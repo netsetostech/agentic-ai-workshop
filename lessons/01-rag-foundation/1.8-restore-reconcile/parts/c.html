@@ -1,0 +1,142 @@
+<details class="chapter-extra"><summary>If the local original disappears during this chapter</summary><p>Load this run's saved session variables first. Recover the exact generation named in its source ledger, then verify the content hash before writing the local file. Do not invent replacement text and expect a same-version reactivation. If the recorded generation is no longer retained, stop and inspect version recovery options; this path cannot reconstruct deleted bytes.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; read the retained version; this writes only the verified local backup</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import hashlib, os, subprocess, warnings
+from pathlib import Path
+from google.cloud import firestore
+warnings.filterwarnings("ignore", category=UserWarning)
+db=firestore.Client(project=os.environ["PROJECT"])
+row=db.collection("sources").document(os.environ["SOURCE"].replace("/", "~")).get().to_dict()
+assert row, "No source ledger entry for this fixture."
+generation=str(row.get("generation") or "")
+assert generation.isdigit(), "No recoverable generation in this ledger entry."
+data=subprocess.check_output(["gcloud", "storage", "cat",
+    os.environ["OBJECT"]+"#"+generation])
+sha=hashlib.sha256(data).hexdigest()
+assert sha==row.get("sha256"), "Recovered bytes do not match the ledger."
+assert "acme_"+sha==os.environ["DOC_KEY"], "These are not this run's original bytes."
+note=Path(os.environ["NOTE"])
+if note.exists():
+    assert note.read_bytes()==data, "A different local file exists; inspect it before replacing."
+else:
+    note.write_bytes(data)
+print("Recovered and verified:", note)
+PY</pre></div>
+<p>After recovery, run <code>ch44_upload</code> and the checks from step 8. If the checksum file or the rest of the saved session is missing too, reconstruct and review that state before continuing.</p></details>
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 4 &middot; Optional variation</span><h3>Watch an incomplete undo refuse</h3><p>Run this only after the successful round trip. It deliberately removes one retired row from this chapter's fixture.</p></div></div>
+<p>The worker will not reactivate a partial version. It compares the retained row count with the claim's count and checks the age of retirement. A shortfall or a closed window emits <code>reactivate_incomplete</code>, leaves the incomplete undo unapplied, and sends the document through fresh ingestion. This variation deletes a retired fixture row; it is separate from the main demonstration and from unrelated tenant documents.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; retire the fixture again; require the exact one-item plan</span><button class="cp" type="button">copy</button></div><pre tabindex="0">sha256sum -c "$DEMO_DIR/note.sha256" &amp;&amp;
+  ch44_plan clean &amp;&amp;
+  gcloud storage rm "$OBJECT" &amp;&amp;
+  ch44_plan retire &amp;&amp;
+  make reconcile PROJECT="$PROJECT" TENANT_ONLY=acme APPLY=1</pre></div>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; optional deliberate fault: remove one verified retired row of this fixture</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, warnings
+from pathlib import Path
+from google.cloud import firestore
+warnings.filterwarnings("ignore", category=UserWarning)
+db=firestore.Client(project=os.environ["PROJECT"])
+key=os.environ["DOC_KEY"]
+source=db.collection("sources").document(os.environ["SOURCE"].replace("/", "~")).get().to_dict() or {}
+claim=db.collection("documents").document(key).get().to_dict() or {}
+assert source.get("status")=="retired" and source.get("doc_key")==key
+assert claim.get("status")=="superseded", "Only the retired fixture's claim may be used."
+rows=list(db.collection("chunks").where("doc_key", "==", key).stream())
+n=int(Path(os.environ["DEMO_DIR"], "initial-chunks.txt").read_text())
+assert len(rows)==n==int(claim["chunks"]), "The complete retained version must exist first."
+assert all(r.to_dict().get("current") is False
+           and r.to_dict().get("source_uri")==os.environ["OBJECT"] for r in rows)
+victim=sorted(rows, key=lambda r:r.id)[0]
+victim.reference.delete()
+print("Removed one retired fixture row:", victim.id, "| claim still expects", n)
+PY</pre></div>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; return the same bytes, then inspect the refused undo and fresh ingestion</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_upload &amp;&amp; ch44_logs
+ch44_source
+ch44_ask present
+ch44_plan clean</pre></div>
+<p><strong>Checkpoint:</strong> a <code>reactivate_incomplete</code> event explains the shortfall, followed by fresh <code>ingest_ok</code>; the restored source and answer are valid again. The reused-N/embedded-0 checkpoint belongs to the successful undo in step 8, not this fault. The strict generation filter may exclude <code>reactivate_incomplete</code> because that event is emitted by the lower-level undo function; use the read below to see it for this version and time window.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; read the undo refusal for this version; no cloud writes</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.doc_key=\"$DOC_KEY\" AND jsonPayload.event=\"reactivate_incomplete\" AND timestamp&gt;=\"$CH44_SINCE\"" \
+  --project "$PROJECT" --limit 5 \
+  --format='table(timestamp,jsonPayload.event,jsonPayload.rows,jsonPayload.chunks,jsonPayload.reason)'</pre></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 4 &middot; Nightly</span><h3>The nightly job, the number it ends on, and the lane older than the ledger</h3><p>The job that runs the walk at 23:30, the metric and the pager that read its last line, and the one-time repair for a lane that predates the ledger.</p></div></div>
+
+<h4>Definition</h4>
+<p>The walk is a Cloud Run job on the ingest image, <code>documind-reconcile</code>, declared when <code>RECONCILE_JOB=true</code> is on the Terraform apply and scheduled at 23:30 IST, after the night switch has floored the lane, with the worker's own environment and no platform retries. Its last line, <code>reconcile_done</code>, carries the drift; a log-based metric extracts that field, and an alert policy pages when the metric stays above zero for twenty-four hours, which is two nightly runs: one night of drift is a lost event the walk repaired, two is a lane nobody is reconciling. <code>make backfill-current</code> is the other one-time tool: on a lane whose rows were written before the ledger existed, it gives every row a <code>current</code> flag and a version key and every indexed claim a ledger row; inspect its plan before deciding whether an older lane needs repair.</p>
+
+<h4>The code</h4>
+@@job_tf@@
+@@sched_tf@@
+@@metric_tf@@
+@@policy_tf@@
+@@mk_job@@
+
+<h4>Read the deployed job and backfill plan</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (all read-only; the backfill is printed, not applied)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run jobs describe documind-reconcile --region "$REGION" --project "$PROJECT" --format='value(name)' 2>/dev/null \
+  || echo "no nightly job on this lane: make reconcile-job declares and schedules it (RECONCILE_JOB=true, a Terraform plan and apply)"
+gcloud scheduler jobs describe documind-reconcile-nightly --location "$REGION" --project "$PROJECT" --format='value(schedule,timeZone,state)' 2>/dev/null \
+  || echo "no schedule either: make reconcile from a shell is the walk until then"
+
+python services/ingest/reconcile.py --project "$PROJECT" --backfill</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected on a lane deployed with the defaults (the second form on a lane where make reconcile-job has run)</span><span class="ro">read only</span></div><pre tabindex="0">no nightly job on this lane: make reconcile-job declares and schedules it (RECONCILE_JOB=true, a Terraform plan and apply)
+no schedule either: make reconcile from a shell is the walk until then
+{"event": "reconcile_backfill", "chunks": 0, "sources": N, "applied": false}
+
+documind-reconcile
+30 23 * * *	Asia/Kolkata	ENABLED
+{"event": "reconcile_backfill", "chunks": 0, "sources": N, "applied": false}</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>On a lane deployed with the defaults the job is not declared, so the walk is something you run; the page you are on has been that operator. Declaring it is one Terraform plan with the switch on, through <code>make plan</code>'s guard, and its apply; keep <code>RECONCILE_JOB=true</code> on every later plan, or the guard refuses the plan that would delete the job. From then the same script runs every night as the worker's account and the pager reads its last line. Read the actual backfill counts rather than assuming zero: <code>chunks 0</code> means no chunk flag needs that repair; the sources count describes the indexed claims the operation would record.</p></div>
+
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Separate smoke</span><h3>Run the broader module validation separately</h3><p>The reindex smoke tests a different fixture and a wider lifecycle; it is not the proof of this chapter's deletion repair.</p></div></div>
+<p><code>make smoke-reindex</code> uploads the kit's version 1 and version 2 under its own name, checks carry-over and reactivation, and asks the smoke-lantern question. Existing copies of that fact can affect the answer checks. Rehearse this separately, inspect its citations and fixture state, and report its actual pass/fail result. Do not replace the exact source and generation checks above with a green answer from this other note.</p>
+@@smoke_doc@@
+@@mk_smoke@@
+<div class="cw"><div class="ch-bar"><span>bash &mdash; optional module smoke; retain its exit status and inspect any failure</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make smoke-reindex PROJECT="$PROJECT" TENANT=acme</pre></div>
+<p>The smoke leaves its own fixture indexed. That does not demonstrate that <code>$SOURCE</code> was retired or restored. Count embedding work from the worker's actual events; a refused undo can require fresh embeddings, while a successful reactivation reuses retained vectors.</p>
+<div class="box box-amber"><div class="box-title">If check 1 fails with "no worker line in time"</div>
+<p>Two causes, told apart by one log read. A kit older than 23 September 2026 waits for a worker line carrying <code>jsonPayload.tenant</code>, and the line the worker writes for the unchanged fixture bytes, <code>ingest_duplicate</code>, carries only the document key, so the smoke waits its five minutes for a match that cannot come. The setup block pulls the latest kit every session; on a clone, one pull is the fix, after putting back any copy of the smoke file made by hand, and the count on the second line must be at least 1 afterwards. If the read shows nothing at all, the event never reached the worker, and the push subscription's endpoint is the place to look: it must be the worker's URL.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the worker's lines for the smoke's uploads; the kit pulled; the subscription's endpoint)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-ingest" AND (jsonPayload.tenant="acme" OR jsonPayload.doc_key:"acme_")' \
+  --project "$PROJECT" --freshness 20m --limit 5 --format='value(timestamp,jsonPayload.event,jsonPayload.doc_key,jsonPayload.chunks,jsonPayload.tenant)'
+git -C "$DEMO_ROOT" checkout -q -- smoke/smoke_reindex.py &amp;&amp; git -C "$DEMO_ROOT" pull -q --ff-only &amp;&amp; grep -c 'doc_key:' smoke/smoke_reindex.py
+gcloud pubsub subscriptions describe documind-ingest-push --project "$PROJECT" --format='value(pushConfig.pushEndpoint)'</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (a duplicate line with an empty tenant column is the worker doing its job; the old smoke could not see it)</span><span class="ro">read only</span></div><pre tabindex="0">2026-09-2xT1x:xx:xx.xxxxxxZ	ingest_duplicate	acme_9c41d0e2b7f5...
+1
+https://documind-ingest-NUMBER.asia-south1.run.app</pre></div></div>
+
+<div class="box box-amber"><div class="box-title">If "answer moved" fails with an answer that also names bay 4</div>
+<p>The check wants the answer to say bay 7 and not bay 4. Lesson 1.4's note, <code>acme/smoke_note_v1.md</code>, which step 5 restored, carries the same clause with bay 4 and no date, so with it current the model reads two sources that disagree; rule six tells it to follow the dated one and say from when it applies, and an answer that mentions the old bay fails the check although it is right. Withdraw the note for the smoke and restore it after: both are the kit's own targets from lesson 1.7, and the restore embeds nothing.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the note withdrawn, the smoke, the note restored)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make retire PROJECT=$PROJECT SOURCE=acme/smoke_note_v1.md
+make smoke-reindex PROJECT=$PROJECT
+make restore PROJECT=$PROJECT SOURCE=acme/smoke_note_v1.md</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (the smoke's lines as above, between the two)</span><span class="ro">read only</span></div><pre tabindex="0">{"event": "reconcile_withdrawn", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/smoke_note_v1.md", ...}
+  ...
+  6 pass · 0 fail
+{"event": "reconcile_restored", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/smoke_note_v1.md", "generation": "...", ...}</pre></div></div>
+<div class="step" id="s12"><div class="step-n">12</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify the story and restore the original backend</h3><p>Use the state transition and the exact evidence, then return the tenant to its saved configuration.</p></div></div>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table"><thead><tr><th>Checkpoint</th><th>Cloud file</th><th>Source ledger</th><th>Proof</th></tr></thead><tbody>
+<tr><td>Working</td><td data-label="Cloud file">Present</td><td data-label="Source ledger">Indexed at the new generation</td><td data-label="Proof">Correct answer cites the exact fixture; N recorded; clean plan.</td></tr>
+<tr><td>Stale after deletion</td><td data-label="Cloud file">Absent</td><td data-label="Source ledger">Still indexed until reconciliation</td><td data-label="Proof">Fixture remains cited, unless a scheduled reconciliation already acted.</td></tr>
+<tr><td>Plan only</td><td data-label="Cloud file">Absent</td><td data-label="Source ledger">Unchanged</td><td data-label="Proof">Only fixture retirement planned; applied false, drift 1.</td></tr>
+<tr><td>Repaired absence</td><td data-label="Cloud file">Absent</td><td data-label="Source ledger">Retired</td><td data-label="Proof">Fixture no longer cited; a subsequent plan has drift 0.</td></tr>
+<tr><td>Restored</td><td data-label="Cloud file">Original bytes, new generation</td><td data-label="Source ledger">Indexed</td><td data-label="Proof">Matching version and generation; reused N, embedded 0; cited answer returns.</td></tr>
+<tr><td>Queued exception</td><td data-label="Cloud file">Present</td><td data-label="Source ledger">May be absent</td><td data-label="Proof">A matching queued claim; no drift contribution and no rewrite by reconciliation.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>Before reporting the chapter complete, check the final source and plan. If the optional incomplete-undo variation was run, record its fresh ingestion separately from the successful reuse in step 8. Leave the verified fixture and local original available for the audience to inspect.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; finish the demo, then restore the pin saved before it began</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_source &amp;&amp; ch44_plan clean
+
+ch44_restore_backend() {
+  local previous
+  previous="$(cat "$DEMO_DIR/backend-before.txt")" || return
+  case "$previous" in
+    vector|firestore|rag_engine|vertex_search|default) ;;
+    *) echo "STOP: saved backend is missing or invalid."; return 1 ;;
+  esac
+  make tenant-backend PROJECT="$PROJECT" TENANT=acme RETRIEVAL_BACKEND="$previous"
+}
+ch44_restore_backend</pre></div>
+<div class="box box-teal"><div class="box-title">What changed on your lane</div><p>One fresh chapter fixture was indexed, deleted, retired by reconciliation and restored from verified original bytes. Its new generation and exact citation proved the return. The original tenant backend was restored from the saved value, and unrelated batch work stayed separate. %%NEXT%%</p></div>
+</div>
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.8 Restore documents and reconcile index differences &middot; v5.0</p><p>Next: Lesson 2.1 Apply query embeddings and authorized filters.</p></div>

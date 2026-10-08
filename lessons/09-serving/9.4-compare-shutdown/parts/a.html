@@ -1,0 +1,94 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 9 &middot; Serving &middot; Lesson 9.4</div>
+<h1>Compare actual backends and verify shutdown behavior: <span>one table, the model behind each row, a floor that is not a count, and zero GPU instances</span></h1>
+<p>The chapter ends with two questions a production team asks before it keeps a self-hosted model. Is the small model good enough, and at what price? And when the day is over, is the GPU really off? The kit answers the first with <code>make compare</code>, a table of four numbers a backend. It answers the second with <code>make off</code>, which lowers four floors to zero.</p>
+<p>In this lesson you read what the table measures and what it cannot see. Then you run the kit's own comparison with a recorder beside it, which keeps what the table drops: the route each row asked for, the model that actually answered, and the price the gateway charged. Last, you switch the lane off and prove it from the instance count Google keeps, not from the floor.</p>
+<div class="hero-chips"><div class="hero-chip">make compare</div><div class="hero-chip">compare_backends.py</div><div class="hero-chip">groundedness</div><div class="hero-chip">citation precision</div><div class="hero-chip">p95</div><div class="hero-chip">Rs per 1k queries</div><div class="hero-chip">x-litellm-response-cost</div><div class="hero-chip">make off</div><div class="hero-chip">min-instances</div><div class="hero-chip">instance_count</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A table you can trust, and a GPU you can prove is off</a></li>
+<li><a href="#s2">The words: make compare, groundedness, citation precision, p95, Rs per 1k, a rate, the recorder, make off, a floor, instance_count</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The table's maths, read</a></li>
+<li><a href="#s4">The comparison, with the actual backends</a></li>
+<li><a href="#s5">Everything off</a></li>
+<li><a href="#s6">Zero GPU instances</a></li>
+<li><a href="#s7">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what <code>make compare</code> measures, where its context comes from, and why a row can be scored under the wrong model's name. You will learn why a floor of zero is not zero instances. Then you will prove it on your lane: the comparison table with the model behind every row, and zero GPU instances.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A table you can trust, and a GPU you can prove is off</h3><p>What the comparison measures, what a row cannot see, the small model's rupees, and what "off" means for a GPU.</p></div></div>
+
+<p><strong>The comparison.</strong> <code>make compare</code> takes the first 20 golden questions and asks each of them of every backend it is given, through the gateway: <code>documind-general</code> and <code>documind-slm</code> by default. For each question it retrieves once and hands every backend the same context, so that the only variable between rows is the model. Each answer comes back as JSON, and the script prints four numbers a backend:</p>
+<ul>
+<li><strong>Groundedness:</strong> the answerable rows it answered with every <code>must_contain</code> phrase.</li>
+<li><strong>Citation precision:</strong> the cited chunks the golden set expects, over all the chunks it cited.</li>
+<li><strong>p95 latency:</strong> the round trip to the gateway; the number a dashboard alerts on.</li>
+<li><strong>Rs per 1k queries:</strong> a row's mean cost, times a thousand.</li>
+</ul>
+
+<p><strong>Where the context comes from.</strong> "Retrieves once" means asking the API. <code>shared/documind_tools.retrieve()</code> posts the question to <code>/v1/query</code>, the live revision answers it with Gemini, and the comparison keeps that answer's citations. What each backend receives is those citations' quotes: the words Gemini chose. So the small model is judged on restating Gemini's evidence, not on reading the retrieved chunks.</p>
+
+<p><strong>What a row records.</strong> A row is labelled with the route it asked for, and priced at the script's own rate for that route. It keeps the answer and the token counts, but neither the model that answered nor the gateway's cost header.</p>
+<ul>
+<li><strong>When the gateway moves a request</strong> (the hook re-routing RESTRICTED text, or a fallback when a backend fails), the row still carries the route's name and price.</li>
+<li><strong>The vLLM route is the plain case.</strong> With no vLLM service deployed, <code>documind-inference</code> is answered by its fallback, the small model. The script, which has no price for that route, charges it at Gemini's rates.</li>
+</ul>
+
+<p><strong>The small model's rupees are a rate.</strong> The script derives 20.50 USD a million tokens from the L4's Rs 86,904 a month over about 50 million tokens. The bill is the GPU's hour, Rs %%HOUR_INR%% of it. At another volume the real price of a question can be far above or below the rate; the panel below shows how far.</p>
+
+<p><strong>Shutdown.</strong> <code>make off</code> lowers the floors: min-instances 0 on the small model, the vLLM service, the gateway and the UI. It also removes the GKE workload, then prints each floor. Three more controls sit around it: the nightly job does the same at 23:00 IST, an alarm fires after two hours of any GPU instance, and <code>make gpu-cap</code> caps the L4 quota. But a floor is not a count. An idle GPU instance may live up to 10 minutes after its last request, billed, whatever the floor says. So zero GPU instances is a measurement: Cloud Monitoring's <code>instance_count</code>, read after the idle window.</p>
+
+<div class="analogy"><div class="analogy-icon">&#129367;</div><div>
+<p><strong>A caterer's tasting in Hyderabad, and the gas meter at closing time.</strong> The caterer tries a cheaper cook against the head cook on twenty dishes. Each plate goes out with a slip naming the cook it was ordered from, priced from the menu by that name. If the new cook was busy and the head cook covered, the slip still names the new cook, at his price. And both cooks are handed the ingredients the head cook picked for his own version of the dish.</p>
+<p>At closing, the manager sets the minimum staff to nobody and goes home. The burners stay lit until the last cook leaves, up to ten minutes later, and the gas is paid for. The only proof the kitchen is off is the meter.</p>
+<p>The tasting is <code>make compare</code>, and the slip is the row's label and price. Covering is the gateway's fallback or re-route, and the head cook's ingredients are the quotes from the API's answer. The minimum staff is min-instances, the burners are the GPU instance, and the meter is <code>instance_count</code>.</p></div></div>
+
+<h4>The table's rupees, and the bill's</h4>
+<p>The table prices the small model at its rate, but the bill is the GPU's hour. Pick a volume, the tokens in each question and answer, the hours your traffic spans and the days. The boxes show the table's rupees per 1,000 questions, the bill's, and Gemini's for the same tokens.</p>
+
+<div class="diagram pc" id="rb">
+<div class="dg-title">A rate and a bill: rupees per 1,000 questions to the small model, and to Gemini</div>
+<div class="pc-in"><label>Questions<select id="rb-q">%%Q_OPTIONS%%</select></label>
+<label>Tokens in<select id="rb-in">%%IN_OPTIONS%%</select></label>
+<label>Tokens out<select id="rb-out">%%OUT_OPTIONS%%</select></label>
+<label>Traffic spans<select id="rb-win">%%WIN_OPTIONS%%</select></label>
+<label>Days a month<select id="rb-days">%%DAYS_OPTIONS%%</select></label></div>
+<div class="rb-cols">
+<div class="pc-box"><b class="h">The table: the rate</b><div class="rb-out" id="rb-table" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The bill: the GPU's hour</b><div class="rb-out" id="rb-bill" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">Gemini, the same tokens</b><div class="rb-out" id="rb-gem" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The rate and Gemini's prices are the script's own table, which matches <code>config.yaml</code> for these two routes. The hour is Google's price for the L4 shape <code>make deploy-slm</code> deploys in <code>us-central1</code>, and the 10 idle minutes are Cloud Run's limit for a GPU instance. The sums are compared with a Python version on all %%N_CHECKED%% combinations.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It assumes one instance keeps up with the traffic (the service allows one, four requests at a time), and that the traffic fills its window with no idle gaps. It prices the small model's instance only: not the gateway or the API around it.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: make compare, groundedness, citation precision, p95, Rs per 1k, a rate, the recorder, make off, a floor, instance_count</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>make compare</strong></td><td data-label="Meaning">The kit's backend comparison: the first 20 golden questions, one retrieval each, every backend through the gateway.</td><td data-label="On your lane"><code>documind-general</code> and <code>documind-slm</code> by default</td></tr>
+<tr><td><strong>Groundedness</strong></td><td data-label="Meaning">Answered, with every <code>must_contain</code> phrase, over the answerable rows.</td><td data-label="On your lane">step 4</td></tr>
+<tr><td><strong>Citation precision</strong></td><td data-label="Meaning">Cited chunks the golden set names, over all cited chunks.</td><td data-label="On your lane">a chunk id carries its clause code: <code>acme:hr_policy_2026#NP-03</code></td></tr>
+<tr><td><strong>p95 latency</strong></td><td data-label="Meaning">The 95th percentile of the sorted round trips.</td><td data-label="On your lane">on 20 rows, the 19th</td></tr>
+<tr><td><strong>Rs per 1k queries</strong></td><td data-label="Meaning">A row's mean cost times 1,000, at the script's own prices.</td><td data-label="On your lane">the small model's is a rate</td></tr>
+<tr><td><strong>A rate</strong></td><td data-label="Meaning">A price per token, derived from an hourly bill at an assumed volume.</td><td data-label="On your lane">Rs 86,904 a month over about 50 million tokens</td></tr>
+<tr><td><strong>The recorder</strong></td><td data-label="Meaning">This lesson's addition: for each row, the route asked, the model that answered and the gateway's cost header.</td><td data-label="On your lane">beside <code>make compare</code>'s own pass</td></tr>
+<tr><td><strong>make off</strong></td><td data-label="Meaning">Four floors to zero, the GKE workload removed, the floors printed.</td><td data-label="On your lane">the nightly job does the same at 23:00 IST</td></tr>
+<tr><td><strong>A floor</strong></td><td data-label="Meaning">min-instances: how many instances Cloud Run keeps, busy or not.</td><td data-label="On your lane">0 on the small model since <code>make deploy-slm</code></td></tr>
+<tr><td><strong>instance_count</strong></td><td data-label="Meaning">Cloud Monitoring's gauge of a service's instances, active or idle, sampled every minute.</td><td data-label="On your lane">the only proof of zero</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a floor is a setting, and an instance count is a fact. <code>make off</code> changes the setting. Only the count, read after the idle window, says the GPU stopped.</p>

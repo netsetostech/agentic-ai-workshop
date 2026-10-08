@@ -1,0 +1,56 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Check before you spend.</strong> The roster, then the audit bucket, then the cache: the model is the last thing the route calls. A refusal costs nothing.</li>
+<li><strong>The audit event is the record; the image is a cache.</strong> The media bucket forgets in 30 days and the audit bucket keeps five years. The audit event holds the prompt's hash, because a locked bucket can never be cleaned of a prompt someone regrets.</li>
+<li><strong>DEMO_MODE makes a demo one bill.</strong> The kit's comment: the same prompt eight times would be eight bills, and eight chances for the network to embarrass you.</li>
+<li><strong>The door keeps large files off Cloud Run.</strong> A signed PUT goes to the bucket, and from there the worker's path is the same as any upload's.</li>
+<li><strong>Speech is cached by what it says.</strong> The same words in the same voice are synthesised once, and replayed free until the bucket's 30-day rule deletes them.</li>
+<li><strong>The UI holds no image model of its own.</strong> The Studio calls the API, which checks, spends and records, so the rules live in one place.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The rules</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The Studio</td><td data-label="Costs">one image; the second call is a DEMO_MODE hit</td><td data-label="On your lane">USD 0.039, which the Studio's caption shows as Rs 3.31 at 85 rupees a dollar; nothing for the hit</td></tr>
+<tr><td>The door</td><td data-label="Costs">the PUT, and the worker's claim check on bytes it knows</td><td data-label="On your lane">no model call</td></tr>
+<tr><td>Read aloud</td><td data-label="Costs">one flash answer, and one Chirp 3 HD synthesis of about 200 characters</td><td data-label="On your lane">under a rupee for the answer; the voice priced per character on Google's page; the replay free</td></tr>
+<tr><td>Listen</td><td data-label="Costs">the calls <code>asia-south1</code> refuses; one Chirp 3 recognition of a clip of about fifteen seconds in <code>eu</code></td><td data-label="On your lane">priced per minute of audio on Google's page</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does. The first point's region facts are Google's, checked on its pages on 24 September 2026.</p>
+<ul>
+<li><strong>The microphone cannot be heard on the lane as deployed.</strong> The UI transcribes in <code>asia-south1</code> (<code>SPEECH_REGION</code>, set when the UI is deployed). Google's pages list none of <code>transcribe()</code>'s three models there for Hindi or English (India). Chirp 3 is GA in the <code>us</code> and <code>eu</code> multi-regions, <code>chirp_2</code> serves <code>us-central1</code>, <code>europe-west4</code> and <code>asia-southeast1</code>, and the language table lists these languages only in <code>asia-southeast1</code> and <code>eu</code>. Moving speech-to-text out of India is a residency decision, so the kit should make it deliberately, not leave the feature silently off.</li>
+<li><strong>The failure says nothing.</strong> <code>transcribe()</code> catches every error, logs none and returns an empty string, so the chat asks nothing and shows nothing.</li>
+<li><strong>Media rows never reach BigQuery.</strong> The sink copies <code>query</code>, <code>stream</code>, <code>chat</code>, <code>desk</code>, <code>passages</code>, <code>desk_shadow</code> and <code>desk_gate</code> (those two on a condition); <code>media</code> still never. <code>tenant_daily</code> reads <code>query</code>, <code>stream</code> and <code>media</code>. The Studio's spend is in Cloud Logging only, and <code>tenant_daily</code> has no image cost. Lesson 11.5 found it.</li>
+<li><strong>Speech is metered and audited nowhere.</strong> <code>voice.py</code> writes no usage row, and <code>media.transcribe</code> is a registered audit action that nothing emits. Every synthesis and every recognition is billed to the project under the UI's account, and attributed to no tenant.</li>
+<li><strong>DEMO_MODE's cache knows the prompt, not the model.</strong> The image's name is the prompt's hash under the tenant. After <code>IMAGE_MODEL</code> changes, a prompt drawn before is served the old model's image for up to 30 days, and each hit leaves a usage row but no audit event.</li>
+<li><strong>Nothing in the UI uses the upload door.</strong> The Documents page uploads through Streamlit, whose limit is set to 200 MB, though <code>media.py</code> itself says that past 32 MB the browser must PUT straight to the bucket. No page calls <code>/v1/media/upload-url</code>; only <code>make smoke-media</code> does. Both buckets' CORS names <code>https://documind.example.com</code>, so a browser PUT from the lane's UI would be refused.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The media row's price</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>'cost_usd': 0.039, 'cached': False</code>, and <code>0.0, True</code> for a hit</td></tr>
+<tr><td>2</td><td data-label="Claim">Media never reaches <code>tenant_daily</code></td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>event=media never copied by the sink, read by tenant_daily</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The voice caches by what it says</td><td data-label="The check">step 3</td><td data-label="Pass looks like">synthesised, read back, then another object for the Hindi voice</td></tr>
+<tr><td>4</td><td data-label="Claim">A generated image</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>cached False</code>, then <code>cached True</code>, the same <code>acme/gen/...png</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Its usage row</td><td data-label="The check">step 4</td><td data-label="Pass looks like">two rows, <code>cost_usd 0.039</code> and <code>0.0</code>; one <code>media.generate</code> event</td></tr>
+<tr><td>6</td><td data-label="Claim">The door's guards, and the door</td><td data-label="The check">step 5</td><td data-label="Pass looks like">two 400s; <code>HTTP 200</code> for the PUT; the worker's <code>ingest_duplicate</code></td></tr>
+<tr><td>7</td><td data-label="Claim">An answer read aloud</td><td data-label="The check">step 6</td><td data-label="Pass looks like">a miss, then a hit; <code>~/answer.ogg</code> plays</td></tr>
+<tr><td>8</td><td data-label="Claim">Where the microphone listens</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>''</code> in <code>asia-south1</code>; the answer's words in <code>eu</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>acme's media folder holds one generated image, which the bucket deletes after 30 days. Cloud Logging holds its two usage rows, and the audit bucket holds its event for five years. The town hall video's object has a new generation with the same bytes: the worker acknowledged it, and the nightly walk will record the generation. The TTS bucket holds the answer's audio for 30 days, <code>~/answer.ogg</code> is in your home directory, and the operator venv has the UI's two speech clients. Module 8 changes the pipeline and measures it, starting with lesson 8.1: the ingest events through Pub/Sub, mapped to Kafka.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 7 Graph and multimodal &middot; Lesson 7.6 Exercise implemented Studio and voice features &middot; v5.0</p><p>Next: Lesson 8.1 Run the ingest events through Pub/Sub, mapped to Kafka.</p></div>

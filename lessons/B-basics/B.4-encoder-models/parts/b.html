@@ -1,0 +1,54 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Pre-training</span><h3>The masked-language idea: fill the blank from both sides</h3><p>How BERT learned to read without labels, tried on four clauses of the kit's handbook with nothing but counts.</p></div></div>
+
+<h4>Definition</h4>
+<p>BERT was pre-trained on BooksCorpus (800 million words) and English Wikipedia (2,500 million). In every sequence it is shown, 15% of the tokens are chosen; 80% of those become <code>[MASK]</code>, 10% become a random token and 10% stay as they are, so the model can never tell which tokens it will be asked about. It must predict each chosen token's original from a vocabulary of 30,000 word pieces, and it may look both ways to do it, because nothing in an encoder's attention hides the right-hand side. A left-to-right model, the GPT style of lesson B.5, may only look left, because it writes left to right. No person labels anything: the text is the answer key.</p>
+<p>The cell runs the same exercise at toy scale. Its text is four clauses of the kit's handbook, the same four the rest of this page scores. It hides one word, leaves the blank in its sentence (so the hidden word is never counted), and asks the rest of the text which words have stood next to the blank's neighbours: first only the word on its left, then the words on both sides, one count each.</p>
+
+<h4>Do it: hide three words and ask the text for them, Rs 0</h4>
+%%CELL_MLM%%
+%%OUT_MLM%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three blanks, three outcomes. In the first, the word on the left, <code>a</code>, has been followed by <code>confirmed</code> once and <code>maximum</code> once, so the left side alone ties between two wrong answers. The word on the right, <code>period</code>, has been preceded by <code>notice</code> twice, so with both sides <code>notice</code> wins, 2 against 1. In the second, both sides together offer six candidates and not one of them is <code>15</code>: the right side says a number of days goes here, and no other sentence says which, because the value belongs to this clause alone. In the third, <code>earned</code> on the left is enough; in this text it has only ever been followed by <code>leave</code>.</p>
+<p>The second blank is the line this course is built on. Language teaches a model what kind of word belongs in a blank; only the document says which one. A model that has read billions of words knows that a notice period is counted in days, and it cannot know that ACME's probationers serve 15 of them. That is why DocuMind retrieves the clause and hands it to the model rather than trusting the model's memory.</p></div>
+
+<div class="box box-amber"><div class="box-title">What the counts are not</div>
+<p>BERT does not count neighbours. Its attention reads every token of the sequence at once, not one word on each side; what it knows lives in learned weights (110 million in BERT-base), not in a table of pairs; and it predicts word pieces, so a word it never saw whole can still be spelled from parts. The counts share one thing with it, the objective: fill the blank from the context on both sides, with the text as the answer key.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Bi-encoder</span><h3>A bi-encoder: two texts, encoded apart, compared by cosine</h3><p>One text in, one vector out; the clauses encoded before any question exists; the question scored by arithmetic.</p></div></div>
+
+<h4>Definition</h4>
+<p>A bi-encoder is a function from one text to one vector, and nothing more: it never sees two texts at once. Similarity is computed afterwards, between vectors, usually as a cosine. That one restriction is what makes it fast at scale. The documents' vectors can be made once, ahead of time, and stored; a question then costs one more vector and some arithmetic, and an index can do that arithmetic over millions of stored vectors. The toy below is a bi-encoder you can read: %%N_WORDS%% hand-made words, each pointing along one of five named axes (leave, exit, pay, probation, reduce) with a weight. A text's vector is the sum of its known words' vectors, scaled to length 1; every other word is ignored. A real embedding model learns its %%DIMS%% axes, which nobody can name, but the shape of the job is the same.</p>
+
+<h4>Do it: a five-axis bi-encoder on the four clauses, Rs 0</h4>
+%%CELL_BI%%
+%%OUT_BI%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The store came first: four rows of five numbers, made before the question existed. LV-01 is all leave, PB-02 mostly probation, NP-03 mostly exit, and LV-07 is spread over all five axes, because the clause says several things. The question leans equally on leave and exit, with some reduce. NP-03 scores %%BI_NP03%%: its notice words meet the question's exit, and its last sentence adds leave and a word that shortens. LV-07, which also answers the question, scores %%BI_LV07%%, only %%BI_GAP%% above LV-01, which does not: half of LV-07 is about encashment, and its pay axis pulls its one vector away from the question. That is the bi-encoder's weakness in one line: a clause becomes one vector, and the vector is a blend of everything the clause says.</p>
+<p>The paraphrase shares a single word with the clauses, <code>notice</code>, and still ranks them in the same order, because <code>holidays</code> sits on the leave axis and <code>cut</code> on the reduce axis: meaning by direction, not by spelling. And the cost: the four rows were paid for before the question arrived, which in the kit means at ingest; the question cost one encoding and four dot products.</p></div>
+
+<div class="box box-teal"><div class="box-title">What a trained embedding model adds</div>
+<p>Three things the toy lacks. Learned axes: hundreds of them, set by training rather than by hand, so that "resign" and "quit" land near each other without anyone listing them. Context: a trained encoder reads each word with its neighbours, so the leave in "earned leave" and the leave in "leave the company" get different vectors, where this toy gives a spelling one vector wherever it appears. And roles: a task type, so a question's vector is made to be compared with documents' vectors. What does not change is the shape: one text in, one vector out, the comparison afterwards.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Cross-encoder</span><h3>A cross-encoder: one pair, read together, scored once</h3><p>The question and the clause as one input, a score that belongs to the pair, and why a cross-encoder only ever reads a shortlist.</p></div></div>
+
+<h4>Definition</h4>
+<p>A cross-encoder takes the pair as its input. BERT's paper packs two texts into one sequence, <code>[CLS]</code> first text <code>[SEP]</code> second text <code>[SEP]</code>, and reads a judgement about the pair off the output vector of <code>[CLS]</code>. A BERT-style reranker is that design, trained on question and passage pairs to say how well the passage answers. Inside, attention runs across the boundary, so every word of the question can bear on every word of the passage: which grade, which way a rule runs, whether a "not" covers the part that matters. The score belongs to the pair and to nothing else, so nothing can be computed before the question arrives.</p>
+<p>The toy's rule reads the pair too. It turns each text into its ideas: the axes of its known words, in order, with repeats merged. Then it scores a clause by its best sentence: how many of the question's ideas that sentence holds in the question's order, gaps allowed, out of all of them. Lining two sequences up against each other is a property of the pair, and the bi-encoder's vectors, being sums, keep no order to line up.</p>
+
+<h4>Do it: the same pairs, read together, Rs 0</h4>
+%%CELL_CROSS%%
+%%OUT_CROSS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The two clauses that answer the question score 1.00: NP-03's last sentence and LV-07's last sentence each hold leave, then a word that shortens, then notice, all three of the question's ideas in its order. The two clauses that only share its topic score 0.33: LV-01 holds leave and nothing else, and PB-02's best sentence holds notice and nothing else. Where the bi-encoder put LV-07 %%BI_GAP%% above LV-01, the rule puts two-thirds between them, because it read the one sentence of LV-07 that answers instead of a blend of the whole clause.</p>
+<p>Then the swapped pair. The same words in another order make identical vectors, so the bi-encoder gives both sentences %%BI_SAME%%, though one says the opposite of the other. The rule, reading each against the question, gives 1.00 and 0.33.</p></div>
+
+<h4>Why a cross-encoder only ever reads a shortlist</h4>
+<p>A bi-encoder's work splits in two: the documents' half is done once, at ingest, and the question's half once per question, and what is left is arithmetic. A cross-encoder's work does not split, because the pair is the input. Ranking acme's %%N_CHUNKS%% chunks against one question would take %%N_CHUNKS%% passes of the model, and the next question as many again. The Sentence-BERT paper (Reimers and Gurevych, 2019), which made BERT-style bi-encoders practical, measured the gap: finding the most similar pair among 10,000 sentences means %%SBERT_PAIRS%% pairs for a cross-encoder, about 65 hours of BERT on the authors' hardware, against about 5 seconds for a bi-encoder. So the two are used together: the bi-encoder narrows the corpus to a pool, and the cross-encoder reads only the pool. The kit's code, next, does exactly that.</p>
+

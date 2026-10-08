@@ -1,0 +1,75 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 5 &middot; MCP and agents &middot; Lesson 5.7</div>
+<h1>Compare the LangChain and ADK adapters: <span>one tool, four brains, and the cost line each one leaves</span></h1>
+<p>The chat service can answer with four brains, and all four reach the same <code>retrieve()</code>. What differs is the adapter between each framework and that one tool. It decides what the model is shown, what is filled in behind its back, what the model reads back and what happens when a call fails. It also decides where the conversation is kept and what gets counted. You put the LangChain adapter beside the ADK adapter offline, on the kit's own code. You also see the turn's limits from lesson 5.5 wired into each harness its own way. Then you ask one question through all four brains on your lane and read the four cost lines that rag-api's rows and the chat rows give together. Last, you take each agent's loop apart, call by call.</p>
+<div class="hero-chips"><div class="hero-chip">four brains</div><div class="hero-chip">one retrieve()</div><div class="hero-chip">ToolRuntime</div><div class="hero-chip">FunctionTool</div><div class="hero-chip">errors as data</div><div class="hero-chip">three wirings, one Meter</div><div class="hero-chip">four cost lines</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">One tool, four harnesses</a></li>
+<li><a href="#s2">The words: adapter, harness, ToolRuntime, FunctionTool, REQUEST, callback, session, limits, cost line</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Two adapters over one tool, side by side</a></li>
+<li><a href="#s4">Four brains on /health, and the module's gate</a></li>
+<li><a href="#s5">Four cost lines, from rag-api's rows and the chat rows</a></li>
+<li><a href="#s6">The loop, call by call</a></li>
+<li><a href="#s7">Why the adapters differ, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the six things an adapter decides, how the kit makes the LangChain and ADK adapters decide them alike, and what the two harnesses still decide differently. You will also see the same turn limits wired three ways, and why a cost line needs two kinds of row: rag-api's for the search, the chat service's for the loop. Then you will prove it: four brains and one <code>limits</code> block on <code>/health</code>, one answer from each through the module's gate, a looping model stopped by every harness, four cost lines from the rows, and each agent brain's own model calls, call by call.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>One tool, four harnesses</h3><p>What an adapter decides, and why two frameworks decide it differently.</p></div></div>
+
+<p><strong>The tool is one.</strong> <code>shared/documind_tools.retrieve()</code> is the only code that talks to rag-api. A brain decides when to call it and what to do with the result, and nothing more. Between each framework and that function sits an adapter. The adapter decides six things: what the model is shown, what is filled in behind it, what the model reads back, what happens when a call fails, where the conversation is kept, and what gets counted.</p>
+
+<p><strong>The LangChain adapter wraps.</strong> The LangChain and LangGraph brains use <code>services/chat/tools.py</code>: two <code>@tool</code> functions, <code>retrieve</code> and <code>calculate_processing_cost</code>. The tenant, the person's assertion and the brain's name arrive through <code>ToolRuntime</code>, which the framework injects and leaves out of the schema. So the model is shown <code>query</code>, <code>doc_type</code> and <code>top_k</code>, and nothing else. The adapter's <code>search()</code> drops rag-api's own answer from the result, rewords a failure and numbers each citation for the turn. The framework turns a bad argument, a missing one or an unknown name into an error result, which the model reads and explains.</p>
+
+<p><strong>The ADK adapter is the same adapter.</strong> ADK's <code>FunctionTool</code> builds a declaration from a Python function's signature and docstring, so whatever the function takes, the model is shown. The ADK brain therefore wraps the two plain functions <code>tools.for_adk()</code> returns, which take only what the model may choose and end in the same <code>search()</code>. The tenant, the assertion and the brain reach them through <code>tools.REQUEST</code>, a context variable the brain sets for the turn. Two callbacks give ADK LangChain's error contract: <code>on_tool_error_callback</code> turns a name ADK does not hold, a refused argument or a mistyped one into an error result, and <code>after_tool_callback</code> marks ADK's own answer to a missing argument as one. What still differs is the harness: the loop, where the conversation is kept, the thinking level, and how many characters each framework spends declaring the same tools.</p>
+
+<p><strong>The limits sit at each harness's own seam.</strong> Lesson 5.5's <code>Meter</code> is one object, made by the chat service for each turn, and every agent brain checks it before each model call. Where the check goes is the harness's choice. The LangChain brain adds one middleware, <code>TurnLimitsMiddleware</code>, that wraps the model call. LangChain also ships <code>ModelCallLimitMiddleware</code>, an off-the-shelf call cap, but it hooks in before and after the model as two graph nodes of its own, so every turn would save more checkpoints. The LangGraph brain has no middleware: its <code>agent</code> node checks the Meter itself. The ADK brain uses three model callbacks, before the call, after it and on its error, and keeps <code>RunConfig.max_llm_calls</code> as a backstop the Meter reaches first.</p>
+
+<p><strong>The cost line has two halves.</strong> The direct brain has no loop: one <code>retrieve()</code>, and rag-api's grounded answer is the answer. Every <code>retrieve()</code>, from any brain, leaves a row in rag-api's log with the brain's name, the tokens and the cost. The agent's own model calls, at least two a turn for each agent brain, are on the chat service's row for the turn: its model calls, tokens and cost, priced at <code>cost.py</code>'s rates. The two halves add up to the line. rag-api's half looks alike for all four brains, because it counts the one thing they share. The chat row's half is where they differ.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128220;</div><div>
+<p><strong>A sub-registrar's record room, and four ways to get a certified copy.</strong> The record room is one. Every request goes through its counter, and its register notes the fee and the name of the clerk who asked. One clerk follows the office manual, with a supervisor checking each slip. One follows a flowchart you drew yourself. The third comes from an agency with its own way of working, but the record room hands it the same slips as the others, with no box for "whose file?": the name is written on the clerk's token at the door. When a slip is rejected, this clerk comes back to explain, as the other two do. The fourth window simply hands you the copy. The register shows four nearly equal fees. The clerks' own time, which is where they differ, is written on each clerk's own docket. And each clerk, however they work, stops after the same number of trips to the counter.</p></div></div>
+
+<h4>Two brains, side by side</h4>
+<p>Choose two brains to see how each decides the %%N_ASPECTS%% things below. The rows where they differ are shaded.</p>
+
+<div class="diagram pc" id="cb">
+<div class="dg-title">The chat service's four brains - what each adapter shows, fills in, hands back and counts</div>
+<div class="pc-box"><div class="cmp-sel"><label>Brain A<select id="cb-a"></select></label><label>Brain B<select id="cb-b"></select></label></div>
+<div class="cmp" id="cb-out"></div>
+<p class="cmp-n" id="cb-n" aria-live="polite"></p></div>
+<p class="dg-cap">Each value is read from the kit's code at build time. The arguments, the character counts, what each model reads and the failures come from step 3's cell, run on the kit's <code>brains.py</code> and <code>tools.py</code> with google-adk %%ADK_PIN%%.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It compares the adapters as the kit builds them, not the quality of their answers. Lesson 4.2's judge scores answers. With <code>CHAT_URL</code> set, <code>make judge</code> also checks each agent brain's tool calls against the one call the kit expects, a single <code>retrieve</code>.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: adapter, harness, ToolRuntime, FunctionTool, REQUEST, callback, session, limits, cost line</h3><p>Eleven rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Adapter</strong></td><td data-label="Meaning">The layer between a framework and the one tool: what the model is shown, what is filled in, what comes back.</td><td data-label="On your lane"><code>tools.py</code> for all three: the <code>@tool</code> functions for LangChain and LangGraph, <code>for_adk()</code> for ADK, both ending in <code>search()</code></td></tr>
+<tr><td><strong>Harness</strong></td><td data-label="Meaning">The loop that takes the model to the tool and back.</td><td data-label="On your lane"><code>create_agent</code>, the <code>StateGraph</code>, the <code>Runner</code>, or none</td></tr>
+<tr><td><strong>ToolRuntime</strong></td><td data-label="Meaning">What LangChain injects into a tool: the context <code>agent.py</code> set, absent from the schema the model reads.</td><td data-label="On your lane">the tenant, the assertion, the brain</td></tr>
+<tr><td><strong>FunctionTool</strong></td><td data-label="Meaning">ADK's wrapper, which builds a declaration from a Python function's signature and docstring.</td><td data-label="On your lane">the two functions <code>tools.for_adk()</code> returns, not the shared ones</td></tr>
+<tr><td><strong>REQUEST</strong></td><td data-label="Meaning">The context variable in <code>tools.py</code> that carries the request to ADK's tools, as <code>ToolRuntime</code> does for LangChain's.</td><td data-label="On your lane">the tenant, the assertion, the brain and the turn's citation ledger</td></tr>
+<tr><td><strong>on_tool_error_callback</strong></td><td data-label="Meaning">ADK's hook when a tool call fails: a dict it returns becomes the result. Its twin, <code>after_tool_callback</code>, can replace a result.</td><td data-label="On your lane"><code>tool_failed</code>: an unknown name, a refused or mistyped argument; <code>mark_error</code>: ADK's missing-argument answer</td></tr>
+<tr><td><strong>refusals</strong></td><td data-label="Meaning">The third of the answer's four keys.</td><td data-label="On your lane">every error result, in all three agent brains</td></tr>
+<tr><td><strong>Session</strong></td><td data-label="Meaning">Where a conversation is kept between turns.</td><td data-label="On your lane">the checkpointer, ADK's own sessions (in memory on your lane), or nothing</td></tr>
+<tr><td><strong>Model callbacks</strong></td><td data-label="Meaning">ADK's hooks around each model call: a response returned before the call replaces it.</td><td data-label="On your lane"><code>limits.adk_before_model</code>, <code>adk_after_model</code>, <code>adk_model_error</code></td></tr>
+<tr><td><strong>/health</strong></td><td data-label="Meaning">The chat service's route that lists its brains and the limits every turn runs under.</td><td data-label="On your lane">four names, from a constant, and %%MAX_CALLS%% calls, Rs %%BUDGET_INR%%, %%DEADLINE_S%% s</td></tr>
+<tr><td><strong>Cost line</strong></td><td data-label="Meaning">What one brain's turn costs.</td><td data-label="On your lane">rag-api's rows for that brain, plus the chat row's own model calls</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: an adapter decides what crosses the boundary, and a harness decides how many times it is crossed. Both show up in the cost line, and the Meter caps the second.</p>

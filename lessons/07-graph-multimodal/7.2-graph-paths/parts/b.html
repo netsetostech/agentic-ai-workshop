@@ -1,0 +1,115 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code> and <code>NUMBER</code> set by the setup above. Module 0 installed <code>google-cloud-spanner</code> with the ingest requirements. You also need:</p>
+<ul>
+<li><strong>Lesson 7.1's graph</strong> in Firestore, with its cached extractions. If you skipped 7.1, run its build first: <code>make graph PROJECT="$PROJECT" TENANT=acme GRAPH_ARGS="--source hr_policy_2026.md --rebuild"</code>.</li>
+<li><strong>The Spanner instance</strong> <code>documind-graph</code>. <code>make up</code> created it with the rest of the lane, and it has billed by the hour ever since, whether or not anything reads it.</li>
+</ul>
+<p>The two candidates in step 6 take no traffic. The live revision serves throughout, and step 6 ends by putting the template back.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The seeders, run</h3><p>The containment rule and the relational gate on six questions, then the kit's own tests of the Spanner walk.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell imports the kit's seeding functions and runs them against eight names from the handbook's graph:</p>
+<ul>
+<li><code>_candidate_names()</code> and <code>_seed_match()</code>, with the seeds sorted longest first, as <code>FirestoreGraph.seed()</code> sorts them;</li>
+<li><code>choose_mode()</code>, which decides whether <code>auto</code> walks.</li>
+</ul>
+<p>The six questions ask about purchases and approvals in different words. Then <code>unittest</code> runs <code>commands/tests/test_spanner_graph.py</code>: the kit's %%N_TESTS%% checks of <code>SpannerGraph.expand()</code>, against a strict fake that refuses what live Spanner refuses.</p>
+
+<h4>The code</h4>
+@@containment@@
+@@fs_seed@@
+@@choose@@
+
+<h4>Do it</h4>
+%%CELL_RULES%%
+%%OUT_RULES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The CFO question seeds nothing.</strong> Neither "purchase approval" nor "cfo" is inside "who signs off on a big purchase?", and the question has no capitalised run of five letters. The Firestore path cannot start a walk from a description.</li>
+<li><strong>Naming the role works.</strong> "cfo" is inside "which purchases need the cfo?", so the CFO seeds, and "which" is a relational word, so <code>auto</code> walks.</li>
+<li><strong>"What does the CFO approve?" seeds the CFO but stays dense.</strong> Neither "what" nor "approve" is in <code>choose_mode()</code>'s list, so <code>auto</code> never walks it; <code>on</code> would.</li>
+<li><strong>A capital letter changes the seeds.</strong> "Purchase" with a capital is a candidate name of eight letters, and it is inside "purchase approval". With a small p, the same question seeds nothing.</li>
+<li><strong>Part of a word is enough.</strong> "india" is inside "indian", so India seeds a question about travel claims, and the walk would lead to WFH-01, the remote-work clause.</li>
+<li><strong>The Spanner walk passes its own tests:</strong> one snapshot for the whole walk, edges followed both ways, the cap counted on distinct nodes, no chunk from another tenant, and one or two hops only. The learner repository's dry run runs them on every push.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Walk</span><h3>The Firestore path: a name the question contains</h3><p>The kit's question without the word CFO, then with it.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make graph</code> with <code>--ask</code> walks the graph for one question and prints what the API would fetch: the seeds, the nodes and the chunk ids. On Firestore it seeds by containment, as <code>graph_candidates()</code> does when <code>GRAPH_BACKEND</code> is firestore. It only reads; no model is called.</p>
+
+<h4>Do it</h4>
+%%CELL_FS_ASK%%
+%%OUT_FS_ASK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The kit's question found no seed, so the walk had nowhere to start. The API would get an empty list, and the dense pool would answer alone.</p>
+<p>With the word CFO, the CFO seeded, and the walk went one hop to Purchase approval and handed over one chunk id: FIN-02's. To seed, each walk read every node of acme's graph, %%N_NODES%% documents each time. That is what containment costs without an index.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Build</span><h3>The Spanner path: build it, read it, walk it by meaning</h3><p>The same graph written to Spanner with a vector per name, read back as tables and as a graph, then walked for the kit's question.</p></div></div>
+
+<h4>Definition</h4>
+<ul>
+<li><code>make graph GRAPH_BACKEND=spanner</code> runs lesson 7.1's four passes and writes the result to Spanner. The extractions come from the cache in Firestore, so nothing is sent to flash-lite. Two embedding calls remain: one to resolve names, and one for the node vectors.</li>
+<li><code>SpannerGraph.load()</code> writes every node, with its vector, and every edge in one commit. It prints nothing, so the <code>graph_built</code> line is the record.</li>
+<li>The cell then reads both tables in one snapshot. It prints the counts, how many nodes carry a vector, and the CFO's edge with the names at both ends joined from <code>GraphNode</code>. Last, it walks one hop from the CFO with the kit's own GQL.</li>
+</ul>
+@@ddl@@
+@@sp_sql@@
+
+<h4>Do it</h4>
+%%CELL_SP_BUILD%%
+%%OUT_SP_BUILD%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Spanner now holds the same %%N_NODES%% nodes and %%N_EDGES%% edges as Firestore, and every node carries a 768-number vector. The line shows <code>fresh 0</code>: lesson 7.1 cached the extractions, and the cache does not care which store the graph goes to. The load was one commit of %%MUTATIONS%% mutations, because Spanner counts one mutation per column written: seven for each node row and six for each edge row.</p>
+<p>Your terminal also shows lines this block leaves out: one <code>HTTP Request: POST ...</code> for each model call, printed by the SDK's own logging, here and in the walk below. The JSON lines are <code>graph.py</code>'s.</p>
+<p>The CFO's edge came back two ways. As tables, <code>GraphEdge</code> is joined to <code>GraphNode</code> twice, for the names at both ends. As a graph, the kit's GQL walk goes from the CFO. Both reach Purchase approval and FIN-02.</p></div>
+
+<p>Now the kit's question, seeded by meaning. On Spanner, <code>--ask</code> prints the five nearest names, each with its distance and whether it passed 0.4. Then it walks from the names that passed.</p>
+%%CELL_SP_ASK%%
+%%OUT_SP_ASK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Purchase approval is %%D_SEED%% from the question: the only seed. The CFO is %%D_CFO%%, just outside 0.4, so it did not seed. The walk reached it anyway, one hop from Purchase approval along the approval edge. The function head came the same way and brought EXP-12, the clause on travel above the cap. So the walk hands over two chunk ids: FIN-02's, which answers the question, and EXP-12's.</p>
+<p>These distances are the stand-in's. Read your own before step 6. If no purchase or approval name on your lane is within 0.4, the walk seeds nothing, and step 6 shows how to set the threshold on the candidate from your numbers.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>The walk in front of the dense pool, on a candidate</h3><p>One question, one candidate, each store in turn; <code>/version</code> and the pool say which walked.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make candidate RETRIEVAL_GRAPH=auto GRAPH_BACKEND=...</code> makes a revision of the API that takes no traffic, tagged <code>candidate</code>, while the live revision keeps serving. <code>ask152</code> asks the candidate's <code>/version</code> what is serving. Then it asks the kit's question as <code>documind-ui-sa</code> and prints the answer, <code>stages.pool</code> and <code>stages.graph_chunks</code>, and each clause cited.</p>
+@@route@@
+@@pool@@
+
+<h4>Do it</h4>
+<p>First with the walk from Firestore:</p>
+%%CELL_CAND_FS%%
+%%OUT_CAND_FS%%
+<p>Then the same candidate, walking from Spanner:</p>
+%%CELL_CAND_SP%%
+%%OUT_CAND_SP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong><code>/version</code> named the store each time:</strong> firestore, then spanner, with <code>RETRIEVAL_GRAPH</code> auto.</li>
+<li><strong>From Firestore, the walk put nothing in the pool:</strong> 0 of 20, because there was no seed, as in step 4.</li>
+<li><strong>From Spanner, it put 2 chunks first:</strong> FIN-02 and EXP-12, found by meaning and fetched by id ahead of the dense candidates.</li>
+<li><strong>Both answers name the CFO, and the question never did.</strong> That is the proof: the CFO question answered without the word CFO, with the walk's share in <code>graph_chunks</code> and the store in <code>/version</code>.</li>
+</ul>
+<p>Notice what the first answer says, too. Dense retrieval found FIN-02 without any graph, because the handbook is small and the clause says "purchase". The Spanner walk made sure FIN-02 was in the pool whatever the dense ranking did. On a corpus where the answer's words are far from the question's, that is the difference.</p></div>
+
+<div class="box box-amber"><div class="box-title">If step 5 seeded nothing</div>
+<p>Set the threshold on the candidate alone, from your own numbers, and ask again. <code>make candidate</code> cannot pass it (step 7 says why), so this is a gcloud line:</p>
+%%CELL_SEED_FIX%%
+<p>Choose a value just past the purchase or approval name, and below the first name that has nothing to do with purchases. The undo below removes it.</p></div>
+
+<p>Last, put the template back. Environment variables carry over from one revision to the next, so the candidate's settings would ride into the next <code>gcloud run services update</code> of the API. The undo writes <code>RETRIEVAL_GRAPH=off</code> and <code>GRAPH_BACKEND=firestore</code>, removes any <code>GRAPH_SEED_DISTANCE</code>, drops the tag, and deletes <code>.candidate-revision</code>.</p>
+%%CELL_UNDO%%
+%%OUT_UNDO%%
+<p>The live revision still takes 100 percent. It never changed, and its <code>RETRIEVAL_GRAPH</code> is still off.</p>

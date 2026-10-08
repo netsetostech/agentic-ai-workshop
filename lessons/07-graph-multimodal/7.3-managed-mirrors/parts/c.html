@@ -1,0 +1,58 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the mirror works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>A policy per tenant, not per deployment.</strong> Residency used to be one variable for the whole deployment. Since 13 September it is one field per tenant, so one deployment serves acme from RAG Engine and globex from Mumbai.</li>
+<li><strong>Fail closed.</strong> An absent field, an unknown value and an unreadable document all mean <code>in</code>, so nothing leaves by accident.</li>
+<li><strong>The operator writes the policy; no service can.</strong> A service that could widen its own tenant's region could export the tenant's documents.</li>
+<li><strong>A store per tenant.</strong> RAG Engine has no metadata filter, and Vertex AI Search's needs a schema, so isolation is structural: no store ever holds two tenants' text.</li>
+<li><strong>The mirror never fails an ingest.</strong> A missing store, a refused policy or a failed upload is one line. The kit's own rows are the record.</li>
+<li><strong>The store retrieves; the kit does the rest.</strong> The reranker, the packing, the answer and the citations are the kit's, so an answer from RAG Engine reads, and is judged, like any other.</li>
+<li><strong>A delete is never refused.</strong> Taking text out is the direction the policy wants.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The rules</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The reads</td><td data-label="Costs">Firestore reads, and a listing of each store</td><td data-label="On your lane">free</td></tr>
+<tr><td>The questions</td><td data-label="Costs">five flash answers; a RAG Engine query for each acme question, a Vertex AI Search query for zeta's</td><td data-label="On your lane">a rupee or two for the answers; each store's queries at its own price</td></tr>
+<tr><td>The pool, in your shell</td><td data-label="Costs">one embedding call and one RAG Engine query</td><td data-label="On your lane">under a paisa, plus the query</td></tr>
+<tr><td>The note</td><td data-label="Costs">one small ingest: an embedding and a DLP scan; nothing copied</td><td data-label="On your lane">a few paise</td></tr>
+<tr><td>The stores themselves</td><td data-label="Costs">RAG Engine corpora and Vertex AI Search data stores bill for what they hold, whether or not anyone asks</td><td data-label="On your lane">price both on Google's pricing pages; <code>make down</code> deletes the corpora first</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong><code>make managed-status</code> never reads <code>in sync</code> for acme.</strong> It holds each store against every indexed version, and the mirror never copies a picture or a video, so acme's three pictures are missing from both stores for good. A check that meant "in sync" would compare text versions only.</li>
+<li><strong>Turning a tenant to <code>in</code> removes nothing already copied.</strong> <code>set_policy()</code> writes one field. The copies stay in RAG Engine and Vertex AI Search until each version is retired, and <code>make managed-status</code> goes on saying <code>in sync</code>, because it never reads the policy.</li>
+<li><strong>Nothing repairs or backfills a missing copy.</strong> <code>managed.py</code> says the nightly walk repairs the mirror, and the Makefile says a version ingested before its corpus existed waits for that repair. But <code>reconcile.py</code> only removes versions from the stores. A failed upload (<code>mirror_failed</code>), a version older than its store, or a tenant turned to <code>any</code> stays uncopied until each version is ingested again.</li>
+<li><strong>A Vertex AI Search copy is recorded before it exists.</strong> The import is a long-running operation. <code>mirror_ok</code>, the <code>doc.mirror</code> event and the ledger's <code>mirrored</code> all follow the request, and nothing checks that the import finished.</li>
+<li><strong><code>found_by</code> stops at the pool.</strong> The Citation contract has no <code>found_by</code>, so an answer shows its store only in the chunk id's <code>#rag-</code> or <code>#vs-</code>. The figure rows that join a managed pool carry no <code>found_by</code> at all.</li>
+<li><strong><code>make down</code> cannot finish while the data stores exist.</strong> <code>managed.tf</code> marks them <code>prevent_destroy</code>, and Terraform rejects any plan that would destroy such a resource, so <code>make down</code>'s <code>terraform destroy</code> fails before it removes anything. The README says <code>make down</code> names the protected stores; its closing list does not. Deleting the throwaway project, which is <code>make down</code>'s own last line, is the sure way to stop the bills.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The policy is judged per copy</td><td data-label="The check">step 3</td><td data-label="Pass looks like">globex's note: two <code>mirror_policy_skipped</code>; acme turned to <code>in</code>: v1 still in both stores</td></tr>
+<tr><td>2</td><td data-label="Claim">A delete is never refused</td><td data-label="The check">step 3</td><td data-label="Pass looks like">v1 retired: <code>mirror_ok</code> with <code>delete:superseded</code> in both stores</td></tr>
+<tr><td>3</td><td data-label="Claim">The policies and the pins</td><td data-label="The check">step 4</td><td data-label="Pass looks like">acme and zeta <code>any</code>, globex <code>in</code>; zeta pinned to <code>vertex_search</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The stores against the ledger</td><td data-label="The check">step 4</td><td data-label="Pass looks like">zeta <code>in sync</code>; globex <code>no store</code>; acme <code>drift</code> by its pictures</td></tr>
+<tr><td>5</td><td data-label="Claim">Answers from each store</td><td data-label="The check">step 5</td><td data-label="Pass looks like">acme <code>rag_engine</code> with a <code>#rag-</code> id; zeta <code>vertex_search</code> with <code>#vs-</code>; globex <code>vector</code></td></tr>
+<tr><td>6</td><td data-label="Claim"><code>found_by</code> on the cited chunk</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>found_by rag_engine</code> under <code>the chunk the answer cites</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The policy skip</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>mirror_policy_skipped</code> for both stores, <code>data_region in</code>; <code>mirrored {}</code> on the row</td></tr>
+<tr><td>8</td><td data-label="Claim">A pin cannot move globex's text</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>retrieval_backend vector, policy_fallback 1</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>acme is pinned to <code>rag_engine</code> again, where <code>make up</code> put it, and globex's pin is cleared. globex holds one more document, the visitor note, on the kit's own rows only: its ledger row says <code>mirrored {}</code>. No store gained or lost anything. Lesson 7.4 compares the stores' answers with the kit's, and tests what a reindex, an undo and a withdrawal do to them.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 7 Graph and multimodal &middot; Lesson 7.3 Configure and query managed retrieval mirrors &middot; v5.0</p><p>Next: Lesson 7.4 Compare quality and test update/withdrawal freshness.</p></div>

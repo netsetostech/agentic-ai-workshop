@@ -1,0 +1,55 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Offline</span><h3>A tokenizer you can read: byte-pair merges on two handbook clauses</h3><p>Learn a vocabulary from %%TRAIN_CHARS%% characters of the kit's handbook, cut the golden question with it, and see why the same word can cost one piece or three.</p></div></div>
+
+<h4>Definition</h4>
+<p>Byte-pair encoding, the idea behind many real tokenizers, learns a vocabulary by counting. Start with every word of the training text as single characters, keeping the space in front of a word as part of it. Count every pair of neighbouring pieces across the whole text, join the commonest pair into one new piece wherever it occurs, and do it again. Each join is a merge, and the list of merges, in the order they were learned, is the tokenizer. To cut a new text, split it into words the same way and replay the merges in order: whatever the merges never joined stays in smaller pieces, down to single characters. The cell runs this on two clauses of the kit's handbook, NP-03 (the notice period) and PB-02 (probation), and stops when no pair occurs twice. It needs nothing but Python.</p>
+
+<h4>Do it: learn the merges, then cut five texts</h4>
+%%CELL_BPE%%
+%%OUT_BPE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The first merges were the commonest letter pairs in the two clauses (<code>on</code>, <code>ti</code>, <code>th</code>), then spaces joined to the letters after them (<code>' a'</code>, <code>' s'</code>), and pair by pair whole words formed: <code>' notice'</code> at merge %%NOTICE_RANK%%, <code>' probation'</code> among the last. The golden question came out as %%Q_PIECES%% pieces for %%Q_CHARS%% characters: the words the clauses repeat (<code>' the'</code>, <code>' notice'</code>, <code>' period'</code>) whole, and the words they use once or never (<code>What</code>, <code>confirmed</code>) in letters and fragments. The same word cost one piece with a space before it, two with no space and three with a capital letter, because those are three different strings to a tokenizer. <code>Bengaluru</code>, which the clauses never contain, fell apart into its %%BLR%% letters. Nothing was unknown and nothing was lost: the pieces always join back into the text.</p></div>
+
+<div class="box box-amber"><div class="box-title">What changes in a real tokenizer</div>
+<p>Not the idea: the scale and the base. Many real tokenizers work on bytes rather than characters, or fall back to bytes for a character they do not know, and in UTF-8 a Devanagari letter is three bytes (step 4 counts them). They learn from vastly more text, so far more words are whole pieces. And a model's vocabulary is fixed when the model is trained: the model is billed in, and limited by, the pieces of its own tokenizer and no other, which is why the count that matters is the model's own (step 6).</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit</span><h3>The kit's two estimates against plain character counts</h3><p>The API divides by four and the ingest worker by %%CPT_WORKER_WORD%%: what each rule says about the same four texts, and where each one decides something.</p></div></div>
+
+<h4>Definition</h4>
+<p>Before it calls a model, the kit needs a token count it can compute for free, so it estimates from the length. rag-api's <code>estimate_tokens()</code> divides the characters by four, and lesson 3.4's packer uses it block by block to fill a prompt's budget. The ingest worker's <code>batches()</code> divides by %%CPT_WORKER_WORD%% and closes an embedding request at %%EMBED_BATCH%% texts or %%EMBED_TOKENS%% estimated tokens, because the embedding model takes at most %%EMBED_REQ_TEXTS%% texts and %%EMBED_REQ_TOKENS%% tokens in one request and refuses an over-full request whole (lesson 1.3); dividing by %%CPT_WORKER_WORD%% counts more tokens for the same text than dividing by four, which errs on the safe side of that ceiling. Both round down and never return less than 1. Neither looks at anything but the length, so each rule treats English, Hindi and an amount in lakhs alike, so many characters for so many tokens, and the cell puts each answer beside the characters, the bytes and the words.</p>
+
+<h4>The code</h4>
+@@estimate@@
+@@batches@@
+
+<h4>Do it: four texts, five counts each</h4>
+%%CELL_EST%%
+%%OUT_EST%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>For English, characters and bytes are the same number: the golden question is %%Q_CHARS%% of each, %%Q_EST4%% tokens to the API and %%Q_EST3%% to the worker, and the NP-03 clause, %%NP_CHARS%% characters, is %%NP_EST4%% or %%NP_EST3%%. The same question in Hindi is %%H_CHARS%% characters, close to the English, so the estimates barely move (%%H_EST4%% to the API), but it is %%H_BYTES%% bytes, because every Devanagari letter and vowel sign takes three bytes in UTF-8. The estimate cannot see that; only the model's count can, and step 6 asks for it. Keep the two rules apart: <code>len // 4</code> is what lesson 3.4's budget is made of, and <code>len // %%CPT_WORKER%%</code> decides how many embedding requests a document takes.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Price</span><h3>The rupee line: tokens priced with the kit's prices</h3><p>Dollars per million tokens, input and output apart, then rupees at the rate the kit carries with every figure: lesson 3.4's arithmetic for a whole answer, run on one sentence.</p></div></div>
+
+<h4>Definition</h4>
+<p>A model's price is two numbers per million tokens: one for the input you send, one for the output it writes. The kit keeps them in <code>shared/prices.py</code> with the rupee rate beside them, and rag-api's <code>cost.price()</code> does the same arithmetic on every answer: the input at the input rate, cached input at a tenth of it, the output at the output rate, the total in dollars and in rupees, and the rate returned with the figures. Lesson 3.4 prices a whole answer that way. This cell prices one sentence, the golden question, on the API's estimate of its tokens: what it costs to send, what the same tokens would cost if the model wrote them, and what a lakh of such questions comes to.</p>
+
+<h4>The code</h4>
+@@prices@@
+@@cost_price@@
+<p>The two files carry the same numbers on purpose. The chat service has no access to the price table in BigQuery, so it prices from <code>shared/prices.py</code>, and a test in the kit holds that table equal to <code>cost.py</code>'s fallback. When this page was built, the cell's two constants were checked against both files, and its dollars and rupees against the kit's own <code>usd()</code> and <code>inr()</code>.</p>
+
+<h4>Do it: the golden question's rupee line, Rs 0</h4>
+%%CELL_PRICE%%
+%%OUT_PRICE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>%%Q_EST4%% tokens of input cost $%%Q_USD%%, which is Rs %%Q_INR%%, or %%Q_PAISE%% paise. That is the rupee line, and every cost the kit reports has its shape: a count, a rate, dollars, then rupees at a rate printed beside them. The same tokens as output cost %%OUT_RATIO%% times as much, because %%MODEL%%'s output rate is %%OUT_RATIO%% times its input rate: what a model writes costs more than what you send it. A lakh of these questions as input comes to Rs %%Q_LAKH%%, which is why the cost of one question is never the interesting number; the volume is. A real answer's input also carries the system prompt and the packed evidence, which is the part lesson 3.4 budgets.</p></div>
+
+<div class="box box-amber"><div class="box-title">The kit's price, and what you pay this year</div>
+<p>The kit prices %%MODEL%% at Google's standard rate, $%%USD_IN%% in and $%%USD_OUT%% out per million tokens. Google's pricing page lists an introductory rate for it of $%%INTRO_IN%% in and $%%INTRO_OUT%% out through 31 December 2026, and the standard rate from 1 January 2027. So until the end of December a call on the <code>%%GEN_LOCATION%%</code> location costs you half the kit's line. The pages and the kit use the standard rate throughout, so their figures do not change on 1 January.</p></div>
+

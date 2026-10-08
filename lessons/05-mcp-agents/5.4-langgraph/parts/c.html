@@ -1,0 +1,75 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; On your lane</span><h3>The graph on your lane: one thread, a new thread, and a request to delete</h3><p>Four turns to the LangGraph brain, through the chat service.</p></div></div>
+
+<h4>Definition</h4>
+<p>With <code>brain</code> set to <code>langgraph</code>, <code>/v1/chat</code> builds the thread id from the roster's tenant, your caller's email and the session you send. It then invokes the graph once on that thread, with the tenant in the runtime context. The graph loads the thread's saved messages, runs the turn, saves the new ones, and <code>_summary()</code> returns the four keys for this turn alone: <code>_turn()</code> gave the question an id, and the turn is that message and what follows it. If that message is missing from the thread, <code>_summary()</code> raises a <code>ValueError</code> rather than count the whole thread again, so anything that trims a thread must keep each turn's question. The cell asks the first question in session <code>lesson102</code>, then a follow-up that only makes sense after it: "how is <em>it</em> paid". It asks the follow-up again in a new session, <code>lesson102-new</code>. Finally it asks to delete a document, in the first session.</p>
+
+<h4>The code</h4>
+@@answer@@
+@@thread@@
+
+<h4>Do it</h4>
+%%CELL_LIVE%%
+%%OUT_LIVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The follow-up in the same session knew that "it" was gratuity. The graph started the turn from the saved thread, so the model read the first question and answer before the second question. The same words in a new session had no thread behind them, and the model could only ask what "it" meant. The request to delete called no tool: the model has no delete tool to call, so the refuse node was never involved, and <code>refusals</code> is empty. The model refused in words, as the system prompt asks. Each turn's <code>tool_calls</code> names its own calls only: the second turn ran on a thread that already held a retrieval, and lists one, and the last lists none. This is the other half of step 4. On your lane the refuse node is a net under a model that has not been offered the rope.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The checkpointer</span><h3>What the checkpointer keeps</h3><p>The saver behind step 5's threads, and what it stores.</p></div></div>
+
+<p>On your lane the saver is <code>PostgresSaver</code> over a small connection pool to the Cloud SQL instance, opened once when the process starts and kept for its life. Returning from inside the saver's own connection helper would close it after the first request. The tables are created by a Cloud Run job, <code>documind-checkpoint-setup</code>, which lesson 5.1's deploy ran. The service never calls <code>setup()</code> itself, because its migrations take exclusive locks, and a scale-out of instances racing to run them fails at random. After every step, the saver stores the whole state: your question, the model's tool requests, every tool result with its quotes, and the answer. It does not store the system prompt, which the <code>agent</code> node adds on each call. The build checked this with the same graph: two turns on one thread leave four saved messages and no system message.</p>
+@@saver@@
+<p>The laptop lane saves to a SQLite file instead, and <code>CHECKPOINT_DSN=memory</code> gives an in-memory saver that forgets on restart. The service logs a warning for it, because it is for tests only. The thread id puts the tenant first and refuses a <code>:</code> in any part, so no session name can reach into another tenant's conversations.</p>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the graph is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The harness is edges and nodes.</strong> Nothing happens that is not drawn: no hidden retries, no middleware. Adding a step, such as a check before an answer is returned, is one more node and one more edge.</li>
+<li><strong>A guard in the graph, not around it.</strong> The LangChain brain refuses inside a middleware that wraps each tool call. The LangGraph brain refuses with a node, so the refusal is part of the state, visible in the thread and in <code>refusals</code>, and the model reads it like any other result.</li>
+<li><strong>Refused whole.</strong> A turn is the unit the model decided as a whole, so it is refused as a whole. Running the allowed calls and refusing the rest would let a model learn that a blocked call can travel with an allowed one.</li>
+<li><strong>The prompt is not state.</strong> The system prompt is added per call and never saved, so fixing a prompt fixes every conversation, including old ones.</li>
+<li><strong>One saver, one thread id.</strong> The LangChain and LangGraph brains are built with the process's one checkpointer and the same <code>tenant:user:session</code> ids. The ADK brain keeps its own sessions, which lesson 5.7 compares.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The venv and the scripted turns</td><td data-label="Costs">a download of a few packages; no model, no network</td><td data-label="On your lane">free</td></tr>
+<tr><td>Four turns on your lane</td><td data-label="Costs">two with a retrieval (one rag-api answer each, plus the agent's own model calls), two with none</td><td data-label="On your lane">a rupee or two</td></tr>
+<tr><td>The threads</td><td data-label="Costs">rows in the Cloud SQL instance the lane already runs</td><td data-label="On your lane">nothing new</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The refuse node cannot fire on the lane.</strong> No blocked name is ever bound to the model. Its proof is offline: step 4's cell, and the kit's own <code>commands/tests/test_chat_brains.py</code>, which runs this graph with a scripted model in the chat image's pins on every push.</li>
+<li><strong>A refused mixed turn misinforms the model.</strong> Every call gets "requires manual approval", so an allowed <code>retrieve</code> asked for beside a blocked tool is reported to the model as needing approval.</li>
+<li><strong>The graph's limits are written by hand.</strong> No middleware runs in a hand-built graph, so the <code>agent</code> node checks the turn's <code>Meter</code> itself before each model call, and <code>ToolNode</code> times each tool call through <code>limits.timed_tool_call</code>. A node added later that calls the model gets no limit unless it does the same. Lessons 5.5 and 5.7 show the limits.</li>
+<li><strong>Nothing deletes a thread.</strong> No code in the kit removes checkpoints. Every conversation, with its questions, quotes and answers, stays in Cloud SQL until someone deletes it by hand.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The venv matches the chat image</td><td data-label="The check">step 3, the venv</td><td data-label="Pass looks like"><code>graph-venv ok: langchain %%PIN_LC%%</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Three nodes and one route</td><td data-label="The check">step 3, the graph</td><td data-label="Pass looks like">six edges, three marked <code>(route decides)</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A plain turn runs the tools</td><td data-label="The check">step 4, <code>plain</code></td><td data-label="Pass looks like"><code>agent -&gt; tools -&gt; agent</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The refuse node fires on a blocked tool, and the answer says so</td><td data-label="The check">step 4, <code>blocked</code></td><td data-label="Pass looks like"><code>agent -&gt; refuse -&gt; agent</code>, <code>refusals ['delete_document']</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A mixed turn is refused whole</td><td data-label="The check">step 4, <code>mixed</code></td><td data-label="Pass looks like"><code>refusals ['retrieve', 'delete_document']</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A thread remembers</td><td data-label="The check">step 5, the second turn</td><td data-label="Pass looks like">an answer about gratuity for a fixed-term employee</td></tr>
+<tr><td>7</td><td data-label="Claim">A new session does not</td><td data-label="The check">step 5, <code>lesson102-new</code></td><td data-label="Pass looks like">the model asks what "it" is</td></tr>
+<tr><td>8</td><td data-label="Claim">A request to delete meets no tool, and the list is that turn's own</td><td data-label="The check">step 5, the last turn</td><td data-label="Pass looks like"><code>tool_calls []</code>, <code>refusals []</code>, a refusal in words</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Two threads in the checkpointer: <code>lesson102</code> with three turns, and <code>lesson102-new</code> with one. There are two rag-api usage rows, from the two retrievals, and four chat rows. Your home folder has <code>~/graph-venv</code>; delete it whenever you like. No roster, role, policy or setting changed. Lesson 5.5 breaks the tools on purpose: a bad argument, a refused tenant, and a tool that takes too long.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 5 MCP and agents &middot; Lesson 5.4 Implement the main LangGraph workflow &middot; v5.0</p><p>Next: Lesson 5.5 Diagnose tool arguments, access failures and timeouts.</p></div>

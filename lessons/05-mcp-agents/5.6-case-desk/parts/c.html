@@ -1,0 +1,162 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; The kit's code</span><h3>Roles and cases, in the code</h3><p>Who may raise a case, who may read it, and how one press becomes one case.</p></div></div>
+
+<h4>Definition</h4>
+<p><strong>Roles.</strong> <code>shared/roles.py</code> keeps a person's roles in a document of their own, <code>tenants/{tenant}/roles/{email}</code>, beside the member document, so the next <code>make roster</code> cannot erase them. <code>roles_for()</code> is the one reader. A person on no roster has no role. A member with no document is <code>["employee"]</code>. A read that fails gives <code>"unread"</code>, which opens the case desk and nothing else, so a person can still reach a human while Firestore is unwell. <code>DESKS</code> says which desks each role opens. The queue roles open none, which is why <code>evalgrc</code> cannot raise a case.</p>
+@@roles@@
+
+<p><strong>Raising.</strong> Every case route starts the same way. <code>_who()</code> asks <code>agent.py</code>'s <code>caller()</code> who is asking, and the roster which tenant they belong to. The tenant and the person are never fields of the body. <code>create_case</code> then checks the case desk and reads the company's queues. Then it either opens a POSH case or writes a draft.</p>
+@@raiser@@
+
+<p><strong>Offering.</strong> <code>GET /v1/cases/offer</code> starts with the same <code>_who()</code> and <code>_raiser()</code>, so only a person who may raise a case gets an answer. It reads the company's settings through <code>settings()</code>, the cache the doors read once a minute, and it reads no case. It returns the email and the tenant the service saw, the person's roles, both switches, the kinds of case whose queue is set up, and the POSH card once the POSH section is complete. The Desk page draws its sections from this answer.</p>
+@@offer@@
+
+<p><strong>The numbers.</strong> A draft can be sent for %%DRAFT_MIN%% minutes. A POSH press's token is claimed in <code>case_tokens</code> for %%TOKEN_H%% hours; a send's token stays on the case as its hash. A case due within %%DUE_SOON_H%% hours and still unacknowledged is "due". A queue's inbox lists up to %%ACTIVE_LIMIT%% active cases and the latest %%LIMIT%% finished ones, and a person's own list holds their latest %%LIMIT%%. An audit write claimed more than %%AUDIT_LEASE_MIN%% minutes ago is taken over by the next call.</p>
+@@consts@@
+
+<p><strong>A new record.</strong> The id is <code>secrets.token_hex(16)</code>: 32 hex characters that say nothing about the person or the case, and cannot be guessed. A record can carry a SHA-256 of a question, never the question itself. A case raised from the button carries neither, and its summary holds only what the person writes.</p>
+@@new@@
+
+<p><strong>Sending.</strong> One transaction reads the draft and opens it. The same token again returns the case as it is, and another token on an opened case is 409. A send after <code>expire_at</code> is 410. The code checks this itself; the TTL in <code>desk.tf</code> only deletes the draft some time later, and after that a send is 404. The due date and its basis come from <code>_due()</code>. For a grievance, the date follows section 4(6), under which the committee may complete its proceedings within thirty days, only when the company has said its committee takes a case raised here as the application. acme's queues file says it does not (<code>accepts_desk_case</code> false), so acme's grievances get a date %%SLA_GRC%% days on: the company's own target. The <code>case.open</code> event goes into <code>audit_pending</code> in the same transaction as the change, and <code>_flush()</code> writes it to the bucket after.</p>
+@@confirm@@
+
+<p><strong>POSH.</strong> No text is accepted. At least one chosen member must hold the office's <code>ic_member</code> role, or nobody could read the case. Then it is 409, and the card's contacts are the way to reach them. Each press is claimed in <code>case_tokens</code>, under a hash of the tenant, the person and the token, inside the transaction that writes the case. A doubled press therefore returns the first case.</p>
+@@posh@@
+
+<p><strong>Reading.</strong> The person who raised a case reads it, and a draft is theirs alone. A POSH case is read only by a chosen member who holds the office's role. Any other queue is read by its roles from <code>desk_law.QUEUES</code>, and <code>people_ops</code> reads a grievance only when the person chose to share it. Anyone else gets 404, the same answer as for a case that does not exist.</p>
+@@access@@
+
+<p><strong>The audit event.</strong> A sensitive case's target gives its type as "sensitive" and leaves out its queue. Every case event's actor is a case reference.</p>
+@@actor@@
+
+<p><strong>What Terraform adds.</strong> The TTL on a draft's <code>expire_at</code>, and one index for each query the queue makes. The overdue job reads the cases and writes only log lines, each with an id, a queue ("sensitive" for a sensitive case), a date and a state.</p>
+@@tf@@
+@@overdue@@
+
+<h4>Do it: five of the queue's tests</h4>
+<p>No lane and no cost: five of <code>commands/tests/test_cases.py</code>'s tests, run against its fake Firestore and fake audit bucket. Who holds what; an expired draft is 410; nobody else can tell a case exists; a POSH case holds no text, and one press opens one; and the audit actor is a case reference.</p>
+%%CELL_TESTS%%
+%%OUT_TESTS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Each test drives the kit's own <code>roles.py</code> and <code>cases.py</code>. A member with no document was an employee, a leaver reached the case desk only, and a failed read gave the case desk alone. A send 31 minutes after the draft was refused, and the draft stayed a draft with no event written. A grievance was read by its requester and by the committee, and by nobody else in either tenant. Two presses with one token made one POSH case, with no summary, no question hash and no route trace. Every event's actor was a case reference, and no event held an "@" or the office's name.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; REST</span><h3>The case routes, over REST</h3><p>What an employee may raise; a grievance raised, confirmed twice, read by the committee, refused to everyone else and closed; then the smoke, and the operator's view.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat service serves %%N_ROUTES%% case routes, and its docstring lists them:</p>
+@@routes@@
+<p><code>{id}</code> matches 32 hex characters only: an id of any other shape matches no route, and <code>/v1/cases/offer</code> is never taken for a case id. A route that returns a case does so through <code>cases.view()</code>. That leaves out the token's hash and the question's hash, and adds who has the case, the clock and the law. <code>GET /v1/cases</code> and the offer also name the email and the tenant the service saw: the Desk page checks those before it draws anything.</p>
+
+<h4>Do it: a case, end to end</h4>
+<p>The cell first asks what <code>evalacme</code> may raise. It raises a grievance as <code>evalacme</code> and sends it twice with one token. Then it tries a second token. <code>evalgrc</code> reads its inbox, then asks for the offer. <code>evalzeta</code> and the outsider ask for the case. The raiser tries to close it, and the committee acknowledges and closes it. It keeps the id in <code>~/lesson105_case.txt</code> for step 8.</p>
+%%CELL_CASES%%
+%%OUT_CASES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The offer named acme, <code>desk_gate</code> rules, both POSH offices and all %%N_TYPES%% kinds of case, because acme's queues file sets up every one. The draft went to <code>grc</code>, the Grievance Redressal Committee, with its basis and an expiry %%DRAFT_MIN%% minutes out. Both sends returned the same open case, opened once. It is due %%SLA_GRC%% days after it opened, and the reply says the date is the company's own target. A second token on the open case was 409. The committee's account found the case in its inbox, and the inbox named the account the service saw. Its offer was 403: <code>grc_member</code> alone raises no case, so it is offered none. zeta's account got 404: it cannot tell the case exists. The outsider, who is on no roster, got the roster's 403. The person who raised it may read it but not move it, so closing it was 403. The committee then acknowledged and closed it.</p></div>
+
+<h4>Do it: the live smoke</h4>
+<p><code>smoke/smoke_cases.py</code> checks the whole queue in one run, as the eval accounts, with your email as the Internal Committee member its POSH press names. It closes and withdraws what it opens.</p>
+%%CELL_SMOKE%%
+%%OUT_SMOKE%%
+
+<h4>Do it: the operator's view</h4>
+<p><code>make cases</code> lists a tenant's open cases, soonest due first, for you to chase. A sensitive case's type and queue both show as "sensitive", since a queue such as <code>ic:hyderabad</code> would give the type away, and no person is named. <code>make cases-overdue</code> runs the hourly job's scan once, as you.</p>
+%%CELL_OPS%%
+%%OUT_OPS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The smoke's %%N_SMOKE%% checks passed: both doors, the draft, one case from two sends, the inbox, the two moves, another tenant's 404, the POSH press made once with no text, its withdrawal, and the outsider's 403. Its own cases are closed or withdrawn, so <code>make cases</code> shows only the two you raised on the Desk page: the POSH record, open, and the grievance you acknowledged. Neither is due within %%DUE_SOON_H%% hours, so the scan logged no case, only its count line.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>The records, the audit events and the log rows</h3><p>The case in Firestore, today's events in the audit bucket, and the rows both doors wrote, read without any service.</p></div></div>
+
+<h4>Do it: the records</h4>
+<p>The case from step 7, the smoke's POSH record, and two role documents, read with the Firestore client.</p>
+%%CELL_RECORDS%%
+%%OUT_RECORDS%%
+
+<h4>Do it: the audit events</h4>
+<p>Today's case and role events in the audit bucket, the newest six, then the latest <code>case.open</code> and <code>role.grant</code> in full.</p>
+%%CELL_AUDIT%%
+%%OUT_AUDIT%%
+
+<h4>Do it: the log rows</h4>
+<p>Every <code>desk_gate</code> row since step 3, from both services.</p>
+%%CELL_LOGS%%
+%%OUT_LOGS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The step 7 case holds the words the cell sent, and no <code>expire_at</code>: the send deleted it. Its <code>audit_pending</code> is empty, because each event was written and cleared, and the token is kept only as a hash. The smoke's POSH record has a unit and a chosen member, and its summary and question hash are both None. The role documents name who set them.</p>
+<p>In the bucket, each case event is named by its action and an id. The <code>case.open</code> event's actor is a case reference, and its target gives the type as "sensitive". Role events are the operator's acts, so their actor is your email and their target the person's. The log has %%N_LOG_ROWS%% rows: the Desk page's turn, the two from step 5's rag-api cell, the chat door's, and the smoke's two. Each says "sensitive" with no user, and none holds the words.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it is shaped this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The class, never the words.</strong> <code>gate()</code> returns a class name, so no caller can log or echo what matched. The log row holds the class and the rules version. For the three sensitive classes, the row says "sensitive" and leaves out the person.</li>
+<li><strong>Rules before identity.</strong> The gate needs no database and no identity, so a question that does not hit and holds no checked number costs one pass of the patterns, plus, at most once a minute in each server process, one read of the list of companies whose <code>desk_gate</code> is on (one attempt, at most 2 s); unless the model check may apply to it, the door verifies nobody: the handler does that, as before. A question with a checked number is verified first, so that only a member's question is masked. So is a question that may need the model check: rag-api's door verifies it when its body's company is on, and the chat door, which learns the company only by verifying, verifies every question with words and no hit while any company on the lane is on. A hit is answered only after the caller is verified and the roster checked. The doors render their own errors as FastAPI renders JSON, so a refused caller cannot tell from the reply whether the question hit.</li>
+<li><strong>Two doors, one rule.</strong> rag-api's door covers every caller of its three question routes, including the MCP server and the A2A peer. The chat door exists because an agent brain shows the person's words to its own model before it searches.</li>
+<li><strong>Rules unless an operator says off.</strong> A missing switch and a value the doors do not know are <code>rules</code>, and a failed read is never off (rag-api's door reads it as <code>rules</code>; the chat door keeps the last value it read), so the gate is never off by accident: only <code>make desk DESK_GATE=off</code> turns it off. The gate needs no queue, because its replies are fixed. The routed Desk does: lesson 10.4 cannot switch it on until every office has a member who can read its POSH cases, and while it is on, <code>make desk-queues</code> refuses a POSH section that would leave an office unreadable, and <code>make roles</code> warns when a revoke leaves one.</li>
+<li><strong>A POSH record holds no words.</strong> It keeps who raised it, the office and the members chosen. What happened is for the person to tell them, and the committee can explain the time limits the Act sets.</li>
+<li><strong>The page draws only what the service says is yours.</strong> Both of the Desk page's reads name the email and the company the service saw. A UI with no IAP in front of it calls as its own account, so the page shows one warning about the sign-in rather than that account's cases.</li>
+<li><strong>404 for everyone else.</strong> A case another tenant asks for, or one the reader may not read, is answered as if it did not exist.</li>
+<li><strong>The event with the change.</strong> An audit event is written into the case record in the same transaction as the change it records, then flushed to the bucket. A failed write is retried by the next call that touches the case.</li>
+<li><strong>The company's date is labelled as the company's.</strong> A queue's target date is shown with a line saying it is the company's own target, not a date set by law, beside what the law says, so nobody reads it as a legal deadline. No date an Act came into force is shown until a person has checked it against the Gazette.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The Desk on your lane</td><td data-label="Costs">three Cloud Build builds and three deploys; %%N_TF_ADD%% resources that cost nothing until used; one short run of the chat image each hour</td><td data-label="On your lane">as any <code>make build</code>, then the hourly job</td></tr>
+<tr><td>The gate and both doors</td><td data-label="Costs">no retrieval, no model call, nothing cached; a settings read once a minute, a roster read, and the list of companies on the model check once a minute</td><td data-label="On your lane">Rs 0 in model cost, for every hit</td></tr>
+<tr><td>The Desk page, the cases and the smoke</td><td data-label="Costs">Firestore reads and writes, and a small object in the audit bucket for each event</td><td data-label="On your lane">no model call in any step</td></tr>
+<tr><td>The offline cells</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The lexicon has not met people's words.</strong> Its examples and near misses were written by a model, and a fluent Hindi and Hinglish speaker has not reviewed them. <code>evals/routes.jsonl</code> holds no escalation rows yet, so recall on real disclosures is not measured.</li>
+<li><strong>It reads words, not meaning.</strong> With <code>desk_gate</code> on <code>rules</code>, as on your lane, a disclosure in words the patterns lack goes to the documents and the model. <code>on</code> adds the model check for those, and its recall is not measured either. A sentence that only looks like one gets the fixed reply.</li>
+<li><strong>The POSH Act is a scan.</strong> The corpus copy has no text layer, so the reply and the case name the Act and its committees, with no section and no line.</li>
+<li><strong>No in-force dates.</strong> <code>IN_FORCE</code> holds no date until a person enters the Labour Codes' and the DPDP Act's dates from the Gazette, so no case says a law applies from a date.</li>
+<li><strong>No holiday calendar.</strong> The exit-dues reading of "two working days" counts Monday to Friday.</li>
+<li><strong>No delivery.</strong> A case is a record and an audit event. Nobody is emailed or paged when one opens: the people in its queue see it when they open their Desk inbox.</li>
+<li><strong>The overdue alert reaches the lane, not the queue.</strong> An alert policy on the job's lines (<code>terraform/desk_alerts.tf</code>) tells your admins, by email or PagerDuty, which queue has a case due or breached, with a count. The line names no company and no person, so <code>make cases</code> finds the case, and nobody in the queue is told by the kit.</li>
+<li><strong>An outside agent has already read the words.</strong> An agent that calls rag-api through the MCP server has shown the person's words to its own model first. rag-api's door sees only its search words.</li>
+<li><strong>The routed Desk stays off.</strong> The kit also holds a router that picks one desk for each question; lesson 10.4 switches it on. With <code>desk_route</code> off, as on every tenant after this lesson, the chat door's shadow hook routes nothing and the Desk page shows its case half alone.</li>
+</ul></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Fifteen checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The gate needs no switch: acme has its rules with nothing written</td><td data-label="The check">step 3, the queues</td><td data-label="Pass looks like"><code>"desk_gate": "rules"</code> on <code>make desk</code>'s line</td></tr>
+<tr><td>2</td><td data-label="Claim">A queue role alone raises no case</td><td data-label="The check">step 3, the roles</td><td data-label="Pass looks like">the <code>"note"</code> on <code>evalgrc</code>'s line: no employee or leaver role</td></tr>
+<tr><td>3</td><td data-label="Claim">Each office has a member who can read its POSH cases</td><td data-label="The check">step 3, the roles</td><td data-label="Pass looks like">your line's <code>"after"</code> holds <code>ic_member:hyderabad</code> and <code>ic_member:pune</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The Desk page answers a disclosure with the fixed reply, and opens the POSH card</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the <code>posh</code> text, "This is a fixed reply. No AI model was used.", and "Sexual harassment at work (POSH)" already chosen</td></tr>
+<tr><td>5</td><td data-label="Claim">Only the disclosure hits; a checked card number is masked, a failed Aadhaar is not</td><td data-label="The check">step 5, on your machine</td><td data-label="Pass looks like"><code>gate posh</code> once, <code>gate None</code> four times, <code>[card no.]</code> once</td></tr>
+<tr><td>6</td><td data-label="Claim">rag-api's door answers with no model and no cost</td><td data-label="The check">step 5, rag-api's door</td><td data-label="Pass looks like"><code>'model': 'none', 'backend': 'desk_gate', 'cost_usd': 0.0</code> on both lines</td></tr>
+<tr><td>7</td><td data-label="Claim">The chat door answers before any brain</td><td data-label="The check">step 5, the chat door</td><td data-label="Pass looks like"><code>brain desk_gate  model none  tool_calls []</code>, <code>model_calls 0</code> and <code>case_offer {'case_type': 'posh'}</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Only a person who may raise a case is offered one</td><td data-label="The check">step 7, the cell</td><td data-label="Pass looks like"><code>offer      200</code> with all %%N_TYPES%% types, then <code>grc offer  403</code></td></tr>
+<tr><td>9</td><td data-label="Claim">One token is one case; another token is refused</td><td data-label="The check">step 7, the cell</td><td data-label="Pass looks like"><code>same case True, opened once True</code>, then <code>409</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The committee reads the case; another tenant and an outsider cannot</td><td data-label="The check">step 7, the cell</td><td data-label="Pass looks like"><code>seen as documind-evalgrc-sa in acme</code>, <code>the case in it: True</code>, <code>404  no such case</code>, <code>403  not a member of any tenant</code></td></tr>
+<tr><td>11</td><td data-label="Claim">Only the queue moves a case</td><td data-label="The check">step 7, the cell</td><td data-label="Pass looks like"><code>raiser     403</code>, then <code>acknowledged</code> and <code>closed</code></td></tr>
+<tr><td>12</td><td data-label="Claim">The live smoke passes</td><td data-label="The check">step 7, the smoke</td><td data-label="Pass looks like"><code>%%N_SMOKE%% passed, 0 failed</code></td></tr>
+<tr><td>13</td><td data-label="Claim">A POSH record holds no words</td><td data-label="The check">step 8, the records</td><td data-label="Pass looks like"><code>summary None, question_sha256 None</code></td></tr>
+<tr><td>14</td><td data-label="Claim">A case event's actor is a case reference</td><td data-label="The check">step 8, the audit events</td><td data-label="Pass looks like"><code>case.open: actor {'tenant_id': 'acme', 'case_ref': 'case:</code> and an id, no email</td></tr>
+<tr><td>15</td><td data-label="Claim">The log rows name no person and hold no words</td><td data-label="The check">step 8, the log rows</td><td data-label="Pass looks like"><code>user None  class sensitive</code> on every row</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Terraform added the Desk's TTL fields, indexes and accounts, and the hourly job with its schedule. rag-api, the UI and the chat service run the Desk's code, and the eval accounts may invoke the chat service. You may mint tokens as them, and three of them are on rosters. acme's <code>tenant_settings</code> holds its case queues, set by you, and no <code>desk_gate</code>: acme has the gate's rules, and no model check. Two role documents exist, yours and <code>evalgrc</code>'s. Your two cases from the Desk page are still open. The cell's grievance and the smoke's are closed, and the smoke's POSH record is withdrawn. Every one left events in the audit bucket. Your home folder has <code>~/queues.acme.json</code> and <code>~/lesson105_case.txt</code>. From now on, a question that hits the gate gets its fixed reply in every lesson, for acme, zeta and globex alike: no company has written <code>desk_gate</code>, so each has the rules. An Aadhaar or card number in their questions is masked before rag-api's handlers or a brain see it. Only acme has queues and roles, so only acme's people can raise a case that reaches someone. A turn the chat door answers runs no brain and keeps no conversation. Lesson 5.7 puts one question through all four brains and compares their costs and traces. Lesson 10.4 later sends each of acme's and zeta's other questions to one specialist desk, and every globex question to the law, and Module 6 picks up the conversations the brains and the Desk keep.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 5 MCP and agents &middot; Lesson 5.6 Hand a question to the person the law names &middot; v5.0</p><p>Next: Lesson 5.7 Compare the LangChain and ADK adapters.</p></div>

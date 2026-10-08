@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson B.5 Generate with GPT-style models: decoding and run-to-run variance - one token at a time, five answers to one prompt | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.dx-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:10px 16px;margin-bottom:12px;}
+.dx-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.dx-l select{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.dx-l input[type=range]{width:100%;min-height:44px;accent-color:var(--teal);}
+.dx-bars{display:flex;flex-direction:column;gap:5px;}
+.dx-row{display:grid;grid-template-columns:58px minmax(0,1fr);align-items:center;gap:8px;font-family:var(--mono);font-size:var(--kicker-size);color:var(--navy);}
+.dx-track{height:20px;background:#e2e8f0;border-radius:5px;overflow:hidden;position:relative;}
+.dx-fill{height:100%;background:#5eead4;}
+.dx-fill.bad{background:#fca5a5;}
+.dx-lbl{position:absolute;left:8px;top:0;line-height:20px;font-size:11px;color:var(--navy);}
+.dx-sum{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal-dark);margin:10px 0 8px;overflow-wrap:anywhere;}
+.dx-runs{font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--slate);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;overflow-wrap:anywhere;}
+.dx-runs .bad{color:#b91c1c;font-weight:600;}
+.dx-count{margin-top:4px;color:var(--navy);font-weight:600;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.5</div>
+<h1>Generate with GPT-style models: <span>decoding and run-to-run variance</span></h1>
+<p>Every answer DocuMind gives is written one token at a time: the model scores every candidate for the next token, one is picked, and the loop runs again. This page opens that loop. You will build it in numpy on a tiny vocabulary, watch greedy decoding repeat itself while sampling varies, see temperature, top-k and top-p reshape the odds, and read why the kit sends Gemini none of the three. Then you will send Gemini one question five times with the kit's own settings, count the distinct answers, and price its thinking at two levels in rupees.</p>
+<div class="hero-chips"><div class="hero-chip">One token at a time</div><div class="hero-chip">gemini-3.6-flash on global</div><div class="hero-chip">Temperature: not sent</div><div class="hero-chip">thinking_level LOW</div><div class="hero-chip">Five runs, distinct answers counted</div><div class="hero-chip">Rs 0.64 per 1,000 thought tokens</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a decoder does: one token at a time</a></li>
+<li><a href="#s2">The words: logit, softmax, greedy, sampling, temperature, thinking</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">From scores to one token: greedy and sampling</a></li>
+<li><a href="#s4">Reshape the odds: temperature, top-k and top-p</a></li>
+<li><a href="#s5">The loop, and five runs of one prompt counted</a></li>
+<li><a href="#s6">What the kit sends Gemini, and why no temperature</a></li>
+<li><a href="#s7">Gemini, five times: count the distinct answers</a></li>
+<li><a href="#s8">Two thinking levels: thought tokens and rupees</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a GPT-style model writes (one token at a time, each picked from a probability distribution) and why picking by chance makes one prompt give different answers. Then you will run the loop yourself in numpy, read what the kit sends Gemini instead of a temperature, and measure the real thing: one prompt asked five times, and one prompt at two thinking levels.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a decoder does: one token at a time</h3><p>The loop every GPT-style model runs to write, where its randomness comes from, and the two things Gemini 3 changes.</p></div></div>
+
+<p><strong>A decoder writes by predicting the next token.</strong> Give a GPT-style model some text and it returns one number for every token in its vocabulary: a score, called a <em>logit</em>, for how well that token would continue the text. Softmax turns the scores into probabilities that add up to 1. Then one token is picked, appended to the text, and the model runs again on the longer text. An answer of a few hundred tokens is a few hundred turns of that loop, and each token is chosen knowing everything before it and nothing after it.</p>
+
+<p><strong>What makes it a decoder.</strong> Inside, it is the transformer block of lesson B.3, stacked, with one restriction: a position may attend only to itself and to the positions before it (the <em>causal mask</em>). Trained on that view to predict each next token, the model can be run forward to write. The encoders of lesson B.4 attend in both directions at once, which is what makes their embeddings and rankers good at reading, and why they are not the models that write.</p>
+
+<p><strong>Where run-to-run variance comes from.</strong> In principle the scores for a given text are arithmetic on fixed weights: the same text, the same scores. The randomness enters at the pick. <em>Greedy decoding</em> takes the likeliest token every time, so one prompt gives one answer however often you ask. <em>Sampling</em> draws a token at random in proportion to its probability, so the same prompt can give a different answer on every run. Three knobs reshape the probabilities before the draw: <em>temperature</em> sharpens or flattens them, <em>top-k</em> keeps only the k likeliest tokens, and <em>top-p</em> keeps only the likeliest tokens that together reach probability p.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128241;</div><div>
+<p><strong>The suggestion strip on your phone's keyboard.</strong> Type "running late, will reach by" and the strip offers three next words. Tap the likeliest one every time and the same start always ends in the same message: that is greedy decoding. Tap by chance, the likelier words more often, and two people who start from the same words send different messages: that is sampling, and it is where run-to-run variance comes from. The strip showing only three words is top-k. Temperature is how adventurous the tapping is. A Gemini 3 model also drafts in its head before it types, which is its thinking, and you pay for the draft even though nobody reads it.</p></div></div>
+
+<div class="diagram">
+<div class="dg-title">The decode loop, with the kit's settings beside it</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><span class="fs-n">1</span><div><b>Read.</b> The prompt's tokens, and every token written so far.</div></div><div class="fs-branch"><b>The kit:</b> one prompt per answer, in one text part (the rules, the packed clauses and the question; step 6).</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">2</span><div><b>Score.</b> One logit for every token in the vocabulary, for the next position only.</div></div><div class="fs-branch"><b>Gemini 3 thinks first:</b> thought tokens come out of this same loop before the answer, unseen and billed as output. <code>thinking_level</code> sets how many; the kit sends LOW.</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">3</span><div><b>Shape.</b> Softmax turns the logits into probabilities; temperature, top-k and top-p reshape them.</div></div><div class="fs-branch"><b>gemini-3.6-flash:</b> custom temperature, top-k and top-p values are ignored. The kit sends none of them.</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">4</span><div><b>Pick.</b> Greedy takes the likeliest token; sampling draws one by chance.</div></div><div class="fs-branch"><b>Run-to-run variance starts here:</b> two runs that draw differently write different answers from the same prompt.</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">5</span><div><b>Append, and go back to 1,</b> until the model picks the end token (finish reason STOP) or the cap is reached (MAX_TOKENS).</div></div><div class="fs-branch"><b>The kit:</b> a cap of 2,048 output tokens, thinking included; an answer cut off by the cap is retried once with 6,144.</div></div>
+</div>
+<p class="dg-cap">The left column is every decoder; the right column is what DocuMind's API does at each step, read from <code>services/rag-api/generator.py</code> and <code>config.py</code> in step 6. Steps 3 to 5 of this page build the left column in numpy; steps 7 and 8 measure the right one on Gemini.</p>
+</div>
+
+<h4>Try the knobs on a toy</h4>
+<p>The explorer below runs the loop on a toy model that writes from a vocabulary of 13 tokens: the same toy the cells in steps 3 to 5 run. The prompt is "A confirmed E3 employee serves a notice period of", and the toy's seven candidates for the next token are figures: 60, which is what the handbook's clause NP-03 says; sixty, the same figure in words; and five figures the clause does not say. Move the knobs and watch two things: the odds of the next token, and five whole answers written with the same five seeds.</p>
+
+<div class="diagram dx" id="dx">
+<div class="dg-title">Decoding explorer - the toy's next token, and five whole answers</div>
+<div class="dx-controls">
+<label class="dx-l">Temperature: <span id="dx-t-v">1.0</span><input type="range" id="dx-t" min="0" max="2" step="0.1" value="1"></label>
+<label class="dx-l">Top-k <select id="dx-k"><option value="">off</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+<label class="dx-l">Top-p <select id="dx-p"><option value="">off</option><option>0.5</option><option>0.8</option><option>0.9</option><option>0.95</option><option>0.99</option></select></label>
+<label class="dx-l">Seeds <select id="dx-s"><option value="1">1 to 5</option><option value="6">6 to 10</option><option value="11">11 to 15</option><option value="16">16 to 20</option></select></label>
+</div>
+<div class="dx-bars" id="dx-bars"></div>
+<p class="dx-sum" id="dx-sum" aria-live="polite"></p>
+<div class="dx-runs" id="dx-runs"></div>
+<p class="dg-cap">Each bar is one candidate's probability after the knobs; a red bar is a figure the clause does not say. Temperature 0 is greedy. The five answers are the whole loop, run to the end token with the same five seeds, so when you move a knob only the knob changes. The script is the cells' own functions, checked against them on 603 runs when the page was built. On gemini-3.6-flash none of the three knobs is yours to turn: step 6 shows what Google's pages say and what the kit sends instead.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>It is a toy, not a language model. Its logits are written by hand, it remembers only the last token it wrote, and it scores a handful of candidates where a real model scores every token in its vocabulary at every step. What it shares with a real decoder is the mechanism: the logits, the softmax, the knobs, the pick and the loop, which are the functions you will run in steps 3 to 5.</p></div>
+
+<h4>What Gemini 3 changes</h4>
+<p>Two things, and both shape what this page measures. First, a Gemini 3 model thinks before it answers: it writes <em>thought tokens</em> with the same loop, the kit never asks to see them, and they are billed as output. How much it thinks is a setting, <code>thinking_level</code>. Second, on <code>gemini-3.6-flash</code>, the model the kit calls, the three knobs above are not yours: Google's model page says custom values for temperature, top-k and top-p are ignored. So for the kit, run-to-run variance is a property of the model that you measure, not a knob that you turn, and the kit steers the two things it can: how much the model thinks, and the shape of the answer.</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: logit, softmax, greedy, sampling, temperature, thinking</h3><p>Twelve words, each with what it means in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Token</strong></td><td data-label="Meaning">A piece of text the model reads and writes: a word, part of a word, a figure, a punctuation mark. Prices and limits are counted in tokens.</td><td data-label="In the kit">Every call's <code>usage_metadata</code> counts them: <code>prompt_token_count</code>, <code>candidates_token_count</code>, <code>thoughts_token_count</code>.</td></tr>
+<tr><td><strong>Logit</strong></td><td data-label="Meaning">The raw score a model gives one candidate for the next token: any real number, higher means likelier.</td><td data-label="In the kit">The kit never asks for them; the toy prints its own in step 3.</td></tr>
+<tr><td><strong>Softmax</strong></td><td data-label="Meaning">Exponentiate every logit and divide by the total: the scores become probabilities that add up to 1, in the same order.</td><td data-label="In the kit">Inside the model, for every token of every answer.</td></tr>
+<tr><td><strong>Greedy decoding</strong></td><td data-label="Meaning">Always pick the likeliest token. One prompt, one answer, however many times you ask.</td><td data-label="In the kit">Temperature 0 in the toy. Not something the kit can ask <code>gemini-3.6-flash</code> for: a custom temperature is ignored.</td></tr>
+<tr><td><strong>Sampling</strong></td><td data-label="Meaning">Draw the next token at random, each candidate with its probability. The source of run-to-run variance.</td><td data-label="In the kit">Whatever the model does inside; step 7 measures what comes out.</td></tr>
+<tr><td><strong>Temperature</strong></td><td data-label="Meaning">Divide the logits by T before the softmax: below 1 sharpens the odds, above 1 flattens them, and 0 is greedy.</td><td data-label="In the kit">Not sent. <code>gemini-3.6-flash</code> ignores custom values; for the earlier Gemini 3 models Google advises keeping the default, 1.0.</td></tr>
+<tr><td><strong>Top-k, top-p</strong></td><td data-label="Meaning">Keep only the k likeliest tokens, or only the likeliest tokens whose probabilities together reach p, and renormalise what is left.</td><td data-label="In the kit">Not sent; ignored by <code>gemini-3.6-flash</code>.</td></tr>
+<tr><td><strong>Seed</strong></td><td data-label="Meaning">The starting value of a random-number generator: the same seed gives the same draws, so the same samples.</td><td data-label="In the kit">The toy's seeds 1 to 5. The kit's config sets none.</td></tr>
+<tr><td><strong>Thinking</strong></td><td data-label="Meaning">Thought tokens a Gemini 3 model writes before its answer, with the same loop. Billed as output whether or not anyone reads them.</td><td data-label="In the kit"><code>_usage()</code> adds <code>thoughts_token_count</code> to <code>tokens_out</code>, so every usage row includes them.</td></tr>
+<tr><td><strong>Thinking level</strong></td><td data-label="Meaning">How much a Gemini 3 model thinks: MINIMAL, LOW, MEDIUM or HIGH. MEDIUM is <code>gemini-3.6-flash</code>'s default; Google's Gemini 3 guide adds that MINIMAL does not guarantee that thinking is off.</td><td data-label="In the kit">LOW, in <code>_call()</code> and in the stream.</td></tr>
+<tr><td><strong>max_output_tokens</strong></td><td data-label="Meaning">The cap on what one call may write. Reaching it ends the answer where it stands, with finish reason MAX_TOKENS; an answer that ends itself finishes with STOP.</td><td data-label="In the kit">2,048 (<code>max_answer_tokens</code>), with the thinking drawn from the same cap; a cut-off answer is retried once at 6,144.</td></tr>
+<tr><td><strong>Run-to-run variance</strong></td><td data-label="Meaning">The same prompt giving different outputs on different runs. Measured by asking more than once and counting.</td><td data-label="In the kit">Step 7 counts it on five calls; lesson 3.1 measures it on the kit's generator.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words are settings the kit sends (the thinking level and the cap), two are settings it deliberately leaves out (temperature, and top-k with top-p), and the rest are mechanism. The toy shows you the mechanism first, because once you have seen a loop pick its tokens, five different answers from one prompt stop being a mystery and become a measurement.</p>
+
+<h3 id="setup">Before you run anything: set up your laptop</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>Every cell on this page runs on your own laptop, in a bash shell: the Terminal on macOS or Linux, WSL or Git Bash on Windows, or Cloud Shell in a browser. The Python is 3.12, the version the kit's services run in their images (<code>python:3.12-slim</code>), inside a virtual environment of its own, <code>~/basics-venv</code>, so nothing is installed into the Python your system uses. Most cells need no account and no network. The cells that call Gemini need the Google Cloud project you create in lesson 0.1 and Application Default Credentials, and their labels say so.</p>
+
+<p>Set up the venv once. The block below finds a Python 3.12 or newer, makes the venv the first time and activates it every time after. Then it installs the two libraries the Basics pages use, at fixed versions: numpy for the arithmetic, and google-genai, at the version the kit pins, for the calls to Gemini. The last line proves both import.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in a bash shell on your laptop, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export BASICS_VENV="$HOME/basics-venv"
+PY312="$(command -v python3.12 || command -v python3)"; [ -n "$PY312" ] || PY312="py -3.12"   <span class="cm"># Windows, Git Bash: the py launcher</span>
+[ -d "$BASICS_VENV" ] || $PY312 -m venv "$BASICS_VENV"                                      <span class="cm"># the first time only</span>
+source "$BASICS_VENV/bin/activate" 2&gt;/dev/null || source "$BASICS_VENV/Scripts/activate"   <span class="cm"># macOS and Linux, else Windows</span>
+python -m pip install -q "numpy==2.5.3" "google-genai==2.22.0"                             <span class="cm"># numpy 2.5 needs Python 3.12 or newer</span>
+python -c "import sys, numpy, google.genai as g; print(sys.version.split()[0], numpy.__version__, g.__version__)"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (the first number is your Python's own patch release)</span><span class="ro">read only</span></div><pre tabindex="0">3.12.x 2.5.3 2.22.0</pre></div>
+
+<p>The cells that call Gemini need two more things: your project from lesson 0.1, and Application Default Credentials, the sign-in Google's client libraries read. Run the block below once, after lesson 0.1, in the same shell; the browser opens for the sign-in. It uses the gcloud CLI, which lesson 0.2 installs on a laptop and Cloud Shell already has. As in the kit, Gemini 3 models are called on the <code>global</code> location and the embedding model on <code>us-central1</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run once, for the cells that call Gemini (after lesson 0.1)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud auth application-default login                                <span class="cm"># once: the sign-in client libraries read</span>
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)"     <span class="cm"># the project from lesson 0.1</span>
+gcloud services enable aiplatform.googleapis.com --project "$PROJECT"   <span class="cm"># Vertex AI, where the kit calls Gemini</span>
+echo "PROJECT=$PROJECT"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">PROJECT=documind-ai-YOUR-ID</pre></div>
+
+<div class="box box-teal"><div class="box-title">Which cells cost money</div>
+<p>Steps 3, 4 and 5 run on numpy alone, with no network and no account: Rs 0, and they print exactly what this page prints, because their random draws come from a seeded generator written out in the cell. Steps 7 and 8 call Gemini on the project you make in lesson 0.1, and each of their labels gives its ceiling in rupees.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Score</span><h3>From scores to one token: greedy and sampling</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_5/demo_03_from_scores_to_one_token_greedy_and_sampling.py" target="_blank" rel="noopener"><code>demo_03_from_scores_to_one_token_greedy_and_sampling.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Seven logits, the softmax that turns them into probabilities, and the two ways to pick: always the top one, or a seeded draw.</p></div></div>
+
+<h4>Definition</h4>
+<p>One turn of the loop, on the toy's seven candidates after "...serves a notice period of". The logits are the model's output. Softmax subtracts the largest logit first, so that no exponential overflows (the result is the same), then exponentiates and divides by the total. Greedy decoding reads off the largest probability and stops there. Sampling needs a random number: a draw <em>u</em> between 0 and 1, and the pick is the first candidate whose running total of probabilities passes <em>u</em>, so a candidate with probability 0.75 owns three quarters of the line from 0 to 1. The draws come from a tiny generator in the cell: give it the same seed and it gives the same draws, on any machine.</p>
+
+<h4>Do it: one turn of the loop, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in the Basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import numpy as np
+NEXT = ["60", "sixty", "15", "90", "45", "30", "ninety"]  # the toy's candidates after "...serves a notice period of"
+logits = np.array([4.0, 2.6, 0.6, 0.2, -0.2, -0.6, -1.0])  # the model's raw scores, one per candidate
+e = np.exp(logits - logits.max())                         # softmax: exponentiate (less the largest, so nothing overflows)
+p = e / e.sum()                                           # and divide by the total, so the probabilities add up to 1
+for token, z, q in zip(NEXT, logits, p):
+    print(f"{token:&gt;6}  logit {z:+.1f}  probability {q:.3f}")
+print(f"total {p.sum():.3f} | 60 or sixty {p[:2].sum():.3f}, another figure {p[2:].sum():.3f} | greedy picks {NEXT[int(np.argmax(p))]!r}")
+
+def draws(seed):                                          # a tiny seeded generator: the same seed gives the same draws
+    x = seed
+    while True:
+        x = (x + 0x9E3779B9) &amp; 0xFFFFFFFF                 # step the state, then mix its bits (MurmurHash3's finaliser)
+        z = ((x ^ (x &gt;&gt; 16)) * 0x85EBCA6B) &amp; 0xFFFFFFFF
+        z = ((z ^ (z &gt;&gt; 13)) * 0xC2B2AE35) &amp; 0xFFFFFFFF
+        yield (z ^ (z &gt;&gt; 16)) / 2**32                     # a number from 0 up to, not including, 1
+
+def sample(p, u):                                         # sampling: the first candidate whose running total passes u
+    return min(int(np.searchsorted(np.cumsum(p), u, side="right")), len(p) - 1)
+
+for seed in (1, 2, 1):
+    u = draws(seed)
+    print(f"seed {seed}, ten draws:", " ".join(NEXT[sample(p, next(u))] for _ in range(10)))
+u = draws(7)
+counts = np.bincount([sample(p, next(u)) for _ in range(10_000)], minlength=len(NEXT))
+print("seed 7, 10,000 draws:", ", ".join(f"{t} {c / 10_000:.3f}" for t, c in zip(NEXT, counts)))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell's own output, computed when the page was built: yours prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">    60  logit +4.0  probability 0.750
+ sixty  logit +2.6  probability 0.185
+    15  logit +0.6  probability 0.025
+    90  logit +0.2  probability 0.017
+    45  logit -0.2  probability 0.011
+    30  logit -0.6  probability 0.008
+ninety  logit -1.0  probability 0.005
+total 1.000 | 60 or sixty 0.934, another figure 0.066 | greedy picks '60'
+seed 1, ten draws: 60 60 60 60 60 sixty 90 60 60 60
+seed 2, ten draws: 60 60 60 60 60 60 60 60 60 60
+seed 1, ten draws: 60 60 60 60 60 sixty 90 60 60 60
+seed 7, 10,000 draws: 60 0.747, sixty 0.190, 15 0.024, 90 0.015, 45 0.011, 30 0.007, ninety 0.006</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The seven logits became seven probabilities that add up to 1.000, still in the logits' order. 60 takes 0.750, sixty 0.185, and the five figures the clause does not say share 0.066 between them. Greedy picked 60, and would pick it on every run. The seeded draws picked 60 most of the time and something else now and then, and seed 1 printed the same ten picks both times, because a seed fixes the draws. Over 10,000 draws every candidate came out within 0.005 of its probability. That is sampling in one sentence: faithful to the distribution on average, unpredictable one draw at a time, and the second half is run-to-run variance.</p></div>
+
+<p>60 and sixty are one figure in two spellings, which is why the cell counts them together. The kit's evaluator, <code>evals/run_eval.py</code>, turns number words into digits before it checks an answer for exactly this reason. The other five are not random either: 15, 45 and 90 all appear elsewhere in acme's documents (probation's notice, the cap on encashed leave, the contract's notice), which is the kind of mix-up a real model can make when it has read all of them.</p>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Shape</span><h3>Reshape the odds: temperature, top-k and top-p</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_5/demo_04_reshape_the_odds_temperature_top_k_and_top_p.py" target="_blank" rel="noopener"><code>demo_04_reshape_the_odds_temperature_top_k_and_top_p.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Three knobs that change the probabilities before the pick, and what each one does to the figures the clause does not say.</p></div></div>
+
+<h4>Definition</h4>
+<p><strong>Temperature</strong> divides every logit by T before the softmax. Below 1 the gaps between the logits grow, so the likeliest token takes more of the probability; above 1 they shrink and the tail grows; as T falls to 0 the softmax becomes greedy, and 0 is used to mean exactly that. <strong>Top-k</strong> keeps the k likeliest candidates and gives the rest probability 0. <strong>Top-p</strong>, also called nucleus sampling, keeps the fewest likeliest candidates whose probabilities reach p. Both then renormalise what is left so that it adds up to 1 again. The function below applies the three in that order, and it is the order the explorer in step 1 uses.</p>
+
+<h4>Do it: eight settings on one turn, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in the Basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import numpy as np
+NEXT = ["60", "sixty", "15", "90", "45", "30", "ninety"]  # the toy's candidates after "...serves a notice period of"
+logits = np.array([4.0, 2.6, 0.6, 0.2, -0.2, -0.6, -1.0])  # the model's raw scores, one per candidate
+
+def shaped(logits, T=1.0, k=None, top_p=None):            # the three knobs, on one step's logits
+    z = np.asarray(logits, dtype=float)
+    if T == 0:                                            # temperature 0 is greedy: all the probability on the top token
+        q = (z == z.max()).astype(float)
+        return q / q.sum()
+    q = np.exp((z - z.max()) / T)                         # temperature divides the logits, then the softmax
+    q /= q.sum()
+    order = np.argsort(-q, kind="stable")                 # the candidates, likeliest first
+    n = len(q) if k is None else min(k, len(q))           # top-k keeps the k likeliest
+    if top_p is not None:                                 # top-p keeps the fewest whose probabilities reach top_p
+        n = min(n, int(np.searchsorted(np.cumsum(q[order]), top_p)) + 1)
+    q[order[n:]] = 0.0                                    # the rest can no longer be picked,
+    return q / q.sum()                                    # and what is left adds up to 1 again
+
+print(f"{'setting':18} {'P(60)':&gt;6} {'P(sixty)':&gt;8} {'P(another figure)':&gt;17} {'left':&gt;4}")
+for name, knobs in (("T=0 (greedy)", dict(T=0)), ("T=0.5", dict(T=0.5)), ("T=1.0", dict(T=1.0)),
+                    ("T=1.5", dict(T=1.5)), ("T=2.0", dict(T=2.0)), ("T=1.0, top-k 2", dict(k=2)),
+                    ("T=1.0, top-p 0.90", dict(top_p=0.90)), ("T=1.0, top-p 0.95", dict(top_p=0.95))):
+    q = shaped(logits, **knobs)
+    print(f"{name:18} {q[0]:6.3f} {q[1]:8.3f} {q[2:].sum():17.3f} {int((q &gt; 0).sum()):4d}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell's own output, computed when the page was built: yours prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">setting             P(60) P(sixty) P(another figure) left
+T=0 (greedy)        1.000    0.000             0.000    1
+T=0.5               0.941    0.057             0.002    7
+T=1.0               0.750    0.185             0.066    7
+T=1.5               0.582    0.229             0.190    7
+T=2.0               0.469    0.233             0.299    7
+T=1.0, top-k 2      0.802    0.198             0.000    2
+T=1.0, top-p 0.90   0.802    0.198             0.000    2
+T=1.0, top-p 0.95   0.781    0.193             0.026    3</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Temperature moved probability between the likeliest token and the tail without removing anything: 60 went from 0.941 at 0.5 to 0.582 at 1.5, and the chance of a figure the clause does not say went from 0.002 to 0.190, and to 0.299 at 2.0, while all seven candidates stayed possible. Top-k 2 and top-p 0.90 cut the tail off outright: two candidates left, both saying 60. Top-p 0.95 needed a third candidate to reach 0.95, and let 15 back in. A sharper distribution does not make the likeliest token any more correct; it only makes the others rarer. That is all these knobs can do, on a model that honours them.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Loop</span><h3>The loop, and five runs of one prompt counted</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_5/demo_05_the_loop_and_five_runs_of_one_prompt_counted.py" target="_blank" rel="noopener"><code>demo_05_the_loop_and_five_runs_of_one_prompt_counted.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The whole decode loop on the toy, until the end token or the cap; then five seeded runs per setting, with the distinct answers counted.</p></div></div>
+
+<h4>Definition</h4>
+<p>The loop is step 3's turn, repeated until it stops. The toy remembers only the last token it wrote, so its whole "model" is a table: for each last token, the logits of the tokens that may follow. A real decoder computes those logits from the whole text, every time, but the loop around it is the same: score, shape, pick, append, look again. It stops in one of two ways, and the kit's code reads which: the model picks the end token (finish reason <code>STOP</code>), or the cap on output tokens comes first (<code>MAX_TOKENS</code>). Then the experiment this lesson is about: one prompt, five runs, the distinct answers counted, at five settings of the temperature and one of top-k, with the same five seeds every time so that only the setting changes.</p>
+
+<h4>Do it: thirty runs and one cut short, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in the Basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import numpy as np
+FIGURES = ("60", "sixty", "15", "90", "45", "30", "ninety")
+TABLE = {"of": dict(zip(FIGURES, (4.0, 2.6, 0.6, 0.2, -0.2, -0.6, -1.0))),   # the toy model: for the last token written,
+         **{f: {"days": 2.4, "calendar": 1.0} for f in FIGURES},             # the logits of the tokens that may follow
+         "calendar": {"days": 1.0}, "days": {".": 1.6, "from": 0.9},
+         "from": {"acknowledgement": 1.0}, "acknowledgement": {".": 1.0}, ".": {"&lt;end&gt;": 1.0}}
+
+def draws(seed):                                          # a tiny seeded generator: the same seed gives the same draws
+    x = seed
+    while True:
+        x = (x + 0x9E3779B9) &amp; 0xFFFFFFFF                 # step the state, then mix its bits (MurmurHash3's finaliser)
+        z = ((x ^ (x &gt;&gt; 16)) * 0x85EBCA6B) &amp; 0xFFFFFFFF
+        z = ((z ^ (z &gt;&gt; 13)) * 0xC2B2AE35) &amp; 0xFFFFFFFF
+        yield (z ^ (z &gt;&gt; 16)) / 2**32                     # a number from 0 up to, not including, 1
+
+def shaped(logits, T=1.0, k=None, top_p=None):            # the three knobs, on one step's logits
+    z = np.asarray(logits, dtype=float)
+    if T == 0:                                            # temperature 0 is greedy: all the probability on the top token
+        q = (z == z.max()).astype(float)
+        return q / q.sum()
+    q = np.exp((z - z.max()) / T)                         # temperature divides the logits, then the softmax
+    q /= q.sum()
+    order = np.argsort(-q, kind="stable")                 # the candidates, likeliest first
+    n = len(q) if k is None else min(k, len(q))           # top-k keeps the k likeliest
+    if top_p is not None:                                 # top-p keeps the fewest whose probabilities reach top_p
+        n = min(n, int(np.searchsorted(np.cumsum(q[order]), top_p)) + 1)
+    q[order[n:]] = 0.0                                    # the rest can no longer be picked,
+    return q / q.sum()                                    # and what is left adds up to 1 again
+
+def generate(seed, T=1.0, k=None, top_p=None, cap=8):     # the loop: score, shape, pick, append
+    u, last, out = draws(seed), "of", []
+    while len(out) &lt; cap:
+        tokens, logits = list(TABLE[last]), list(TABLE[last].values())
+        q = shaped(logits, T, k, top_p)
+        pick = tokens[min(int(np.searchsorted(np.cumsum(q), next(u), side="right")), len(q) - 1)]
+        if pick == "&lt;end&gt;":
+            return " ".join(out), "STOP"                  # the model ended it: finish reason STOP
+        out.append(pick)
+        last = pick
+    return " ".join(out), "MAX_TOKENS"                    # the cap ended it: finish reason MAX_TOKENS
+
+for name, knobs in (("greedy (T=0)", dict(T=0)), ("T=0.5", dict(T=0.5)), ("T=1.0", dict(T=1.0)), ("T=1.5", dict(T=1.5)),
+                    ("T=2.0", dict(T=2.0)), ("T=2.0, top-k 2", dict(T=2.0, k=2))):
+    runs = [generate(seed, **knobs)[0] for seed in range(1, 6)]   # the same five seeds each time: only the knobs change
+    other = sum(run.split()[0] not in ("60", "sixty") for run in runs)
+    print(f"{name:15} distinct {len(set(runs))} of 5, another figure in {other} of 5")
+    print(" " * 16 + " | ".join(runs))
+print("greedy, capped at 2 tokens:", generate(1, T=0, cap=2))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell's own output, computed when the page was built: yours prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">greedy (T=0)    distinct 1 of 5, another figure in 0 of 5
+                60 days . | 60 days . | 60 days . | 60 days . | 60 days .
+T=0.5           distinct 2 of 5, another figure in 0 of 5
+                60 days . | 60 days . | 60 days . | 60 days . | 60 days from acknowledgement .
+T=1.0           distinct 3 of 5, another figure in 0 of 5
+                60 days . | 60 days . | sixty days . | 60 days . | 60 days from acknowledgement .
+T=1.5           distinct 4 of 5, another figure in 1 of 5
+                sixty days . | sixty days . | 45 days . | 60 days . | 60 calendar days .
+T=2.0           distinct 5 of 5, another figure in 2 of 5
+                sixty days from acknowledgement . | 15 days . | 30 days . | 60 days . | 60 calendar days .
+T=2.0, top-k 2  distinct 4 of 5, another figure in 0 of 5
+                60 days from acknowledgement . | sixty days . | sixty days . | 60 days . | 60 calendar days .
+greedy, capped at 2 tokens: ('60 days', 'MAX_TOKENS')</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Greedy wrote "60 days ." five times: one distinct answer, because nothing in the loop was left to chance. Sampling at temperature 1.0 wrote 3 distinct answers of five, every one with the right figure: the variance was wording, "sixty" for "60" and "from acknowledgement" added, which a reader would accept. Heating it raised the count to 4 at 1.5 and 5 at 2.0, and the figure itself started to move: at 1.5, 1 of the five stated a figure the clause does not say, and at 2.0, 2. Top-k 2 at 2.0 kept 4 distinct wordings and the figure right in all five. The cap of two tokens cut the greedy answer off as "60 days" with finish reason MAX_TOKENS: an answer that never finished, which is a different failure from a wrong one, and the reason the kit's code reads the finish reason before it reads the answer.</p></div>
+
+<p>Hold on to the shape of that result, because step 7 asks the same question of a real model: does it say the same thing five times, and when it does not, is the difference wording or the figure? The toy answered it by construction. Gemini answers it by measurement, with one difference that matters: there, you cannot turn the temperature down.</p>
+
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The kit</span><h3>What the kit sends Gemini, and why no temperature</h3><p>The client, the model, the one generate_content call and its config; what Google's pages say about the knobs it leaves out; and how its thinking is priced.</p></div></div>
+
+<h4>Definition</h4>
+<p>You have not cloned the kit yet (that is lesson 0.2), so this step reads it here, verbatim. DocuMind's API writes every answer with one function, <code>_call()</code> in <code>services/rag-api/generator.py</code>: one <code>generate_content</code> on a client built for the <code>global</code> location, with the model from <code>config.py</code> (<code>gemini-3.6-flash</code> unless a deploy sets another) and a config of four settings: JSON as the reply's type, <code>ModelDraft</code> as its schema, <code>max_output_tokens</code> at 2,048, and thinking level LOW. A tenant's context cache joins them when one is live. What is not there is the point of this step: no temperature, no top-p, no top-k, no seed. The prompt is the system rules, the packed clauses and the question, in one text part; a packed figure adds its image.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - the client: generation on the global endpoint</span><span class="ro">read only</span></div><pre tabindex="0">_client = genai.Client(enterprise=<span class="kw">True</span>, project=settings.project_id, location=<span class="st">&quot;global&quot;</span>)  <span class="cm"># generation runs on the global endpoint (Gemini 3.x)</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/config.py - the model is a setting</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="cm"># GENERATOR_MODEL in the environment. A model NAME is served on the global endpoint; a tuned model is</span>
+    <span class="cm"># an ENDPOINT path (projects/.../locations/us-central1/endpoints/...) and is served on a regional</span>
+    <span class="cm"># client - generator.py picks by the value (10.1: tuning is regional). RAG_MODEL_BASE names the base</span>
+    <span class="cm"># a tuned endpoint was tuned from, for pricing (cost.py) and for the cache&#x27;s model check.</span>
+    generator_model: str = <span class="st">&quot;gemini-3.6-flash&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - _call(): one generate_content and its config</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_call</span>(prompt: str, packed: list[dict], tenant_id: str | <span class="kw">None</span>, max_tokens: int, model: str | <span class="kw">None</span> = <span class="kw">None</span>):
+    <span class="st">&quot;&quot;&quot;One generate_content call with the structured-answer config, on the client the model needs.&quot;&quot;&quot;</span>
+    model = model <span class="kw">or</span> settings.generator_model
+    <span class="kw">return</span> _client_for(model).models.generate_content(
+        model=model,
+        contents=_contents(prompt, packed),   <span class="cm"># + the figures being cited (9.6, gap G7)</span>
+        config=types.GenerateContentConfig(
+            response_mime_type=<span class="st">&quot;application/json&quot;</span>,
+            <span class="cm"># ModelDraft, from shared/documind_schemas.py - the same class 3.2 teaches.</span>
+            <span class="cm"># The model cites by [Source N] and QUOTES the words it relied on; resolve()</span>
+            <span class="cm"># below turns that into Citations with ids, pages and scores it never saw.</span>
+            response_schema=ModelDraft,
+            max_output_tokens=max_tokens,
+            <span class="cm"># NO temperature / top_p / top_k: gemini-3.6-flash ignores all</span>
+            <span class="cm"># three, and passing them reads like a knob that does something.</span>
+            <span class="cm"># thinking_level, not thinking_budget=0 - Gemini 3.x thinking</span>
+            <span class="cm"># cannot be switched off, and budget=0 is a 2.5-era setting.</span>
+            thinking_config=types.ThinkingConfig(thinking_level=<span class="st">&quot;LOW&quot;</span>),
+            **_cache_kwargs(tenant_id, model),
+        ),
+    )</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_schemas.py - DraftCitation and ModelDraft, the response schema</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">class</span> DraftCitation(BaseModel):
+    <span class="st">&quot;&quot;&quot;What the model cites: the [Source N] number it saw, and the words it is relying on.&quot;&quot;&quot;</span>
+
+    source: int = Field(ge=<span class="nu">1</span>, description=<span class="st">&quot;1-based [Source N] in the context&quot;</span>)
+    quote: str = Field(max_length=<span class="nu">200</span>, description=<span class="st">&quot;Exact words from that source&quot;</span>)
+
+
+<span class="kw">class</span> ModelDraft(BaseModel):
+    <span class="st">&quot;&quot;&quot;What the model is asked for. Use this as response_schema; resolve() turns it into a
+    RAGAnswer. Asking the model for chunk ids or scores directly invites it to invent them.&quot;&quot;&quot;</span>
+
+    answer: str
+    citations: List[DraftCitation]
+    confidence: Literal[<span class="st">&quot;high&quot;</span>, <span class="st">&quot;medium&quot;</span>, <span class="st">&quot;low&quot;</span>]
+    answerable: bool</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - SYSTEM, the rules every prompt starts with</span><span class="ro">read only</span></div><pre tabindex="0">SYSTEM = <span class="st">&quot;&quot;&quot;You are DocuMind, a retrieval-grounded assistant.
+Rules:
+1. Answer ONLY from the numbered context below. Never invent sources.
+2. Cite using [N] where N is the chunk number. Multiple chunks: [1,2].
+3. If the context does not contain the answer, set answerable=false and say so.
+4. Keep answers under 300 words unless asked for more.
+5. A quote is the clause that answers - at most twenty-five words, never a whole section.
+&quot;&quot;&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - generate(): the prompt, in one text part</span><span class="ro">read only</span></div><pre tabindex="0">    prompt = f<span class="st">&quot;{SYSTEM}{_dated_rule(packed)}\n\nContext:\n{context}\n\nQuestion: {query}&quot;</span></pre></div>
+
+<p>Read the comment in <code>_call()</code>. Its first half is the knobs: the model ignores all three, so passing one would only make the code look as if it controlled something. Its second half is the thinking: the kit asks for a level, not a budget of zero, because Gemini 3 thinking cannot be switched off. The streamed answer, further down the same file, asks for the same LOW.</p>
+
+<div class="box box-amber"><div class="box-title">What Google's documentation says (checked 7 October 2026)</div>
+<ul>
+<li><strong>gemini-3.6-flash, the kit's model.</strong> Its <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-6-flash" target="_blank" rel="noopener">model page</a> says it does not support custom values for temperature, top-k and top-p: a custom value is ignored, not refused. Frequency and presence penalties are stricter: a custom value there throws an error. The model's <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-6-flash" target="_blank" rel="noopener">developer's guide</a> says to control output determinism with the thinking level or a structured JSON schema instead.</li>
+<li><strong>The earlier Gemini 3 models.</strong> The Gemini API's <a href="https://ai.google.dev/gemini-api/docs/gemini-3" target="_blank" rel="noopener">Gemini 3 guide</a> strongly recommends keeping temperature at its default of 1.0, because the models' reasoning is optimised for that setting, and warns that setting it below 1.0 may cause looping or degraded performance, particularly on complex maths and reasoning.</li>
+<li><strong>Thinking.</strong> gemini-3.6-flash takes MINIMAL, LOW, MEDIUM or HIGH, and MEDIUM is its default. The Gemini 3 guide adds that MINIMAL does not guarantee that thinking is off, and that one request cannot carry both <code>thinking_level</code> and the older <code>thinking_budget</code>. The Gemini API's <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener">price list</a> labels its output price "including thinking tokens".</li>
+</ul>
+<p>So "Gemini 3 ignores temperature" is exact for the model the kit calls, and a simplification for the others, where Google advises against changing it rather than ignoring it.</p></div>
+
+<p><strong>Why would a lower temperature hurt?</strong> Google's guide gives its reason in one line: the reasoning is tuned for the default. Step 4 showed what a lower temperature does: it moves probability onto the likeliest token, and at 0 the loop always takes it. A loop that always takes the likeliest next token is known to fall into repeating itself on long outputs, and a model that writes many thought tokens before every answer runs its loop far longer than the answer you see. That fits the looping the guide warns about. For gemini-3.6-flash Google has gone one step further and stopped honouring the setting at all; its pages give no reason beyond naming the two levers to use instead. The kit uses both: thinking level LOW, and a schema that fixes the answer's shape.</p>
+
+<h4>Thinking, priced</h4>
+<p>Thought tokens are billed as output, and the kit counts them that way: <code>_usage()</code> adds <code>thoughts_token_count</code> to <code>candidates_token_count</code> for every attempt, and the price list in <code>shared/prices.py</code> charges output at USD 7.50 per million tokens on <code>gemini-3.6-flash</code>, against USD 1.50 for input. At the kit's Rs 85 to the dollar, that is Rs 0.64 per 1,000 output tokens, thinking included, and Rs 0.13 per 1,000 input tokens: a thought token costs 5 times what a prompt token costs. The cap bounds it: the thinking and the answer share the same 2,048 output tokens, at most Rs 1.31 a call. When a long think crowds the answer out and the reply is cut off, <code>generate()</code> asks once more with 6,144, at most Rs 3.92 more, and bills both attempts.</p>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - _usage(): the thinking is billed as output</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_usage</span>(r) -&gt; dict:
+    <span class="st">&quot;&quot;&quot;What one attempt billed (6.2, 12 September 2026): the prompt tokens - the cached ones among them, priced at
+    the cache rate by cost.py - and the output, which on the 3.x family is the candidates AND the thinking:
+    thoughts_token_count is billed as output whether or not a thought is shown, and until now it was never added,
+    so every row under-counted what the month&#x27;s counter (budget.py) then read.&quot;&quot;&quot;</span>
+    u = getattr(r, <span class="st">&quot;usage_metadata&quot;</span>, <span class="kw">None</span>)
+    n = <span class="kw">lambda</span> k: getattr(u, k, <span class="kw">None</span>) <span class="kw">or</span> <span class="nu">0</span>  <span class="cm"># noqa: E731 - None from the SDK means &quot;not this call&quot;, not 0 tokens</span>
+    <span class="kw">return</span> {<span class="st">&quot;tokens_in&quot;</span>: n(<span class="st">&quot;prompt_token_count&quot;</span>),
+            <span class="st">&quot;tokens_out&quot;</span>: n(<span class="st">&quot;candidates_token_count&quot;</span>) + n(<span class="st">&quot;thoughts_token_count&quot;</span>),
+            <span class="st">&quot;cached_tokens&quot;</span>: n(<span class="st">&quot;cached_content_token_count&quot;</span>)}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - generate(): a cut-off answer, retried once</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">if</span> draft <span class="kw">is</span> <span class="kw">None</span> <span class="kw">and</span> _finish_reason(r) == <span class="st">&quot;MAX_TOKENS&quot;</span>:
+        <span class="cm"># Cut off, not refused. A statute answer with its quotes - and, on the 3.x family,</span>
+        <span class="cm"># the thinking drawn from the same budget before them - can outrun the first cap.</span>
+        <span class="cm"># Once more with three times the room. The second live eval (7 Sept 2026) scored</span>
+        <span class="cm"># fourteen of these as refusals: every one a real document with a real answer.</span>
+        log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;generation_truncated&quot;</span>, <span class="st">&quot;tenant&quot;</span>: tenant_id,
+                                <span class="st">&quot;max_output_tokens&quot;</span>: settings.max_answer_tokens,
+                                <span class="st">&quot;tokens_out&quot;</span>: r.usage_metadata.candidates_token_count <span class="kw">or</span> <span class="nu">0</span>,
+                                <span class="st">&quot;thoughts&quot;</span>: getattr(r.usage_metadata, <span class="st">&quot;thoughts_token_count&quot;</span>, <span class="kw">None</span>)}))
+        <span class="kw">if</span> backend == <span class="st">&quot;gateway&quot;</span>:
+            r = _gateway_call(prompt, packed, tenant_id, settings.max_answer_tokens * <span class="nu">3</span>, model)
+        <span class="kw">else</span>:
+            r, model = _call_or_fallback(prompt, packed, tenant_id, settings.max_answer_tokens * <span class="nu">3</span>, model)
+        <span class="cm"># The first attempt was billed too. Rebinding `r` dropped it from the row until 12 September 2026 (6.2):</span>
+        <span class="cm"># a truncated-then-retried answer cost the tenant two calls and was counted as one.</span>
+        billed = _add(billed, {**_usage(r), <span class="st">&quot;cost_usd&quot;</span>: getattr(r, <span class="st">&quot;cost_usd&quot;</span>, <span class="kw">None</span>)})
+        draft = _draft(r)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/config.py - the cap, shared with the thinking</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="cm"># 2048, not 1024: a statute answer with its quotes - and the thinking drawn from the same</span>
+    <span class="cm"># budget on the 3.x family - outran 1024 on fourteen rows of the second live eval, and each</span>
+    <span class="cm"># cut-off JSON was scored as a refusal. generator.py retries once with three times this.</span>
+    max_answer_tokens: int = <span class="nu">2048</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/prices.py - the price list and usd()</span><span class="ro">read only</span></div><pre tabindex="0">USD_INR = <span class="nu">85</span>            <span class="cm"># the course-wide rate, as in cost.py and shared/documind_tools.py</span>
+PROFILE = os.environ.get(<span class="st">&quot;DOCUMIND_PROFILE&quot;</span>, <span class="st">&quot;gcp&quot;</span>)     <span class="cm"># the same switch shared/profile.py reads</span>
+DEFAULT_MODEL = <span class="st">&quot;gemini-3.6-flash&quot;</span>
+
+PRICES = {<span class="st">&quot;gemini-3.6-flash&quot;</span>: (<span class="nu">1.50</span>, <span class="nu">7.50</span>),
+          <span class="st">&quot;gemini-3.1-flash-lite&quot;</span>: (<span class="nu">0.25</span>, <span class="nu">1.50</span>),
+          <span class="st">&quot;gemini-3.1-pro-preview&quot;</span>: (<span class="nu">2.00</span>, <span class="nu">12.00</span>),
+          <span class="st">&quot;documind-general&quot;</span>: (<span class="nu">1.50</span>, <span class="nu">7.50</span>),
+          <span class="st">&quot;documind-reasoning&quot;</span>: (<span class="nu">2.00</span>, <span class="nu">12.00</span>),
+          <span class="st">&quot;documind-slm&quot;</span>: (<span class="nu">20.5</span>, <span class="nu">20.5</span>),
+          <span class="st">&quot;documind-inference&quot;</span>: (<span class="nu">20.5</span>, <span class="nu">20.5</span>),
+          <span class="st">&quot;documind-gke&quot;</span>: (<span class="nu">20.5</span>, <span class="nu">20.5</span>)}
+
+
+<span class="kw">def</span> <span class="fn">usd</span>(model: str | <span class="kw">None</span>, tokens_in: int, tokens_out: int, cached_tokens: int = <span class="nu">0</span>) -&gt; float:
+    <span class="st">&quot;&quot;&quot;One call&#x27;s cost in USD. An unknown model is priced as flash, as cost.py prices one. A tuned endpoint&#x27;s
+    path is unknown here too: cost.py bills it at its base model (RAG_MODEL_BASE, which only rag-api is given),
+    this at flash.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> PROFILE == <span class="st">&quot;local&quot;</span>:
+        <span class="kw">return</span> <span class="nu">0.0</span>
+    usd_in, usd_out = PRICES.get(model <span class="kw">or</span> DEFAULT_MODEL, PRICES[DEFAULT_MODEL])
+    billable_in = max(tokens_in - cached_tokens, <span class="nu">0</span>)
+    <span class="kw">return</span> (billable_in * usd_in + cached_tokens * usd_in * <span class="nu">0.10</span> + tokens_out * usd_out) / <span class="nu">1_000_000</span></pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read every setting the kit sends Gemini, and the ones it leaves out on purpose. The two live cells that follow use exactly these: the same client on <code>global</code>, the same model, the same schema copied from <code>shared/documind_schemas.py</code>, the same thinking level and cap, the prompt <code>generate()</code> builds, and the prices from <code>shared/prices.py</code>. The build ran both cells against a stand-in client to check that the config they send is <code>_call()</code>'s, setting for setting; only Gemini's answers are missing until you run them.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Variance</span><h3>Gemini, five times: count the distinct answers</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_5/demo_07_gemini_five_times_count_the_distinct_answers.py" target="_blank" rel="noopener"><code>demo_07_gemini_five_times_count_the_distinct_answers.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The generator's own prompt for one golden question, sent five times with the kit's config; the distinct answers and the right figure counted, and the five calls priced.</p></div></div>
+
+<h4>Definition</h4>
+<p>This is the lesson's proof, on the real model. The prompt is the one <code>generate()</code> builds when retrieval hands it a single clause: the rules from step 6, the handbook's clause NP-03 as <code>[Source 1]</code>, and the question of golden row <code>lk-06</code>, whose check is that the answer states 60. The config is <code>_call()</code>'s, setting for setting. The cell asks five times, prints each answer, and counts two things: distinct answers (the exact text, with runs of spaces collapsed), and answers that state 60 by the boundary rule <code>run_eval.py</code> uses, where the figure must stand on its own, so "160" does not count (unlike <code>run_eval.py</code>, the cell does not read "sixty" as 60). The prompt is about 195 tokens by the kit's own estimate (four characters a token); the cell prints what the five calls cost, and they cannot cost more than Rs 6.53 in output even if every call ran to the cap.</p>
+<div class="cw"><div class="ch-bar"><span>evals/golden.jsonl - the row step 7 asks</span><span class="ro">read only</span></div><pre tabindex="0">{<span class="st">&quot;id&quot;</span>: <span class="st">&quot;lk-06&quot;</span>, <span class="st">&quot;shape&quot;</span>: <span class="st">&quot;lookup&quot;</span>, <span class="st">&quot;question&quot;</span>: <span class="st">&quot;What is the notice period for a confirmed E3?&quot;</span>, <span class="st">&quot;tenant&quot;</span>: <span class="st">&quot;acme&quot;</span>, <span class="st">&quot;must_contain&quot;</span>: [<span class="st">&quot;60&quot;</span>], <span class="st">&quot;must_retrieve&quot;</span>: [<span class="st">&quot;NP-03&quot;</span>, <span class="st">&quot;hr_policy_2026&quot;</span>], <span class="st">&quot;answerable&quot;</span>: true}</pre></div>
+
+
+<div class="box box-amber"><div class="box-title">Before you run it</div>
+<p>This cell and the one in step 8 call Gemini on your own Google Cloud project, so they need lesson 0.1's project and the setup's second block (the sign-in and <code>PROJECT</code>). If you have not made the project yet, read the author's recorded output below, go on to lesson 0.1, and come back: the cells will wait.</p></div>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop after lesson 0.1, in the Basics venv (five calls to gemini-3.6-flash, at most Rs 6.53 in output)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, re, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # print any character a model writes, Windows included
+from typing import List, Literal
+from pydantic import BaseModel, Field
+from google import genai
+from google.genai import types
+
+class DraftCitation(BaseModel):
+    """What the model cites: the [Source N] number it saw, and the words it is relying on."""
+
+    source: int = Field(ge=1, description="1-based [Source N] in the context")
+    quote: str = Field(max_length=200, description="Exact words from that source")
+
+
+class ModelDraft(BaseModel):
+    """What the model is asked for. Use this as response_schema; resolve() turns it into a
+    RAGAnswer. Asking the model for chunk ids or scores directly invites it to invent them."""
+
+    answer: str
+    citations: List[DraftCitation]
+    confidence: Literal["high", "medium", "low"]
+    answerable: bool
+
+PROMPT = """You are DocuMind, a retrieval-grounded assistant.
+Rules:
+1. Answer ONLY from the numbered context below. Never invent sources.
+2. Cite using [N] where N is the chunk number. Multiple chunks: [1,2].
+3. If the context does not contain the answer, set answerable=false and say so.
+4. Keep answers under 300 words unless asked for more.
+5. A quote is the clause that answers - at most twenty-five words, never a whole section.
+
+
+Context:
+[Source 1] hr_policy_2026.md, p.1, NP-03 — Notice period
+NP-03 — Notice period
+A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs
+from the date the resignation is acknowledged in writing. Unused earned leave may not be
+set off against the notice period.
+
+Question: What is the notice period for a confirmed E3?"""
+client = genai.Client(enterprise=True, project=os.environ["PROJECT"], location="global")    # generator.py's _client
+config = types.GenerateContentConfig(                     # _call()'s config: no temperature, top_p, top_k or seed
+    response_mime_type="application/json", response_schema=ModelDraft, max_output_tokens=2048,
+    thinking_config=types.ThinkingConfig(thinking_level="LOW"))
+answers, tokens_in, tokens_out = [], 0, 0
+for run in range(1, 6):
+    r = client.models.generate_content(model="gemini-3.6-flash", contents=[PROMPT], config=config)
+    u = r.usage_metadata
+    tokens_in += u.prompt_token_count or 0
+    tokens_out += (u.candidates_token_count or 0) + (u.thoughts_token_count or 0)   # _usage(): thinking is output
+    try:
+        answers.append(json.loads(r.text)["answer"])
+    except (TypeError, ValueError, KeyError):             # cut off or blocked: no draft to read
+        answers.append("(no parseable answer)")
+    print(f"run {run}: {answers[-1]}")
+distinct = len({" ".join(a.split()) for a in answers})
+states_60 = sum(bool(re.search(r"(?&lt;![\w.])60(?![\w]|\.\d)", a.lower())) for a in answers)   # run_eval.py's rule: 60, not 160
+rupees = (tokens_in * 1.50 + tokens_out * 7.50) / 1_000_000 * 85           # shared/prices.py
+print(f"distinct answers: {distinct} of 5 | answers that state 60 (golden row lk-06): {states_60} of 5")
+print(f"five calls: {tokens_in} tokens in, {tokens_out} out (thinking included) | Rs {rupees:.4f} at the kit's prices")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author's run, recorded: your answers, token counts and rupees are your own)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/five_runs.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">How to read it</div>
+<p>Read the two counts together. More than one distinct answer with every answer stating 60 is variance in wording: the model drew different tokens around the same figure, as the toy did at temperature 1.0, and a reader loses nothing. An answer that drops the figure, or states another, is the variance that matters, and it is what the golden set's <code>must_contain</code> check exists to catch. The five calls were independent: nothing one run wrote could steer the next, and the schema held all five to the same shape (an answer, citations, a confidence and the answerable flag). Your counts may differ from the recorded ones. That difference is the subject of this lesson, and lesson 3.1 measures it properly, with more runs, on the kit's own generator.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Thinking</span><h3>Two thinking levels: thought tokens and rupees</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_5/demo_08_two_thinking_levels_thought_tokens_and_rupees.py" target="_blank" rel="noopener"><code>demo_08_two_thinking_levels_thought_tokens_and_rupees.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>One golden question that needs two clauses, asked at the kit's level and at the deepest, with the thought tokens read off the usage and priced from the kit's list.</p></div></div>
+
+<h4>Definition</h4>
+<p>Golden row <code>jn-01</code> joins two clauses: probation's notice (PB-02) and leave on exit (LV-07), and its check is that the answer says 15 days and that leave cannot be encashed. The prompt is again <code>generate()</code>'s, with both clauses packed, about 252 tokens by the kit's estimate. The cell sends it at <code>LOW</code>, the kit's level, and at <code>HIGH</code>, and gives both the 6,144-token room that <code>generate()</code> gives its one retry, so that a long think at HIGH is not cut off. For each level it prints the thought tokens, the answer tokens, the prompt tokens, the finish reason, the cost at the kit's prices and the answer. Two calls: at most Rs 7.83 in output, even if both ran to the cap.</p>
+<div class="cw"><div class="ch-bar"><span>evals/golden.jsonl - the row step 8 asks</span><span class="ro">read only</span></div><pre tabindex="0">{<span class="st">&quot;id&quot;</span>: <span class="st">&quot;jn-01&quot;</span>, <span class="st">&quot;shape&quot;</span>: <span class="st">&quot;join&quot;</span>, <span class="st">&quot;question&quot;</span>: <span class="st">&quot;If I resign during probation, what notice applies and can I encash leave?&quot;</span>, <span class="st">&quot;tenant&quot;</span>: <span class="st">&quot;acme&quot;</span>, <span class="st">&quot;must_contain&quot;</span>: [<span class="st">&quot;15&quot;</span>, <span class="st">&quot;cannot&quot;</span>], <span class="st">&quot;must_retrieve&quot;</span>: [<span class="st">&quot;PB-02&quot;</span>, <span class="st">&quot;LV-07&quot;</span>], <span class="st">&quot;answerable&quot;</span>: true}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop after lesson 0.1, in the Basics venv (two calls to gemini-3.6-flash, at most Rs 7.83 in output)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # print any character a model writes, Windows included
+from typing import List, Literal
+from pydantic import BaseModel, Field
+from google import genai
+from google.genai import types
+
+class DraftCitation(BaseModel):
+    """What the model cites: the [Source N] number it saw, and the words it is relying on."""
+
+    source: int = Field(ge=1, description="1-based [Source N] in the context")
+    quote: str = Field(max_length=200, description="Exact words from that source")
+
+
+class ModelDraft(BaseModel):
+    """What the model is asked for. Use this as response_schema; resolve() turns it into a
+    RAGAnswer. Asking the model for chunk ids or scores directly invites it to invent them."""
+
+    answer: str
+    citations: List[DraftCitation]
+    confidence: Literal["high", "medium", "low"]
+    answerable: bool
+
+PROMPT = """You are DocuMind, a retrieval-grounded assistant.
+Rules:
+1. Answer ONLY from the numbered context below. Never invent sources.
+2. Cite using [N] where N is the chunk number. Multiple chunks: [1,2].
+3. If the context does not contain the answer, set answerable=false and say so.
+4. Keep answers under 300 words unless asked for more.
+5. A quote is the clause that answers - at most twenty-five words, never a whole section.
+
+
+Context:
+[Source 1] hr_policy_2026.md, p.1, PB-02 — Probation
+PB-02 — Probation
+New joiners serve six months on probation at grade E2. During probation the notice
+period is 15 days for either side. Probation may be extended once, by up to three
+months, with written reasons.
+
+[Source 2] hr_policy_2026.md, p.1, LV-07 — Leave on exit
+LV-07 — Leave on exit
+Earned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be
+encashed during probation and cannot be used to shorten notice.
+
+Question: If I resign during probation, what notice applies and can I encash leave?"""
+client = genai.Client(enterprise=True, project=os.environ["PROJECT"], location="global")    # generator.py's _client
+rupees = {}
+for level in ("LOW", "HIGH"):                             # the kit's level, then the deepest
+    r = client.models.generate_content(model="gemini-3.6-flash", contents=[PROMPT], config=types.GenerateContentConfig(
+        response_mime_type="application/json", response_schema=ModelDraft,
+        max_output_tokens=6144,                         # the room generate() gives its one retry
+        thinking_config=types.ThinkingConfig(thinking_level=level)))
+    u = r.usage_metadata
+    prompt, answer, thoughts = u.prompt_token_count or 0, u.candidates_token_count or 0, u.thoughts_token_count or 0
+    rupees[level] = (prompt * 1.50 + (answer + thoughts) * 7.50) / 1_000_000 * 85   # shared/prices.py
+    finish = getattr(r.candidates[0].finish_reason, "name", "UNKNOWN") if r.candidates else "NO_CANDIDATES"
+    print(f"{level:4}: thoughts {thoughts} | answer {answer} | prompt {prompt} | finish {finish} | Rs {rupees[level]:.4f}")
+    try:
+        print("      " + json.loads(r.text)["answer"])
+    except (TypeError, ValueError, KeyError):             # cut off or blocked: no draft to read
+        print("      (no parseable answer)")
+print(f"HIGH cost Rs {rupees['HIGH'] - rupees['LOW']:+.4f} against LOW, at the kit's prices")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author's run, recorded: your answers, token counts and rupees are your own)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/thinking_levels.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">How to read it</div>
+<p>The thought tokens are the part of each bill you pay for and never read. They are charged at the output rate, the same as the answer, so a level that thinks more costs more even when the answer it leads to is the same length. Then compare the two answers against the row's check: if LOW already said 15 days and that leave cannot be encashed during probation, the extra thinking at HIGH bought nothing on this question, and the kit runs every answer at LOW. One call per level is one sample, and thought counts vary from run to run like everything else the loop writes; lesson 3.1 asks each level five times.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eleven checks, each one cell or excerpt above, each with what proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Softmax makes probabilities</td><td data-label="The check">the cell in step 3</td><td data-label="Pass looks like">total 1.000; 60 at 0.750; greedy picks <code>'60'</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A seed fixes the draws</td><td data-label="The check">step 3's two seed 1 lines</td><td data-label="Pass looks like">the same ten picks, twice</td></tr>
+<tr><td>3</td><td data-label="Claim">Sampling follows the probabilities</td><td data-label="The check">step 3's 10,000 draws</td><td data-label="Pass looks like">every share within 0.005 of its probability</td></tr>
+<tr><td>4</td><td data-label="Claim">Temperature sharpens and flattens</td><td data-label="The check">the table in step 4</td><td data-label="Pass looks like">60 at 0.941 at 0.5 and 0.582 at 1.5; seven candidates left at every temperature above 0</td></tr>
+<tr><td>5</td><td data-label="Claim">Top-k and top-p cut the tail</td><td data-label="The check">the table in step 4</td><td data-label="Pass looks like">2 left at top-k 2 and at top-p 0.90; 3 at top-p 0.95</td></tr>
+<tr><td>6</td><td data-label="Claim">Greedy repeats itself</td><td data-label="The check">the loop in step 5</td><td data-label="Pass looks like"><code>distinct 1 of 5</code> at T=0</td></tr>
+<tr><td>7</td><td data-label="Claim">Distinct answers rise with temperature</td><td data-label="The check">the loop in step 5</td><td data-label="Pass looks like">3, 4 and 5 of 5 at 1.0, 1.5 and 2.0; another figure from 1.5 on</td></tr>
+<tr><td>8</td><td data-label="Claim">The cap cuts an answer off</td><td data-label="The check">the last line in step 5</td><td data-label="Pass looks like"><code>('60 days', 'MAX_TOKENS')</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The kit sends no sampling knobs</td><td data-label="The check"><code>_call()</code> in step 6</td><td data-label="Pass looks like">no temperature, top-p, top-k or seed; thinking level LOW; cap 2,048</td></tr>
+<tr><td>10</td><td data-label="Claim">One prompt, five answers, counted</td><td data-label="The check">the cell in step 7</td><td data-label="Pass looks like">five <code>run</code> lines, how many are distinct, how many state 60, and the rupees</td></tr>
+<tr><td>11</td><td data-label="Claim">Thinking is billed as output</td><td data-label="The check">the cell in step 8</td><td data-label="Pass looks like">thought tokens at LOW and at HIGH, each line priced, and HIGH's difference in rupees</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your laptop</div>
+<p>Nothing that lasts. The setup's venv, <code>~/basics-venv</code>, holds numpy and google-genai, and the offline cells in steps 3 to 5 only printed. If you ran steps 7 and 8, your project made seven calls to <code>gemini-3.6-flash</code>, five and then two, billed at the rupee figures the cells printed, and each call was independent of the others: nothing carries from one call to the next, which is why five calls can disagree. Lesson 0.1 is next: the billing account, the budget alert and the project those paid cells need, if you have not made them yet.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Basics &middot; Lesson B.5 Generate with GPT-style models: decoding and run-to-run variance &middot; v5.0</p><p>Next: Lesson 0.1 Set up the Google Cloud billing account, budget and project.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+function draws(seed){
+  var x = seed >>> 0;
+  return function(){
+    x = (x + 0x9E3779B9) >>> 0;
+    var z = Math.imul(x ^ (x >>> 16), 0x85EBCA6B) >>> 0;
+    z = Math.imul(z ^ (z >>> 13), 0xC2B2AE35) >>> 0;
+    return ((z ^ (z >>> 16)) >>> 0) / 4294967296;
+  };
+}
+function shaped(z, T, k, p){
+  var n = z.length, i, max = -Infinity, q = [], s = 0;
+  for (i = 0; i < n; i++){ if (z[i] > max){ max = z[i]; } }
+  if (T === 0){
+    for (i = 0; i < n; i++){ q.push(z[i] === max ? 1 : 0); s += q[i]; }
+    return q.map(function(v){ return v / s; });
+  }
+  for (i = 0; i < n; i++){ q.push(Math.exp((z[i] - max) / T)); s += q[i]; }
+  q = q.map(function(v){ return v / s; });
+  var order = q.map(function(v, j){ return j; }).sort(function(a, b){ return (q[b] - q[a]) || (a - b); });
+  var keep = (k === null) ? n : Math.min(k, n);
+  if (p !== null){ var acc = 0, m = 0; while (m < n){ acc += q[order[m]]; m++; if (acc >= p){ break; } } keep = Math.min(keep, m); }
+  for (i = keep; i < n; i++){ q[order[i]] = 0; }
+  s = 0; for (i = 0; i < n; i++){ s += q[i]; }
+  return q.map(function(v){ return v / s; });
+}
+function generate(table, start, seed, T, k, p, cap){
+  var u = draws(seed), last = start, out = [];
+  while (out.length < cap){
+    var row = table[last], q = shaped(row.map(function(r){ return r[1]; }), T, k, p), r = u(), acc = 0, i;
+    for (i = 0; i < q.length; i++){ acc += q[i]; if (acc > r){ break; } }
+    if (i >= q.length){ i = q.length - 1; }
+    if (row[i][0] === '<end>'){ return [out.join(' '), 'STOP']; }
+    out.push(row[i][0]); last = row[i][0];
+  }
+  return [out.join(' '), 'MAX_TOKENS'];
+}
+var root = document.getElementById('dx'); if (!root) { return; }
+var TABLE = {"of": [["60", 4.0], ["sixty", 2.6], ["15", 0.6], ["90", 0.2], ["45", -0.2], ["30", -0.6], ["ninety", -1.0]], "60": [["days", 2.4], ["calendar", 1.0]], "sixty": [["days", 2.4], ["calendar", 1.0]], "15": [["days", 2.4], ["calendar", 1.0]], "90": [["days", 2.4], ["calendar", 1.0]], "45": [["days", 2.4], ["calendar", 1.0]], "30": [["days", 2.4], ["calendar", 1.0]], "ninety": [["days", 2.4], ["calendar", 1.0]], "calendar": [["days", 1.0]], "days": [[".", 1.6], ["from", 0.9]], "from": [["acknowledgement", 1.0]], "acknowledgement": [[".", 1.0]], ".": [["<end>", 1.0]]}, START = 'of', RIGHT = ['60', 'sixty'], OF = TABLE[START];
+var $ = function(id){ return document.getElementById(id); };
+var tIn = $('dx-t'), kIn = $('dx-k'), pIn = $('dx-p'), sIn = $('dx-s'), tV = $('dx-t-v'), bars = $('dx-bars'), sum = $('dx-sum'), runs = $('dx-runs');
+function el(tag, cls, text){ var e = document.createElement(tag); if (cls){ e.className = cls; } if (text !== undefined){ e.textContent = text; } return e; }
+function render(){
+  var T = Math.round(parseFloat(tIn.value) * 10) / 10, k = kIn.value ? parseInt(kIn.value, 10) : null, p = pIn.value ? parseFloat(pIn.value) : null, s0 = parseInt(sIn.value, 10);
+  tV.textContent = T === 0 ? '0 (greedy)' : T.toFixed(1);
+  var q = shaped(OF.map(function(r){ return r[1]; }), T, k, p), other = 0, left = 0;
+  bars.textContent = '';
+  OF.forEach(function(r, i){
+    var bad = RIGHT.indexOf(r[0]) < 0, row = el('div', 'dx-row'), track = el('div', 'dx-track'), fill = el('div', bad ? 'dx-fill bad' : 'dx-fill');
+    if (bad){ other += q[i]; }
+    if (q[i] > 0){ left++; }
+    fill.style.width = (q[i] * 100).toFixed(1) + '%';
+    track.appendChild(fill); track.appendChild(el('span', 'dx-lbl', q[i].toFixed(3)));
+    row.appendChild(el('span', '', r[0])); row.appendChild(track); bars.appendChild(row);
+  });
+  sum.textContent = 'P(60) ' + q[0].toFixed(3) + ' | P(sixty) ' + q[1].toFixed(3) + ' | P(another figure) ' + other.toFixed(3) + ' | candidates left ' + left;
+  var seen = {}, distinct = 0, wrong = 0;
+  runs.textContent = '';
+  for (var s = s0; s < s0 + 5; s++){
+    var g = generate(TABLE, START, s, T, k, p, 8), bad = RIGHT.indexOf(g[0].split(' ')[0]) < 0;
+    if (!seen[g[0]]){ seen[g[0]] = 1; distinct++; }
+    if (bad){ wrong++; }
+    runs.appendChild(el('div', bad ? 'bad' : '', 'seed ' + s + ': ' + g[0]));
+  }
+  runs.appendChild(el('div', 'dx-count', 'distinct ' + distinct + ' of 5, another figure in ' + wrong + ' of 5'));
+}
+[tIn, kIn, pIn, sIn].forEach(function(el){ el.addEventListener('input', render); el.addEventListener('change', render); });
+render();
+})();
+</script>
+</body>
+</html>

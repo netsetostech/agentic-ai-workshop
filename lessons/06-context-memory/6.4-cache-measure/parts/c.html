@@ -1,0 +1,79 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; What the hits bought</span><h3>Avoided calls in rupees, and the latency of a hit</h3><p>The candidate's own rows, then the kit's usage table for the same hour.</p></div></div>
+
+<h4>Definition</h4>
+<p>Every answer on the candidate wrote a usage row, and a hit's row says <code>model_backend</code> <code>cache</code>, with zero tokens and zero cost. The cell reads the candidate revision's rows since step 4 began and splits them into hits and model answers. It prints the p95 latency of each, the average cost of a model answer, and the calls the hits avoided, priced at that average. It then reads the replay's file and names the hits that served a wrong answer. <code>make usage</code> groups the same rows the way the warehouse view does, and its "by model and backend" table shows the cache as a row of its own.</p>
+
+<h4>The code</h4>
+@@p95@@
+
+<h4>Do it: the candidate's rows</h4>
+%%CELL_SAVE%%
+%%OUT_SAVE%%
+
+<h4>Do it: the kit's table</h4>
+%%CELL_USAGE%%
+%%OUT_USAGE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The avoided calls, in rupees, are this lesson's second proof. Read them together with the line under them. Every hit saved a model call and cost nothing on the row, and a hit's p95 is a fraction of a model answer's. That time is the embedding and a Firestore read, and the embedding is paid on a miss too. But the wrong answers are counted among the savings. On this replay the cache was cheap and fast, and for the different pairs it was also wrong. The warehouse view, <code>tenant_daily</code>, groups the same way, so the cache's share of answers and its latency are one query away every day.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The decision</span><h3>Choosing the threshold, and the clean-up</h3><p>What the numbers allow, where the threshold lives, and the candidate put away.</p></div></div>
+
+<p>The kit's rule is the lowest candidate with no false hit on the set, and your curve names it. Before moving the switch, weigh three things. First, the rule of three: %%N_DIFF%% different pairs with no false hit still allow a true rate of about %%RULE3%%%. The honest next step is more different pairs, written from real questions one word away, not a lower threshold. Second, the saving at that threshold: if it hits only a few same-fact pairs, the exact rung (the same words, no threshold at all) may be most of what the cache is worth. Third, the replay's <code>hit from</code> lines, which the curve cannot see. The threshold is an environment variable, <code>SEMANTIC_CACHE_THRESHOLD</code>, read once when a revision starts. No <code>make</code> target passes it, so trying 0.97 on a candidate takes <code>gcloud run services update documind-api --no-traffic --tag candidate --update-env-vars SEMANTIC_CACHE_THRESHOLD=0.97</code>, with your region and project, and then the replay again.</p>
+%%CELL_CLEAN%%
+%%OUT_CLEAN%%
+<p>The answers the replay stored stay in <code>answer_cache</code> for their day. The service's configuration says <code>SEMANTIC_CACHE=on</code> until the next deploy or candidate sets it back. Your two reports stay in your home folder: <code>~/cache93_curve.json</code> and <code>~/cache93_replay.json</code>.</p>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the cache is tuned this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Tight first, then measured.</strong> 0.95, not 0.92: a cache that answers "what is the notice period" to "what is the probation period" serves a wrong answer fast. The kit starts tight and keeps the switch off until a curve says otherwise.</li>
+<li><strong>A false hit is worse than a miss.</strong> A miss costs a model call. A false hit returns a confident answer with real citations to a question it does not fit, and nothing on the page tells the reader. That is why the rule counts false hits, not the balance of the two rates.</li>
+<li><strong>The exact rung needs no threshold.</strong> The same words, lower-cased and without punctuation, are found by two equality filters. Whatever the near rung's threshold, repeated questions still hit.</li>
+<li><strong>The pairs are checked before they judge.</strong> A pair against a missing row, an unanswerable row or the wrong tenant, or identical to its golden question, would make the curve lie. <code>check_pairs()</code> refuses such a set, and so does <code>--selftest</code>, offline.</li>
+<li><strong>Per tenant, always.</strong> Every lookup is filtered by tenant, so a threshold can only confuse one tenant's questions with each other, never with another tenant's.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The curve</td><td data-label="Costs">%%N_EMB%% short embeddings</td><td data-label="On your lane">a fraction of a paisa</td></tr>
+<tr><td>The replay</td><td data-label="Costs">%%N_EMB%% questions: every miss is a model answer, every hit is free on the row</td><td data-label="On your lane">about Rs 25</td></tr>
+<tr><td>The rows and <code>make usage</code></td><td data-label="Costs">Cloud Logging reads</td><td data-label="On your lane">free</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">a revision with no traffic, at zero minimum instances</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The tool embeds with a fixed model.</strong> <code>cache_threshold.py</code> names <code>text-embedding-005</code> in its code, while the API reads <code>EMBEDDING_MODEL</code>. On a lane that declares another embedding model, the curve describes a model the cache does not use.</li>
+<li><strong>No <code>make</code> target sets the threshold.</strong> Neither <code>make candidate</code> nor <code>make up</code> passes <code>SEMANTIC_CACHE_THRESHOLD</code>, so a measured value reaches a revision only by hand.</li>
+<li><strong>The cache-hit alert is not created.</strong> <code>quota.tf</code> lists <code>cache_hit_low</code>, "documind/cache_hit_rate &lt; 0.30 for 1h", in a map nothing reads, and no metric of that name exists. A cache that stopped paying for itself would go unnoticed.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The pairs can judge a threshold</td><td data-label="The check">step 3</td><td data-label="Pass looks like">the curve prints; a refused set lists its problems instead</td></tr>
+<tr><td>2</td><td data-label="Claim">The curve covers nine thresholds</td><td data-label="The check">step 3, the table</td><td data-label="Pass looks like">both rates for 0.85 to 0.98</td></tr>
+<tr><td>3</td><td data-label="Claim">A safe threshold exists, or it does not</td><td data-label="The check">step 3, <code>lowest threshold with no false hit</code></td><td data-label="Pass looks like">a value, or <code>none</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The explorer shows your lane</td><td data-label="The check">step 1, after <em>Read my report</em></td><td data-label="Pass looks like"><code>data: your report (%%N_PAIRS%% pairs)</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The live cache agrees with the curve at 0.95</td><td data-label="The check">step 4, the last line</td><td data-label="Pass looks like">the curve's false hits at 0.95, or <code>hit from</code> lines that explain the difference</td></tr>
+<tr><td>6</td><td data-label="Claim">A hit is fast</td><td data-label="The check">step 5, the p95 line</td><td data-label="Pass looks like">a hit's p95 far below a model answer's</td></tr>
+<tr><td>7</td><td data-label="Claim">The avoided calls, in rupees</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>the hits avoided N calls, about Rs X</code>, and the wrong ones named</td></tr>
+<tr><td>8</td><td data-label="Claim">The kit's table shows the cache as its own row</td><td data-label="The check">step 5, <code>make usage</code></td><td data-label="Pass looks like">a <code>cache</code> row at <code>0.0000</code> USD</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>documind-api</code> has one more revision, which serves no traffic and has no tag. The service's configuration says <code>SEMANTIC_CACHE=on</code> until the next deploy sets it back, and <code>.candidate-revision</code> is gone. <code>answer_cache</code> holds the replay's answers until their day is up. Your home folder has two reports, and the log has the usage rows of about %%N_EMB%% questions. Lesson 6.5 turns from caches to memory: agent state, conversation history and knowledge, and where each one lives.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.4 Measure latency, avoided calls and false cache hits &middot; v5.0</p><p>Next: Lesson 6.5 Distinguish agent state, conversation history and knowledge.</p></div>

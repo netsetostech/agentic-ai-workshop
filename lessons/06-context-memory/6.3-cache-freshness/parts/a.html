@@ -1,0 +1,82 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.3</div>
+<h1>Test cache scope, configuration changes and freshness: <span>what must match for a hit, what a reindex does to both caches, and what comes back with the old corpus</span></h1>
+<p>A cache is right only while the thing it copied has not changed. This lesson changes things on purpose and watches both caches react. You ask the E3 notice-period question under three scopes, then release revision 2 of acme's handbook, which makes the answer 90 days instead of 60. The answer cache misses, the context cache goes stale, and <code>make cache</code> brings the second one back. Finally you put version 1 back and watch the old answer return, because the corpus it was given under has returned.</p>
+<div class="hero-chips"><div class="hero-chip">fingerprint = the corpus</div><div class="hero-chip">scope: filters, top_k, prompt</div><div class="hero-chip">24 hours</div><div class="hero-chip">cache_stale</div><div class="hero-chip">make reindex</div><div class="hero-chip">the old answer, back</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What each cache checks, and the fingerprint both follow</a></li>
+<li><a href="#s2">The words: fingerprint, doc_key, reindex, the undo, scope, cache_stale, the dated rule</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Both caches, and the corpus they follow</a></li>
+<li><a href="#s4">Scope: the same words under other settings</a></li>
+<li><a href="#s5">The corpus moves: revision 2, and both caches react</a></li>
+<li><a href="#s6">make cache again: attached again, and what it packed</a></li>
+<li><a href="#s7">The corpus comes back: version 1, and the old answer with it</a></li>
+<li><a href="#s8">Why freshness works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn exactly what each cache compares before it is used, why one fingerprint of the corpus is enough to keep both caches honest, and which configuration changes the kit's caches see and which they do not. Then you will prove it on your lane: the miss after <code>make reindex</code>, a hit again after <code>make cache</code>, and the old answer served again once the old document is back.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What each cache checks, and the fingerprint both follow</h3><p>Two lists of conditions, one name for the corpus, and what each list leaves out.</p></div></div>
+
+<p><strong>Each cache checks its own list before it is used.</strong> The answer cache serves a stored answer only when four things hold. It must be for the same tenant, under the same corpus fingerprint, for the same scope (the filters, <code>top_k</code> and the prompt version), and less than 24 hours old. The context cache is attached only when its record exists with more than two minutes left, the request runs on the cache's model, and the fingerprint it was packed from is still the ledger's. Everything else about the request can change without either cache noticing.</p>
+
+<p><strong>The fingerprint is the corpus's name.</strong> After every reindex, retirement and reactivation, the worker hashes the tenant's sorted current <code>doc_key</code>s into <code>ledger/{tenant}</code>. A <code>doc_key</code> is the hash of a version's bytes, so a new version of any document gives the tenant a new fingerprint, even when the change is far from the question. The invalidation is coarse, but it is cheap and it is safe: one Firestore read per request, and no scan of the cache. Because the fingerprint names the set of current bytes and not a moment, putting the old bytes back brings the old fingerprint back. Every answer given under it that is still inside its 24 hours becomes a hit again. That is correct, because the same documents give the same answers.</p>
+
+<p><strong>The scope holds what changes an answer, and leaves some of it out.</strong> Filters, <code>top_k</code> and the prompt version are in the scope, because each can change what the model reads or how it answers. The model, the retrieval backend and mode, and the reranker are not. Change the generator model and the answer cache keeps serving the old model's answers for up to a day; the row names the model that gave each one. The context cache is stricter here: it refuses any request on another model.</p>
+
+<p><strong>Stale means something different for each cache.</strong> A stale answer is simply never served. Nothing deletes it, and Firestore's TTL policy reaps it after its day. A stale context cache is not attached. The API writes <code>cache_stale</code> in its log for every such request and answers uncached until <code>make cache</code> packs again. <code>make cache</code> records the new fingerprint, but it packs the kit's own copy of the documents, not the tenant's current corpus. So after a reindex, the new cache is labelled current while holding the old text. What keeps the answer right then is the prompt's dated rule: when sources disagree, follow the one with the latest effective date.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127974;</div><div>
+<p><strong>A bank's rate board.</strong> The counter answers "what is the one-year FD rate?" from a sheet stamped with the circular it was worked out under. A question for a senior citizen, or for two years, needs its own sheet: that is the scope. When a new circular arrives, every sheet stamped with the old one goes in the drawer, unread: that is the fingerprint moving. If head office withdraws the new circular and restores the old one, this morning's sheets are right again, and out they come. The thick rate manual on the counter is reissued for each circular too, but it is reprinted from head office's master copy, which may still carry last month's page.</p></div></div>
+
+<h4>Freshness over time</h4>
+<p>Start where step 3 leaves your lane: a context cache packed under version 1's fingerprint, and no stored answers. Then press the events in any order. Change the request's settings before an ask, and read what each cache did.</p>
+
+<div class="diagram pc" id="fresh">
+<div class="dg-title">A timeline of events against both caches - the kit's store(), lookup(), get(), stale_against() and generate_config_kwargs()</div>
+<div class="pc-box"><b class="h">The request and the revision</b>
+<div class="pc-in">
+<label>top_k<select id="fr-k"><option>6</option><option>8</option></select></label>
+<label>Filters<select id="fr-f"><option value="none">none</option><option value="text">kind: text</option></select></label>
+<label>Prompt version<select id="fr-p"><option>v3</option><option>v4</option></select></label>
+<label>The revision's model<select id="fr-m"><option value="flash">gemini-3.6-flash</option><option value="lite">gemini-3.1-flash-lite</option></select></label>
+<label>SEMANTIC_CACHE<select id="fr-s"><option value="on">on</option><option value="off">off</option></select></label>
+</div>
+<div class="fr-btns"><button type="button" data-ev="ask">Ask the E3 question</button><button type="button" data-ev="reindex">make reindex: revision 2</button><button type="button" data-ev="restore">make reindex: version 1</button><button type="button" data-ev="cache">make cache</button><button type="button" data-ev="delete">Delete the context cache</button><button type="button" data-ev="w30">+30 minutes</button><button type="button" data-ev="w1d">+1 day</button><button type="button" data-ev="reset">Start again</button></div>
+<div class="fr-state" id="fr-state" aria-live="polite"></div>
+<ol class="pc-steps" id="fr-log" aria-live="polite"></ol></div>
+<p class="dg-cap">The timeline runs the kit's own rules. The build replayed %%N_SEQS%% random sequences of these events, %%N_ASKS%% asks in all, through <code>store()</code> and <code>lookup()</code> on a stand-in Firestore, and through <code>get()</code>, <code>stale_against()</code> and <code>generate_config_kwargs()</code> on a stand-in record. The panel agreed at every ask. The scope hashes shown are the kit's own <code>scope_of()</code>.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the timeline is not</div>
+<p>The question's words never change here; paraphrases and the near rung were lesson 6.2's. The clock jumps rather than runs. Every answer is taken as answerable and cited, so every miss is stored. Your lane's fingerprints are longer hashes than F1 and F2, and they depend on every document acme holds.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: fingerprint, doc_key, reindex, the undo, scope, cache_stale, the dated rule</h3><p>Eleven rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Corpus fingerprint</strong></td><td data-label="Meaning">The first 16 hex digits of a hash of the tenant's sorted current <code>doc_key</code>s, written to <code>ledger/{tenant}</code> on every reindex, retirement and reactivation.</td><td data-label="On your lane">one value, then another, then the first again</td></tr>
+<tr><td><strong>doc_key</strong></td><td data-label="Meaning">The tenant and the SHA-256 of one version's bytes. A new version is a new key.</td><td data-label="On your lane"><code>acme_497809ff...</code> for version 1</td></tr>
+<tr><td><strong>make reindex</strong></td><td data-label="Meaning">A new version under an old object name, released through the offline golden gate. The worker retires the previous version for 30 days.</td><td data-label="On your lane">revision 2, then version 1 again</td></tr>
+<tr><td><strong>ingest_reactivated</strong></td><td data-label="Meaning">The undo: bytes the ledger retired less than 30 days ago come back without embedding anything.</td><td data-label="On your lane">likely for both reindexes</td></tr>
+<tr><td><strong>Scope</strong></td><td data-label="Meaning">A short hash of the request's filters, <code>top_k</code> and prompt version, stored on each answer and compared on lookup.</td><td data-label="On your lane">four hashes in step 4</td></tr>
+<tr><td><strong>What the scope leaves out</strong></td><td data-label="Meaning">The model, the retrieval backend and mode, and the reranker. Changing them does not turn a hit into a miss.</td><td data-label="On your lane">the timeline's model setting</td></tr>
+<tr><td><strong>An answer's day</strong></td><td data-label="Meaning"><code>expire_at</code>, 24 hours after storing. After it the answer is never served; Firestore's TTL policy deletes it later.</td><td data-label="On your lane"><code>SEMANTIC_CACHE_TTL_H</code> 24</td></tr>
+<tr><td><strong>cache_stale</strong></td><td data-label="Meaning">The API's log line when a context cache was packed under another fingerprint: the answer runs uncached.</td><td data-label="On your lane">step 5 reads two</td></tr>
+<tr><td><strong>The two-minute rule</strong></td><td data-label="Meaning"><code>get()</code> treats a context cache with two minutes or less to live as gone, so no call starts on a cache about to expire.</td><td data-label="On your lane"><code>min_remaining_s</code> 120</td></tr>
+<tr><td><strong>The dated rule</strong></td><td data-label="Meaning">A line added to the prompt when a packed chunk carries an effective date: where sources disagree, follow the latest.</td><td data-label="On your lane">revision 2 is dated 1 October 2026</td></tr>
+<tr><td><strong>RETENTION_DAYS</strong></td><td data-label="Meaning">How long a retired version's rows stay, flagged, so the undo needs no embedding.</td><td data-label="On your lane">30</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the fingerprint says whether the corpus is the same, and the scope says whether the question is the same. The answer cache needs both, and the context cache needs only the first.</p>

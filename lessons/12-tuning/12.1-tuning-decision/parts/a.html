@@ -1,0 +1,101 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 12 &middot; Tuning &middot; Lesson 12.1</div>
+<h1>Decide whether tuning is justified and prepare data: <span>a rubric, then a frozen file</span></h1>
+<p>Tuning teaches a model a habit, not facts. Before you pay for it, your lane's own numbers must show answers that are wrong in a way a habit fixes: a missing citation, a missing refusal, JSON that breaks. The fix must also be one that a prompt, a cache or better retrieval cannot make more cheaply. The kit has no tool that makes this call. This page gives you a rubric that reads numbers the kit already produces.</p>
+<p>In this lesson you audit the training file the kit ships. Then you run the live gate with a report, and put that report, a week of the API's logs and the price table through the rubric. Last, you build your own training file as version v2, freeze it with its manifest in the datasets bucket, and read it back.</p>
+<div class="hero-chips"><div class="hero-chip">make_trainset.py</div><div class="hero-chip">exclude_golden</div><div class="hero-chip">ModelDraft</div><div class="hero-chip">SYSTEM</div><div class="hero-chip">REPORT=</div><div class="hero-chip">generation_repaired</div><div class="hero-chip">cost.py</div><div class="hero-chip">make trainset</div><div class="hero-chip">manifest.json</div><div class="hero-chip">datasets bucket</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What tuning can fix, and the data it needs</a></li>
+<li><a href="#s2">The words: tuning, the habit, the rubric, the report, the grammar events, a training row, the golden set, exclude_golden, the manifest, the datasets bucket</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The kit's rules, and the file it ships, audited</a></li>
+<li><a href="#s4">The evidence, and the verdict</a></li>
+<li><a href="#s5">Your training file, as v2</a></li>
+<li><a href="#s6">The frozen file, read back</a></li>
+<li><a href="#s7">Optional: a better file, v3, in the house style and in Hinglish</a></li>
+<li><a href="#s8">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what supervised tuning changes in a model and what it cannot. You will learn the four questions that decide whether your lane needs it, and the four rules the kit's training file follows. You will also see where the file falls short of those rules today. Then you will prove it on your lane: a verdict with its evidence, and the frozen manifest with its row count.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What tuning can fix, and the data it needs</h3><p>A habit, not facts; four questions before any spend; four rules for the file.</p></div></div>
+
+<p><strong>What a tuned model learns.</strong> Supervised tuning shows a model a few hundred worked examples: this prompt, this answer. It changes how the model answers, not what it knows. The kit's own words, in <code>make_trainset.py</code>: a model tuned on this learns the habit the lane serves, not facts, because facts are retrieval's job. On DocuMind the habit is the answer the generator asks for, in <code>SYSTEM</code>'s five rules:</p>
+<ul>
+<li><strong>The shape.</strong> ModelDraft's JSON: an answer, citations, <code>answerable</code>, <code>confidence</code>.</li>
+<li><strong>The citation.</strong> A <code>[N]</code> mark in the answer for each source it uses, and a citation with the clause that answers, at most twenty-five words.</li>
+<li><strong>The refusal.</strong> <code>answerable=false</code> when the sources do not answer.</li>
+</ul>
+<p>A fact reaches the model through retrieval, on every request, in its current version, with a source to cite. A fact trained into the weights stays as it was on the day of training, and has no source to cite.</p>
+
+<p><strong>Four questions before the spend.</strong> The rubric reads four numbers the kit already produces:</p>
+<ol>
+<li><strong>The gate's misses: habit or knowledge?</strong> <code>make eval-live REPORT=</code> writes each row's outcome and why. A row that answered without a citation, answered when it should have refused, or came back malformed is a habit miss. A row that refused an answerable question, or answered without the figure it needed, is a knowledge miss: retrieval, the corpus, or the row itself. Tuning can only fix the first kind.</li>
+<li><strong>The grammar under traffic.</strong> The generator logs <code>generation_repaired</code> when it had to fix a draft, <code>generation_invalid</code> when the fix failed, and <code>generation_unparsed</code> when the reply was not JSON. The rubric counts them against a week of answers. The line is this page's, not the kit's: 1%. Below it, the prompt is holding the grammar.</li>
+<li><strong>The price.</strong> <code>gemini-3.6-flash</code>, the model your lane serves, cannot be tuned. Managed tuning accepts <code>gemini-3.5-flash</code> and <code>gemini-3.1-flash-lite</code>, and the kit tunes flash-lite. In <code>cost.py</code>'s table flash-lite costs a sixth of flash for input and a fifth for output: USD 0.25 and 1.50 a million tokens, against 1.50 and 7.50. A tuned model costs more than its base, though: Google's pricing page, checked on 24 September 2026, says that from Gemini 3 onward a tuned endpoint's predictions cost 1.5 times the base model's. That makes a tuned flash-lite about a quarter of flash for input and three tenths for output. One that passes the same gate would still cut the bill: a reason to try it, as an experiment that lesson 12.3 decides.</li>
+<li><strong>The data.</strong> One row per real chunk needs chunks. <code>make_trainset.py</code> takes chunks of 400 characters or more from the tenant's corpus mirrors, and acme has %%N_CHUNKS%%.</li>
+</ol>
+<p>The verdict follows from the four numbers:</p>
+<ul>
+<li><strong>Tune for quality</strong> when the misses are habit, or the grammar breaks at 1% or more.</li>
+<li><strong>Tune for price, as an experiment only,</strong> when the misses are knowledge but the tunable base is cheaper.</li>
+<li><strong>Do not tune</strong> in every other case.</li>
+</ul>
+
+<p><strong>Four rules for the file.</strong> <code>make_trainset.py</code> samples 300 chunks, sorted by id and evenly strided, so the sample is the same every time the corpus is. For each chunk <code>gemini-3.6-flash</code> writes a question, the answer, the clause that answers, and a question the passage does not answer. Every tenth chunk also yields a refusal row. Then four rules apply:</p>
+<ul>
+<li><strong><code>exclude_golden</code>: no row may teach the test.</strong> A row is dropped if its chunk is a golden row's evidence: the chunk is in the row's scope and carries one of its must-contain phrases. It is also dropped if its question is a golden question rephrased. For each golden row in turn, the evidence rule is checked before the question rule.</li>
+<li><strong><code>redact</code>: drop, never rewrite.</strong> DLP inspects each question and answer, and a row with any finding is dropped. The kit's reason: weights cannot be filtered per tenant afterwards.</li>
+<li><strong><code>write</code>: one list, two formats.</strong> The Gemini tuning format that Vertex AI reads, the chat format that open-source trainers read, and a manifest with each file's SHA-256.</li>
+<li><strong>Frozen.</strong> The version is in the file name. A changed corpus is a new version, never an edit.</li>
+</ul>
+
+<div class="analogy"><div class="analogy-icon">&#128218;</div><div>
+<p><strong>A tuition teacher before the board exams.</strong> A good tuition teacher drills how to write an answer: make the point, cite the section, and write "not in the syllabus" when it is not. That habit carries into any paper. The teacher cannot drill next year's syllabus changes: those are in the textbook, and this is an open-book exam. An honest teacher also never drills the board paper itself, or questions rephrased from it. The marks would then say the student is ready when the student has only memorised.</p>
+<p>Before paying for a crash course, the parent reads the last test. Marks lost for not citing, or for answering what was not asked, are what drilling fixes. Marks lost because the textbook lacks the chapter are not. And if a younger student, once drilled, could sit the same paper for a quarter of the fees, a trial is worth it, judged by the same paper.</p>
+<p>The drilling is tuning, and the way of writing is the habit. The open textbook is retrieval and the board paper is the golden set. The last test is the gate's report, and the crash course's fee is the tuning job.</p></div></div>
+
+<h4>Would this row enter the training file?</h4>
+<p>Pick a chunk from acme's corpus and a question to write from it, or type your own. The panel runs <code>exclude_golden</code> against the gate's %%N_GOLD%% golden rows. It tells you whether the row is kept, or which golden row drops it and by which rule.</p>
+
+<div class="diagram pc" id="tg">
+<div class="dg-title">exclude_golden: the evidence rule, then the question rule, for each golden row in order</div>
+<div class="pc-box"><b class="h">The row</b>
+<div class="pc-in"><label>A chunk from acme's corpus<select id="tg-chunk">%%CHUNK_OPTIONS%%</select></label>
+<label>A question written from it<select id="tg-pick">%%PRESET_OPTIONS%%</select></label></div>
+<div class="pc-in"><label>The question<input type="text" id="tg-q" autocomplete="off" spellcheck="false"></label></div>
+<div class="tg-chunk" id="tg-text" tabindex="0" aria-label="The chunk's text"></div></div>
+<div class="pc-box"><b class="h">The rule's answer</b><div class="tg-out" id="tg-out" aria-live="polite"></div></div>
+<p class="dg-cap">The rules are the kit's: <code>exclude_golden</code> with <code>run_eval.normalise</code>, ported and compared with the kit's own function on %%N_CHECKED%% cases. The cases are every row of the committed v1, plus every question offered here and every golden question, each on every chunk offered here.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It judges one row against the golden set, and nothing else. It does not run DLP, write a question, or check the quote. <code>make trainset</code> does all three, and a row the panel keeps can still be dropped by the PII scan.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: tuning, the habit, the rubric, the report, the grammar events, a training row, the golden set, exclude_golden, the manifest, the datasets bucket</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Supervised tuning</strong></td><td data-label="Meaning">Training a base model on worked examples, a prompt and its answer. It changes how the model answers, not what it knows.</td><td data-label="On your lane"><code>make tune</code> (12.2): <code>gemini-3.1-flash-lite</code>, 3 epochs, adapter size 4, in <code>us-central1</code></td></tr>
+<tr><td><strong>The habit</strong></td><td data-label="Meaning">What the lane serves apart from facts: ModelDraft's JSON, a citation with its clause, a refusal when the sources do not answer.</td><td data-label="On your lane"><code>SYSTEM</code>'s five rules, in <code>generator.py</code></td></tr>
+<tr><td><strong>The rubric</strong></td><td data-label="Meaning">This page's four questions: the gate's misses, the grammar under traffic, the price, the data.</td><td data-label="On your lane">step 4's cell; the kit has no decision tool</td></tr>
+<tr><td><strong>The gate's report</strong></td><td data-label="Meaning"><code>make eval-live REPORT=</code>: each row's outcome, whether it passed, and why it did not.</td><td data-label="On your lane"><code>~/gate171.json</code></td></tr>
+<tr><td><strong>The grammar events</strong></td><td data-label="Meaning">The generator's own log lines when a draft breaks: <code>generation_repaired</code>, <code>generation_invalid</code>, <code>generation_unparsed</code>.</td><td data-label="On your lane">Cloud Logging, <code>documind-api</code></td></tr>
+<tr><td><strong>A training row</strong></td><td data-label="Meaning">One chunk's question and answer: <code>SYSTEM</code>, the chunk and the question as the user turn; ModelDraft's JSON as the model turn.</td><td data-label="On your lane">300 chunks, and a refusal from every tenth</td></tr>
+<tr><td><strong>The golden set</strong></td><td data-label="Meaning">The gate's questions, each with the phrases it must contain and the documents it must retrieve: the test set.</td><td data-label="On your lane"><code>evals/golden.jsonl</code>, %%N_GOLD%% rows</td></tr>
+<tr><td><strong><code>exclude_golden</code></strong></td><td data-label="Meaning">Drops a row whose chunk is a golden row's evidence, or whose question is a golden question rephrased.</td><td data-label="On your lane">each rule's count in the manifest</td></tr>
+<tr><td><strong>The manifest</strong></td><td data-label="Meaning">The file's record: version, date, tenant, rows, refusals, what was dropped and why, a SHA-256 per file.</td><td data-label="On your lane"><code>documind_sft_v2.manifest.json</code></td></tr>
+<tr><td><strong>The datasets bucket</strong></td><td data-label="Meaning">Where the frozen files are uploaded. Versioned, and nothing in it expires.</td><td data-label="On your lane"><code>gs://documind-ai-YOUR-ID-datasets/sft/</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the golden set tests the model, and the training rows teach it. A row the golden set could recognise, by its evidence or by its question, would let a tuned model pass the test from memory. That is why <code>exclude_golden</code> runs before anything is written, and why lesson 12.3 can trust its comparison.</p>

@@ -1,0 +1,95 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.5</div>
+<h1>Generate with GPT-style models: <span>decoding and run-to-run variance</span></h1>
+<p>Every answer DocuMind gives is written one token at a time: the model scores every candidate for the next token, one is picked, and the loop runs again. This page opens that loop. You will build it in numpy on a tiny vocabulary, watch greedy decoding repeat itself while sampling varies, see temperature, top-k and top-p reshape the odds, and read why the kit sends Gemini none of the three. Then you will send Gemini one question five times with the kit's own settings, count the distinct answers, and price its thinking at two levels in rupees.</p>
+<div class="hero-chips"><div class="hero-chip">One token at a time</div><div class="hero-chip">%%MODEL%% on global</div><div class="hero-chip">Temperature: not sent</div><div class="hero-chip">thinking_level LOW</div><div class="hero-chip">Five runs, distinct answers counted</div><div class="hero-chip">Rs %%INR_PER_K_OUT%% per 1,000 thought tokens</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a decoder does: one token at a time</a></li>
+<li><a href="#s2">The words: logit, softmax, greedy, sampling, temperature, thinking</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">From scores to one token: greedy and sampling</a></li>
+<li><a href="#s4">Reshape the odds: temperature, top-k and top-p</a></li>
+<li><a href="#s5">The loop, and five runs of one prompt counted</a></li>
+<li><a href="#s6">What the kit sends Gemini, and why no temperature</a></li>
+<li><a href="#s7">Gemini, five times: count the distinct answers</a></li>
+<li><a href="#s8">Two thinking levels: thought tokens and rupees</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a GPT-style model writes (one token at a time, each picked from a probability distribution) and why picking by chance makes one prompt give different answers. Then you will run the loop yourself in numpy, read what the kit sends Gemini instead of a temperature, and measure the real thing: one prompt asked five times, and one prompt at two thinking levels.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a decoder does: one token at a time</h3><p>The loop every GPT-style model runs to write, where its randomness comes from, and the two things Gemini 3 changes.</p></div></div>
+
+<p><strong>A decoder writes by predicting the next token.</strong> Give a GPT-style model some text and it returns one number for every token in its vocabulary: a score, called a <em>logit</em>, for how well that token would continue the text. Softmax turns the scores into probabilities that add up to 1. Then one token is picked, appended to the text, and the model runs again on the longer text. An answer of a few hundred tokens is a few hundred turns of that loop, and each token is chosen knowing everything before it and nothing after it.</p>
+
+<p><strong>What makes it a decoder.</strong> Inside, it is the transformer block of lesson B.3, stacked, with one restriction: a position may attend only to itself and to the positions before it (the <em>causal mask</em>). Trained on that view to predict each next token, the model can be run forward to write. The encoders of lesson B.4 attend in both directions at once, which is what makes their embeddings and rankers good at reading, and why they are not the models that write.</p>
+
+<p><strong>Where run-to-run variance comes from.</strong> In principle the scores for a given text are arithmetic on fixed weights: the same text, the same scores. The randomness enters at the pick. <em>Greedy decoding</em> takes the likeliest token every time, so one prompt gives one answer however often you ask. <em>Sampling</em> draws a token at random in proportion to its probability, so the same prompt can give a different answer on every run. Three knobs reshape the probabilities before the draw: <em>temperature</em> sharpens or flattens them, <em>top-k</em> keeps only the k likeliest tokens, and <em>top-p</em> keeps only the likeliest tokens that together reach probability p.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128241;</div><div>
+<p><strong>The suggestion strip on your phone's keyboard.</strong> Type "running late, will reach by" and the strip offers three next words. Tap the likeliest one every time and the same start always ends in the same message: that is greedy decoding. Tap by chance, the likelier words more often, and two people who start from the same words send different messages: that is sampling, and it is where run-to-run variance comes from. The strip showing only three words is top-k. Temperature is how adventurous the tapping is. A Gemini 3 model also drafts in its head before it types, which is its thinking, and you pay for the draft even though nobody reads it.</p></div></div>
+
+<div class="diagram">
+<div class="dg-title">The decode loop, with the kit's settings beside it</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><span class="fs-n">1</span><div><b>Read.</b> The prompt's tokens, and every token written so far.</div></div><div class="fs-branch"><b>The kit:</b> one prompt per answer, in one text part (the rules, the packed clauses and the question; step 6).</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">2</span><div><b>Score.</b> One logit for every token in the vocabulary, for the next position only.</div></div><div class="fs-branch"><b>Gemini 3 thinks first:</b> thought tokens come out of this same loop before the answer, unseen and billed as output. <code>thinking_level</code> sets how many; the kit sends LOW.</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">3</span><div><b>Shape.</b> Softmax turns the logits into probabilities; temperature, top-k and top-p reshape them.</div></div><div class="fs-branch"><b>%%MODEL%%:</b> custom temperature, top-k and top-p values are ignored. The kit sends none of them.</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">4</span><div><b>Pick.</b> Greedy takes the likeliest token; sampling draws one by chance.</div></div><div class="fs-branch"><b>Run-to-run variance starts here:</b> two runs that draw differently write different answers from the same prompt.</div></div>
+<div class="fs"><div class="fs-main"><span class="fs-n">5</span><div><b>Append, and go back to 1,</b> until the model picks the end token (finish reason STOP) or the cap is reached (MAX_TOKENS).</div></div><div class="fs-branch"><b>The kit:</b> a cap of %%CAP%% output tokens, thinking included; an answer cut off by the cap is retried once with %%CAP3%%.</div></div>
+</div>
+<p class="dg-cap">The left column is every decoder; the right column is what DocuMind's API does at each step, read from <code>services/rag-api/generator.py</code> and <code>config.py</code> in step 6. Steps 3 to 5 of this page build the left column in numpy; steps 7 and 8 measure the right one on Gemini.</p>
+</div>
+
+<h4>Try the knobs on a toy</h4>
+<p>The explorer below runs the loop on a toy model that writes from a vocabulary of %%VOCAB_N%% tokens: the same toy the cells in steps 3 to 5 run. The prompt is "A confirmed E3 employee serves a notice period of", and the toy's seven candidates for the next token are figures: 60, which is what the handbook's clause NP-03 says; sixty, the same figure in words; and five figures the clause does not say. Move the knobs and watch two things: the odds of the next token, and five whole answers written with the same five seeds.</p>
+
+<div class="diagram dx" id="dx">
+<div class="dg-title">Decoding explorer - the toy's next token, and five whole answers</div>
+<div class="dx-controls">
+<label class="dx-l">Temperature: <span id="dx-t-v">1.0</span><input type="range" id="dx-t" min="0" max="2" step="0.1" value="1"></label>
+<label class="dx-l">Top-k <select id="dx-k"><option value="">off</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+<label class="dx-l">Top-p <select id="dx-p"><option value="">off</option><option>0.5</option><option>0.8</option><option>0.9</option><option>0.95</option><option>0.99</option></select></label>
+<label class="dx-l">Seeds <select id="dx-s"><option value="1">1 to 5</option><option value="6">6 to 10</option><option value="11">11 to 15</option><option value="16">16 to 20</option></select></label>
+</div>
+<div class="dx-bars" id="dx-bars"></div>
+<p class="dx-sum" id="dx-sum" aria-live="polite"></p>
+<div class="dx-runs" id="dx-runs"></div>
+<p class="dg-cap">Each bar is one candidate's probability after the knobs; a red bar is a figure the clause does not say. Temperature 0 is greedy. The five answers are the whole loop, run to the end token with the same five seeds, so when you move a knob only the knob changes. The script is the cells' own functions, checked against them on %%N_CHECKED%% runs when the page was built. On %%MODEL%% none of the three knobs is yours to turn: step 6 shows what Google's pages say and what the kit sends instead.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>It is a toy, not a language model. Its logits are written by hand, it remembers only the last token it wrote, and it scores a handful of candidates where a real model scores every token in its vocabulary at every step. What it shares with a real decoder is the mechanism: the logits, the softmax, the knobs, the pick and the loop, which are the functions you will run in steps 3 to 5.</p></div>
+
+<h4>What Gemini 3 changes</h4>
+<p>Two things, and both shape what this page measures. First, a Gemini 3 model thinks before it answers: it writes <em>thought tokens</em> with the same loop, the kit never asks to see them, and they are billed as output. How much it thinks is a setting, <code>thinking_level</code>. Second, on <code>%%MODEL%%</code>, the model the kit calls, the three knobs above are not yours: Google's model page says custom values for temperature, top-k and top-p are ignored. So for the kit, run-to-run variance is a property of the model that you measure, not a knob that you turn, and the kit steers the two things it can: how much the model thinks, and the shape of the answer.</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: logit, softmax, greedy, sampling, temperature, thinking</h3><p>Twelve words, each with what it means in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Token</strong></td><td data-label="Meaning">A piece of text the model reads and writes: a word, part of a word, a figure, a punctuation mark. Prices and limits are counted in tokens.</td><td data-label="In the kit">Every call's <code>usage_metadata</code> counts them: <code>prompt_token_count</code>, <code>candidates_token_count</code>, <code>thoughts_token_count</code>.</td></tr>
+<tr><td><strong>Logit</strong></td><td data-label="Meaning">The raw score a model gives one candidate for the next token: any real number, higher means likelier.</td><td data-label="In the kit">The kit never asks for them; the toy prints its own in step 3.</td></tr>
+<tr><td><strong>Softmax</strong></td><td data-label="Meaning">Exponentiate every logit and divide by the total: the scores become probabilities that add up to 1, in the same order.</td><td data-label="In the kit">Inside the model, for every token of every answer.</td></tr>
+<tr><td><strong>Greedy decoding</strong></td><td data-label="Meaning">Always pick the likeliest token. One prompt, one answer, however many times you ask.</td><td data-label="In the kit">Temperature 0 in the toy. Not something the kit can ask <code>%%MODEL%%</code> for: a custom temperature is ignored.</td></tr>
+<tr><td><strong>Sampling</strong></td><td data-label="Meaning">Draw the next token at random, each candidate with its probability. The source of run-to-run variance.</td><td data-label="In the kit">Whatever the model does inside; step 7 measures what comes out.</td></tr>
+<tr><td><strong>Temperature</strong></td><td data-label="Meaning">Divide the logits by T before the softmax: below 1 sharpens the odds, above 1 flattens them, and 0 is greedy.</td><td data-label="In the kit">Not sent. <code>%%MODEL%%</code> ignores custom values; for the earlier Gemini 3 models Google advises keeping the default, 1.0.</td></tr>
+<tr><td><strong>Top-k, top-p</strong></td><td data-label="Meaning">Keep only the k likeliest tokens, or only the likeliest tokens whose probabilities together reach p, and renormalise what is left.</td><td data-label="In the kit">Not sent; ignored by <code>%%MODEL%%</code>.</td></tr>
+<tr><td><strong>Seed</strong></td><td data-label="Meaning">The starting value of a random-number generator: the same seed gives the same draws, so the same samples.</td><td data-label="In the kit">The toy's seeds 1 to 5. The kit's config sets none.</td></tr>
+<tr><td><strong>Thinking</strong></td><td data-label="Meaning">Thought tokens a Gemini 3 model writes before its answer, with the same loop. Billed as output whether or not anyone reads them.</td><td data-label="In the kit"><code>_usage()</code> adds <code>thoughts_token_count</code> to <code>tokens_out</code>, so every usage row includes them.</td></tr>
+<tr><td><strong>Thinking level</strong></td><td data-label="Meaning">How much a Gemini 3 model thinks: MINIMAL, LOW, MEDIUM or HIGH. MEDIUM is <code>%%MODEL%%</code>'s default; Google's Gemini 3 guide adds that MINIMAL does not guarantee that thinking is off.</td><td data-label="In the kit">LOW, in <code>_call()</code> and in the stream.</td></tr>
+<tr><td><strong>max_output_tokens</strong></td><td data-label="Meaning">The cap on what one call may write. Reaching it ends the answer where it stands, with finish reason MAX_TOKENS; an answer that ends itself finishes with STOP.</td><td data-label="In the kit">%%CAP%% (<code>max_answer_tokens</code>), with the thinking drawn from the same cap; a cut-off answer is retried once at %%CAP3%%.</td></tr>
+<tr><td><strong>Run-to-run variance</strong></td><td data-label="Meaning">The same prompt giving different outputs on different runs. Measured by asking more than once and counting.</td><td data-label="In the kit">Step 7 counts it on five calls; lesson 3.1 measures it on the kit's generator.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words are settings the kit sends (the thinking level and the cap), two are settings it deliberately leaves out (temperature, and top-k with top-p), and the rest are mechanism. The toy shows you the mechanism first, because once you have seen a loop pick its tokens, five different answers from one prompt stop being a mystery and become a measurement.</p>
+

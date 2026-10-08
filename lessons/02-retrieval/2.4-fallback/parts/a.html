@@ -1,0 +1,89 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 2 &middot; Retrieval &middot; Lesson 2.4</div>
+<h1>Test fallback without losing tenant or metadata filters: <span>the rung beneath the index, the three predicates that hold on the way down, and the smoke that refuses a quiet substitution</span></h1>
+<p>Lesson 2.3 followed the pool through the ranker. This lesson takes the pool's other source. Firestore holds every embedding the worker wrote, as a field on the row, and its own vector index can answer a question when the kit's index will not, or when a tenant is pinned beneath it. What must not change on the way down is the three predicates: the tenant from the roster, the ledger's current, and the caller's filters. On Firestore each combination of them needs a composite vector index the kit declares, %%N_INDEXES%% of them, and without one Firestore refuses rather than degrades. Every chunk the rung returns is stamped <code>found_by: firestore</code>, the answer counts <code>vector_chunks 0</code>, and the smoke fails a vector deployment that answers from beneath, because that failure is the one a working demo hides. You will read the rung by hand with the API's predicates, move one tenant onto it and back, break the index for a candidate revision and watch the chaos rung answer with a line in the log, run the kit's own read-only probe of the combined filters, see the tier rebuilt from the rows, and price the rung.</p>
+<div class="hero-chips"><div class="hero-chip">found_by: firestore</div><div class="hero-chip">tenant, current, filters</div><div class="hero-chip">%%N_INDEXES%% composite indexes</div><div class="hero-chip">make tenant-backend</div><div class="hero-chip">vector_search_fallback</div><div class="hero-chip">make smoke: vector tier</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Why a second rung exists, and what must survive the drop</a></li>
+<li><a href="#s2">The words: rung, backend, pin, chaos rung, found_by, pre-filter, composite index, policy, probe, backfill</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The Firestore rung by hand: the API's three predicates on Firestore's own vector index</a></li>
+<li><a href="#s4">Moving one tenant beneath the index by hand, and back</a></li>
+<li><a href="#s5">The chaos rung: an index that will not answer, on a candidate that takes no traffic</a></li>
+<li><a href="#s6">The probe: the kit's read-only check of the combined filters</a></li>
+<li><a href="#s7">The tier from the rows: vector-status, backfill-vectors, and the rows that count the rung</a></li>
+<li><a href="#s8">What the rung costs, where it cannot go, and the policy that sends a tenant home</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why Firestore holds a second copy of every vector, how the same three predicates are applied on that rung as pre-filters, why each combination needs its own composite index, and how a chosen rung and a fallen-into one read differently on the answer. Then you will prove it on your lane: reproduce the rung with the API's predicates, pin acme beneath the index and back, force the chaos rung on a candidate revision and read <code>vector_search_fallback</code>, run <code>commands/check-firestore-fallback.py</code>, and read <code>make smoke</code>'s verdict both ways.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Why a second rung exists, and what must survive the drop</h3><p>An outage is not a refusal, a filter is a predicate on the corpus and not on one way through it, and a substitution nobody noticed is the failure the smoke exists for.</p></div></div>
+
+<p><strong>Firestore already holds every vector, so an outage is not a refusal.</strong> The worker mirrors each chunk's 768 numbers into its row as a vector field, and Firestore's own vector index, a flat scan over the tenant's rows by cosine distance, can find the nearest chunks to a question. It is slower than the kit's index and it skips the ANN tier, but a slower answer is a different thing from no answer. Three roads lead onto that rung: the deployment's <code>RETRIEVAL_BACKEND=firestore</code>, a tenant pinned to it in <code>tenant_settings</code>, and the chaos rung, which is what <code>_dense_retrieve()</code> does when the index raises. On every road the chunks come back stamped <code>found_by: firestore</code>. The answer tells the two kinds apart: <code>stages.retrieval_backend</code> is the backend chosen for the request, and <code>stages.vector_chunks</code> is the index's share of the pool. A pinned tenant reads <code>firestore</code> and 0; a fallen-into rung reads <code>vector</code> and 0.</p>
+
+<p><strong>Three predicates hold on the way down.</strong> The tenant is the roster's, never the body's. <code>current</code> is the ledger's, applied when <code>RETRIEVAL_CURRENT_ONLY</code> is on. The caller's filters are the two keys the API allows, %%FILTER_KEYS%%, and any other key is a 400 before retrieval starts. On the index they travel as restricts; on Firestore they are pre-filters in front of <code>find_nearest</code>, an equality each, or one <code>in</code> for a <code>doc_type</code> list, which runs on the same composite index as the equality, and Firestore will only run a vector query whose pre-filter combination has a composite vector index of its own. The kit declares %%N_INDEXES%%: the tenant alone, the tenant with current, and every combination of the two filter keys with and without current. That is why a new filter key is a Terraform change before it is a code change: without its index Firestore does not degrade, it refuses.</p>
+
+<p><strong>The smoke refuses a quiet substitution.</strong> A vector deployment answering from beneath looks right from every angle a demonstration checks: answers come, citations come, <code>/version</code> still says Vector Search. Only the row says what happened, <code>vector_chunks 0</code> under <code>retrieval_backend vector</code>, and <code>make smoke</code> fails on exactly that pair, naming the two commands that put the tier back: <code>make vector-status</code> to count it and <code>make backfill-vectors</code> to fill it from the rows' stored vectors, with no model call, because the vectors were never lost.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127963;</div><div>
+<p><strong>The second counter.</strong> A records office has a fast desk and an archive counter. The fast desk keeps an index card for every file and finds the nearest ones in a moment; the archive counter keeps the files themselves, every one, and finds the same ones by walking the shelf, slower. When the fast desk is closed, or a department has been told to use the archive, the archive counter serves the same person with the same three rules: it checks the badge for the department, it hands out current files only, and it applies whatever filing-cabinet restriction the request named, provided the shelf has a divider for that combination. Every slip is stamped with the counter that served it. And the office manager's audit rule is blunt: a day when the fast desk was open on paper but every slip came from the archive is a failed audit, however happy the customers were.</p></div></div>
+
+<h4>The ladder: three tiers, one contract</h4>
+<div class="diagram rl" id="ladder">
+<div class="dg-title">Where a pool can come from - and what each rung stamps</div>
+<ol class="rl-list">
+<li class="rl-row"><span class="rl-stage">managed stores</span><span class="rl-what">RAG Engine or Vertex AI Search hold a copy of an <code>any</code> tenant's current versions and rank on their own terms (Module 7); the kit reranks, packs and cites as always</span><span class="rl-field">found_by rag_engine | vertex_search &middot; managed_chunks</span></li>
+<li class="rl-row rl-main"><span class="rl-stage">the kit's index</span><span class="rl-what">Vector Search, dense or hybrid, with the tenant, current and filter restricts; the deployment's default and acme's pin</span><span class="rl-field">found_by vector &middot; vector_chunks %%TOPK%%</span></li>
+<li class="rl-row"><span class="rl-stage">Firestore's own vector index</span><span class="rl-what">the same rows, a flat cosine scan behind the same pre-filters; chosen by a setting or a pin, or fallen into when the index raises</span><span class="rl-field">found_by firestore &middot; vector_chunks 0 &middot; vector_search_fallback when fallen into</span></li>
+</ol>
+<p class="dg-cap">Whatever rung answers, <code>prefer_current()</code> drops retired versions, the reranker orders, the packer fits, and the citations resolve against the packed set (lesson 2.3). The rung changes where the pool comes from, never what happens to it.</p>
+</div>
+
+<h4>The rung finder: the handler's rules, on the settings you choose</h4>
+<p>Which rung answers a request is decided by four things in order: the startup validator, the deployment's backend against the tenant's pin, the tenant's data-region policy against a managed store, and then whether the index answers. The finder below applies the kit's rules in that order, <code>check_retrieval_modes()</code>, <code>choose_for()</code>, <code>retrieval_backend_for()</code> and <code>_dense_retrieve()</code>, and says what the answer, the log and the smoke would show, and which of the %%N_INDEXES%% composite indexes a Firestore query would need for the predicates you set.</p>
+
+<div class="diagram rf" id="finder">
+<div class="dg-title">Rung finder - config.py, main.py, retriever.py and firestore_indexes.tf, as rules</div>
+<div class="rf-controls">
+<label class="rf-l">RETRIEVAL_BACKEND, the deployment's<select id="rf-backend"><option value="vector">vector (the lane)</option><option value="firestore">firestore</option><option value="rag_engine">rag_engine</option><option value="vertex_search">vertex_search</option></select></label>
+<label class="rf-l">RETRIEVAL_MODE<select id="rf-mode"><option value="dense">dense (the lane)</option><option value="hybrid">hybrid</option></select></label>
+<label class="rf-l">The tenant's pin, tenant_settings.retrieval_backend<select id="rf-pin"><option value="">none</option><option value="vector">vector (acme on the lane)</option><option value="firestore">firestore</option><option value="rag_engine">rag_engine</option><option value="vertex_search">vertex_search</option></select></label>
+<label class="rf-l">The tenant's data_region<select id="rf-policy"><option value="any">any (acme on the lane)</option><option value="in">in</option><option value="">not declared</option></select></label>
+<label class="rf-l">The kit's index<select id="rf-index"><option value="up">answers</option><option value="down">raises (undeployed, unreachable, wrong name)</option></select></label>
+<label class="rf-l">RETRIEVAL_CURRENT_ONLY<select id="rf-current"><option value="off">off (the lane)</option><option value="on">on</option></select></label>
+<label class="rf-l rf-check"><span>The caller's filters</span><span class="rf-boxes"><label><input type="checkbox" id="rf-doc"> doc_type</label><label><input type="checkbox" id="rf-kind"> kind</label></span></label>
+</div>
+<div class="rf-out" id="rf-out" aria-live="polite"></div>
+<p class="dg-cap">The index list is read from <code>terraform/firestore_indexes.tf</code> when this page is built; the backend names from config.py; the smoke's two sentences from <code>smoke/smoke.py</code>. Nothing here calls your lane; steps 3 to 7 do.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the finder is not</div>
+<p>It is not the lane: it says what the code would do, not what your lane did, and the pin it models is read once a minute by the API, so a change you make in step 4 takes up to a minute to show. The managed rungs are Module 7's; here they matter only as the case the policy sends home.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: rung, backend, pin, chaos rung, found_by, pre-filter, composite index, policy, probe, backfill</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Rung</strong></td><td data-label="Meaning">One place a pool can come from. The kit's own tier has two: Vector Search, and Firestore's vector index beneath it. The managed stores are separate tiers with their own copies.</td><td data-label="On your lane">Vector Search by default; Firestore in steps 4 and 5.</td></tr>
+<tr><td><strong>RETRIEVAL_BACKEND</strong></td><td data-label="Meaning">The deployment's default rung, one of %%BACKENDS%%, reported by <code>/version</code>. The startup validator refuses hybrid mode on anything but vector.</td><td data-label="On your lane"><code>vector</code>, set by <code>make up</code>.</td></tr>
+<tr><td><strong>Pin</strong></td><td data-label="Meaning"><code>tenant_settings/{tenant}.retrieval_backend</code>: one tenant's rung, written by <code>make tenant-backend</code>, read by the API once a minute, held against the tenant's policy on every request. <code>default</code> clears it.</td><td data-label="On your lane">acme pinned to <code>vector</code> since lesson 1.1; zeta unpinned.</td></tr>
+<tr><td><strong>Chaos rung</strong></td><td data-label="Meaning">The except branch of <code>_dense_retrieve()</code>: an index that raises is answered from Firestore with a <code>vector_search_fallback</code> line and never a 500. Hybrid degrades the same way, to dense Firestore.</td><td data-label="On your lane">Step 5, on a candidate whose deployed index name is wrong.</td></tr>
+<tr><td><strong>found_by, vector_chunks</strong></td><td data-label="Meaning">The stamp on each chunk of the pool and the count of the index's share on the answer and the row. <code>retrieval_backend firestore</code> with 0 is a chosen rung; <code>vector</code> with 0 is a fallen-into one.</td><td data-label="On your lane">20 of 20 normally; 0 in steps 4 and 5.</td></tr>
+<tr><td><strong>Pre-filter</strong></td><td data-label="Meaning">A <code>where</code> in front of <code>find_nearest</code>, an equality each or one <code>in</code> for a <code>doc_type</code> list: the tenant, current when the switch is on, and the caller's %%FILTER_KEYS%%. The same predicates the index applies as restricts.</td><td data-label="On your lane">Step 3's cell, three ways.</td></tr>
+<tr><td><strong>Composite vector index</strong></td><td data-label="Meaning">Firestore's declaration that a given set of pre-filters may front a vector query: the fields, then <code>__name__</code>, then the 768-dimension flat vector. One per combination; a missing one is a refusal.</td><td data-label="On your lane">%%N_INDEXES%% in <code>firestore_indexes.tf</code>, applied by <code>make up</code>.</td></tr>
+<tr><td><strong>data_region, policy_fallback</strong></td><td data-label="Meaning"><code>in</code> keeps a tenant's text on the kit's rows in India, and <code>in</code> is what a missing policy means; a managed pin for such a tenant is served from the kit's own rung with <code>policy_fallback 1</code> on the row.</td><td data-label="On your lane">acme <code>any</code>; step 8 runs the rule offline.</td></tr>
+<tr><td><strong>The probe</strong></td><td data-label="Meaning"><code>commands/check-firestore-fallback.py</code>: a read-only check that the combined <code>doc_type</code> and <code>kind</code> filters hold on the Firestore rung, with and without current, using a verified source's stored metadata, and an evidence file.</td><td data-label="On your lane">Step 6.</td></tr>
+<tr><td><strong>backfill-vectors</strong></td><td data-label="Meaning">The ANN tier from the rows: every current row's stored vector streamed up to the index, no model call. The repair for a worker deployed before the index existed, and the answer to a red smoke.</td><td data-label="On your lane">Step 7, as a plan: nothing to fill.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One pair of words carries the lesson: <em>chosen</em> and <em>fallen into</em>. Both produce a pool stamped <code>firestore</code>, and only the answer's <code>retrieval_backend</code> beside its <code>vector_chunks</code> tells you which happened. The smoke reads the pair; so should you.</p>

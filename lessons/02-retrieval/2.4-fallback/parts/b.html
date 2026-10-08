@@ -1,0 +1,171 @@
+<div class="box box-amber"><div class="box-title">The names this lesson reads off the API, and the two pins</div>
+<p>The index names and the retrieval settings live in the API's environment; a name the service does not set is unset rather than exported empty, because the kit's settings class reads an empty variable as a value, and steps 5 and 6 import the kit. The pins live in Firestore, one document per tenant, and the lane helper prints them.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }
+setenv() { v="$(svc_env documind-api "$1")"; if [ -n "$v" ]; then export "$1=$v"; else unset "$1"; fi; }
+for N in VECTOR_INDEX_ENDPOINT VECTOR_DEPLOYED_INDEX_ID RETRIEVAL_BACKEND RETRIEVAL_MODE RETRIEVAL_CURRENT_ONLY TOP_K_RETRIEVE; do setenv "$N"; done
+echo "endpoint: $VECTOR_INDEX_ENDPOINT  deployed: $VECTOR_DEPLOYED_INDEX_ID"
+echo "backend: ${RETRIEVAL_BACKEND:-vector (default)}  mode: ${RETRIEVAL_MODE:-dense (default)}  current_only: ${RETRIEVAL_CURRENT_ONLY:-off (default)}  top_k_retrieve: ${TOP_K_RETRIEVE:-20 (default)}"
+for T in acme zeta; do python commands/lane.py tenant-backend $T; done
+python commands/lane.py tenant-policy acme</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (your ids differ; the lane pinned acme to vector in lesson 1.1 and never pinned zeta)</span><span class="ro">read only</span></div><pre tabindex="0">endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321  deployed: documind_chunks_v1
+backend: vector  mode: dense (default)  current_only: off (default)  top_k_retrieve: 20 (default)
+acme: retrieval_backend=vector
+zeta: retrieval_backend=default (the deployment RETRIEVAL_BACKEND)
+acme: data_region=any</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Rows</span><h3>The Firestore rung by hand: the API's three predicates on Firestore's own vector index</h3><p>The one function that answers from beneath, the two keys it accepts from a caller, the indexes that let it, and a cell that runs it three ways for a fraction of a paisa.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>_firestore_fallback()</code> is short because Firestore does the work. It starts from the chunks collection filtered to the tenant, adds <code>current == true</code> when the switch is on, adds each caller filter as an equality, or as one <code>in</code> for a <code>doc_type</code> list, and asks <code>find_nearest</code> on the embedding field for the nearest rows by cosine distance, <code>TOP_K_RETRIEVE</code> of them. Each row becomes a chunk with its distance flipped into a score, so the reranker and the fallback's own ordering read it like an index result, the 768 numbers dropped so they never reach the model, and <code>found_by</code> set to <code>firestore</code>. The cell reproduces it with the same client calls, prints the first five rows with the fields the predicates read, and estimates what Firestore bills for the query: one read per hundred index entries it scans and one per document it returns.</p>
+
+<h4>The code</h4>
+@@fallback_fn@@
+@@filter_keys@@
+@@indexes_tf@@
+
+<h4>Do it: the rung under three predicate sets</h4>
+<p>Run the cell as it is, then twice more with a filter in front of its first line: <code>F='{"doc_type":"policy"}' python - &lt;&lt;'PY'</code> and <code>F='{"kind":"text"}' python - &lt;&lt;'PY'</code>, the rest unchanged. The worker stamped the lane's uploads <code>doc_type: unknown</code>, so the first filter empties the pool on this rung exactly as it did on the index in lesson 2.1, and the second keeps it whole.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell; one embedding, a few dozen Firestore reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, json, math, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google import genai
+from google.cloud import firestore
+from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
+from google.cloud.firestore_v1.vector import Vector
+PROJECT, REGION = os.environ["PROJECT"], os.environ["REGION"]
+Q = os.environ.get("Q", "What is the notice period for a confirmed E3?")
+F = json.loads(os.environ.get("F", "{}"))                                 # the caller's filters: doc_type, kind
+CURRENT = os.environ.get("RETRIEVAL_CURRENT_ONLY", "off") == "on"
+client = genai.Client(enterprise=True, project=PROJECT, location=REGION)    # held in a name: a discarded client closes its connection
+vec = list(client.models.embed_content(
+    model="text-embedding-005", contents=[Q], config={"output_dimensionality": 768, "task_type": "RETRIEVAL_QUERY"}).embeddings[0].values)
+db = firestore.Client(project=PROJECT)
+q = db.collection("chunks").where("tenant_id", "==", "acme")               # the roster's predicate, never the body's
+if CURRENT:
+    q = q.where("current", "==", True)                                     # the ledger's, when RETRIEVAL_CURRENT_ONLY is on
+for k, v in F.items():
+    # the caller's: FILTER_KEYS only, checked by main.py; a doc_type list is one `in`
+    q = q.where(k, "in", v) if isinstance(v, list) else q.where(k, "==", v)
+hits = q.find_nearest("embedding", Vector(vec), distance_measure=DistanceMeasure.COSINE, limit=20, distance_result_field="d").get()
+pool = []
+for h in hits:
+    d = h.to_dict(); d["id"] = h.id; d["score"] = 1.0 - d.pop("d", 1.0); d.pop("embedding", None); d["found_by"] = "firestore"
+    pool.append(d)
+entries = db.collection("chunks").where("tenant_id", "==", "acme").count().get()[0][0].value
+fields = "tenant_id" + (", current" if CURRENT else "") + "".join(", " + k for k in F)
+print(f"predicates: {fields}{''.join(f' ({k}={v})' for k, v in F.items())} -> {len(pool)} rows, every one found_by firestore")
+for c in pool[:5]:
+    print(f"   {c.get('locator', '?'):9} {c.get('source_uri', '').split('/')[-1][:26]:26} doc_type {str(c.get('doc_type')):8} kind {str(c.get('kind')):6} current {str(c.get('current')):5} score {c['score']:.4f}")
+print(f"index needed: ({fields}, embedding) | reads billed, at most: {math.ceil(entries / 100)} for {entries} index entries + {len(pool)} documents")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected, the three runs (your counts and scores; the row count under each predicate set is the point)</span><span class="ro">read only</span></div><pre tabindex="0">predicates: tenant_id -> 20 rows, every one found_by firestore
+   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+   ...
+index needed: (tenant_id, embedding) | reads billed, at most: 1x for 1xxx index entries + 20 documents
+
+predicates: tenant_id, doc_type (doc_type=policy) -> 0 rows, every one found_by firestore
+index needed: (tenant_id, doc_type, embedding) | reads billed, at most: 1x for 1xxx index entries + 0 documents
+
+predicates: tenant_id, kind (kind=text) -> 20 rows, every one found_by firestore
+   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+   ...
+index needed: (tenant_id, kind, embedding) | reads billed, at most: 1x for 1xxx index entries + 20 documents</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Firestore found the same clause the index finds, NP-03 first, from the rows alone: the vector on the row was enough, which is the whole reason the rung exists. The predicates behaved as predicates on the corpus rather than on one way through it: the tenant narrowed the shelf, the <code>doc_type</code> filter emptied it exactly as it had on the index, and <code>kind</code> kept it whole. Each combination named a different composite index, and every one you asked for existed because the kit declares them all; ask for one that is not declared, a new key say, and the same call raises a failed-precondition error with a link, which is a Terraform change before it is a code change. The bill was tens of reads, which step 8 turns into paise.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Pin</span><h3>Moving one tenant beneath the index by hand, and back</h3><p>The document that pins one tenant, the minute the API takes to notice, the same three predicates on the chosen rung, two tenants that do not cross, and the smoke's line for a chosen rung.</p></div></div>
+
+<h4>Definition</h4>
+<p>A pin is a field, <code>retrieval_backend</code> on <code>tenant_settings/{tenant}</code>, written by <code>make tenant-backend</code> and read by <code>choose_for()</code> once a minute per tenant. A pin the deployment cannot serve, an unknown name or a managed store under hybrid mode, is ignored with a <code>retrieval_pin_ignored</code> line rather than a 500; a pin to a managed store is then held against the tenant's <code>data_region</code>, which is step 8. A pin to <code>firestore</code> takes the chosen road in <code>_dense_retrieve()</code>: no endpoint is asked, the rung answers with the same predicates, and the answer says <code>retrieval_backend firestore</code> beside <code>vector_chunks 0</code>. The smoke reads that pair as a request that ran somewhere else and skips its vector-tier check, because a chosen rung is not a fault. The cells pin acme, wait for the API to notice, ask the same questions under the same filters as step 3, ask two tenants the same question, read the smoke's line, and pin acme back.</p>
+
+<h4>The code</h4>
+@@choose_for@@
+@@dense_branch@@
+@@mk_pin@@
+
+<h4>Do it: pin acme beneath the index, and wait for the API to notice</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one field written; up to nine questions while the minute passes)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/lane.py tenant-backend acme firestore          <span class="cm"># the same as: make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=firestore</span>
+ask() { curl -s -X POST "$API/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" -d "$1" \
+  | python -c "import sys, json; j = json.load(sys.stdin); s = j.get('stages', {}); c = j.get('citations') or []; print('backend', s.get('retrieval_backend'), '| vector_chunks', s.get('vector_chunks'), '| pool', s.get('pool'), '| retrieve_ms', s.get('retrieve_ms'), '| answerable', j.get('answerable'), '| first', (c[0]['chunk_id'].rsplit('#', 1)[1] + ' ' + c[0]['source_uri'].split('/')[-1][:22]) if c else '-', '|', j.get('answer', '')[:60])"; }
+for i in $(seq 1 9); do
+  OUT="$(ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}')"; echo "$OUT"
+  case "$OUT" in *"backend firestore"*) break;; esac; sleep 10                     <span class="cm"># the pin is read once a minute</span>
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (a line or two of vector while the cached settings age out, then the chosen rung)</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=firestore
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...</pre></div>
+
+<h4>Do it: the same predicates on the chosen rung, and two tenants that do not cross</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (four questions, a few rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3,"filters":{"doc_type":"policy"}}'
+ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3,"filters":{"kind":"text"}}'
+ask '{"query":"What is the per-trip cap on domestic travel reimbursement?","tenant_id":"acme","stream":false,"top_k":3}'
+ask '{"query":"What is the per-trip cap on travel reimbursement?","tenant_id":"zeta","stream":false,"top_k":3}'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (acme on the chosen rung, zeta on the index; the two amounts are the isolation)</span><span class="ro">read only</span></div><pre tabindex="0">backend firestore | vector_chunks 0 | pool 0 | retrieve_ms 4xx | answerable False | first - | The corpus holds nothing near this question: no passage of this
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first x hr_policy_2026.md | ... Rs 40,000 ...
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first x hr_policy_zeta_2026.md | ... Rs 25,000 ...</pre></div>
+
+<h4>Do it: the smoke's line for a chosen rung, then the pin back</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (two smokes, a rupee each; one field written)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">DOCUMIND_PROJECT=$PROJECT DOCUMIND_API_URL=$API DOCUMIND_TENANT=acme DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$PROJECT.iam.gserviceaccount.com make smoke 2&gt;&amp;1 | grep "vector tier"
+python commands/lane.py tenant-backend acme vector
+for i in $(seq 1 9); do OUT="$(ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}')"; case "$OUT" in *"backend vector"*) echo "$OUT"; break;; esac; sleep 10; done
+DOCUMIND_PROJECT=$PROJECT DOCUMIND_API_URL=$API DOCUMIND_TENANT=acme DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$PROJECT.iam.gserviceaccount.com make smoke 2&gt;&amp;1 | grep "vector tier"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">  [ -- ] vector tier  this request ran on firestore — skipped
+acme: retrieval_backend=vector
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+  [PASS] vector tier  20 of 20 chunks came from the index</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One field moved a tenant beneath the index without a deploy, and the API noticed within its minute. On the chosen rung the three predicates held exactly as on the index: the <code>doc_type</code> filter emptied the pool again, the <code>kind</code> filter kept it, and the answer was the same clause. Two tenants asked the same question on two rungs and got their own handbooks' amounts, because the tenant predicate is the roster's on every rung. The smoke saw a request that ran on <code>firestore</code> by choice and said so instead of failing, which is the line to expect for a pinned tenant; after the pin came back it counted twenty of twenty again. Step 5 is the case it does fail.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Chaos</span><h3>The chaos rung: an index that will not answer, on a candidate that takes no traffic</h3><p>The except branch, a candidate revision whose deployed index does not exist, the answer that still comes, the log line that says why, the smoke's verdict on it, and the template put back.</p></div></div>
+
+<h4>Definition</h4>
+<p>When <code>find_neighbors</code> raises, for an undeployed index, an unreachable endpoint or a deployed index the endpoint does not know, <code>_dense_retrieve()</code> logs one <code>vector_search_fallback</code> line with the error's text and answers from Firestore with the same predicates; hybrid takes the same rung, dense only. The answer then says <code>retrieval_backend vector</code>, because that was the request's backend, and <code>vector_chunks 0</code>, because none came from the index, and that pair under a vector deployment is the one <code>make smoke</code> refuses. The safe way to see it is a candidate revision, no traffic and a tag, whose deployed index name is wrong: the endpoint raises for it as it would for an undeployed index, and the code path is the same one a release-day drill exercises by undeploying the real index for an hour. The undo is different from lesson 2.2's: the variable exists on the live service, so it is set back to its real value rather than removed, or the next revision would inherit the wrong one.</p>
+
+<h4>The code</h4>
+@@chaos_except@@
+@@counts@@
+@@smoke_tier@@
+
+<h4>Do it: a candidate that cannot reach the index</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; one question to it; one log read; ask() from step 4)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars VECTOR_DEPLOYED_INDEX_ID=documind_chunks_nonesuch --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+curl -s -X POST "$CAND/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}' \
+  | python -c "
+import sys, json
+j = json.load(sys.stdin); s = j['stages']
+print('candidate: backend', s['retrieval_backend'], '| vector_chunks', s['vector_chunks'], '| pool', s['pool'], '| answerable', j['answerable'], '| citations', len(j['citations']))
+ok = s['retrieval_backend'] != 'vector' or s.get('vector_chunks', 0) > 0                   # smoke.py check 3a, by hand
+print('the smoke would say:', '[PASS] vector tier' if ok else '[FAIL] vector tier  RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1')"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="vector_search_fallback"' \
+  --project "$PROJECT" --freshness 10m --limit 2 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the error's wording is the endpoint's; the wrong name appears in it)</span><span class="ro">read only</span></div><pre tabindex="0">candidate: backend vector | vector_chunks 0 | pool 20 | answerable True | citations 3
+the smoke would say: [FAIL] vector tier  RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1
+2026-09-2xT1x:xx:xx.xxxxxxZ	acme	... documind_chunks_nonesuch ...</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the undo: the real name back on the template, the tag dropped, the live service asked once)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars VECTOR_DEPLOYED_INDEX_ID="$VECTOR_DEPLOYED_INDEX_ID" --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet
+echo "template now: $(svc_env documind-api VECTOR_DEPLOYED_INDEX_ID)"
+ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}'
+gcloud run services describe documind-api --region "$REGION" --project "$PROJECT" --format='value(status.traffic[].percent,status.traffic[].revisionName)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">template now: documind_chunks_v1
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+100;documind-api-00048-xyz</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The candidate asked its endpoint for a deployed index that does not exist, the endpoint raised, and the request was answered anyway from the rows beneath, with the same citations as ever and one line in the log that names the cause. Nobody calling that revision would have known; the answer's own pair, <code>vector</code> with 0, is the only witness, and the smoke's rule turned it into a red line naming the two commands. Then the template got its real name back, in place, and the live service kept counting twenty of twenty throughout, because a candidate with no traffic never touched it. On a release day the same drill undeploys the real index, and the smoke stays red until the tier is back.</p></div>

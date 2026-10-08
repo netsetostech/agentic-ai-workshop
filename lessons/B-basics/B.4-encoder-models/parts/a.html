@@ -1,0 +1,107 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.4</div>
+<h1>Encode with BERT-style models: <span>embeddings and rankers</span></h1>
+<p>BERT taught a machine to read a sentence in both directions at once, by hiding words and asking for them back. Encoders in that style do two jobs in a retrieval system, and DocuMind has a model for each. The embedding model turns every chunk, once, and every question, as it arrives, into %%DIMS%% numbers that are compared by arithmetic: a bi-encoder, fast enough to search the whole corpus. The ranker reads the question beside each of the %%POOL%% candidates and scores the pair: a cross-encoder, too slow for the corpus and sharper on the shortlist. You will fill hidden words from counts, score four handbook clauses with a toy bi-encoder and a toy cross-encoder, read the kit's two calls in its own code, and then score the same clauses both ways with the real models on your own project.</p>
+<div class="hero-chips"><div class="hero-chip">15% of the tokens hidden</div><div class="hero-chip">bi-encoder: two vectors, one cosine</div><div class="hero-chip">cross-encoder: one pair, one score</div><div class="hero-chip">%%EMBED_MODEL%%, %%DIMS%% numbers</div><div class="hero-chip">%%RANK_MODEL%%</div><div class="hero-chip">pool %%POOL%%, top_k %%TOPK%%</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What an encoder is, and the two ways the kit uses one</a></li>
+<li><a href="#s2">The words: encoder, mask, embedding, bi-encoder, cross-encoder, score</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">The masked-language idea: fill the blank from both sides</a></li>
+<li><a href="#s4">A bi-encoder: two texts, encoded apart, compared by cosine</a></li>
+<li><a href="#s5">A cross-encoder: one pair, read together, scored once</a></li>
+<li><a href="#s6">The kit's two encoders, in its own code</a></li>
+<li><a href="#s7">One question, four clauses, scored both ways on your project</a></li>
+<li><a href="#s8">Where each encoder sits, and what each costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how an encoder learns to read (by filling hidden words from both sides) and the two shapes it takes in retrieval: a bi-encoder that turns the question and each chunk into vectors apart and compares them by cosine, and a cross-encoder that reads the question and a chunk together and scores the pair. Then you will prove it: toys of both offline, the kit's two calls read in its own code, and the real two scoring one question side by side.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What an encoder is, and the two ways the kit uses one</h3><p>Reading in both directions, learning by filling blanks, and the two shapes an encoder takes when it scores a question against a passage.</p></div></div>
+
+<p><strong>An encoder reads the whole text at once.</strong> It is a transformer in which every token attends to every other token, the ones before it and the ones after it, so each token comes out as a vector shaped by its neighbours on both sides. The "leave" in "unused earned leave" and the "leave" in "I want to leave" come out as different vectors, because their neighbours differ. A decoder, the GPT-style model of lesson B.5, may only look left, because it writes one token after another; an encoder only has to read, so it looks both ways. Pool its token vectors into one (their average, or the output of a special first token) and a whole text becomes one vector.</p>
+
+<p><strong>BERT learned to read by filling blanks.</strong> School exams have a "fill in the blanks" section for a good reason: a student who can fill every blank in a passage has understood it, and the passage is its own answer key. BERT (Devlin and colleagues at Google, 2018) was pre-trained on that exercise over 3,300 million words of books and Wikipedia: hide 15% of the tokens and predict them from the context on both sides (beside a second, smaller task: guessing whether one sentence follows another). No person labels anything. To fill "serves a ___ period of 60 days" well, a model has to learn that periods of notice are served, counted in days and tied to a grade. Step 3 runs the idea on four clauses of the kit's handbook with nothing but counts.</p>
+
+<p><strong>One encoder, two ways to score a question against a passage.</strong> After pre-training, an encoder is trained further for a job, and retrieval uses it in two shapes. A <em>bi-encoder</em> encodes the question and each passage separately, one vector each, and compares the two vectors afterwards by cosine. Passages can be encoded once, long before any question, and stored; a question then costs one encoding and some arithmetic, the kind an index is built to do over millions of stored vectors. The price is that the model never sees the question and the passage together: whatever a passage's one vector did not keep, no comparison can recover. A <em>cross-encoder</em> takes the question and one passage as a single input and lets attention run across both, so each word of the question can bear on each word of the passage, and one relevance score comes out. It is usually the more accurate of the two, and nothing can be computed before the question arrives: every pair is a full pass of the model, so it only ever reads a shortlist.</p>
+
+<p><strong>DocuMind uses both, in that order.</strong> Every chunk was embedded once at ingest by <code>%%EMBED_MODEL%%</code> under the document task type; every question is embedded under the query task type; the index returns the %%POOL%% nearest chunks. Then the Ranking API's <code>%%RANK_MODEL%%</code> reads the question beside each of the %%POOL%% and returns the request's <code>top_k</code>, %%TOPK%% by default, highest score first. Retrieve with the bi-encoder, rerank with the cross-encoder. Google documents what these two models take and return, and that is all the kit depends on, not how they are built: "bi-encoder" and "cross-encoder" name the two roles they play.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127968;</div><div>
+<p><strong>The broker's cards and the site visit.</strong> A broker keeps a card for every flat on the books, written when the flat was listed: two bedrooms, third floor, near the metro, the rent. When you call, the broker writes a card for you too and pulls the twenty flats whose cards look most like yours. That is fast, because cards are compared with cards, and no card was written with you in mind. That is the bi-encoder: every flat summarised once, every tenant summarised once, matched by comparing summaries. Then you visit five of the twenty with your own needs in your head, and find the lift that stops at the second floor and the "near the metro" that is a twenty-minute walk. A visit sees the flat and you together, which no card can, and it is far too slow to make for every flat in the city. That is the cross-encoder, and DocuMind books it the same way: cards for the whole corpus, visits for the shortlist.</p></div></div>
+
+<div class="diagram" id="two-ways">
+<div class="dg-title">One encoder, two ways to score a question against a clause</div>
+<div class="band">
+<div class="lane">
+<div class="lane-h">Bi-encoder: each text alone</div>
+<div class="band">
+<div class="node code"><b>the clause</b>at ingest, once, with no question in sight</div>
+<div class="node code"><b>the question</b>at query time, with no clause in sight</div>
+</div>
+<div class="down">&darr;</div>
+<div class="node"><b>%%EMBED_MODEL%%</b><code>%%DOC_TASK%%</code> for the clause, <code>%%QUERY_TASK%%</code> for the question</div>
+<div class="down">&darr;</div>
+<div class="node"><b>two vectors of %%DIMS%% numbers</b>the clause's is stored with its row and in the index</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>a cosine</b>arithmetic on two lists of numbers, fast enough to run against every chunk</div>
+</div>
+<div class="lane">
+<div class="lane-h">Cross-encoder: the pair together</div>
+<div class="node code"><b>the question and the clause</b>one input, at query time</div>
+<div class="down">&darr;</div>
+<div class="node"><b>%%RANK_MODEL%%</b>is handed the question and the clause's text together and scores them as a pair</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>one score, 0 to 1</b>for this pair alone: nothing to store, nothing to reuse for the next question</div>
+</div>
+</div>
+<div class="down">&darr;</div>
+<div class="node"><b>DocuMind runs both, in that order</b>the bi-encoder finds %%POOL%% candidates among acme's %%N_CHUNKS%% chunks; the cross-encoder orders the %%POOL%% and the caller gets the request's top_k, %%TOPK%% by default</div>
+<p class="dg-cap">The left column is the kit's retrieval: each clause was embedded at ingest under the document task type, each question is embedded under the query task type, and the two are compared by arithmetic, which is why it can run against the whole corpus. The right column is the kit's reranking: the question and a candidate's text go to the ranker together and come back as one score, which is why it runs only on the pool. The %%N_CHUNKS%% is acme's corpus as the kit's chunker cuts it.</p>
+</div>
+
+<h4>Try the two scorers</h4>
+<p>The explorer runs a toy of each on the four handbook clauses the rest of this page uses, plus one sentence twice: LV-07's last clause on its own, and the same words swapped round. The toy bi-encoder knows %%N_WORDS%% hand-made words on five named axes, makes each clause and the question into one vector apiece, and compares them by cosine. The toy cross-encoder is one hand-written rule that reads the pair: how many of the question's ideas a sentence of the clause holds in the question's order. Pick the second question, which is the first one's words in another order, and watch which column moves.</p>
+
+<div class="diagram" id="pairs">
+<div class="dg-title">Two scorers, one question - a toy bi-encoder and a toy cross-encoder on the handbook's clauses</div>
+<div class="pe-controls">
+<label class="pe-l">Question <select id="pe-q"><option value="0">Can I use my unused leave to shorten my notice period?</option><option value="1">Can my notice period be used to shorten my unused leave?</option><option value="2">Is earned leave paid out when I resign?</option><option value="own">Type your own below</option></select></label>
+<label class="pe-l pe-own" id="pe-own-l">Your question <input type="text" id="pe-own" maxlength="140" placeholder="e.g. Will my holidays cut my notice short?"></label>
+</div>
+<p class="pe-sum" id="pe-sum" aria-live="polite"></p>
+<div class="pe-out" id="pe-out"></div>
+<p class="dg-cap">Each row is one passage. The upper bar is the toy bi-encoder's cosine between the passage's vector, made once before any question, and the question's vector; the lower bar is the toy cross-encoder's score for the pair, the share of the question's ideas that the passage's best sentence holds in order. The first two questions have the same words, so every upper bar stays put between them: each text became one vector before the comparison, and these vectors are sums, which keep no order. The lower bars move, because the rule reads the two texts together.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>It is two toys, not two models: %%N_WORDS%% words, five axes and one rule, the same code as the cells in steps 4 and 5, checked against them on %%N_CHECKED%% question and passage pairs when this page was built. Words outside the %%N_WORDS%% are ignored, and a question in the passive voice fools the rule. What carries over to the real models is the structure. A bi-encoder fixes each text's vector before it sees the other text, so whatever that vector dropped (here, all word order) no comparison can bring back; a cross-encoder reads the pair, so anything in either text can count.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: encoder, mask, embedding, bi-encoder, cross-encoder, score</h3><p>Ten words, each with what it is in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Encoder</strong></td><td data-label="Meaning">A transformer that reads a whole text at once: every token attends to every other, before and after it, and comes out as a vector shaped by both sides. BERT-base is 12 layers of it, 768 numbers wide, 110 million parameters.</td><td data-label="In the kit">No encoder runs inside the kit: <code>%%EMBED_MODEL%%</code> and <code>%%RANK_MODEL%%</code> are Google's, called over the network. The kit's <code>sparse_encoder.py</code> hashes words and has no model behind it.</td></tr>
+<tr><td><strong>Masked language modelling</strong></td><td data-label="Meaning">Pre-training by filling blanks: 15% of the tokens are chosen (80% of them replaced by <code>[MASK]</code>, 10% by a random token, 10% left alone) and the model predicts the originals from both sides. The text is its own answer key.</td><td data-label="In the kit">Nothing in the kit trains a model. Step 3 runs the idea on four handbook clauses, with counts.</td></tr>
+<tr><td><strong>[CLS] and [SEP]</strong></td><td data-label="Meaning">BERT's markers. <code>[CLS]</code> opens every input and its output vector stands for the whole input; <code>[SEP]</code> closes a text, so a pair goes in as <code>[CLS]</code> question <code>[SEP]</code> passage <code>[SEP]</code>.</td><td data-label="In the kit">Never seen: the Ranking API takes the question and each record as separate fields.</td></tr>
+<tr><td><strong>Embedding</strong></td><td data-label="Meaning">One vector for a whole text, pooled from its tokens' vectors. Texts that mean similar things get vectors that point the same way.</td><td data-label="In the kit">%%DIMS%% numbers for every chunk and every question (<code>output_dimensionality</code> %%DIMS%%).</td></tr>
+<tr><td><strong>Bi-encoder</strong></td><td data-label="Meaning">Two texts encoded apart, then compared by cosine or dot product. One side can be encoded long before the other exists.</td><td data-label="In the kit"><code>%%EMBED_MODEL%%</code>: chunks at ingest (<code>indexer.py</code>), questions at query time (<code>retriever.py</code>).</td></tr>
+<tr><td><strong>Task type</strong></td><td data-label="Meaning">The role a text is embedded for. A document vector and a query vector are made to be compared with each other.</td><td data-label="In the kit"><code>%%DOC_TASK%%</code> for chunks, <code>%%QUERY_TASK%%</code> for questions; stamped on every row (lesson 1.3).</td></tr>
+<tr><td><strong>Cosine, dot product</strong></td><td data-label="Meaning">The comparison: the cosine of the angle between two vectors, 1 when they point the same way. For vectors of length 1 it equals their dot product.</td><td data-label="In the kit"><code>%%DISTANCE%%</code> on the index (<code>vector.tf</code>); cosine distance on the Firestore rung, turned into 1 minus the distance.</td></tr>
+<tr><td><strong>Cross-encoder</strong></td><td data-label="Meaning">The question and one passage as a single input, read together; one relevance score out. Nothing can be computed ahead, so it reads a shortlist.</td><td data-label="In the kit">The Ranking API's <code>%%RANK_MODEL%%</code> on <code>%%RANK_LOC%%</code>, called by <code>rerank()</code> in <code>retriever.py</code>.</td></tr>
+<tr><td><strong>Relevance score</strong></td><td data-label="Meaning">The ranker's number for one record, from 0 to 1, records returned highest first. It is not a cosine, and the two are on different scales.</td><td data-label="In the kit">Written on the chunk as <code>rerank_score</code>; it becomes the citation's score (lesson 2.3).</td></tr>
+<tr><td><strong>Pool, top_n</strong></td><td data-label="Meaning">Retrieve, then rerank: the bi-encoder's nearest candidates are the pool; the ranker orders the pool and returns top_n of it.</td><td data-label="In the kit">The pool is <code>TOP_K_RETRIEVE</code>, %%POOL%%; top_n is the request's <code>top_k</code>, %%TOPK%% by default and %%TOPK_MAX%% at most.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Some of this comes from earlier pages: lesson B.2 measured the cosine between two embeddings, and lesson B.3 computed an attention head's weights for one sentence, the operation every layer of an encoder runs. This page adds what they are for in retrieval: the training that teaches an encoder to read, and the two shapes an encoder takes when it scores a question against a passage.</p>
+

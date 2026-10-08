@@ -1,0 +1,125 @@
+<h3 id="preflight">Before the demo: verify the index, then select the tenant backend</h3>
+<div class="box box-amber" id="index-note"><div class="box-title">Why the earlier cell stopped at find_neighbors()</div>
+<p><code>404 Index 'documind_chunks_nonesuch' is not found</code> means the requested deployed-index ID is absent from that endpoint. The old names box copied this value from the API without checking it. A shell export alone would leave the API unchanged. The direct Python call raises the error; the API can catch it and answer through Firestore, so a health check or an answer is not proof that Vector Search served the request.</p>
+<p>There were two other demo traps: selecting <code>rag_engine</code> immediately after <code>vector</code> undoes the tenant setting, and a manual query with only the tenant restrict differs from an API with <code>RETRIEVAL_CURRENT_ONLY=on</code>. This page now validates the endpoint first, saves the original pin, matches the current-version filter and restores the pin only at the end.</p></div>
+
+<h4>Where the index comes from</h4>
+<p><code>terraform/vector.tf</code> declares the index, its endpoint and the deployment ID <code>documind_chunks_v1</code>. The infrastructure apply in <code>make up</code> creates them; <code>services/ingest/indexer.py</code> fills the index with <code>upsert_datapoints()</code>. The Python cell below only embeds a question and searches the existing deployment. Read the actual endpoint before deciding that an index needs creating.</p>
+<div class="cw"><div class="ch-bar"><span>text &mdash; creation, ingestion, query</span><span class="ro">read only</span></div><pre tabindex="0">Terraform apply
+  index + endpoint + deployed index ID
+                  |
+Upload -> chunks -> document embeddings -> upsert_datapoints()
+                  |
+Question -> query embedding -> find_neighbors() -> chunk IDs
+                  |
+Read chunk text from Firestore -> compare with API citations</pre></div>
+
+<h4>Run first: check the serving revision and save the original pin</h4>
+<p>Run in <code>$DEMO_ROOT</code>. This reads the single revision receiving traffic, checks that its deployed ID exists, saves only the relevant settings under <code>operator-evidence/lesson51/</code>, and then selects <code>vector</code> for Acme. Empty optional settings take their code defaults. It stops before any embedding or tenant change if the deployment is invalid. A split-traffic service needs a chosen revision before this single-revision demonstration can proceed.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run before step 3; reads configuration and saves/sets the Acme pin</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, subprocess, warnings
+from pathlib import Path
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import aiplatform
+from shared.tenancy import backend_for, set_backend
+
+project, region = os.environ["PROJECT"], os.environ["REGION"]
+flags = [f"--project={project}", f"--region={region}", "--format=json"]
+def read_run(kind, name):
+    return json.loads(subprocess.run(
+        ["gcloud", "run", kind, "describe", name] + flags,
+        check=True, capture_output=True, text=True).stdout)
+
+service = read_run("services", "documind-api")
+# One service, two URLs: status.url (often the hashed a.run.app one) and the
+# deterministic documind-api-NUMBER.REGION.run.app that API is built from.
+urls = {service["status"]["url"].rstrip("/"), f"https://documind-api-{os.environ['NUMBER']}.{region}.run.app"}
+if os.environ["API"].rstrip("/") not in urls:
+    raise SystemExit(f"STOP: API={os.environ['API']} is not one of this service's URLs: {sorted(urls)}")
+traffic = [t for t in service["status"].get("traffic", []) if t.get("percent", 0) > 0]
+if len(traffic) != 1 or traffic[0].get("percent") != 100:
+    raise SystemExit("STOP: inspect split traffic; this demo expects one serving revision.")
+revision = traffic[0]["revisionName"]
+env = {e["name"]: e.get("value", "") for e in
+       read_run("revisions", revision)["spec"]["containers"][0].get("env", [])}
+cfg = {"project": project, "api": os.environ["API"], "revision": revision,
+       "endpoint": env.get("VECTOR_INDEX_ENDPOINT", ""),
+       "deployed_id": env.get("VECTOR_DEPLOYED_INDEX_ID", ""),
+       "mode": env.get("RETRIEVAL_MODE") or "dense",
+       "current_only": env.get("RETRIEVAL_CURRENT_ONLY") or "off",
+       "top_k": int(env.get("TOP_K_RETRIEVE") or 20),
+       "embed_model": env.get("EMBEDDING_MODEL") or "text-embedding-005",
+       "graph": env.get("RETRIEVAL_GRAPH") or "off"}
+print(json.dumps(cfg, indent=2))
+if not cfg["endpoint"] or not cfg["deployed_id"]:
+    raise SystemExit("STOP: the serving revision has no complete Vector Search configuration.")
+if cfg["current_only"] not in ("on", "off") or cfg["top_k"] &lt; 1:
+    raise SystemExit("STOP: invalid current-only or pool-size setting.")
+aiplatform.init(project=project, location=region)
+endpoint = aiplatform.MatchingEngineIndexEndpoint(cfg["endpoint"])
+deployed = [d.id for d in endpoint.deployed_indexes]
+print("Actual deployed IDs:", deployed)
+if cfg["deployed_id"] not in deployed:
+    raise SystemExit("STOP: API deployed ID is absent. Use the repair note below, then rerun this block.")
+
+os.environ["GOOGLE_CLOUD_PROJECT"] = project
+evidence = Path("operator-evidence/lesson51")
+evidence.mkdir(parents=True, exist_ok=True)
+backup = evidence / "pin-before.json"
+current = backend_for("acme") or "default"
+if backup.exists():
+    before = json.loads(backup.read_text())
+    if before["project"] != project or current not in (before["backend"], "vector"):
+        raise SystemExit("STOP: saved pin belongs to a different project or the pin changed independently.")
+else:
+    before = {"project": project, "backend": current}
+    with backup.open("x") as f:
+        json.dump(before, f)
+(evidence / "settings.json").write_text(json.dumps(cfg, indent=2))
+print("Original Acme pin:", before["backend"])
+print("Acme demo pin:", set_backend("acme", "vector"))
+print("PASS: index configuration verified. Allow up to 60 seconds for the API's tenant-setting cache.")
+PY</pre></div>
+<p><strong>Continue only after PASS.</strong> Keep Acme on <code>vector</code> through steps 3&ndash;9. The API environment's <code>RETRIEVAL_BACKEND</code> is a default; the tenant pin overrides it. If step 3 still reports the old backend, wait for that one-minute cache to expire, then retry.</p>
+
+<details class="lesson-repair"><summary>Repair note: the API contains documind_chunks_nonesuch</summary>
+<p>This is a configuration repair for an existing index, not an index-creation step. Read the ID from the intended Terraform state and prove that it is deployed on the same endpoint. The following block refuses an endpoint mismatch or missing deployment. It creates a corrected API revision and routes 100% of the demo service's traffic to it. Other environment variables are retained; do not rerun the full infrastructure deployment to fix this one setting.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; optional repair; updates the API revision and its traffic</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, subprocess, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import aiplatform
+project, region = os.environ["PROJECT"], os.environ["REGION"]
+def run(args):
+    return subprocess.run(args, check=True, capture_output=True, text=True).stdout.strip()
+def output(name):
+    return run(["terraform", "-chdir=terraform", "output", "-raw", name])
+endpoint_name = output("vector_index_endpoint")
+deployed_id = output("vector_deployed_index_id")
+flags = [f"--project={project}", f"--region={region}"]
+service = json.loads(run(["gcloud", "run", "services", "describe", "documind-api"] + flags + ["--format=json"]))
+traffic = [t for t in service["status"].get("traffic", []) if t.get("percent", 0) > 0]
+if len(traffic) != 1 or traffic[0].get("percent") != 100:
+    raise SystemExit("STOP: inspect split traffic before a repair.")
+serving = traffic[0]["revisionName"]
+if service["status"].get("latestCreatedRevisionName") != serving:
+    raise SystemExit("STOP: a different candidate revision exists; inspect it before updating the service template.")
+env = {e["name"]: e.get("value", "") for e in
+       service["spec"]["template"]["spec"]["containers"][0].get("env", [])}
+if env.get("VECTOR_INDEX_ENDPOINT") != endpoint_name:
+    raise SystemExit("STOP: API and Terraform endpoints differ; inspect the intended state before repair.")
+aiplatform.init(project=project, location=region)
+endpoint = aiplatform.MatchingEngineIndexEndpoint(endpoint_name)
+if deployed_id not in [d.id for d in endpoint.deployed_indexes]:
+    raise SystemExit("STOP: Terraform's ID is not deployed here. Inspect the infrastructure setup.")
+print("Verified deployed ID:", deployed_id, flush=True)
+revision = run(["gcloud", "run", "services", "update", "documind-api"] + flags +
+               [f"--update-env-vars=VECTOR_DEPLOYED_INDEX_ID={deployed_id}", "--no-traffic",
+                "--format=value(status.latestCreatedRevisionName)"])
+if not revision:
+    raise SystemExit("STOP: no revision returned; inspect Cloud Run before changing traffic.")
+subprocess.run(["gcloud", "run", "services", "update-traffic", "documind-api"] + flags +
+               [f"--to-revisions={revision}=100"], check=True)
+print("Rerun the preflight block to verify the serving configuration before step 3.")
+PY</pre></div>
+<p>If Terraform has no outputs or the endpoint has no deployed indexes, return to the infrastructure setup and inspect its plan and deployment status. Exporting a name does not create an index. <a href="https://docs.cloud.google.com/run/docs/configuring/services/environment-variables">Cloud Run environment-variable updates</a> and <a href="https://docs.cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration">revision traffic routing</a> describe these operations.</p>
+</details>

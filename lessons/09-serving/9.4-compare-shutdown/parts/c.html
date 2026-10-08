@@ -1,0 +1,95 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>Everything off</h3><p>make off: four floors to zero, the GKE workload removed, and the floors it prints.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make off</code> runs each switch, and carries on past one that fails, such as the vLLM service that does not exist:</p>
+@@off@@
+<p>Then it prints each service's floor: the min-instances annotation on its revision template, or <code>absent</code> for a service that does not exist.</p>
+
+<h4>Do it</h4>
+%%CELL_OFF%%
+%%OUT_OFF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Four floors read 0, or absent for the vLLM service.</strong> The GKE workload was removed (the lab cluster had none), and the lab cluster stays until <code>make down</code>.</li>
+<li><strong>The small model's floor was 0 already:</strong> <code>make deploy-slm</code> set it. A floor of 0 means Cloud Run may stop the instance, not that it has.</li>
+<li><strong>The instance the comparison woke is still up,</strong> and billing, until its idle window ends.</li>
+</ul></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>Zero GPU instances</h3><p>Cloud Monitoring's instance_count for each service, read at least 10 minutes after make off.</p></div></div>
+
+<h4>Definition</h4>
+<p>The kit reads an instance count in one place, the two-hour alarm:</p>
+@@alarm@@
+<p>The cell asks Cloud Monitoring for the same gauge directly, over the last 45 minutes: one point a minute per service, summed over active and idle instances. It prints the last minute each service had an instance. A GPU service with an instance in the last three minutes is still up; a sample can take two minutes to show. Wait at least 10 minutes after <code>make off</code> before you run it.</p>
+
+<h4>Do it</h4>
+%%CELL_ZERO%%
+%%OUT_ZERO%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Zero GPU instances.</strong> That is the second proof: no GPU service had an instance in the last three minutes.</li>
+<li><strong>The small model's last instance was at 10:13, about nine minutes after its last answer.</strong> That was the idle window, billed at Rs %%HOUR_INR%% an hour while the floor said 0. The stand-in's times are illustrations; yours are your lane's.</li>
+<li><strong>The gateway stopped at 10:09.</strong> It runs on CPU, and its bill ran by request.</li>
+<li><strong>Neither backstop would have acted.</strong> The alarm waits two hours, and the nightly job would have changed nothing, because every floor was already 0.</li>
+<li><strong>This completes the chapter's gate:</strong> <code>make smoke-gateway</code> in lesson 9.1, <code>make smoke-slm</code> in lesson 9.2, and zero GPU instances here.</li>
+</ul></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>One retrieval for every backend,</strong> so that the only variable between rows is the model.</li>
+<li><strong>p95, not the mean:</strong> the number a dashboard alerts on.</li>
+<li><strong>The small model's rupees are a rate, and the script says so.</strong> Idle time is the variable.</li>
+<li><strong><code>make off</code> is four switches in one, then the lines that prove it.</strong> The nightly job makes a forgotten GPU cost an evening, not a month.</li>
+<li><strong>The alarm reads the instance count, not the floor:</strong> two hours above zero.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The selftest and the read</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The comparison</td><td data-label="Costs">20 answers from the API, 20 from Gemini and 40 from the small model, plus the GPU's life</td><td data-label="On your lane">a few rupees of Gemini, and the L4 at Rs %%HOUR_INR%% an hour for its instance's life, the cold start and the idle window included</td></tr>
+<tr><td><code>make off</code></td><td data-label="Costs">four service updates, and the GKE workload's removal</td><td data-label="On your lane">free</td></tr>
+<tr><td>The zero check</td><td data-label="Costs">one Cloud Monitoring read</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>A row names the route, not the model that answered.</strong> Its price comes from the script's own table, and the gateway's reply and cost header are never read. A row the hook or a fallback moved is scored and priced under the wrong name.</li>
+<li><strong>The context is Gemini's quotes.</strong> <code>retrieve()</code> asks the API for its answer, and the comparison keeps its citations' quotes. A question Gemini refused gives every backend an empty context.</li>
+<li><strong>A slow API becomes a failed model.</strong> After 20 seconds <code>retrieve()</code> returns no citations and the row's context is empty, and only a log line says so.</li>
+<li><strong>Three routes have no price in the script.</strong> <code>documind-reasoning</code>, <code>documind-sensitive</code> and <code>documind-inference</code> fall to <code>documind-general</code>'s rates.</li>
+<li><strong>The table never scores a refusal.</strong> Groundedness leaves out the rows the documents cannot answer, and the first 20 golden rows are all answerable. So a backend that answers everything scores as well as one that refuses correctly.</li>
+<li><strong>p95 on 20 rows hides a cold start.</strong> It is the 19th sorted row.</li>
+<li><strong><code>make off</code> prints floors, not instances.</strong> Nothing but the two-hour alarm reads an instance count.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The script's sums</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>selftest OK</code></td></tr>
+<tr><td>2</td><td data-label="Claim">What a row cannot see</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>reads neither the model that answered nor x-litellm-response-cost</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The comparison table</td><td data-label="The check">step 4</td><td data-label="Pass looks like">three rows of four numbers</td></tr>
+<tr><td>4</td><td data-label="Claim">What answered each route</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>documind-inference</code> answered by <code>ollama_chat/documind-slm</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The two prices</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the gateway's and the table's, side by side</td></tr>
+<tr><td>6</td><td data-label="Claim">The floors</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>documind-slm: min-instances 0</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The idle window</td><td data-label="The check">step 6</td><td data-label="Pass looks like">the small model's last instance, minutes after its last answer</td></tr>
+<tr><td>8</td><td data-label="Claim">Zero GPU instances</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>none - zero GPU instances</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>compare.csv</code> holds the comparison's 60 rows. Every floor is 0, and the GKE workload is gone; the lab cluster remains until <code>make down</code>. No GPU instance is running. That ends Module 9: the gateway routes and authorizes, the small model serves behind it, and the lane can prove it is off. Module 10 turns to agent patterns, starting with where an agent reasons.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 9 Serving &middot; Lesson 9.4 Compare actual backends and verify shutdown behavior &middot; v5.0</p><p>Next: Lesson 10.1 Choose where the agent reasons: observe-think-act and ReAct.</p></div>

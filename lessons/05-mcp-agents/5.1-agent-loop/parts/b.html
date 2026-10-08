@@ -1,0 +1,52 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>ME</code>, <code>API</code> and <code>tok</code>, and <code>adc ok</code> from the setup block. Step 3 builds the chat service's image and deploys it in your region, which takes several minutes. Steps 5 to 7 ask five questions through rag-api and the chat service. Nothing else changes.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The service</span><h3>The chat service, in your lane's region</h3><p>A redeploy with the kit's current script, then where it points and which brains it builds.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make up</code> deploys the chat service from <code>commands/lesson-12.8.sh</code>. Until 23 September 2026, that script named <code>us-central1</code> in all fourteen places a region appears. That meant the image registry, the service, the Cloud SQL instance, the migration job, and two URLs: <code>RAG_API_URL</code>, where the brains send every retrieval, and <code>SELF_URL</code>. The API's own script follows <code>REGION</code>, and Terraform creates the image registry in <code>REGION</code>. So on a lane in asia-south1, the chat build pushed to a registry the lane does not have, and the deploy stopped there: no chat service was created at all. Had one been, it would have called an API that does not exist. The kit's script now follows <code>REGION</code> in all fourteen places. The cell below runs just that script through <code>make deploy-services</code>. It builds the chat image, deploys it beside your API, grants the invoker role, runs the checkpointer's one-time migration and turns on IAP. The invoker role goes to seven accounts: the UI's account, the outsider, and five eval accounts the DocuMind Desk's live checks call the service as. Terraform creates them. The loop names an eighth, the account a Google Chat bridge calls the service as, which exists only on a lane planned with <code>GCHAT_DOOR=true</code>, as lesson 10.4 shows, and then it is bound too. The script prints a "not bound" line for each account that does not exist yet and binds the rest, so on a lane without the door the bridge's account gets that line. <code>ADMIN_EMAILS</code> is your own address, so the target's last step, the operator grant, succeeds.</p>
+
+<h4>Do it: deploy</h4>
+%%CELL_DEPLOY%%
+%%OUT_DEPLOY%%
+
+<h4>Do it: where it points, and its brains</h4>
+%%CELL_WHERE%%
+%%OUT_WHERE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The chat service now runs in your region, and its <code>RAG_API_URL</code> is your API, the one the setup block reached. <code>/health</code> lists the four brains the image can build, and the default one: LangChain, from <code>DOCUMIND_BRAIN</code>. If the describe cell cannot find the service, or names another region's API, the deploy ran the old script. Check with <code>git log</code> that the kit is current, and run the cell again.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The contract</span><h3>The contract: what the model reads of each tool</h3><p>The two tools as the model sees them, and the parameter it never sees.</p></div></div>
+
+<h4>Definition</h4>
+<p>LangChain builds a tool's schema from its signature and its docstring. The adapter's <code>runtime: ToolRuntime</code> parameter is filled by the framework and left out of the schema. That is the one kind of hidden parameter that is also delivered. The first version of this file used <code>InjectedToolArg</code> instead, which hides an argument and never fills it: the tool ran with an empty tenant, and rag-api refused it. The chat request itself has only three fields, and none of them names a tenant. The cell reads <code>services/chat/tools.py</code> as text and prints each tool the way its schema presents it, so it needs no LangChain on your machine. Its last line calls the shared <code>calculate_processing_cost</code>, the function the chat's cost tool hands its arguments to, with the tier <code>'express'</code> and prints its refusal. That refusal is the text the chat tool returns to the model as an error result. The build checked the printout against LangChain's own <code>tool_call_schema</code> for all %%N_TOOLS%% tools.</p>
+
+<h4>The code</h4>
+@@adapter@@
+@@request@@
+
+<h4>Do it</h4>
+%%CELL_CONTRACT%%
+%%OUT_CONTRACT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two tools, and not one argument names a tenant, a user or an assertion. <code>retrieve</code> has a hidden <code>runtime</code>, which is where agent.py's context arrives, and passes what it reads to <code>search()</code>, where every brain's retrieval ends. <code>calculate_processing_cost</code> needs none, because pricing pages concerns nobody's documents; it hands its arguments to the shared function, so an unknown tier is refused here as it is there. The first line of each docstring is the description the model uses to choose a tool, so a vague docstring is a tool the model picks at the wrong time.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 2 &middot; The one retrieve()</span><h3>The one retrieve(), from your shell</h3><p>The function every brain calls, called directly, as a roster member.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>retrieve()</code> builds the request itself: the query, the tenant, <code>top_k</code> limited to 1 to 20, and no stream. It adds a Bearer ID token minted for rag-api, and the person's assertion when there is one. It returns the citations, the verdict and the confidence, plus rag-api's own answer. A network failure becomes a dictionary with <code>error</code> set. From a shell there is no metadata server to mint the token, so <code>DOCUMIND_IMPERSONATE_SA</code> mints it as <code>documind-ui-sa</code>, the same account <code>tok</code> uses, through your Application Default Credentials. The cell also notes a start time, which step 8 uses to read the rows.</p>
+
+<h4>The code</h4>
+@@one@@
+
+<h4>Do it</h4>
+%%CELL_RETRIEVE%%
+%%OUT_RETRIEVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Your shell ran the same function the chat service's brains run, and got the same contract back: five citations, a verdict, a confidence, and rag-api's own answer. That last field is the direct brain's whole job; the agent brains throw it away. A failure here prints <code>document retrieval is unavailable</code>, the tool layer's own words: a wrong <code>RAG_API_URL</code>, a missing role, or <code>adc NOT ok</code>. Those are the same words a model would read in a tool result, so it could tell you what went wrong.</p></div>

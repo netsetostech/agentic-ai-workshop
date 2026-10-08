@@ -1,0 +1,319 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Parse</span><h3>Parse: Document AI, chosen by residency</h3><p>What reads a PDF, why one setting picks the reader, and how to see which reader your lane has.</p></div></div>
+
+<h4>Definition</h4>
+<p>The worker never reads a PDF itself. It sends the bytes to one Document AI processor and gets back pages of text. Which processor exists is decided once, by <code>RESIDENCY</code>: <code>india</code> creates an Enterprise OCR processor in Mumbai, <code>us</code> creates a Layout Parser in the United States. The Layout Parser understands headings, tables and reading order; the OCR processor returns text with layout boxes and no structure. The comment in the code says why that is not a quality decision: if a customer's contract says its documents stay in India, the processor in <code>us</code> is not available, whatever it would have given you. Text files skip all of this - a Markdown handbook is decoded and used as it is.</p>
+
+<h4>See it in the UI</h4>
+<p>Look at the <em>document</em> column of the Versions table. Every <code>.pdf</code> row went through Document AI; every <code>.md</code> row did not. Both kinds end up with a chunk count, and nothing downstream can tell them apart, which is the point of parsing: after it, everything is text. One row to look for is <code>acme/posh_act_2013.pdf</code>, a scanned Gazette with no text layer; if it is in your table with a chunk count, your processor can read a scan.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/parser.py - the processor map and the online limit</span><span class="ro">read only</span></div><pre tabindex="0">RESIDENCY = os.environ.get(<span class="st">"RESIDENCY"</span>, <span class="st">"india"</span>)     <span class="cm"># india | us</span>
+
+<span class="cm"># Layout Parser gives you document STRUCTURE - headings, tables, reading order -</span>
+<span class="cm"># and it runs in `us` only. Enterprise OCR runs in asia-south1 and gives you</span>
+<span class="cm"># text plus layout boxes, no semantic structure.</span>
+<span class="cm">#</span>
+<span class="cm"># For a DPDP deployment that is not a trade-off you get to make on quality</span>
+<span class="cm"># grounds: if the document carries personal data of people in India and the</span>
+<span class="cm"># customer's contract says it stays in India, the processor that runs in `us`</span>
+<span class="cm"># is not available to you, whatever it would have given you.</span>
+PROCESSORS = {
+    <span class="st">"india"</span>: {<span class="st">"location"</span>: <span class="st">"asia-south1"</span>, <span class="st">"type"</span>: <span class="st">"OCR_PROCESSOR"</span>},
+    <span class="st">"us"</span>:    {<span class="st">"location"</span>: <span class="st">"us"</span>,          <span class="st">"type"</span>: <span class="st">"LAYOUT_PARSER_PROCESSOR"</span>},
+}
+<span class="cm"># ...</span>
+ONLINE_PAGE_LIMIT = <span class="nu">15</span></pre></div>
+
+<p>Note the default: the code says <code>india</code>, but the Makefile deploys with <code>RESIDENCY ?= us</code> unless you override it, and the Terraform in <code>docai.tf</code> creates whichever processor the same variable names. On a default <code>make up</code>, therefore, your lane has a Layout Parser in <code>us</code>. The page says both so that what you read off your lane in a moment makes sense.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/parser.py - parse()</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">parse</span>(project_id: str, processor_id: str, content: bytes,
+          mime_type: str) -&gt; tuple[str, int]:
+    <span class="cm">"""Return (text with a form feed between pages, page_count)."""</span>
+    client, name = _client_and_name(project_id, processor_id)
+    <span class="kw">if</span> mime_type == <span class="st">"application/pdf"</span>:
+        reader = PdfReader(io.BytesIO(content))
+        <span class="kw">if</span> len(reader.pages) &gt; ONLINE_PAGE_LIMIT:
+            pages: list[str] = []
+            <span class="kw">for</span> first <span class="kw">in</span> range(<span class="nu">0</span>, len(reader.pages), ONLINE_PAGE_LIMIT):
+                writer = PdfWriter()
+                <span class="kw">for</span> page <span class="kw">in</span> reader.pages[first:first + ONLINE_PAGE_LIMIT]:
+                    writer.add_page(page)
+                buf = io.BytesIO()
+                writer.write(buf)
+                pages.extend(_process(client, name, buf.getvalue(), mime_type))
+            <span class="kw">return</span> <span class="st">"\f"</span>.join(pages), len(pages)
+    pages = _process(client, name, content, mime_type)
+    <span class="kw">return</span> <span class="st">"\f"</span>.join(pages), len(pages)</pre></div>
+
+<p>Read the shape of the return value: one string with a form feed (<code>\f</code>) between pages, and the page count. That form feed is the whole reason a citation can name a page: the chunker in step 6 cuts at it and never lets a window cross it.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _parse()</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_parse</span>(content: bytes, content_type: str) -&gt; tuple[str, int]:
+    <span class="cm">"""(text, pages). Plain text needs no processor; everything else goes to Doc AI."""</span>
+    <span class="kw">if</span> content_type.startswith(<span class="st">"text/"</span>):
+        text = content.decode(<span class="st">"utf-8"</span>, <span class="st">"replace"</span>)
+        <span class="kw">return</span> text, max(<span class="nu">1</span>, text.count(<span class="st">"\f"</span>) + <span class="nu">1</span>)
+    <span class="kw">if</span> <span class="kw">not</span> PROCESSOR_ID:
+        <span class="kw">raise</span> RuntimeError(<span class="st">"DOCAI_PROCESSOR_ID is not set (deploy/terraform/docai.tf outputs it)"</span>)
+    <span class="kw">return</span> parse(PROJECT, PROCESSOR_ID, content, content_type)</pre></div>
+
+<h4>Call it: which reader does your lane have?</h4>
+<p>Two read-only calls. The first prints the worker's environment, where the residency and the processor id live. The second asks the Document AI API to list the processors in each of the two possible locations; exactly one location will list <code>documind-parser</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services describe documind-ingest --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep -E 'RESIDENCY|DOCAI_PROCESSOR_ID'
+
+for LOC in us asia-south1; do
+  echo "== $LOC =="
+  curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    "https://$LOC-documentai.googleapis.com/v1/projects/$NUMBER/locations/$LOC/processors" \
+    | python -c "import json,sys; j=json.load(sys.stdin); [print(p['displayName'], p['type'], p['state']) for p in j.get('processors', [])] or print('(none)')"
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected, on a default make up</span><span class="ro">read only</span></div><pre tabindex="0">{'name': 'RESIDENCY', 'value': 'us'}
+{'name': 'DOCAI_PROCESSOR_ID', 'value': 'a1b2c3d4e5f6a7b8'}
+== us ==
+documind-parser LAYOUT_PARSER_PROCESSOR ENABLED
+== asia-south1 ==
+(none)</pre></div>
+
+<p>A lane deployed with <code>RESIDENCY=india</code> prints the mirror image: <code>OCR_PROCESSOR</code> under <code>asia-south1</code> and nothing under <code>us</code>. Either way there is exactly one processor, and the worker's environment names it.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You found the one machine that reads every PDF on your lane, and the one setting that chose it. Nothing about the worker's code changes between the two choices; the processor map and the Terraform read the same word. That is what "chosen by residency rather than by preference" means in the parser's first line.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Pages</span><h3>Count pages first: slices, and the 250-page line</h3><p>The worker counts a PDF's pages before it pays to read one, and two numbers hang on that count.</p></div></div>
+
+<h4>Definition</h4>
+<p>Reading a PDF's page count is free: the page tree is in the file, and pypdf reads it without rendering anything. The worker does that first, because two decisions need only the number. A file over 250 pages, <code>MAX_INLINE_PAGES</code>, cannot finish inside one push request, so it is handed to the batch lane (lesson 1.5). A file under that line is sent to Document AI in slices of 15 pages, because 15 is the online request limit; a 29-page Act is two requests, a 236-page Act is sixteen. Nothing in the corpus crosses 250: the CGST Act, at 236 pages, is the largest.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _pdf_pages()</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_pdf_pages</span>(content: bytes) -&gt; int | <span class="kw">None</span>:
+    <span class="cm"># ...</span>
+    <span class="kw">try</span>:
+        <span class="kw">return</span> len(PdfReader(io.BytesIO(content)).pages)
+    <span class="kw">except</span> Exception:  <span class="cm"># noqa: BLE001 - a count is a hint for routing, never a verdict on the document</span>
+        <span class="kw">return</span> <span class="kw">None</span></pre></div>
+
+<h4>Do it: count the corpus, Rs 0</h4>
+<p>The same count, on the PDFs in your kit folder, with the same library. The cell prints pages and slices per PDF, then the totals and what one parse of the whole corpus would cost at each processor's list price - the rates as the course reads them on the pricing page, to re-verify before quoting.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import glob, math, os
+from pypdf import PdfReader
+LIMIT, INLINE, USD_INR = 15, 250, 85
+OCR_USD, LAYOUT_USD = 1.50, 10.00            # per 1,000 pages, list price as read on the pricing page - re-verify
+total = calls = 0
+for path in sorted(glob.glob("evals/corpus/*/*.pdf")):
+    n = len(PdfReader(path).pages)
+    s = math.ceil(n / LIMIT)
+    total += n; calls += s
+    lane = "BATCH LANE" if n &gt; INLINE else "inline"
+    print(f"{path[13:]:48} pages={n:4} slices={s:3} {lane}")
+print(f"\n{total} pages in {calls} Document AI requests")
+print(f"one full parse: OCR Rs {total/1000*OCR_USD*USD_INR:,.0f}   Layout Parser Rs {total/1000*LAYOUT_USD*USD_INR:,.0f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (trimmed)</span><span class="ro">read only</span></div><pre tabindex="0">acme/cgst_act_2017.pdf                           pages= 236 slices= 16 inline
+acme/code_on_social_security_2020.pdf            pages= 116 slices=  8 inline
+acme/code_on_wages_2019.pdf                      pages=  29 slices=  2 inline
+acme/maternity_benefit_amendment_act_2017.pdf    pages=   4 slices=  1 inline
+acme/posh_act_2013.pdf                           pages=  13 slices=  1 inline
+...
+zeta/osh_code_2020.pdf                           pages=  86 slices=  6 inline
+
+1065 pages in 79 Document AI requests
+one full parse: OCR Rs 136   Layout Parser Rs 905</pre></div>
+
+<h4>Prove it on the lane: one small PDF, four pages</h4>
+<p>The amendment Act is four pages and globex does not hold it, so ingesting it there is a fresh source, one Document AI request, and a few paise. Then read the worker's line for it, which carries the page count as <code>pages</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (costs about four pages of Document AI)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ingest-one PROJECT=$PROJECT TENANT=globex FILE=evals/corpus/acme/maternity_benefit_amendment_act_2017.pdf
+
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-ingest" AND jsonPayload.event="ingest_ok" AND jsonPayload.tenant="globex"' \
+  --project "$PROJECT" --limit 1 --format='value(jsonPayload.doc_key,jsonPayload.pages,jsonPayload.chunks,jsonPayload.embedded)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">globex_e7a1c0...    4    5    5</pre></div>
+
+<p>Four pages, five chunks: the count is pypdf's, the chunks are Document AI's text cut per page. Your chunk count may differ by one, because the two readers do not always agree on where a line ends, which is exactly what step 7 is about.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The worker learned the page count for free, decided the file was small enough for the push lane, sent it to Document AI in one slice, and wrote <code>pages: 4</code> on its log line. The same field on the CGST Act's line reads 236 and sixteen requests were made for it; over 250 and the line would have been <code>ingest_queued_batch</code> instead.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Sections</span><h3>Chunk by section: the handbook becomes 283 clauses</h3><p>The first rule of the chunker, and why a clause is the right size for a policy question.</p></div></div>
+
+<h4>Definition</h4>
+<p>A Markdown document with <code>## </code> headings is cut at the headings: one chunk per section, whatever its length, with the heading's clause code as the locator (<code>NP-03</code>) or, when a heading carries no code, the section's ordinal (<code>s1</code>). Text above the first heading is the <code>preamble</code>. A section longer than a window is windowed within itself and its pieces are numbered (<code>NP-03-1</code>). A question about the notice period is answered by one chunk that is exactly the notice-period clause, which is why the handbook's answers cite so precisely.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _chunk(), the section rule</span><span class="ro">read only</span></div><pre tabindex="0">_SECTION = re.compile(r<span class="st">"^## +(.+?) *$"</span>, re.M)
+_CODE = re.compile(r<span class="st">"^([A-Z][A-Z0-9]{0,7}(?:-[A-Z0-9]{1,6}){1,2})\b"</span>)   <span class="cm"># NP-03, IT-SEC-04, MSA-04, GEN-014</span>
+<span class="cm"># ...</span>
+    text = re.sub(r<span class="st">"\A\s*&lt;!--.*?--&gt;\s*"</span>, <span class="st">""</span>, text, count=<span class="nu">1</span>, flags=re.S)
+    heads = list(_SECTION.finditer(text.strip()))
+    out = []
+    <span class="kw">if</span> heads:
+        text = text.strip()
+        pre = text[:heads[<span class="nu">0</span>].start()].strip()
+        <span class="kw">for</span> k, (_, piece) <span class="kw">in</span> enumerate(_windows(pre)):
+            out.append({<span class="st">"text"</span>: piece, <span class="st">"kind"</span>: <span class="st">"text"</span>, <span class="st">"page_start"</span>: <span class="kw">None</span>,
+                        <span class="st">"locator"</span>: <span class="st">"preamble"</span> + (f<span class="st">"-{k}"</span> <span class="kw">if</span> k <span class="kw">else</span> <span class="st">""</span>), <span class="st">"section"</span>: <span class="kw">None</span>})
+        <span class="kw">for</span> n, h <span class="kw">in</span> enumerate(heads):
+            title = h.group(<span class="nu">1</span>).strip()
+            body = text[h.end(): heads[n + <span class="nu">1</span>].start() <span class="kw">if</span> n + <span class="nu">1</span> &lt; len(heads) <span class="kw">else</span> len(text)].strip()
+            code = _CODE.match(title)
+            key = code.group(<span class="nu">1</span>) <span class="kw">if</span> code <span class="kw">else</span> f<span class="st">"s{n + 1}"</span>
+            <span class="kw">for</span> k, (_, piece) <span class="kw">in</span> enumerate(_windows(f<span class="st">"{title}\n{body}"</span>)):
+                out.append({<span class="st">"text"</span>: piece, <span class="st">"kind"</span>: <span class="st">"text"</span>, <span class="st">"page_start"</span>: <span class="kw">None</span>,
+                            <span class="st">"locator"</span>: key + (f<span class="st">"-{k}"</span> <span class="kw">if</span> k <span class="kw">else</span> <span class="st">""</span>), <span class="st">"section"</span>: title})</pre></div>
+
+<p>The first line drops a mirror's provenance header, the HTML comment <code>fetch_real.py</code> writes at the top of every mirrored Act, so a comment about where a file came from is never indexed as content. The rest is the rule: preamble, then one chunk per heading, each chunk beginning with its own title so the clause code is inside the text that gets embedded.</p>
+
+<h4>Do it: cut the handbook, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys
+sys.path.insert(0, "."); sys.path.insert(0, "services/ingest")
+from shared import documind_corpus as dc
+text = open("evals/corpus/acme/hr_policy_2026.md", encoding="utf-8").read()
+doc = {"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://x/acme/hr_policy_2026.md", "text": text}
+chunks = dc.chunk_document(doc, "acme")
+print(len(chunks), "chunks from", text.count("\n## "), "headings")
+for c in chunks[:5]:
+    print(f"  {c['locator']:10} section={str(c['section'])[:32]:34} chars={len(c['text']):5}  hash={c['chunk_hash'][:12]}")
+from collections import Counter
+per_section = Counter(c["section"] for c in chunks)
+print("sections windowed within themselves:", [t for t, n in per_section.items() if n &gt; 1])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">283 chunks from 282 headings
+  preamble   section=None                               chars=   97  hash=903e2b39ee92
+  NP-03      section=NP-03 &#8212; Notice period              chars=  234  hash=f4512754ae41
+  PB-02      section=PB-02 &#8212; Probation                  chars=  212  hash=bb65ccc2494c
+  LV-01      section=LV-01 &#8212; Earned leave               chars=  189  hash=ff463cede286
+  LV-07      section=LV-07 &#8212; Leave on exit              chars=  167  hash=7b5538b88f78
+sections windowed within themselves: []</pre></div>
+
+<p>Every one of the 282 sections fits in a single window, so no locator carries a numeric suffix; the handbook's clauses are short. The hashes are what lesson 1.1 called the chunk's identity across versions.</p>
+
+<h4>Read it on the lane</h4>
+<p>The worker cut the same file with the same rule when the corpus was loaded. Its rows for the handbook should be the same 283 locators in the same order.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path.insert(0, ".")
+from google.cloud import firestore
+from shared import documind_corpus as dc
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+
+q = (db.collection("chunks").where("tenant_id", "==", "acme")
+     .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/hr_policy_2026.md")
+     .where("current", "==", True))
+lane = sorted(q.stream(), key=lambda c: int(c.id.rsplit("#", 1)[1]))
+lane_loc = [c.to_dict().get("locator") for c in lane]
+
+text = open("evals/corpus/acme/hr_policy_2026.md", encoding="utf-8").read()
+local = dc.chunk_document({"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://x", "text": text}, "acme")
+local_loc = [c["locator"] for c in local]
+print("lane:", len(lane_loc), "local:", len(local_loc), "same locators in the same order:", lane_loc == local_loc)
+print("same hashes:", [c.to_dict().get("chunk_hash") for c in lane] == [c["chunk_hash"] for c in local])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">lane: 283 local: 283 same locators in the same order: True
+same hashes: True</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two different programs - the worker on Cloud Run and the loader on your machine - cut the same Markdown into the same 283 pieces with the same locators and the same hashes. For a text file there is nothing to disagree about: no parser stands between the bytes and the chunker. Step 7 shows what happens when one does.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Windows</span><h3>Chunk by window: an Act becomes page windows</h3><p>The second rule of the chunker: fixed windows with an overlap, cut page by page, ending on a sentence when one is near.</p></div></div>
+
+<h4>Definition</h4>
+<p>Running text has no headings to cut at, so the chunker cuts windows of 2,000 characters. It prefers to end a window at a sentence boundary in the window's second half, and it starts the next window 200 characters back, so a sentence sitting on the seam is present in both. Windows never cross a page: the text is split at every form feed first, and each page is windowed on its own. The locator is the page and the window's number on it, counted from zero: <code>p7-0</code>, <code>p7-1</code>. Text with no form feeds at all has no page to name, and its locators are <code>w0</code>, <code>w1</code>.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _windows(), and the window rule in _chunk()</span><span class="ro">read only</span></div><pre tabindex="0">CHUNK_CHARS, CHUNK_OVERLAP = <span class="nu">2000</span>, <span class="nu">200</span>
+<span class="cm"># ...</span>
+<span class="kw">def</span> <span class="fn">_windows</span>(text: str) -&gt; list[tuple[int, str]]:
+    <span class="cm">"""Fixed windows with overlap, ending on a sentence when there is one nearby; (start offset, text)."""</span>
+    text = text.strip()
+    out, start = [], <span class="nu">0</span>
+    <span class="kw">while</span> start &lt; len(text):
+        end = min(len(text), start + CHUNK_CHARS)
+        <span class="kw">if</span> end &lt; len(text):
+            cut = text.rfind(<span class="st">". "</span>, start + CHUNK_CHARS // <span class="nu">2</span>, end)
+            <span class="kw">if</span> cut != -<span class="nu">1</span>:
+                end = cut + <span class="nu">1</span>
+        piece = text[start:end].strip()
+        <span class="kw">if</span> piece:
+            out.append((start, piece))
+        <span class="kw">if</span> end &gt;= len(text):
+            <span class="kw">break</span>
+        start = max(end - CHUNK_OVERLAP, start + <span class="nu">1</span>)
+    <span class="kw">return</span> out
+<span class="cm"># ...</span>
+    <span class="kw">else</span>:
+        paged = <span class="st">"\f"</span> <span class="kw">in</span> text
+        <span class="kw">for</span> p, page <span class="kw">in</span> enumerate(text.split(<span class="st">"\f"</span>), <span class="nu">1</span>):
+            <span class="kw">for</span> k, (_, piece) <span class="kw">in</span> enumerate(_windows(page)):
+                out.append({<span class="st">"text"</span>: piece, <span class="st">"kind"</span>: <span class="st">"text"</span>, <span class="st">"page_start"</span>: p <span class="kw">if</span> paged <span class="kw">else</span> <span class="kw">None</span>,
+                            <span class="st">"locator"</span>: f<span class="st">"p{p}-{k}"</span> <span class="kw">if</span> paged <span class="kw">else</span> f<span class="st">"w{k}"</span>, <span class="st">"section"</span>: <span class="kw">None</span>})</pre></div>
+
+<h4>Do it: cut the Code on Wages, Rs 0</h4>
+<p>Your kit has a text mirror of every Act, made by pypdf when the corpus was fetched, with a form feed between pages. Cut the mirror of the Code on Wages and look at one seam.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys
+sys.path.insert(0, ".")
+from shared import documind_corpus as dc
+text = open("evals/corpus/acme/code_on_wages_2019.md", encoding="utf-8").read()
+print("pages in the mirror:", text.count("\f") + 1)
+chunks = dc.chunk_document({"slug": "code_on_wages_2019", "doc_type": "act", "source_uri": "gs://x", "text": text}, "acme")
+print(len(chunks), "windows; the first six locators:", [c["locator"] for c in chunks[:6]])
+a, b = chunks[1], chunks[2]                      # p2-0 and p2-1: two windows on the same page
+print(f"{a['locator']} is {len(a['text'])} chars; {b['locator']} is {len(b['text'])} chars")
+print("end of", a["locator"], "->", repr(a["text"][-60:]))
+print("start of", b["locator"], "->", repr(b["text"][:60]))
+print("the overlap: the last 200 characters of", a["locator"], "reappear at the start of", b["locator"], "->", a["text"][-200:] == b["text"][:200])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">pages in the mirror: 29
+65 windows; the first six locators: ['p1-0', 'p2-0', 'p2-1', 'p3-0', 'p3-1', 'p4-0']
+p2-0 is 2000 chars; p2-1 is 1201 chars
+end of p2-0 -&gt; 'th or without the knowledge of the\nprincipal employer and includ'
+start of p2-1 -&gt; 'in or\nin connection with the work of an establishment when he'
+the overlap: the last 200 characters of p2-0 reappear at the start of p2-1 -&gt; True</pre></div>
+
+<p>Page 1 is a title page and makes one window; page 2 makes two. Look at the seam. The first window is exactly 2,000 characters and ends in the middle of the word "including": the definitions clause on that page runs for hundreds of characters without a full stop, so there was no sentence end in the window's second half to cut at, and the rule fell back to a hard cut. This is what the overlap is for. The second window starts 200 characters earlier, so the broken word, and the sentence around it, are whole in <code>p2-1</code>. A question about that sentence still finds it.</p>
+
+<h4>Read it on the lane, and ask a question that lands on a page</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+q = (db.collection("chunks").where("tenant_id", "==", "acme")
+     .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/code_on_wages_2019.pdf")
+     .where("current", "==", True))
+rows = sorted(q.stream(), key=lambda c: int(c.id.rsplit("#", 1)[1]))
+print(len(rows), "windows on the lane; first six:", [c.to_dict().get("locator") for c in rows[:6]])
+print("pages seen:", sorted({c.to_dict().get("page_start") for c in rows})[:5], "...", max(c.to_dict().get("page_start") for c in rows))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (acme pinned to vector, see the setup)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -s -X POST $API/v1/query -H "Authorization: Bearer $(tok $API)" -H "Content-Type: application/json" \
+  -d '{"query":"Within how many days must wages be paid after the wage period ends under the Code on Wages?","tenant_id":"acme","stream":false}' \
+  | python -c "import json,sys; j=json.load(sys.stdin); print(j['answer'][:160]); [print(c['chunk_id'].split('#')[1], c['source_uri'].split('/')[-1], 'page', c['page'], '|', c['quote'][:60]) for c in j['citations']]"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your wording differs; the pages are the point)</span><span class="ro">read only</span></div><pre tabindex="0">67 windows on the lane; first six: ['p1-0', 'p2-0', 'p2-1', 'p3-0', 'p3-1', 'p4-0']
+pages seen: [1, 2, 3, 4, 5] ... 29
+Under the Code on Wages, wages must be paid within seven days after the end of the wage period ... [Source 1]
+19 code_on_wages_2019.pdf page 9 | (iv) monthly basis, before the expiry of the seventh day of the succ
+20 code_on_wages_2019.pdf page 9 | ...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The lane's windows carry pages because the parser kept the page breaks, and the citation shows <code>page 9</code> because the chunk's <code>page_start</code> is 9: section 17 of the Code, on when wages fall due, sits on page 9 of the Act. But look at the first line: the lane has 67 windows where your mirror has 65. Same Act, same rule, two different counts. That is the next step.</p></div>

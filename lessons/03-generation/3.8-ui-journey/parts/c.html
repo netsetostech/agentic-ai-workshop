@@ -1,0 +1,110 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Citations</span><h3>Citations: the pills, the sources, and the link signed through IAM</h3><p>How an [N] becomes a pill, what the Sources list offers for each kind, and why the UI's account can sign a link without holding a key.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>render_with_citations()</code> finds every <code>[N]</code>, or <code>[N, M]</code>, in the answer. It matches each number to the Nth citation event and draws a pill. The label is a plain number for text, a kind and page for a figure or a table, and a start time for a video segment. A number past the last source still gets a pill, marked as an unknown source. The pattern accepts digits only, so a model that writes <code>[Source 1]</code>, copying the context's headers, gets no pill at all. The Sources list shows each source's label, the start of its text, and its effective date when the ledger stamped one. Below that sits a link. A figure's link shows the image inline, a segment's plays the video from its start, and text gets <em>Open source</em>, or <em>Jump to page N</em> when there is a page. Every link is a V4 signed URL valid for %%EXPIRY%% minutes. A Cloud Run service has no private key to sign with, so the page hands the library its own email and access token, and the library signs through IAM's signBlob API. That works because the account holds the token-creator role on itself.</p>
+
+<h4>The code</h4>
+@@label@@
+@@pill@@
+@@signing@@
+
+<h4>Do it: open the source, then render your own transcript</h4>
+<p><strong>In the browser</strong>, under the answer from step 5, open <strong>Sources</strong> and click <strong>Open source</strong> on the note. A new tab shows the note's text from the bucket, through a link that stops working in %%EXPIRY%% minutes. Then capture the same answer as a transcript and paste it into the renderer in step 1:</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one stream, a rupee)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -N -s -X POST "$API/v1/stream" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What colour badge do visitors wear at the Pune warehouse?","tenant_id":"acme","top_k":5}' &gt; /tmp/stream64.txt
+echo "citation events: $(grep -c '^event: citation' /tmp/stream64.txt) | tokens: $(grep -c '^event: token' /tmp/stream64.txt) | done: $(grep -c '^event: done' /tmp/stream64.txt)"
+grep -m1 '^data: {"n": 1' /tmp/stream64.txt | cut -c7- \
+  | python -c "import json,sys; d=json.load(sys.stdin); print('first citation:', d['source'].split('/')[-1], '| kind', d['kind'], '| page', d['page'], '| quote', repr(d['quote'][:48]))"
+cat /tmp/stream64.txt</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your ids and counts; the whole transcript follows, ready to copy)</span><span class="ro">read only</span></div><pre tabindex="0">citation events: 5 | tokens: NN | done: 1
+%%FIRST_EVENT%%
+...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The link opened because the UI's account signed it through IAM, for one object, for %%EXPIRY%% minutes. No key was stored anywhere, and anyone holding that link could read that one note until it expired. The transcript you pasted was drawn exactly as the page draws it. The <code>[1]</code> in the answer became a pill whose hover shows the note's badge clause, because the first citation event is the first packed chunk. The Sources list offered <em>Open source</em>, not <em>Jump to page</em>, because a markdown note has no pages.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Account</span><h3>The UI's account: what it may do, and the checks the page makes first</h3><p>The roles the UI's service account holds, the ones it pointedly does not, and the grants that let it upload, call the API and sign links.</p></div></div>
+
+<h4>Definition</h4>
+<p>The UI's account holds a short list of project roles: Vertex AI and Document AI users, the Secret Manager accessor, Firestore user for the roster, and Speech for voice. It also holds object admin on two buckets, the uploads and the text-to-speech cache, and the token-creator role on itself, for signing. It holds no project-wide invoker role. The API and the chat service each grant the UI's account the right to call them, and that is the whole call graph. It holds no BigQuery role either, and the Terraform says why: the process that renders user chat should not hold warehouse credentials, because a flaw there would reach the warehouse. The page adds its own checks before anything is written. The tenant comes from the roster, never from a form, and must be a plain name. The file name must be plain, with no path, no control characters and at most 255 bytes. The extension must be on the list, and one upload is capped at %%MAX_MB%% MB.</p>
+
+<h4>The code</h4>
+@@ui_roles@@
+@@bucket_grant@@
+@@self_sign@@
+
+<h4>Do it: read the account's grants, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (reads only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">SA="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"
+echo "project roles:"; gcloud projects get-iam-policy "$PROJECT" --flatten=bindings --filter="bindings.members:serviceAccount:$SA" --format='value(bindings.role)'
+has() { python -c "import json,sys; raw=sys.stdin.read(); m='serviceAccount:$SA'; j=json.loads(raw) if raw.strip() else None; print('no such service' if j is None else [b['role'] for b in j.get('bindings', []) if m in b.get('members', [])] or 'none')"; }
+echo "uploads bucket: $(gcloud storage buckets get-iam-policy "gs://$PROJECT-uploads" --format=json | has)"
+for S in documind-api documind-chat documind-ingest; do echo "may invoke $S: $(gcloud run services get-iam-policy "$S" --region "$REGION" --project "$PROJECT" --format=json 2&gt;/dev/null | has)"; done
+echo "on itself: $(gcloud iam service-accounts get-iam-policy "$SA" --project "$PROJECT" --format=json | has)"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your lane may carry a role more; the absent ones are the point: no BigQuery, no call to the worker)</span><span class="ro">read only</span></div><pre tabindex="0">project roles:
+roles/aiplatform.user
+roles/datastore.user
+roles/documentai.apiUser
+roles/secretmanager.secretAccessor
+roles/speech.editor
+uploads bucket: ['roles/storage.objectAdmin']
+may invoke documind-api: ['roles/run.invoker']
+may invoke documind-chat: ['roles/run.invoker']
+may invoke documind-ingest: none
+on itself: ['roles/iam.serviceAccountTokenCreator']</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The account's grants read like the journey's hops. Object admin on the uploads bucket is the upload. Invoker on the API is the Versions table and the chat. The token-creator role on itself is the signed links. Firestore access is the roster lookup. The worker is not something the UI may call: it runs when the bucket says an object arrived, and the UI's only way to start it is to write a file where it watches. A missing <code>documind-chat</code> prints "no such service" on a lane without the chat service. That is expected, not a gap.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What the journey costs, the sidebar's own price table, and what nothing records</h3><p>The rupee line, a second price table inside the page, the answer drawn as HTML, and the uploader nobody writes down.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Hop</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The UI itself</td><td data-label="Costs">Cloud Run while an instance serves; nothing idle at <code>MIN_INSTANCES</code> 0, one warm instance on a session day</td><td data-label="On your lane">your browsing today</td></tr>
+<tr><td>The upload</td><td data-label="Costs">one object write, then the worker's parse and three embeddings</td><td data-label="On your lane">paise</td></tr>
+<tr><td>Versions</td><td data-label="Costs">one API call and the ledger's reads</td><td data-label="On your lane">free at this volume</td></tr>
+<tr><td>A question in Chat</td><td data-label="Costs">the API's answer: the prompt and the reply at the model's rate, priced on the row</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>Open source</td><td data-label="Costs">one signBlob call and the object's download</td><td data-label="On your lane">free at this size</td></tr>
+<tr><td>Read aloud</td><td data-label="Costs">Text-to-Speech by the character, nothing on a cache hit</td><td data-label="On your lane">off unless you switch it on</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The sidebar's own price table</h4>
+<p>The sidebar's "Cost this session" is not the bill. The stream's <code>done</code> event carries tokens but no price on the vertex backend, so the page prices each turn itself. It multiplies the tokens by two rates written into its own code, $%%UI_IN%% in and $%%UI_OUT%% out per million, at %%UI_INR%% rupees to the dollar. The API prices the same tokens with <code>cost.py</code>, which reads a price table and charges cached input at a tenth of the rate. The two agree today. After a price change, the sidebar stays wrong until the image is rebuilt. Once Module 6 turns a context cache on, the sidebar overstates, because it charges cached tokens at the full rate. The usage row is the bill, and the sidebar is an estimate.</p>
+@@ui_prices@@
+
+<h4>The answer, drawn as HTML</h4>
+<p>To draw the pills as badges, the page renders the whole answer with Streamlit's <code>unsafe_allow_html</code>. The model's text becomes HTML, and the hover text escapes only quotation marks. A model's output is text the page did not write, and this is one reason the Terraform keeps warehouse credentials out of the UI's process. The renderer in step 1 escapes the answer before it adds pills, which is the safer order.</p>
+
+<h4>What nothing records</h4>
+<p>The page knows who uploaded a file: it just read your email off the assertion. Nothing writes that down. The object is written by the UI's account with a content type and nothing else, and the ledger row carries the tenant and the version, not the person. A storage audit log, where one is switched on, would name the UI's account. So the lane can tell you which version of the note is current and when it landed, but not who put it there. Recording the person means stamping the email onto the object, a one-line change to the kit that this course has not made.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Nothing reaches the UI without a sign-in</td><td data-label="The check">step 3, the curl</td><td data-label="Pass looks like"><code>HTTP 302</code> to accounts.google.com</td></tr>
+<tr><td>2</td><td data-label="Claim">The page knows the person and the tenant</td><td data-label="The check">step 3, the sidebar</td><td data-label="Pass looks like">your email; <strong>Tenant: acme</strong></td></tr>
+<tr><td>3</td><td data-label="Claim">The upload lands in the tenant's folder, written by the UI's account</td><td data-label="The check">step 4, the object</td><td data-label="Pass looks like"><code>text/plain</code> and a generation under <code>acme/</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The worker indexed your exact bytes</td><td data-label="The check">step 4, the worker's line</td><td data-label="Pass looks like">the key's hash equals your file's; <code>embedded %%NOTE_CHUNKS%%</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The version is listed</td><td data-label="The check">step 4, Versions and the curl</td><td data-label="Pass looks like"><code>acme/pune_visitor_rules.md indexed chunks %%NOTE_CHUNKS%%</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A cited answer streams in the UI</td><td data-label="The check">step 5, Chat</td><td data-label="Pass looks like">amber, with a <code>[1]</code> pill on the note's clause</td></tr>
+<tr><td>7</td><td data-label="Claim">The API believes the person, not the page</td><td data-label="The check">step 5, the rows</td><td data-label="Pass looks like">your email on the stream row; the account on the shell's</td></tr>
+<tr><td>8</td><td data-label="Claim">A source opens through a link signed without a key</td><td data-label="The check">step 6, Open source</td><td data-label="Pass looks like">the note's text in a new tab</td></tr>
+<tr><td>9</td><td data-label="Claim">The UI's account holds only its journey's grants</td><td data-label="The check">step 7</td><td data-label="Pass looks like">no BigQuery role; <code>none</code> for the worker</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One new document under acme, <code>pune_visitor_rules.md</code>, indexed with %%NOTE_CHUNKS%% chunks. It answers a question no golden row asks, so it can stay. To withdraw it, run <code>make retire PROJECT=$PROJECT SOURCE=acme/pune_visitor_rules.md</code>. Your questions are usage rows, one of them with your email on it, and the transcript is at <code>/tmp/stream64.txt</code>. The journey from an upload to a cited answer now works end to end on your lane. Lesson 3.9 designs a fact-checking system from these parts, and Module 4 then measures how good the answers are, starting with the questions it measures them on.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Generation &middot; Lesson 3.8 Complete the Streamlit upload-to-answer journey &middot; v5.0</p><p>Next: Lesson 3.9 System design: a fact-checking system built from DocuMind's parts.</p></div>

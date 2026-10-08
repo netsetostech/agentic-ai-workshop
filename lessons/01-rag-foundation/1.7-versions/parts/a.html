@@ -1,0 +1,80 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 1 &middot; RAG foundation &middot; Lesson 1.7</div>
+<h1>Publish versions, retire documents and reject stale events: <span>one current version, three ways to stop being it, and the event that must not count</span></h1>
+<p>A document on the lane has exactly one current version, and this lesson is about how that stays true. A new version is published by one swap, never by a stream of writes. A version stops being current in one of three ways, each with its own name and its own way back: superseded by a newer one, retired because its object left the bucket, or withdrawn by a person. And an event that arrives late, carrying an older generation of the object, is refused before a byte is downloaded, because acting on it would publish the past. You will read all of it off your lane, replay three events yourself, and withdraw and restore a document by hand.</p>
+<div class="hero-chips"><div class="hero-chip">Staged, then one swap</div><div class="hero-chip">superseded / retired / withdrawn</div><div class="hero-chip">expire_at, 30 days</div><div class="hero-chip">The generation guard</div><div class="hero-chip">make retire / make restore</div><div class="hero-chip">Rs 0 throughout</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What "current" means</a></li>
+<li><a href="#s2">The words: staged, swap, superseded, retired, withdrawn, generation, tombstone</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Publish: the swap, and the reader's guard</a></li>
+<li><a href="#s4">Superseded: the retired rows' bookkeeping, and the clock that removes them</a></li>
+<li><a href="#s5">Stale: the generation guard, and three replayed events</a></li>
+<li><a href="#s6">Withdrawn: retire a document by hand, then restore it</a></li>
+<li><a href="#s7">The three states side by side</a></li>
+<li><a href="#s8">The swap window, effective dates, and what a version costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a version is published (rows written staged and invisible, then flipped current in one pass while the previous version's rows are flagged, never deleted), the three states a version can leave "current" for and what brings each one back, and why an event for an older generation of an object is acknowledged and ignored. Then you will prove it on your lane: read the handbook's three versions and their flags, replay three events against the worker and watch the guard sort them, withdraw the note from lesson 1.4 by hand, see the tombstone hold against the same bytes, and restore it without embedding anything.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What "current" means</h3><p>One version a reader may see, how it becomes that version, the three ways it stops, and the one event that must not change anything.</p></div></div>
+
+<p><strong>Current is a flag, and exactly one version of a document carries it.</strong> Every chunk row has <code>current</code>. The reader filters on it, the search index carries it as a restrict, and the ledger row names the version that holds it. Publishing a version means flipping that flag on its rows and off the previous version's rows, and the worker does it as one pass over the source's rows: the new version's rows go first, so that no reader ever finds none, and the old rows are flagged with a successor, a timestamp and an expiry. For a document of a few hundred chunks that is one Firestore commit; for a longer one it is two, and the reader carries a guard for the moment in between: of two versions that are both current, keep the one whose rows landed last.</p>
+
+<p><strong>Three ways out of current, three names.</strong> <em>Superseded</em>: a newer version was published; the old rows keep their vectors for thirty days, so the same bytes again are reactivated rather than re-embedded, which lessons 1.3 and 1.6 used. <em>Retired</em>: the object left the bucket, which the nightly walk of lesson 1.8 notices; an object that comes back is re-ingested. <em>Withdrawn</em>: a person took the document down with <code>make retire</code>; the object stays where it is, the walk leaves it alone, the same bytes again are acknowledged and refused, and only <code>make restore</code> brings it back. The three are distinct on purpose: before the third existed, a hand retirement looked like a lost object, and the next night's walk put back what a person had just removed.</p>
+
+<p><strong>An older event is not an older version to publish.</strong> Delivery is at-least-once and not in order (lesson 1.5). The event for generation 41 of an object can arrive after generation 42 was indexed. The worker reads the ledger's generation before it downloads anything, and an older event is acknowledged as <code>stale</code>: one log line, nothing fetched, nothing changed. The bytes are always fetched by generation, never "whatever the object holds now", so an event and its bytes are one version; a generation that no longer exists is the same case, and the newer generation's own event is what indexes it.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128218;</div><div>
+<p><strong>A library's reference shelf.</strong> One edition of each standard sits on the shelf; that is what a reader may consult. A new edition goes on the shelf in one motion and the old one goes to the stacks with a slip saying which edition replaced it and when the stacks may discard it. Three things take a book off the shelf: a newer edition (superseded), the publisher withdrawing the title from sale (retired, when the walk finds the object gone), or the librarian pulling it by hand with a note that says do not reshelve (withdrawn). And when a courier turns up with last year's edition after this year's is already shelved, the librarian checks the edition number against the catalogue and sends it back unopened. That is the generation guard.</p></div></div>
+
+<h4>Play the lifecycle</h4>
+<p>The player below is the kit's rules as a state machine: one document, its ledger row, its versions and their rows, and what the worker or the walk says after each event. Press the events in any order that the rules allow; the greyed ones do not apply to the state you are in. Watch two things: the ledger status and what a reader would see.</p>
+
+<div class="diagram vp" id="lifecycle">
+<div class="dg-title">The version player - one document through the kit's rules</div>
+<div class="vp-buttons" id="vp-buttons">
+<button class="vp-btn" type="button" data-act="reissue">Re-issue (new bytes)</button>
+<button class="vp-btn" type="button" data-act="same">Same bytes as current</button>
+<button class="vp-btn" type="button" data-act="undo">Bytes of a superseded version</button>
+<button class="vp-btn" type="button" data-act="retire">make retire</button>
+<button class="vp-btn" type="button" data-act="restore">make restore</button>
+<button class="vp-btn" type="button" data-act="gone">Object deleted (the nightly walk)</button>
+<button class="vp-btn" type="button" data-act="back">Same bytes after the walk retired it</button>
+<button class="vp-btn" type="button" data-act="old">An older generation's event</button>
+<button class="vp-btn" type="button" data-act="ttl">30 days pass</button>
+<button class="vp-btn" type="button" data-act="reset">Reset</button>
+</div>
+<div class="vp-status" id="vp-status"></div>
+<div class="vp-versions" id="vp-versions"></div>
+<div class="vp-log" id="vp-log"></div>
+<p class="dg-cap">The claim state is <code>documents/{doc_key}.status</code>, the rows state is the <code>current</code> flag with its <code>expire_at</code>, the ledger status is <code>sources/{name}.status</code>. Every transition here is a function you will read on this page: <code>swap_versions</code>, <code>retire_previous</code>, <code>reactivate</code>, <code>stale_generation</code>, <code>withdrawn</code>, and the reconcile CLI's <code>--retire</code> and <code>--restore</code>.</p>
+</div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: staged, swap, superseded, retired, withdrawn, generation, tombstone</h3><p>Nine words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Staged</strong></td><td data-label="Meaning">A row written <code>current: false, staged: true</code> with an expiry one day out. Invisible to every reader until the swap; if nothing ever swaps it, the policy removes it.</td><td data-label="On your lane">None left: the count in step 3 says <code>staged rows: 0</code>.</td></tr>
+<tr><td><strong>Swap</strong></td><td data-label="Meaning">One pass over a source's rows: the new version's rows flipped current and their stage marks cleared, then every other current row retired. Batches of 400; a document up to about 250 chunks flips in one commit.</td><td data-label="On your lane">The handbook's 283 rows: one commit.</td></tr>
+<tr><td><strong>Superseded</strong></td><td data-label="Meaning">A version whose rows a newer version retired: <code>current: false</code>, <code>superseded_by</code>, <code>superseded_at</code>, <code>expire_at</code> thirty days out; the claim's status too. The same bytes again reactivate it.</td><td data-label="On your lane">Revision 2 and revision 3 of the handbook.</td></tr>
+<tr><td><strong>Retired</strong> (the ledger)</td><td data-label="Meaning">The ledger status the nightly walk sets when a source's object has left the bucket: rows retired, and an object that returns is re-ingested (lesson 1.8).</td><td data-label="On your lane">None today; the state <code>make restore</code> passes through on its way back.</td></tr>
+<tr><td><strong>Withdrawn</strong></td><td data-label="Meaning">A tombstone a person sets with <code>make retire</code>: rows retired, the ledger row says <code>withdrawn</code>, the object stays, the walk leaves it, the same bytes are refused. Only <code>make restore</code> clears it.</td><td data-label="On your lane">The note from lesson 1.4, for a few minutes in step 6.</td></tr>
+<tr><td><strong>Generation</strong></td><td data-label="Meaning">Cloud Storage's number for one version of an object. The bucket keeps versions (a year, then a lifecycle rule deletes them), the ledger records the generation it indexed, and every event names one.</td><td data-label="On your lane">Read off the handbook's ledger row in step 5.</td></tr>
+<tr><td><strong>Stale event</strong></td><td data-label="Meaning">An event whose generation is older than the ledger's, or names a generation that cannot be fetched. Acknowledged, logged, ignored.</td><td data-label="On your lane">Two of the three replays in step 5.</td></tr>
+<tr><td><strong>The newest-per-source guard</strong></td><td data-label="Meaning">The reader's rule: of two versions of one source both marked current, keep the one whose rows landed last, and never pass a retired row to the reranker.</td><td data-label="On your lane">Read in step 3; it never fires on a 283-row document.</td></tr>
+<tr><td><strong><code>expire_at</code></strong></td><td data-label="Meaning">The retired row's clock. A Firestore TTL policy on that field is the only thing that ever deletes a chunk row; <code>make purge</code> is its manual twin.</td><td data-label="On your lane">Revision 2's and revision 3's rows expire on 22 October 2026.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Lesson 1.4 wrote these records and lesson 1.6 counted them. This lesson reads their flags, because the flags are the lifecycle: a row's state, a claim's state and a ledger row's state, and the events that move them.</p>
+

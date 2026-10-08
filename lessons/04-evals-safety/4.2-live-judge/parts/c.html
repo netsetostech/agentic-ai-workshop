@@ -1,0 +1,113 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; The judge</span><h3>The judge: the lane's own answers, read with the context they cite</h3><p>Its own venv, its offline self-test, and a run that ends in Vertex AI Experiments.</p></div></div>
+
+<h4>Definition</h4>
+<p>The judge collects its own answers with the same <code>ask()</code> and the same member token, so it judges the lane and not a prompt in a notebook. For each answer it reads the cited chunks in full from Firestore. It builds the prompt the judge model will see: the context, then the question. It asks Vertex AI Evaluation, in <code>us-central1</code>, for two ratings per row. GROUNDEDNESS is 1 when every part of the answer is attributable to that context and 0 otherwise. The second is the one its SDK names, which for the pinned 2.1.0 is %%SECOND%%, from 1 to 5. Each run is an Experiments run in <code>documind-eval</code>, named for the API revision's <code>GIT_SHA</code>, the time and a hash of the judge's templates, because a different template is a different judge. That SDK is 2.1.0, while the kit's services pin <code>google-cloud-aiplatform</code> %%AIP_PIN%%, which the retriever, the indexer and the ablation harness import in your shell. So the judge gets its own venv, and <code>make judge</code> is told to use its python.</p>
+
+<h4>The code</h4>
+@@judge_doc@@
+@@judge_target@@
+@@enrich@@
+@@prompt_shape@@
+@@metrics@@
+@@by_shape@@
+@@judge_close@@
+
+<h4>Do it: the judge's venv and its self-test</h4>
+%%CELL_JUDGE_ENV%%
+%%OUT_JUDGE_ENV%%
+
+<h4>Do it: the judge on your lane</h4>
+<p><code>--reuse</code> keeps the collected answers in a file. If the Evaluation step stops, the rerun judges the same answers without asking the lane again.</p>
+%%CELL_JUDGE%%
+%%OUT_JUDGE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The self-test proved the judge's assembly offline: the full chunk text replaces the quote, the prompt carries the context and then the question, and the trajectory maths is right. The live run asked the lane every row again, read every cited chunk it could find, and sent %%N_JUDGE_REQ%% requests to the Evaluation service, two per answer. <code>groundedness/mean</code> is the share of answers judged fully grounded. The by-shape lines are the ones to read, because a refusal claims nothing and so says nothing about grounding. No SDK 2.1.0 setting pins the judge model, so the run says the service's default judged it. The template hash in the run's name is how you tell two judges apart later.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Side by side</span><h3>Where the gate and the judge disagree: read the row</h3><p>Four ways the two can meet, and the gate's misses read against the judge's answers.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th></th><th>The judge: grounded</th><th>The judge: not grounded</th></tr></thead>
+<tbody>
+<tr><td><strong>The gate: pass</strong></td><td data-label="The judge: grounded">agreed: the figure, cited, and supported</td><td data-label="The judge: not grounded">the figure is right and something else in the answer is not in its context: read the answer</td></tr>
+<tr><td><strong>The gate: fail</strong></td><td data-label="The judge: grounded">supported but short: one figure of two, a refusal the corpus could answer, a figure in words the rule missed</td><td data-label="The judge: not grounded">agreed: a real miss</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><code>judge.py</code> prints its summary and writes no per-row ratings, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.</p>
+%%CELL_SIDE%%
+%%OUT_SIDE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The stub's two misses read differently. jn-06 answered with one of its two figures, and everything it said was in its context, so a groundedness judge can call it grounded. lk-27 refused, and a refusal is always grounded. Neither is the judge failing; both are rows the gate caught and a groundedness rating cannot. The reverse happens too: an answer can carry the gate's figure and a sentence its context never said. That row passes the gate, and only a low by-shape rating, or your reading, finds it. The two collections are separate runs, so a row can differ between them; that difference is itself worth reading.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Trajectories and pairwise</span><h3>The judge's other two modes: trajectories now, pairwise in lesson 4.4</h3><p>The chat service's tool calls against the one grounded path, and why the pairwise judge needs a candidate.</p></div></div>
+
+<p>With <code>CHAT_URL</code>, the judge sends a few answerable acme rows to each of the chat service's three brains, langchain, langgraph and adk. It compares the tool calls each brain returns with the reference path: one retrieve, then the answer. The three matches are computed in <code>judge.py</code>: exact, in order and any order. A brain that answers without retrieving scores 0 on all three, whatever its answer says. <code>--no-vertex</code> skips the Evaluation service, and <code>--reuse</code> skips asking the API again, so this costs only the chat turns. <code>CHAT_URL</code> is the service's <code>documind-chat-NUMBER.REGION.run.app</code> address, not the <code>status.url</code> gcloud prints, which is usually its hashed <code>a.run.app</code> address: the judge mints its token for <code>CHAT_URL</code>, and the chat service accepts only a token minted for its own <code>SELF_URL</code>.</p>
+@@traj@@
+%%CELL_TRAJ%%
+%%OUT_TRAJ_NONE%%
+%%OUT_TRAJ_CHAT%%
+<p>Pairwise is the third mode. With <code>API_B</code>, the same questions also go to a candidate revision, and the judge says which of the two answers is better, row by row, with the live revision as the baseline. It needs a candidate with one setting changed, which is where lesson 4.4 begins.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>How each instrument lied before it was fixed, and what a run costs</h3><p>The kit's own history of green runs that meant nothing, and the rupees of this lesson.</p></div></div>
+
+<h4>The live gate, before 12 September</h4>
+<ul>
+<li><strong>A 200 whose body was <code>{}</code> counted as a refusal.</strong> Every 200 is now checked against the response schema, and a malformed body is a failed request.</li>
+<li><strong>A 500 on the version row cost one point and never blocked.</strong> <code>request_success_rate</code> must now be 1.00, and a required row that errors blocks on its own.</li>
+<li><strong>"60" was satisfied by "160 days".</strong> A figure must now stand on its own boundaries.</li>
+<li><strong>A citation was any non-empty list.</strong> Each one must now name the row's tenant and a current version.</li>
+<li><strong>33 correct answers of 47 read as 87%.</strong> The rates divided by the rows answered. <code>correct_rate</code> now divides answered-and-right by every answerable row.</li>
+<li><strong>A missing outsider token printed a note and ran anyway.</strong> The run now refuses to start, because every isolation row would ask as a member and could only fail.</li>
+</ul>
+
+<h4>The judge, in its first live runs on 10 September</h4>
+<ul>
+<li><strong>It read quotes.</strong> A citation's quote is at most twenty-five words, so every answer that said more looked unsupported: 0.25 grounded. It now reads the cited chunks in full.</li>
+<li><strong>It read the bare question.</strong> The template reads only the prompt and the response, so the chunk text in another column was never seen. It scored 0.25 again, because the sixteen refusals among sixty-four rows were the only answers that looked grounded. The prompt is now the context, then the question.</li>
+<li><strong>It stopped after seventeen minutes.</strong> The SDK had renamed FULFILLMENT. The second metric is now resolved by preference and printed.</li>
+<li><strong>Two runs collided on one name,</strong> and Experiments refused the second. The name now carries the time.</li>
+<li><strong>A candidate token for the tag URL got 401 on every row,</strong> and the judge wrote a run with no rows. Tokens now carry the canonical URL as their audience, and an empty collection stops the run.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><code>make eval</code>, the self-test, the cells that read files</td><td data-label="Costs">nothing</td><td data-label="On your lane">every run</td></tr>
+<tr><td>CI's verdict</td><td data-label="Costs">one call to GitHub's public API</td><td data-label="On your lane">free</td></tr>
+<tr><td><code>make eval-live</code></td><td data-label="Costs">%%N_ROWS%% answers at the model's rate, $%%RATE_IN%% in and $%%RATE_OUT%% out per million tokens, and %%N_ISO%% requests refused at the roster</td><td data-label="On your lane">what <code>make usage</code> printed</td></tr>
+<tr><td><code>make judge</code></td><td data-label="Costs">%%N_ROWS%% more answers, and %%N_JUDGE_REQ%% requests to the Evaluation service</td><td data-label="On your lane">the same again, plus the service's own line on the bill</td></tr>
+<tr><td>Trajectories</td><td data-label="Costs">nine chat turns</td><td data-label="On your lane">only with the chat service</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>In an application repository, <code>documind-cd.yml</code> would run on every pull request and every push to main, as its header says. It is keyless: GitHub's short-lived token is exchanged through Workload Identity Federation for a Google credential that lasts about an hour, pinned to the repository's immutable id and to main. The learner repository has no project behind it, so there the workflow waits for a person to start it.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The kit's set is sound</td><td data-label="The check">step 3, <code>make eval</code></td><td data-label="Pass looks like">three <code>[PASS]</code> lines</td></tr>
+<tr><td>2</td><td data-label="Claim">CI judged the commit you run</td><td data-label="The check">step 3, the CI cell</td><td data-label="Pass looks like"><code>success</code> on the marked commit</td></tr>
+<tr><td>3</td><td data-label="Claim">The live gate sent every row</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>%%N_ROWS%% rows (%%N_ANS%% answerable, %%N_UNANS%% not)</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The outsider was refused on every isolation row</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>isolation_403_rate</code> 100.0%</td></tr>
+<tr><td>5</td><td data-label="Claim">The exit code carries the verdict</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>All thresholds met.</code>, or <code>Blocked:</code> with the reason</td></tr>
+<tr><td>6</td><td data-label="Claim">Two rates have different denominators</td><td data-label="The check">step 4, the arithmetic</td><td data-label="Pass looks like"><code>ANSWERED</code> against <code>ANSWERABLE</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The run's rupees are known</td><td data-label="The check">step 4, <code>make usage</code></td><td data-label="Pass looks like">%%N_ROWS%% answers in the hour, with INR</td></tr>
+<tr><td>8</td><td data-label="Claim">The judge's assembly is right</td><td data-label="The check">step 5, the self-test</td><td data-label="Pass looks like"><code>selftest:</code> and the four claims</td></tr>
+<tr><td>9</td><td data-label="Claim">The judge rated the lane</td><td data-label="The check">step 5</td><td data-label="Pass looks like">a run ending <code>-t%%TEMPLATE_HASH%%</code>, groundedness by shape</td></tr>
+<tr><td>10</td><td data-label="Claim">The gate's misses were read</td><td data-label="The check">step 6</td><td data-label="Pass looks like">each missed row, the judge's answer, its figures</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>In the cloud: the usage rows of the gate's and the judge's answers, the outsider's refused requests in the API's log, and one run in the Experiments experiment <code>documind-eval</code>, which stays until you delete it. On your machine: <code>evals/reports/lesson72.json</code> and <code>evals/reports/judge72.json</code>, which git ignores, and <code>~/judge-venv</code>, which you can delete. Nothing in the kit changed, so the setup block's <code>git pull</code> keeps working. Lesson 4.3 places these instruments in the pipeline, and lesson 4.4 makes a candidate with one setting changed and turns all three instruments on it: the scoped live gate, the pairwise judge against the live revision, and the price of the difference.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.2 Separate offline checks, live scoring and LLM judgment &middot; v5.0</p><p>Next: Lesson 4.3 Place evals in the pipeline: CI, the candidate gate and live traffic.</p></div>

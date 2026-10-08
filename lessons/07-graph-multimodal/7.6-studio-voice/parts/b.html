@@ -1,0 +1,111 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>API</code> and <code>ME</code> set by the setup above, and lesson 7.5's lane.</p>
+<ul>
+<li><strong>Lesson 7.5's video.</strong> Step 5 sends <code>evals/corpus/acme/townhall_2026_q1.mp4</code>, which <code>make media MEDIA_ARGS=--video</code> wrote, through the door. Step 6 asks the town hall question that 7.5 answered from it.</li>
+<li><strong>The UI's speech clients.</strong> Step 6's first line installs the UI image's pins of the Speech-to-Text and Text-to-Speech clients. The cells run the UI's own <code>voice.py</code> in your shell, with the UI's settings.</li>
+<li><strong>What the lesson changes.</strong> It generates one image for acme and writes the answer's audio into the TTS bucket. It re-sends the video's bytes under their own name, which the worker acknowledges, and it saves <code>~/answer.ogg</code>.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The Studio's and the voice's rules, run</h3><p>The usage row media.py writes, the events that reach BigQuery, and cached_tts with its clients stood in.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell does three things with the kit's own files:</p>
+<ol>
+<li>It lifts <code>_usage()</code> out of <code>media.py</code>, which builds its clients when imported, and writes the row for a generation and for a DEMO_MODE hit.</li>
+<li>It reads the log sink's filter and <code>tenant_daily</code>'s <code>WHERE</code>, and says which usage events each one takes.</li>
+<li>It imports the UI's <code>voice.py</code> with its clients stood in: a bucket in memory, and a voice that counts its calls. Then it reads the Studio's own sentence aloud three times.</li>
+</ol>
+
+<h4>The code</h4>
+@@usage@@
+@@sink@@
+@@cached_tts@@
+
+<h4>Do it</h4>
+%%CELL_RULES%%
+%%OUT_RULES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The media row carries a price and no tokens:</strong> 0.039 for a generation, and 0 with <code>cached True</code> for a DEMO_MODE hit. The UI's cost display reads the same price from its own copy of it.</li>
+<li><strong>A media row never reaches <code>tenant_daily</code>.</strong> The sink copies <code>query</code>, <code>stream</code>, <code>chat</code>, <code>desk</code>, <code>passages</code>, <code>desk_shadow</code> and <code>desk_gate</code> (those two on a condition) into BigQuery; <code>media</code> still never. The view reads <code>query</code>, <code>stream</code> and <code>media</code>. The view asks for media rows the sink never copies, and the chat rows the sink copies go unread. Lesson 11.5 found it; this lesson's image is one such row.</li>
+<li><strong><code>cached_tts</code> synthesised once and read back once.</strong> The Hindi voice reading the same words is another key and another object, because the voice is part of what the key hashes.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>A generated image, and its usage row</h3><p>The Studio's own prompt, sent twice; the rows in Cloud Logging; the event in the audit bucket; the image.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell reads the Studio tab's default prompt out of <code>studio.py</code>, and sends it to <code>/v1/media/generate</code> twice as <code>documind-ui-sa</code>, as the Studio would. It then reads three things back:</p>
+<ul>
+<li>the API's <code>event=media</code> usage rows from Cloud Logging;</li>
+<li>the <code>media.generate</code> events from the audit bucket;</li>
+<li>a 15-minute link to the image, signed as <code>documind-ui-sa</code>, the account the Studio signs with, which may read the media bucket.</li>
+</ul>
+<p>The route checks before it spends:</p>
+@@guards@@
+<p>Then it spends, and records:</p>
+@@spend@@
+
+<h4>Do it</h4>
+%%CELL_STUDIO%%
+%%OUT_STUDIO%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The first call drew the image,</strong> <code>cached False</code>. <strong>The second was served from the media bucket,</strong> <code>cached True</code>, with no model call. The name is the prompt's hash, <code>%%KEY8%%...</code>, so anyone in acme who sends these exact words gets this image from the bucket until the 30-day rule deletes it.</li>
+<li><strong>Two usage rows:</strong> 0.039 for the spend and 0.0 for the hit, both in Cloud Logging.</li>
+<li><strong>One audit event,</strong> for the generation. The hit left none, because nothing was drawn. The event holds the prompt's hash, not the prompt, because the audit bucket is retention-locked for five years.</li>
+<li><strong>The link opens the PNG for 15 minutes.</strong></li>
+</ul>
+<p>If this prompt was drawn before, in the Studio or by an earlier run, both calls are hits: two rows at 0, and no audit event. Either way, that is the first proof: a generated image and its usage row.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Exercise</span><h3>The upload door</h3><p>Two requests the door refuses, then lesson 7.5's video, put straight into the bucket.</p></div></div>
+
+<h4>Definition</h4>
+<p>The door signs a PUT for one bare filename, under the caller's tenant, bound to one of seven content types:</p>
+@@upload_url@@
+<p>The cell asks for two URLs the door should refuse: a zip, and a name that is a path into globex. Then it asks for one for the video, PUTs the MP4's bytes to it, and waits for the worker's line about those bytes. It finds the line by the bytes' own SHA-256, the worker's claim key.</p>
+
+<h4>Do it</h4>
+%%CELL_DOOR%%
+%%OUT_DOOR%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Two refusals, from the route's own checks:</strong> the content type is not one of the seven, and the name is not bare. The object's name is the tenant's prefix plus exactly the filename given, so the door refuses a slash or <code>..</code> before it signs anything.</li>
+<li><strong>The URL was a PUT into acme's prefix of the uploads bucket,</strong> bound to <code>video/mp4</code> and 15 minutes. The PUT went straight to the bucket, without passing through Cloud Run.</li>
+<li><strong>The worker took the bucket's event and acknowledged the bytes as a duplicate.</strong> Its claim key is the bytes' hash, and lesson 7.5 indexed these bytes already. A new video would be described the way 7.5 showed.</li>
+</ul>
+<p>No page of the UI uses this door (step 7).</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>An answer read aloud, and a question nobody hears</h3><p>The UI's own voice.py, in your shell: an answer spoken twice, then its audio transcribed back.</p></div></div>
+
+<h4>Definition</h4>
+<p>The first cell asks the town hall question as <code>documind-ui-sa</code>. It reads the answer aloud with the UI's own <code>cached_tts</code>, twice, and saves the audio as <code>~/answer.ogg</code>. The text is the answer's first 1,500 characters, as the chat's toggle reads it.</p>
+%%CELL_SPEAK%%
+%%OUT_SPEAK%%
+<p>Play it: in Cloud Shell, <code>cloudshell download ~/answer.ogg</code> hands the file to your browser. That is the second proof: an answer read aloud.</p>
+
+<p>The second cell gives that audio to the UI's own <code>transcribe</code>, first where the UI runs it, then in <code>eu</code>. <code>eu</code> is a location Google lists <code>chirp_3</code> in, for Hindi and English (India). The audio leaves India for that one call: a synthetic voice reading an answer about acme, whose policy is <code>any</code> (lesson 7.3). This is the function:</p>
+@@transcribe@@
+%%CELL_LISTEN%%
+%%OUT_LISTEN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The answer was read aloud:</strong> the first time a miss, synthesised and written to the TTS bucket; the second time a hit, the same bytes read back.</li>
+<li><strong>In <code>asia-south1</code>, <code>transcribe()</code> returned an empty string.</strong> None of its three models answered there, and it swallowed each error without a word. That is what the chat's microphone does on your lane: it records, transcribes nothing, and asks nothing.</li>
+<li><strong>In <code>eu</code>, the same function returned the answer's words.</strong> The function is sound; the location is not.</li>
+</ul></div>
+
+<h4>In the UI</h4>
+<p>Open the UI and try the same features by hand:</p>
+<ul>
+<li><strong>Studio.</strong> Press Generate with the default prompt. It is the prompt step 4 drew, so it is a DEMO_MODE hit: the caption says cache hit, $0.000. Then press Speak under "Read it aloud" to play the Studio's sentence in the voice you pick.</li>
+<li><strong>Chat.</strong> Turn on "Read answers aloud" in the sidebar and ask a question: the answer plays under it.</li>
+<li><strong>The microphone.</strong> Press Speak and say a question. Nothing is asked, for the reason the second cell showed.</li>
+</ul>

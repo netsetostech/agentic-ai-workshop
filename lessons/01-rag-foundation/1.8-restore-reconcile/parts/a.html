@@ -1,0 +1,70 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 1 &middot; RAG foundation &middot; Lesson 1.8</div>
+<h1>Restore documents and reconcile index differences: <span>one document, a visible gap, and a verified return</span></h1>
+<p>Start with a document that answers a question. Delete its cloud file and show why the index can still answer. Preview the reconciliation plan, apply retirement, and prove that storage and the index agree again. Then upload the exact original bytes and watch the worker reuse the existing embeddings. A fresh fixture, exact source checks and a clean baseline make each change visible.</p>
+<div class="hero-chips"><div class="hero-chip">indexed &rarr; retired &rarr; indexed</div><div class="hero-chip">plan before apply</div><div class="hero-chip">same bytes, reused embeddings</div><div class="hero-chip">queued is not drift</div></div>
+</div></div>
+
+<div class="content">
+<div class="toc"><div class="toc-title">On this page</div><ol>
+<li><a href="#s1">The demonstration: create a gap, repair it, restore the document</a></li>
+<li><a href="#s2">How reconciliation decides: flow diagrams and the queued claim</a></li>
+<li><a href="#setup">Set up the operator shell</a></li>
+<li><a href="#s3">Prepare: credentials, backend and a clean baseline</a></li>
+<li><a href="#s4">Create this chapter's note and the checks</a></li>
+<li><a href="#s5">Prove the document works</a></li>
+<li><a href="#s6">Delete the cloud file and show the stale index</a></li>
+<li><a href="#s7">Plan retirement, apply it, then prove zero drift</a></li>
+<li><a href="#s8">Restore the exact bytes and prove reuse</a></li>
+<li><a href="#s9">Optional: watch an incomplete undo refuse</a></li>
+<li><a href="#s10">The nightly job and older records</a></li>
+<li><a href="#s11">The separate module smoke test</a></li>
+<li><a href="#s12">Verify the story and restore the original backend</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>Prove one document's deletion, retirement and restoration before studying the exceptions. Then trace each reconciliation action to its real bucket, ledger and claim evidence.</p></div>
+
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; The story</span><h3>Create a gap, repair it, restore the document</h3><p>Storage, the source ledger and a cited answer are three observations. Watch them agree, disagree, and agree again.</p></div></div>
+<p>The ingestion worker handles upload events. Deleting an object sends no deletion event this worker acts on, so a file can disappear while its indexed rows remain current. Reconciliation compares live bucket objects with the source ledger and the per-version claims, names the differences, and repairs them only when the operator applies the plan. It never parses or embeds content itself: a reingest rewrites the object onto itself, creating a new finalize event for the existing worker.</p>
+<div class="analogy"><div class="analogy-icon">&#128203;</div><div><p><strong>The warehouse stock-take.</strong> A delivery is booked when it arrives. If an item leaves through a side door, the ledger still lists it. A stock-take spots the difference and corrects the record. If the same item comes back, its earlier record can be reactivated after checking that the retained pieces are complete.</p></div></div>
+<div class="diagram"><div class="dg-title">The main demonstration</div>
+<div class="life-flow" role="group" aria-label="Indexed, stale after deletion, retired after reconciliation, then indexed after restoration">
+<div><b>1. Working</b><span>File present<br>Source indexed<br>Answer cites it</span></div><span class="life-arrow" aria-hidden="true">&rarr;</span>
+<div><b>2. Stale</b><span>File deleted<br>Source still indexed<br>Gap is visible</span></div><span class="life-arrow" aria-hidden="true">&rarr;</span>
+<div><b>3. Consistent absence</b><span>File absent<br>Source retired<br>Next plan: drift 0</span></div><span class="life-arrow" aria-hidden="true">&rarr;</span>
+<div><b>4. Restored</b><span>Original bytes uploaded<br>Source indexed again<br>Reused N, embedded 0</span></div>
+</div><p class="dg-cap">N is the chunk count observed on your fixture, not a hardcoded three. Reuse depends on the retained rows still being complete and inside the undo window.</p></div>
+<p><strong>Zero drift does not mean every document is present.</strong> A deleted file and a retired source agree with one another. Reconciliation can already be clean before restoration. The apply's summary describes the differences it found at the start; a new plan proves what remains afterward.</p>
+
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Decisions</span><h3>How reconciliation decides</h3><p>First compare the live object and ledger. Only then, if required, inspect the bytes.</p></div></div>
+<p>An <strong>object generation</strong> identifies an upload; uploading the same bytes creates a new generation. A <strong>hash</strong> identifies those bytes. A <strong>claim</strong> is the worker's per-version record in <code>documents/{tenant}_{sha256}</code>, with a status such as indexed, superseded or queued. The source ledger is a separate record in <code>sources/</code>, keyed by object name.</p>
+%%DECISION_FLOW%%
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table"><thead><tr><th>Action</th><th>Evidence</th><th>What apply does</th><th>Drift?</th></tr></thead><tbody>
+<tr><td><strong>retire</strong></td><td data-label="Evidence">The live file is gone but its source is still indexed.</td><td data-label="Apply">Retire the indexed records, update the source ledger and tell the managed mirror.</td><td data-label="Drift">Yes</td></tr>
+<tr><td><strong>reingest</strong></td><td data-label="Evidence">A retired source is back in the bucket, or its bytes lack a completed or queued claim.</td><td data-label="Apply">Rewrite the object onto itself. The worker decides between reactivation and fresh ingestion.</td><td data-label="Drift">Yes</td></tr>
+<tr><td><strong>backfill</strong></td><td data-label="Evidence">The hash has an indexed or superseded claim, but the source ledger needs repair.</td><td data-label="Apply">Record the known version in the source ledger. No embedding call.</td><td data-label="Drift">Yes</td></tr>
+<tr><td><strong>touch</strong></td><td data-label="Evidence">The generation changed but the hash matches the ledger.</td><td data-label="Apply">Update the recorded generation. No content indexing.</td><td data-label="Drift">No</td></tr>
+<tr><td><strong>queued</strong></td><td data-label="Evidence">A matching queued claim owns this object generation or these exact bytes.</td><td data-label="Apply">Leave it to the batch job; reconciliation does not execute that job.</td><td data-label="Drift">No</td></tr>
+<tr><td><strong>ok / withdrawn</strong></td><td data-label="Evidence">The generation agrees, or a person deliberately withdrew the source.</td><td data-label="Apply">Leave it alone. A withdrawn source requires the explicit restore path.</td><td data-label="Drift">No</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p><code>drift = retire + reingest + backfill</code>. These are counts of planned differences. A <code>touch</code> updates bookkeeping, and <code>queued</code> is work already assigned elsewhere.</p>
+
+<h4>How do we know a PDF is queued?</h4>
+<p>The worker writes <code>status: queued</code>, the object's <code>gcs_uri</code> and its <code>generation</code> into the version claim when handing the document to the batch lane. Reconciliation first matches the live file's name and generation to a queued claim. Legacy claims without a generation are also accepted. If the byte-check path is reached, a queued claim for the same tenant and hash produces the same decision. The filename, PDF size and an absent ledger row are not proof of queued status.</p>
+@@queue_claim@@
+@@queue_match@@
+<div class="cw"><div class="ch-bar"><span>expected &mdash; example decisions, read the reason as well as the action</span><span class="ro">read only</span></div><pre tabindex="0">{"reconcile": "reingest", "name": "acme/cgst_act_2017.pdf", "why": "not in the ledger"}
+{"reconcile": "queued", "name": "acme/cgst_it_bundle.pdf", "why": "handed to the batch lane; the batch job indexes it, the claim says queued"}
+{"event": "reconcile_done", "applied": false, "reingest": 1, "queued": 1, "drift": 1}</pre></div>
+<p>In that example the first PDF contributes one unit of drift. The bundle contributes none. Queued means handed to batch processing; it can remain queued if no batch job has run. Use <code>make queued PROJECT=$PROJECT</code> to inspect the pending work before deciding how to operate the batch lane.</p>
+<h4>The planner's rules, verbatim</h4>
+@@plan_objects@@
+@@plan_ledger@@
+@@decide@@
+@@drift@@
+
+<h4>Explore a different bucket and ledger</h4>
+<div class="diagram ws" id="walk"><div class="dg-title">Change the evidence; watch the decision and drift</div>
+<div class="ws-rows" id="ws-rows"></div><div class="ws-sum" id="ws-sum"></div>
+<p class="dg-cap">This simulator follows plan() and decide_bytes(). It changes no cloud resources. A queue selection represents a matching claim; an unrelated upload generation must be assessed separately.</p></div>

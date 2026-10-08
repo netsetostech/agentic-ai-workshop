@@ -1,0 +1,150 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 2 &middot; Console, then gcloud</span><h3>The budget: an alert on the billing account</h3><p>An amount, %%N_RULES%% thresholds and the people who hear, set in the console at the kit's own values, then read back with gcloud.</p></div></div>
+
+<h4>Definition</h4>
+<p>A budget lives on the billing account. It watches a scope (every project the account pays for, or some of them), compares the period's cost with an amount, and holds threshold rules: a percentage of the amount, on actual spend so far or on the forecast for the period. When spend crosses a rule, Google emails the billing account's administrators and users, and can also notify Cloud Monitoring channels or publish to a Pub/Sub topic. That is all it does. You make yours now, on the whole account, before any project has spent a rupee; lesson 0.3 adds the kit's own, scoped to the lane's project.</p>
+
+<div class="box box-red"><div class="box-title">An alarm, not a brake</div>
+<p>Google's budget page is explicit: an alerts-only budget does not automatically cap usage or spending. When the email arrives, everything is still running, and it arrives late: the page warns that the first notification can take several hours after a budget is created, and that usage reaches Cloud Billing with a delay of its own. Google also offers <em>spend cap</em> budgets, which pause a service once its estimated cost passes the amount, but only for a few services (%%SPEND_CAP_SERVICES%%), on one project at a time, and even then enforcement is not instant and the overage is billed. Spanner, Cloud SQL, GKE and Compute Engine are not on that list, and the kit declares no spend cap. The brake on this course is a command: <code>make down</code>, in lesson 0.4.</p></div>
+
+<h4>Make it in the console</h4>
+<p>Every value below that is not a name comes from the kit: the amount is the Makefile's <code>BUDGET_AMOUNT</code>, the thresholds are <code>budget.tf</code>'s %%N_RULES%% rules. The one deliberate difference is the credits, explained after the list.</p>
+<ol>
+<li>In the console's menu, open <em>Billing</em>, choose your billing account, then <em>Budgets &amp; alerts</em> and <em>Create budget</em>.</li>
+<li><strong>Define</strong>: <em>Alerts only</em>. Name it <code>Billing account guard</code>. The kit's budget, which lesson 0.3 creates, is called <code>%%BUDGET_NAME%%</code>; a different name keeps the two apart. <em>Next</em>.</li>
+<li><strong>Scope</strong>: time range <em>Monthly</em>; all projects and all services, so anything that starts anywhere on the account is counted. Under the savings, untick <em>Promotional credits</em> and leave the rest ticked. <em>Next</em>.</li>
+<li><strong>Amount</strong>: <em>Specified amount</em>, target <code>%%BUDGET_AMOUNT%%</code>. There is no currency to choose, because a budget is in the billing account's own: on an Indian account this is Rs %%BUDGET_AMOUNT_INR%%. <em>Next</em>.</li>
+<li><strong>Actions</strong>: the console fills in %%CONSOLE_DEFAULTS%% percent of actual spend. Change %%CONSOLE_DROP%% to %%ACTUAL_SECOND%%, then <em>Add threshold</em>: %%FORECAST_PCT%% percent, triggered on <em>Forecasted</em>. Keep <em>Email alerts to billing admins and users</em> ticked; if you created the billing account, you are one of its administrators. <em>Finish</em>.</li>
+</ol>
+
+<div class="box box-amber"><div class="box-title">Why untick the promotional credits</div>
+<p>By default a budget takes every credit off the cost before it checks a threshold, and Google counts the Free Trial's credit as a promotional credit. On a trial account a default budget therefore reads zero for as long as the credit pays, and on the day the credit is gone the trial ends with it: such a budget may never send an email at all. With promotional credits unticked, yours measures what the lane really costs while the trial pays for it, and its %%ACTUAL_FIRST%% percent email, at Rs %%HALF_INR%% of cost before the credit, is your first warning rather than none. On a paid account with no promotional credits the box changes nothing. The kit's budget keeps the default, every credit taken off; step 7 sets the two side by side.</p></div>
+
+<h4>Read it back with gcloud</h4>
+<p>The Budget API answers for the same budget. <code>--billing-project</code> makes the call count against your project, where step 5 enabled the Budget API (the kit's helper names a quota project for its own gcloud calls in the same way); the filter picks yours out of any others on the account, and the format keeps the fields the console asked about.</p>
+%%BUDGET_CELL%%
+%%BUDGET_OUT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>gcloud read the budget through the Cloud Billing Budget API that step 5 enabled, as you, with your role on the account. The amount came back in the account's currency; the %%N_RULES%% threshold rules came back as fractions of it, the last one forecasted; and the filter carries the credit treatment you chose, a list of the credit types still taken off, with the promotional ones left out. Those are the same fields the kit's Terraform writes, which the next step reads.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 3 &middot; The kit, read verbatim</span><h3>The kit's side, read verbatim: what make plan checks, and the budget it declares</h3><p>The helper that refuses a project with no billing account, and terraform/budget.tf line by line: which account, which spend, how much, when, and who hears.</p></div></div>
+
+<h4>What make plan reads about your project first</h4>
+<p>Lesson 0.3's <code>make plan</code> runs <code>commands/infrastructure.py plan</code>, and before Terraform plans anything the helper reads the project you made in step 4: that it exists and is active, that it has a number, that billing is enabled, and that the linked account's ID has the shape of a real one. Fail any of these and it stops with a sentence that names what to fix.</p>
+@@infra_discover@@
+@@infra_billing@@
+<p>The kit's read-only <code>make preflight</code> checks the same two facts, and for a miss prints the commands step 4 ran:</p>
+@@preflight@@
+
+<h4>The budget it declares</h4>
+<p>Lesson 0.3 creates this budget with everything else, in the same apply; nothing switches it on or off. Three excerpts from <code>terraform/budget.tf</code> (which account it goes on, the resource itself, its inputs), then the Makefile lines that set the amount.</p>
+@@budget_locals@@
+@@budget_tf@@
+@@budget_vars@@
+@@mk_budget@@
+
+<p>Read it as five decisions.</p>
+<ol>
+<li><strong>Which account.</strong> The one already linked to the project, read from the project's own record (<code>data.google_project.current.billing_account</code>), unless <code>billing_account_id</code> is set. The precondition refuses anything that is not a real <code>XXXXXX-XXXXXX-XXXXXX</code> ID, and its message names three fixes; step 4's link and step 5's <code>cloudbilling</code> are two of them.</li>
+<li><strong>Which spend.</strong> <code>budget_filter</code> names one project, by number. The comment records why: the ID form passed the plan and was refused by the first real apply. So the kit's budget watches the lane's project only; yours watches the whole account.</li>
+<li><strong>How much.</strong> <code>units = var.budget_amount</code>, and <code>make plan</code> passes <code>BUDGET_AMOUNT</code>, %%BUDGET_AMOUNT%%, as <code>-var budget_amount</code>; run Terraform without make and the variable's own default, %%VAR_DEFAULT%%, applies instead. No currency is sent unless <code>budget_currency</code> is set, so the amount is in the account's own: the comment records that <code>USD</code> was refused on an Indian account, and the Budget API requires the account's currency.</li>
+<li><strong>When.</strong> %%N_RULES_CAP%% threshold rules: %%ACTUAL_TXT%% percent of actual spend, and %%FORECAST_PCT%% percent of the forecast for the month, the one rule that can speak before the money is spent.</li>
+<li><strong>Who hears.</strong> No notification block at all unless <code>alert_channels</code> or <code>budget_pubsub</code> is set, so the API's default applies: emails to the billing account's administrators and users, the same people your budget emails. The comment explains the omission: an empty block read back as a change on every plan. The Pub/Sub leg is off by default because it needs a grant to Google's billing budget agent, a system account outside your organisation, which an organisation that restricts sharing to its own domain refuses.</li>
+</ol>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Setting</th><th>Yours (step 6)</th><th>The kit's (lesson 0.3)</th></tr></thead>
+<tbody>
+<tr><td>Name</td><td data-label="Yours">Billing account guard</td><td data-label="The kit's">%%BUDGET_NAME%%</td></tr>
+<tr><td>Made by</td><td data-label="Yours">you, in the console</td><td data-label="The kit's">Terraform, in the apply <code>make up</code> runs</td></tr>
+<tr><td>Watches</td><td data-label="Yours">every project on the billing account</td><td data-label="The kit's">the lane's project, by number</td></tr>
+<tr><td>Amount</td><td data-label="Yours">%%BUDGET_AMOUNT%%, in the account's currency</td><td data-label="The kit's">the same, from <code>BUDGET_AMOUNT</code></td></tr>
+<tr><td>Thresholds</td><td data-label="Yours">%%ACTUAL_TXT%% percent actual, %%FORECAST_PCT%% forecasted</td><td data-label="The kit's">the same %%N_RULES%%</td></tr>
+<tr><td>Credits</td><td data-label="Yours">every type taken off but the promotional</td><td data-label="The kit's">every credit taken off, the API's default</td></tr>
+<tr><td>Who hears</td><td data-label="Yours">the billing account's administrators and users</td><td data-label="The kit's">the same, unless channels or a topic are set</td></tr>
+<tr><td>Removed by</td><td data-label="Yours">you, on Budgets &amp; alerts</td><td data-label="The kit's"><code>make down</code>, with the rest of the Terraform</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The credits row is the one real difference. On a paid account a credit is money you do not pay, so cost after credits is the bill, and that is what the kit's default measures. Yours is set for the first month of a course that may run on the trial, where the credit hides the rate the lane spends at. While both exist, an email from yours and silence from the kit's is the trial's credit at work.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; Price it</span><h3>The standing cost: what bills by the hour, per day and per weekend</h3><p>%%N_ITEMS_CAP%% declarations in the kit's Terraform, each priced at Google's Mumbai list price, then set against the budget, the trial, and the switches that do and do not stop them.</p></div></div>
+
+<h4>Definition</h4>
+<p>The standing cost is what a resource bills for existing, by the hour, whether or not anything uses it. Most of DocuMind scales to nothing: its %%N_SERVICES%% Cloud Run services are deployed with no minimum instance, so a service nobody calls is soon running no instance at all and costs nothing. The kit's README names the parts that do not scale away:</p>
+<div class="box box-teal"><div class="box-title">README.md, the kit's own summary</div><p>%%SHAPE_SENTENCE%%</p></div>
+<p>That sentence names the index, the two Cloud SQL instances and the cluster. Read against the Terraform, the list is longer: the cluster is two lines on the bill, its fee and its node; Spanner's own file says it bills by the hour; and the connector Cloud Run reaches the private network through keeps instances running too. %%N_ITEMS_CAP%% declarations in all, read verbatim below.</p>
+
+<h4>The %%N_ITEMS%%, as the kit declares them</h4>
+@@vector@@
+<p><strong>The index.</strong> One replica (<code>min_replica_count = 1</code>), on the machine its shard size names. <code>vector.tf</code> does not choose the shard size: the index is created without one, the API picks it, and the comment above the map records an existing index that came back <code>MEDIUM</code>. A small shard runs one <code>%%SMALL_MACHINE%%</code>, Rs %%INDEX_DAY_SMALL%% a day; a medium one runs one <code>%%MEDIUM_MACHINE%%</code>, Rs %%INDEX_DAY_MEDIUM%% a day. Once the index exists its description names its shard size; until then this page carries both.</p>
+@@spanner@@
+<p><strong>Spanner.</strong> Enterprise edition, which Spanner Graph needs, at %%SP_PU%% processing units: a tenth of a node, the smallest a provisioned instance can be, in <code>regional-asia-south1</code>. The comment above it says it bills by the hour while it exists, and asks for it to be priced on the Spanner page for <code>regional-asia-south1</code> before a cohort. That pricing is the table below: Rs %%SPANNER_DAY%% a day.</p>
+@@cloudsql@@
+<p><strong>Cloud SQL.</strong> %%SQL_COUNT_CAP%% instances of one shape, the chat service's checkpointer and the gateway's database: <code>%%SQL_TIER%%</code>, zonal, %%SQL_GB%% GB of SSD, no backups, running all the time. A running instance's public address costs nothing; its hours and its disk do.</p>
+@@gke@@
+<p><strong>The GKE cluster.</strong> <code>location = var.region</code> makes it a regional cluster. Every GKE cluster pays a flat management fee of $%%GKE_FEE%% an hour (the kit's <code>gke/README.md</code> prices the same fee), and the free tier's monthly credit covers zonal and Autopilot clusters, not a regional Standard one. Its lab pool is one <code>%%GKE_MACHINE%%</code> node with a %%GKE_DISK_GB%% GB standard disk.</p>
+@@connector@@
+<p><strong>The connector.</strong> Serverless VPC Access keeps at least <code>min_instances</code>, %%CONN_MIN%%, running, of the default instance type, <code>e2-micro</code>, and Google bills connector instances as Compute Engine VMs.</p>
+
+<h4>The price of each, per hour and per day</h4>
+<p>Each line is the declaration's size times Google's list price for Mumbai (<code>asia-south1</code>, where the course's lane runs its services and where <code>spanner.tf</code> keeps the graph), read from Google's pricing pages on 7 October 2026, at the kit's Rs %%USD_INR%% to the dollar from <code>shared/prices.py</code>.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Item</th><th>Declared in</th><th>Size</th><th>USD an hour</th><th>Rs a day</th></tr></thead>
+<tbody>
+%%STANDING_TABLE%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Run the arithmetic yourself, Rs 0</h4>
+<p>The same table as a Python cell: the hourly prices, the kit's rate and the kit's budget, then the sums. It touches no account and no network, so it runs anywhere a <code>python</code> does, Cloud Shell included.</p>
+%%PY_CELL%%
+%%PY_OUT%%
+
+<h4>Against the budget and the trial</h4>
+<ul>
+<li><strong>A day</strong> of standing cost is Rs %%DAY_SMALL%% with the small index and Rs %%DAY_MEDIUM%% with the medium one. <strong>A weekend</strong>, Saturday and Sunday, is Rs %%WEEKEND_SMALL%% or Rs %%WEEKEND_MEDIUM%%. <strong>A month</strong> left up is Rs %%MONTH_SMALL%% or Rs %%MONTH_MEDIUM%%.</li>
+<li><strong>The budget.</strong> With nothing else running, the standing cost alone crosses the kit's %%ACTUAL_FIRST%% percent, Rs %%HALF_INR%%, after %%H50_SMALL%% hours with the small index or %%H50_MEDIUM%% with the medium one, and %%ACTUAL_LAST%% percent after %%H100_SMALL%% or %%H100_MEDIUM%% hours. The email follows after Cloud Billing's reporting delay, not at that hour.</li>
+<li><strong>The trial.</strong> Rs %%TRIAL_INR%% of credit covers %%TRIAL_DAYS_SMALL%% days of a small-index lane left standing, or %%TRIAL_DAYS_MEDIUM%% days of a medium one.</li>
+</ul>
+
+<div class="box box-amber"><div class="box-title">What the table leaves out</div>
+<p>Storage, which bills by the gigabyte-month: Firestore, the buckets, BigQuery, the managed search stores, the container images, the graph's own data. Network traffic. Every per-use call: Gemini, embeddings, Document AI pages, Cloud Run requests. Any address a machine holds while it runs. And tax. It is also list price at the course's rate, while an Indian account is charged at Google's own rupee prices, so your invoice will not match it to the rupee. On a quiet day those additions are usually small beside the machines, which is why the machines are the number to write down.</p></div>
+
+<h4>What stops it, and what does not</h4>
+<p><code>make off</code>, the switch lesson 0.4 teaches, sets %%OFF_N%% Cloud Run services (the two GPU services, the gateway and the UI) back to zero minimum instances, and removes the vLLM workload from the cluster. None of the %%N_ITEMS%% above is a Cloud Run service, and the kit says so as it runs:</p>
+@@mk_gke_down@@
+<p>The index, Spanner, both databases and the connector are not touched by it either. Only <code>make down</code> removes them, by destroying what the Terraform made, and the last lines it prints name the one action that stops everything at once, which is why the lane gets a project of its own:</p>
+@@mk_down@@
+
+<div class="box box-teal"><div class="box-title">Write it down: the lane's standing cost</div>
+<p>This is the lesson's proof. In your notes, with today's date: <strong>Rs %%DAY_SMALL%% a day</strong> with a small-shard index, <strong>Rs %%DAY_MEDIUM%% a day</strong> with a medium one; Rs %%WEEKEND_SMALL%% or Rs %%WEEKEND_MEDIUM%% for a weekend left up. Plan for the larger until you know which machine your index got. Lesson 0.4 comes back to this number when it switches the lane off.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your account.</p></div></div>
+
+<p>One more read-only block first: the project's billing information, the record the kit's helper reads in step 7, and gcloud's default project.</p>
+%%VERIFY_CELL%%
+%%VERIFY_OUT%%
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">gcloud acts as you</td><td data-label="The check">the setup block</td><td data-label="Pass looks like">your sign-in on the account line</td></tr>
+<tr><td>1</td><td data-label="Claim">An open billing account</td><td data-label="The check">step 3's list</td><td data-label="Pass looks like"><code>True</code> under <code>OPEN</code> for the account you chose</td></tr>
+<tr><td>2</td><td data-label="Claim">The project, linked to it</td><td data-label="The check">the block above</td><td data-label="Pass looks like"><code>billingEnabled: true</code>, and your account in <code>billingAccountName</code></td></tr>
+<tr><td>3</td><td data-label="Claim">gcloud's default project</td><td data-label="The check">the block above, its last line</td><td data-label="Pass looks like"><code>documind-ai-YOUR-ID</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The kit's APIs</td><td data-label="The check">step 5's loop</td><td data-label="Pass looks like"><code>the kit's %%N_APIS%%: %%N_APIS%% enabled, 0 missing</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A budget alert on the billing account</td><td data-label="The check">step 6's read-back</td><td data-label="Pass looks like">units <code>%%BUDGET_AMOUNT%%</code> in your currency; thresholds %%ACTUAL_FRAC%%, and %%FORECAST_FRAC%% forecasted</td></tr>
+<tr><td>6</td><td data-label="Claim">Who hears it</td><td data-label="The check">the budget's <em>Actions</em> page in the console</td><td data-label="Pass looks like"><em>Email alerts to billing admins and users</em> ticked</td></tr>
+<tr><td>7</td><td data-label="Claim">The standing cost, written down</td><td data-label="The check">step 8</td><td data-label="Pass looks like">Rs %%DAY_SMALL%% or Rs %%DAY_MEDIUM%% a day; Rs %%WEEKEND_SMALL%% or Rs %%WEEKEND_MEDIUM%% a weekend</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>There is no lane yet, and nothing bills. Your billing account carries a budget, <em>Billing account guard</em>: %%BUDGET_AMOUNT%% a month in its currency, emails at %%ACTUAL_TXT%% percent of actual spend and at a %%FORECAST_PCT%% percent forecast, measured before the trial's promotional credit. Your project, <code>documind-ai-YOUR-ID</code>, exists, is linked to that account, is gcloud's default in Cloud Shell, and has the kit's %%N_APIS%% APIs enabled, which cost nothing. The lane's standing cost is in your notes: Rs %%DAY_SMALL%% to Rs %%DAY_MEDIUM%% a day, from the moment the lane exists. Lesson 0.2 clones the kit and proves a first success at Rs 0; lesson 0.3 deploys the lane into this project, adds the kit's own <em>%%BUDGET_NAME%%</em> for it, and starts that meter.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 0 Setup &middot; Lesson 0.1 Set up the Google Cloud billing account, budget and project &middot; v5.0</p><p>Next: Lesson 0.2 Reproduce the local environment, read the master diagram and prove a first success.</p></div>

@@ -1,0 +1,130 @@
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Verify</span><h3>Verify: the two rungs that read the records</h3><p>The API reads the records two ways, with one set of predicates. Run both against the note, then let the kit's own commands run the checks an operator runs.</p></div></div>
+
+<h4>Definition</h4>
+<p>A question reaches the records through one of two rungs. The first is the index: the question's vector, the tenant restrict, the <code>current</code> restrict and any caller filters go to <code>find_neighbors</code>, the ids come back with scores, and the rows are fetched from Firestore by id to get their text. The second is Firestore's own vector index on the <code>chunks</code> collection, used when the first rung raises or when a tenant is pinned to it: the same tenant, the same <code>current</code>, the same filters, as pre-filters on the rows (an equality each, or one <code>in</code> for a <code>doc_type</code> list). Every chunk that comes back carries <code>found_by</code>, so an answer can say which rung served it. The two rungs need different indexes to exist, the Vector Search index and the Firestore composite indexes, and the second one does not degrade without its index; it refuses.</p>
+
+<h4>The code</h4>
+@@dense_restricts@@
+@@dense_find@@
+@@fallback@@
+
+<h4>Do it: the fallback rung, then the API</h4>
+<p>The first cell runs the Firestore rung's exact query with the note's own vector: itself first, at a cosine distance of zero. The second asks the API a question only the note can answer and prints which rung served it and how many of the pooled chunks came from the index.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, hashlib, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+from google.cloud.firestore_v1.vector import Vector
+from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+NOTE = os.environ.get("NOTE", os.path.expanduser("~/lesson34_note.md"))    # the note you wrote in step 3
+sha = hashlib.sha256(open(NOTE, "rb").read()).hexdigest()
+cid = f"acme:{sha}#1"
+vec = list(db.collection("chunks").document(cid).get().to_dict()["embedding"])
+q = db.collection("chunks").where("tenant_id", "==", "acme").where("current", "==", True)      # the rung's predicates
+hits = q.find_nearest("embedding", Vector(vec), distance_measure=DistanceMeasure.COSINE, limit=3, distance_result_field="d").get()
+for h in hits:
+    d = h.to_dict()
+    print(f"  {h.id.split('#')[0][:18]}...#{h.id.rsplit('#', 1)[1]}  {d['locator']:9} cosine distance {d['d']:.4f}" + ("   &lt;- itself" if h.id == cid else ""))
+PY
+
+curl -s -X POST $API/v1/query -H "Authorization: Bearer $(tok $API)" -H "Content-Type: application/json" \
+  -d '{"query":"Where is the smoke lantern kept, and how often is it checked?","tenant_id":"acme","stream":false}' \
+  | python -c "import json,sys; j=json.load(sys.stdin); print(j['answer'][:150]); print([(c['chunk_id'].split('#')[1], c['source_uri'].split('/')[-1]) for c in j['citations'][:2]]); s=j['stages']; print('backend', s['retrieval_backend'], '| pool', s['pool'], '| from the index', s['vector_chunks'])"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your wording and the pool size differ)</span><span class="ro">read only</span></div><pre tabindex="0">  acme:9c41d0e2b7f5...#1  SM-01     cosine distance 0.0000   &lt;- itself
+  acme:9c41d0e2b7f5...#2  SM-02     cosine distance 0.2xxx
+  acme:9c41d0e2b7f5...#0  preamble  cosine distance 0.3xxx
+The smoke lantern is kept in bay 4 of the Pune warehouse and is checked on the first Monday of every month ... [Source 1]
+[('1', 'smoke_note_v1.md'), ('2', 'smoke_note_v1.md')]
+backend vector | pool 20 | from the index 20</pre></div>
+
+<h4>The operator's checks: two commands, and their tests</h4>
+<p>The kit ships two read-only commands for exactly this lesson. <code>verify-vector-index.py</code> reads Terraform's outputs and asks the API whether the index Terraform declared is the one attached to the endpoint, streaming, 768-dimensional, deployed exactly once; it needs a checkout with Terraform state, and the two <code>gcloud</code> reads in step 5 are the same checks by hand. <code>check-firestore-fallback.py</code> takes the handbook, proves the ledger row names the bytes in your checkout, and runs the Firestore rung with combined filters in both <code>current</code> modes; it imports the API's own modules, so it needs the API's packages in your venv. Both write their evidence under <code>operator-evidence/</code>. Their tests run offline in a fraction of a second.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (all read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/verify-vector-index.py --deploy-root "$DEMO_ROOT" --project "$PROJECT" --region "$REGION"
+
+GOOGLE_CLOUD_PROJECT="$PROJECT" python commands/check-firestore-fallback.py
+
+python -m unittest discover -s commands/tests -p test_verify_vector_index.py
+python -m unittest discover -s commands/tests -p test_check_firestore_fallback.py</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the first command stops at "terraform output" in a checkout without state; the rest is yours)</span><span class="ro">read only</span></div><pre tabindex="0">Project: documind-ai-YOUR-ID (NUMBER)
+Terraform index: projects/documind-ai-YOUR-ID/locations/asia-south1/indexes/1234567890123456789
+Terraform endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321
+API index: projects/NUMBER/locations/asia-south1/indexes/1234567890123456789
+API endpoint: projects/NUMBER/locations/asia-south1/indexEndpoints/9876543210987654321
+Index dimensions: 768; update method: STREAM_UPDATE
+Global vector count: 1745
+Deployment: documind_chunks_v1
+Deployment sync time: 2026-09-22T10:41:07.000Z
+PASS: the expected index is attached to the expected endpoint.
+This verifies attachment and configuration; ingestion and query checks are separate.
+{"project": "documind-ai-YOUR-ID", "collection": "chunks", "source_uri": "gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md", "source_status": "indexed", "source_doc_key": "acme_..."}
+Verified HR source: 283 current chunks; stored doc_type='unknown'; manifest doc_type='policy'
+NOTE: stored metadata differs from the manifest. This probe tests the stored equality filters; it does not certify policy classification or repair metadata.
+PASS: combined doc_type='unknown'+kind='text', current=off, rows=5
+PASS: combined doc_type='unknown'+kind='text', current=on, rows=5
+PASS: both Firestore filter modes verified. Evidence: operator-evidence/firestore-combined-filters.json
+Ran 8 tests in 0.005s
+OK
+Ran 11 tests in 0.006s
+OK</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both rungs found the note. The Firestore rung put the row first at a distance of exactly zero, with the note's other clauses behind it, which is the fallback the chaos drill relies on. The API answered from the index, said so on <code>retrieval_backend</code>, and reported that every chunk in its pool came from <code>find_neighbors</code>; a zero there while the backend says <code>vector</code> is how you would learn that the index was down and Firestore answered instead. The fallback check refused to run until it had proved the handbook's ledger row names the bytes in your checkout, which after lesson 1.3's undo it does. Its NOTE line is the <code>doc_type: unknown</code> finding from lesson 1.1, reported by the kit itself.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Repair, expire, and what the records cost</h3><p>Which store is the truth when two disagree, the only thing that ever deletes a row, and where the rupees go.</p></div></div>
+
+<h4>The rows rebuild the tier</h4>
+<p>Firestore holds everything the index holds and more: the text, the vector, the stamps and the flags. So when the index and the rows disagree, the index is rebuilt from the rows, and nothing in the rows is ever derived from the index. <code>backfill()</code> reads every current row (of one tenant, or all), rebuilds each datapoint with the row's own vector, re-embeds only a row whose stamp fails the check from lesson 1.3, and checkpoints the repaired vector back on the row with optimistic concurrency so that a concurrent writer is never overwritten. Its plan is the count you saw in 1.3; <code>APPLY=1</code> is the repair, and the two states it exists for are a worker deployed before the index existed and an apply that lost its index and succeeded on the second run.</p>
+@@backfill@@
+@@repair_doc@@
+<div class="cw"><div class="ch-bar"><span>bash &mdash; the plan (read-only) and the repair (writes to the tier; run it only when the plan is not zero)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make backfill-vectors PROJECT=$PROJECT TENANT_ONLY=acme
+# make backfill-vectors PROJECT=$PROJECT TENANT_ONLY=acme APPLY=1</pre></div>
+
+<h4>Two clocks on a row, and the one deleter</h4>
+<p>Nothing in the worker calls delete on a chunk row. A staged row that nothing ever swapped carries an <code>expire_at</code> one day out; a retired row carries one thirty days out; and a Firestore TTL policy on that field, declared in Terraform, removes the row after it. That is the whole deletion story, and it is why the undo in lesson 1.3 could be free for thirty days and not a minute longer. The second Terraform excerpt is the index the fallback rung needed in step 7: one composite vector index per predicate combination, because Firestore refuses a vector query it has no index for.</p>
+@@stage_consts@@
+@@ttl@@
+@@vec_index@@
+
+<h4>What the records cost, and what they do not</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Record</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Firestore rows, claims, ledger</td><td data-label="Costs">per document read and written, and storage; a 768-number vector is a few kilobytes a row</td><td data-label="On your lane">the note's seven records: a handful of writes, fractions of a paisa</td></tr>
+<tr><td>Vector Search datapoints</td><td data-label="Costs">nothing per datapoint or per query; the <em>deployed index</em> bills its machine (an <code>e2-standard-2</code> for a small shard) by the hour whether or not anything is indexed or asked</td><td data-label="On your lane">the standing cost of this module; <code>make down</code> is what stops it</td></tr>
+<tr><td>BigQuery mirror rows</td><td data-label="Costs">streaming inserts per megabyte and storage per month; a query bills the bytes it scans</td><td data-label="On your lane">three rows, under a kilobyte; the count query scans the tenant's rows only because the table is clustered by tenant</td></tr>
+<tr><td>The audit event</td><td data-label="Costs">one small object in a bucket with a retention lock: storage, and nothing else</td><td data-label="On your lane">one JSON object of about 400 bytes, unremovable inside the window</td></tr>
+<tr><td>Reading records</td><td data-label="Costs">Firestore reads and BigQuery bytes; a datapoint read or a neighbour search is served by the machine you already pay for</td><td data-label="On your lane">every cell on this page: a few paise at most</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry to remember: the records are cheap, the deployed index is not, and the deployed index holds nothing that Firestore does not. A team that must cut cost undeploys the index and answers from the Firestore rung, slower and with the same records; a team that must cut risk keeps both and verifies that they agree, which is the walk you have just done.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">Which store answers</td><td data-label="The check"><code>stages.retrieval_backend</code> on any answer</td><td data-label="Pass looks like"><code>vector</code> during this lesson</td></tr>
+<tr><td>1</td><td data-label="Claim">A write moves the index by exactly its rows</td><td data-label="The check">the before and after counts in step 3</td><td data-label="Pass looks like"><code>datapoints now</code> is the earlier count plus 3</td></tr>
+<tr><td>2</td><td data-label="Claim">One key names every Firestore record</td><td data-label="The check">the four-record cell in step 4</td><td data-label="Pass looks like">claim <code>indexed</code>, 3 rows current, 0 staged, <code>doc_key matches: True</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The datapoint is the row</td><td data-label="The check">the read in step 5</td><td data-label="Pass looks like"><code>same as the row's vector: True</code>, four restricts</td></tr>
+<tr><td>4</td><td data-label="Claim">The index finds a row by its own vector</td><td data-label="The check">the search in step 5</td><td data-label="Pass looks like">itself first, <code>distance 1.0000</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The mirror holds every chunk, append-only</td><td data-label="The check">the two queries in step 6</td><td data-label="Pass looks like">3 rows for the note; <code>rows_ever</code> above the current count</td></tr>
+<tr><td>6</td><td data-label="Claim">The audit event names the version</td><td data-label="The check">the bucket read in step 6</td><td data-label="Pass looks like"><code>doc.upload</code> with the note's key and <code>chunks 3</code></td></tr>
+<tr><td>7</td><td data-label="Claim">Both rungs read with one predicate set</td><td data-label="The check">the two calls in step 7</td><td data-label="Pass looks like">Firestore: itself at <code>0.0000</code>; the API: <code>backend vector</code>, <code>from the index</code> above 0</td></tr>
+<tr><td>8</td><td data-label="Claim">The tier is rebuildable from the rows</td><td data-label="The check">the plan in step 8</td><td data-label="Pass looks like"><code>needs_document_embedding: 0</code>, and the command that would repair it named</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One new document under acme: <code>smoke_note_v1.md</code>, your personalised note, three rows, three datapoints, three mirror rows, one ledger row, one audit event, and a new tenant fingerprint. If the reindex smoke had left the unchanged demo bytes on your lane as <code>smoke_note.md</code>, that document is untouched. Everything else was read. Ingestion ends here: a document's path from bytes to records is now something you can follow, count and prove. Lessons 1.5 to 1.8 take the same records through their lifetime, starting with what happens when the write does not go to plan.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.4 Write, inspect and verify indexed records &middot; v5.0</p><p>Next: Lesson 1.5 Follow upload events, retries, dead-letter handling and the batch lane.</p></div>

@@ -1,0 +1,98 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.1</div>
+<h1>Run Python the way the kit does: <span>venvs, JSON and HTTP calls</span></h1>
+<p>The DocuMind kit is %%N_SERVICES%% services and the Python that builds, tests and feeds them, and three habits run through all of it. Every service runs in an environment of its own with pinned libraries; data moves as JSON; and the parts talk to each other over HTTP. This page practises each habit on your laptop, with Python's standard library and the venv the setup block makes, and then shows you the kit's own lines doing the same. You will make a venv and delete it, write and read a file shaped like the kit's golden set, start a small web server and call it, make two calls at once, and give a call the timeout, the retry and the check the kit gives its own.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_SERVICES%% requirements files, %%N_PIN_LINES%% pins</div><div class="hero-chip">%%N_SHARED%% shared pins, one version each</div><div class="hero-chip">sys.prefix != sys.base_prefix</div><div class="hero-chip">%%N_GOLDEN%% golden rows, one per line</div><div class="hero-chip">urllib, as smoke.py uses it</div><div class="hero-chip">2 calls in about %%WAITS_TOGETHER%% wait</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What the kit's Python does, in three habits</a></li>
+<li><a href="#s2">The words: venv, site-packages, pin, JSON, JSONL, status code, token, event loop</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">The venv: what the setup block built, and why the kit pins</a></li>
+<li><a href="#s4">Files and JSON: pathlib, json and a JSONL file</a></li>
+<li><a href="#s5">One HTTP call: a server on your laptop, and urllib</a></li>
+<li><a href="#s6">Two calls at once: asyncio.gather and asyncio.to_thread</a></li>
+<li><a href="#s7">A call the kit would trust: one retry, a timeout, a checked body</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the three habits under every DocuMind service: an environment of its own with pinned libraries, JSON in and out, and HTTP between the parts, with async to keep several calls in flight. Then you will prove each one on your laptop with nothing but Python's standard library, and read the kit's own lines that do the same.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What the kit's Python does, in three habits</h3><p>An environment of its own, JSON in and out, HTTP between the parts, and what async adds to the third.</p></div></div>
+
+<p><strong>An environment of its own.</strong> Each of the kit's %%N_SERVICES%% services has a folder under <code>services/</code>, and in it a <code>requirements.txt</code> that names the libraries the service needs, each with <code>==</code> and one exact version: %%N_PIN_LINES%% lines across the %%N_SERVICES%% files, and not one of them without a version. %%N_SLIM%% of the services build their image from <code>python:3.12-slim</code> and install their file into it; the other %%N_OTHER_BASE%% start from a vendor's image (vLLM, LiteLLM and Ollama). Where two services use the same library they pin the same version, and the kit's dry run fails if they do not. On your laptop a <em>virtual environment</em>, a venv, does the image's job: a folder with its own Python and its own libraries, so that what one project installs cannot break another.</p>
+
+<p><strong>JSON in and out.</strong> A question to the DocuMind API is a JSON object, and so is its answer. The golden set the eval gate runs is a file of JSON objects, one per line, and every usage row the API writes to its log is a JSON object that Cloud Logging turns into fields. Python's <code>json</code> module does both directions: <code>json.dumps()</code> turns a dict into text, and <code>json.loads()</code> turns the text back into a dict.</p>
+
+<p><strong>HTTP between the parts.</strong> The UI, the chat service, the smoke test and the eval gate all reach the API the same way: an HTTP request to a URL, with an ID token in the <code>Authorization</code> header and, for a question, a JSON body; back comes a status code and a JSON body. A call like that spends most of its time waiting for the other side, and <em>async</em> is how one program waits on several calls at once instead of one after another.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127857;</div><div>
+<p><strong>A dabbawala's tiffin.</strong> Every morning in Mumbai a tiffin leaves a home with one person's lunch in it, packed in its own sealed tins, so that nobody's dal ends up in anybody else's rice. That is a venv: one project's libraries, at the versions it was tested with, in a box of their own. On the lid is a painted code that every dabbawala reads the same way, from the station to the office floor. That is JSON: a format both ends agree on, so what was packed in Andheri is read correctly at Churchgate. The tiffin goes out full and comes back empty in the afternoon: one request, one response, which is HTTP. And no dabbawala carries one tiffin at a time; he carries a crate of them on the same train and hands each one over as its stop comes. That is async: one worker, many deliveries in flight.</p></div></div>
+
+<h4>The three habits in one of the kit's own loops</h4>
+<p>The eval gate's live half (Module 4 runs it against your lane with <code>make eval-live</code>) uses all three in a few dozen lines. Follow one row of the golden set through it. Every value below is read from the kit when this page is built.</p>
+
+<div class="diagram">
+<div class="dg-title">One golden row's trip through the eval gate</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><div class="fs-n">1</div><div><b>One line of <code>evals/golden.jsonl</code></b>, the first of %%N_GOLDEN%%, is read and parsed into a dict: <code>%%LK_LINE%%</code></div></div><div class="fs-branch"><b>JSON:</b> <code>json.loads(line)</code>, and the file's <code>true</code> becomes Python's <code>True</code>.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">2</div><div><b>run_eval.py asks the API</b>: <code>POST /v1/query</code> with the body <code>%%LK_BODY%%</code> and the header <code>Authorization: Bearer</code> followed by an ID token.</div></div><div class="fs-branch"><b>HTTP:</b> <code>urllib.request</code>, from the standard library, with a %%EVAL_TIMEOUT%%-second timeout.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">3</div><div><b>rag-api answers</b> from its own image: <code>python:3.12-slim</code>, the %%RAG_PINS%% libraries its <code>requirements.txt</code> pins, and %%RAG_WORKERS%% uvicorn workers under gunicorn.</div></div><div class="fs-branch"><b>Environment:</b> the libraries are the file's, at the file's versions.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">4</div><div><b>The answer comes back as JSON</b>, and <code>validate_body()</code> checks its shape before anything is scored: <code>answer</code> a string, <code>citations</code> a list, <code>answerable</code> true or false, <code>confidence</code> one of high, medium or low.</div></div><div class="fs-branch"><b>JSON again:</b> a 200 with the wrong shape counts as a failed request.</div></div>
+</div>
+<p class="dg-cap">Steps 3 to 7 below are these moves on your laptop: the environment (step 3), the file (step 4), the call (step 5), several calls at once (step 6), and the checks a call needs before anyone trusts its answer (step 7). The gate also scores each answer against its row; that half belongs to Module 4.</p>
+</div>
+
+<h4>Try it: the kit's pins, file by file</h4>
+<p>The explorer below holds every <code>requirements.txt</code> in the kit as it stood when this page was built: the %%N_SERVICES%% services' files, and the one under <code>shared/</code> for the tool layer in <code>shared/documind_tools.py</code>. Pick a file to see what it pins. Then change the chosen library's version, or tick the box to drop its version altogether, and read what the kit's dry run would say: its two checks are ported here rule for rule.</p>
+
+<div class="diagram pe" id="pins">
+<div class="dg-title">Pin explorer - every requirements.txt in the kit, and validate.py's two checks</div>
+<div class="pe-controls">
+<label class="pe-l">File <select id="pe-file"></select></label>
+<label class="pe-l">Library <select id="pe-pkg"></select></label>
+<label class="pe-l">Version <input type="text" id="pe-ver" maxlength="24" autocomplete="off" spellcheck="false"></label>
+<label class="pe-l pe-chk"><input type="checkbox" id="pe-drop"> No version: write the library unpinned</label>
+</div>
+<div aria-live="polite">
+<p class="pe-sum" id="pe-sum"></p>
+<div class="pe-chips" id="pe-chips"></div>
+<p class="pe-who" id="pe-who"></p>
+<p class="pe-check" id="pe-req"></p>
+<p class="pe-check" id="pe-pins"></p>
+</div>
+<p class="dg-cap">A teal pin is pinned by at least one other file, and the number after it counts the files that pin that library. The page opens on rag-api's <code>google-genai==%%GENAI_PIN%%</code>, the version the setup block installs on your laptop. Type <code>2.20.0</code> in the version box and the pins check fails the way <code>validate.py</code> does, naming every file and its version. Tick the box instead and the requirements check warns. The requirements check reads the %%N_SERVICES%% service files; the pins check reads those and <code>shared/requirements.txt</code>, %%N_PIN_FILES%% files. The port was compared with <code>validate.py</code> itself on all %%N_CASES%% one-pin changes (every pin given another version, then none) when this page was built.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>It reads the files and applies the two checks; it is not pip. It cannot tell you whether a version exists, or whether a set of versions can be installed together. pip answers those when an image is built, and the dry run builds every Python image with Docker when it runs in CI.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: venv, site-packages, pin, JSON, JSONL, status code, token, event loop</h3><p>Ten terms, each with where it shows up in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Virtual environment</strong> (venv)</td><td data-label="Meaning">A folder with a Python of its own and a <code>site-packages</code> of its own, made by <code>python -m venv</code>. Activating it puts its Python first on <code>PATH</code>.</td><td data-label="In the kit"><code>~/basics-venv</code> on your laptop. The services use images instead: %%N_SLIM%% of the %%N_SERVICES%% Dockerfiles start from <code>python:3.12-slim</code>.</td></tr>
+<tr><td><strong>site-packages</strong></td><td data-label="Meaning">The folder where pip installs libraries for one Python. A venv's is its own, so what is installed there is invisible to every other Python on the machine.</td><td data-label="In the kit">numpy and google-genai, in <code>~/basics-venv</code>'s.</td></tr>
+<tr><td><strong>Pin</strong></td><td data-label="Meaning">A requirement written <code>name==version</code>: exactly that version, never "the newest".</td><td data-label="In the kit">%%N_PIN_LINES%% lines in %%N_SERVICES%% service files, every one pinned; <code>google-genai==%%GENAI_PIN%%</code> in %%N_GENAI%% of them.</td></tr>
+<tr><td><strong>pathlib.Path</strong></td><td data-label="Meaning">A path as an object: <code>/</code> joins parts, <code>.open()</code> opens the file to read or write, <code>.read_text()</code> reads it whole, <code>.rglob()</code> searches a folder tree.</td><td data-label="In the kit"><code>validate.py</code> finds the requirements files with <code>SERVICES.rglob("requirements.txt")</code>.</td></tr>
+<tr><td><strong>JSON</strong></td><td data-label="Meaning">Text that writes objects, arrays, strings, numbers, <code>true</code>, <code>false</code> and <code>null</code>. <code>json.dumps()</code> writes it, <code>json.loads()</code> reads it.</td><td data-label="In the kit">Every question and answer of the API, and every usage row it logs.</td></tr>
+<tr><td><strong>JSONL</strong></td><td data-label="Meaning">JSON Lines: one JSON value per line, so a file is written and read a row at a time.</td><td data-label="In the kit"><code>evals/golden.jsonl</code>, %%N_GOLDEN%% rows; %%N_JSONL%% JSONL files in the kit, %%JSONL_LINES%% lines.</td></tr>
+<tr><td><strong>Status code</strong></td><td data-label="Meaning">The three-digit number a response starts with: 200 OK, 401 no credential, 403 not allowed, 404 no such path, 5xx the server failed.</td><td data-label="In the kit"><code>smoke.py</code> wants a 200 for a question, and a 401 or 403 for the same question with no token.</td></tr>
+<tr><td><strong>ID token</strong></td><td data-label="Meaning">A short-lived token, signed by Google, that names the caller. It travels in the header <code>Authorization: Bearer &lt;token&gt;</code>, and Cloud Run checks it before the service's code runs.</td><td data-label="In the kit"><code>smoke.py</code> asks gcloud for one; <code>shared/documind_tools.py</code> mints a new one for every call.</td></tr>
+<tr><td><strong>Coroutine, event loop</strong></td><td data-label="Meaning">A function written <code>async def</code> returns a coroutine. An event loop runs many coroutines in one thread, switching to another whenever one is waiting at an <code>await</code>.</td><td data-label="In the kit">rag-api runs %%RAG_WORKERS%% uvicorn workers under gunicorn: %%RAG_WORKERS%% processes, an event loop in each.</td></tr>
+<tr><td><strong>gather, to_thread</strong></td><td data-label="Meaning"><code>asyncio.gather()</code> waits for several coroutines at once and returns their results in the order given. <code>asyncio.to_thread()</code> runs an ordinary blocking function in a thread, so the loop stays free.</td><td data-label="In the kit">The chat service asks the roster in Firestore through <code>asyncio.to_thread</code>.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three of these words are the habits from step 1, and the rest are how they work. Each habit gets a cell of its own below, run on your laptop, followed by the kit's lines that do the same thing at full size.</p>
+

@@ -1,0 +1,76 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 5 &middot; MCP and agents &middot; Lesson 5.5</div>
+<h1>Diagnose tool arguments, access failures and timeouts: <span>where each failure surfaces, what the model reads, and what the logs keep</span></h1>
+<p>A tool call can fail in more places than it can succeed. Some failures stop a request at the door, and some reach the model as an error. Some reach it as ordinary data that happens to say something went wrong. And some are not failures of a tool at all: a turn that never ends, because the model keeps asking. You force five failures through the kit's own LangChain brain: a blocked name, a wrong argument, a tool that does not exist, a retrieval that times out, and a retrieval cut at its budget. You stop a model that never stops asking, and see the next turn answer. Then you meet three identities at the chat service's door, and a filter argument the corpus cannot honour. For each one you find where it surfaced and who was told.</p>
+<div class="hero-chips"><div class="hero-chip">refusals</div><div class="hero-chip">errors as data</div><div class="hero-chip">RAG_TIMEOUT_S</div><div class="hero-chip">cut at the budget</div><div class="hero-chip">stopped_by</div><div class="hero-chip">401 and 403</div><div class="hero-chip">pool 0</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Every failure has a place, and a reader</a></li>
+<li><a href="#s2">The words: refusal, error result, payload, budget, Meter, stopped_by, door, empty pool</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Five failures through the kit's LangChain brain</a></li>
+<li><a href="#s4">A turn that will not stop: the call cap, the rupees and the deadline</a></li>
+<li><a href="#s5">Access failures at the chat service's door</a></li>
+<li><a href="#s6">An argument the corpus cannot honour</a></li>
+<li><a href="#s7">Reading a failure on the lane</a></li>
+<li><a href="#s8">Why failures are handled this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the three places a failure can surface (the HTTP status, the tool result, the log) and which failures land in <code>refusals</code>. You will also learn why a timed-out retrieval does not land there, and how a turn is held to %%MAX_CALLS%% model calls, Rs %%BUDGET_INR%% and %%DEADLINE_S%% seconds. Then you will prove it: a non-empty <code>refusals</code>, a tool cut at its budget and listed in <code>limits.tool_timeouts</code> with <code>refusals []</code>, a capped turn on your lane that answers HTTP 200 with <code>stopped_by</code>, a 401 and a 403 from the door, and a filter that empties the pool.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Every failure has a place, and a reader</h3><p>Before a turn, inside a turn, and in a log line.</p></div></div>
+
+<p><strong>Before a turn, the caller is told.</strong> Cloud Run's IAM admits or refuses the token. The chat service then asks who the token names: a token that names nobody is a 401. It asks whether the roster lists them: an account on no roster is a 403. No brain runs and no model is called. The caller gets a status and a sentence, and the request log keeps the status. The tenant is decided here, from the roster, and it never becomes an argument a model could fill. So "search another tenant's documents" is not a failure the tool layer has to catch. It cannot be asked at all.</p>
+
+<p><strong>Inside a turn, the model is told, in two different ways.</strong> Some failures produce an error result: a tool message marked <code>error</code>, and <code>_summary()</code> puts its name in <code>refusals</code>. A blocked name is one, refused by the guard before the tool runs. An argument of the wrong type is another, rejected by LangChain's check. So is a tool the model named that does not exist, and so is a tier the cost tool does not know: the tool raises a <code>ToolException</code>, which LangChain also turns into an error result. Other failures produce an ordinary result that carries bad news. When rag-api does not answer within <code>RAG_TIMEOUT_S</code>, the one <code>retrieve()</code> returns <code>{"error": ...}</code> as data, and a filter that matches nothing returns an empty list. The model reads both, but <code>refusals</code> counts only the first kind.</p>
+
+<p><strong>A slow tool is cut, and the model is told as data.</strong> Every tool has a budget in <code>TIMEOUTS</code>: %%RETRIEVE_S%% seconds for <code>retrieve</code> on the lane, which is <code>RAG_TIMEOUT_S</code>'s 90 plus 5 for the token and the connection, and %%COST_S%% for the cost tool. <code>limits.timed_tool_call</code> runs each call in a pool of threads and waits no longer than the smaller of that budget and the time the turn has left. A call past it is abandoned: the model reads a payload error that says so, <code>refusals</code> stays empty, and the tool's name goes into <code>limits.tool_timeouts</code>. A call still waiting for a thread is cancelled and never runs. One already running finishes, but it adds nothing to the turn's citations. All three agent brains time their tools this way.</p>
+
+<p><strong>A turn has limits of its own.</strong> A tool failure ends one call. A model that keeps asking for tools would keep a turn going until something outside it gave up. So every turn carries a <code>Meter</code>, made by the chat service for that turn: at most %%MAX_CALLS%% model calls, Rs %%BUDGET_INR%% for its own model calls and its searches, and %%DEADLINE_S%% seconds. It is checked before each model call. A tripped limit ends the turn with HTTP 200, a fixed sentence as the answer, and <code>limits.stopped_by</code> naming the limit. The thread stays whole, so the next turn on it answers. The rupee cap is named here; lesson 11.6 takes it up beside the month's.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127974;</div><div>
+<p><strong>A bank branch clearing cheques.</strong> The guard stops a stranger at the door, and the teller refuses a cheque on an account that is not yours. Both are told to your face, before anything is processed. A cheque made out for a prohibited purpose goes to the manager and comes back marked "needs approval". One whose amount in words does not match the figures comes back marked "returned". A cheque that cannot be cleared in time comes back too: "unpaid, present again", which is an answer, not a rejection. A cheque the clearing house has not answered by the counter's cut-off is set aside, and you are told so, while the queue moves. And a customer who keeps presenting cheques is served a fixed number at one visit, then told the counter has closed for them and to come back, which they can.</p></div></div>
+
+<h4>Where a failure surfaces</h4>
+<p>Choose a failure to see which layer catches it, what the caller and the model are told, what the four keys say, what the logs keep, and whether the turn waits.</p>
+
+<div class="diagram pc" id="fs">
+<div class="dg-title">%%N_FAIL%% failures of a chat turn - the door, the guard, LangChain, the one retrieve() and rag-api</div>
+<div class="pc-box"><b class="h">The failure</b>
+<div class="pc-in"><label>What goes wrong<select id="fs-f"></select></label></div>
+<div class="fs-grid" id="fs-out" aria-live="polite"></div></div>
+<p class="dg-cap">The texts are the kit's own. The five tool failures come from step 3's cell, run at build time on the kit's <code>brains.py</code> and <code>limits.py</code>; the two stops are the kit's <code>limits.py</code> and its tests. The door's texts are read from <code>agent.py</code> and <code>shared/iap.py</code>, and the empty pool from <code>main.py</code>.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the LangChain brain, the chat service's default. The LangGraph brain refuses a blocked name with its refuse node (lesson 5.4), times its tools through the same <code>timed_tool_call</code>, and checks the <code>Meter</code> in its own <code>agent</code> node. The ADK brain has callbacks of its own for both, in lesson 5.7.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: refusal, error result, payload, budget, Meter, stopped_by, door, empty pool</h3><p>Thirteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Error result</strong></td><td data-label="Meaning">A tool message with <code>status</code> <code>error</code>, returned instead of the tool's output.</td><td data-label="On your lane">three of step 3's five</td></tr>
+<tr><td><strong>refusals</strong></td><td data-label="Meaning"><code>_summary()</code>'s list of every tool whose result was an error, whatever the reason.</td><td data-label="On your lane">a blocked name, a bad argument, an unknown tool or tier</td></tr>
+<tr><td><strong>Payload error</strong></td><td data-label="Meaning">An ordinary result that says something failed, <code>{"error": ...}</code>, returned as data so the model can explain it.</td><td data-label="On your lane"><code>document search is unavailable</code></td></tr>
+<tr><td><strong>BLOCKED</strong></td><td data-label="Meaning">The names the guard refuses before any tool runs.</td><td data-label="On your lane"><code>delete_document</code>, <code>send_email</code>, <code>modify_access</code></td></tr>
+<tr><td><strong>Budget</strong></td><td data-label="Meaning"><code>TIMEOUTS</code>: seconds per tool. A call is cut at the smaller of its budget and the turn's time left, never under a second.</td><td data-label="On your lane">%%RETRIEVE_S%% and %%COST_S%%</td></tr>
+<tr><td><strong>tool_timeouts</strong></td><td data-label="Meaning">The tools whose calls this turn abandoned, in the answer's <code>limits</code> and on the chat row.</td><td data-label="On your lane"><code>[]</code> on a healthy turn</td></tr>
+<tr><td><strong>Client timeout</strong></td><td data-label="Meaning"><code>RAG_TIMEOUT_S</code>: how long the one <code>retrieve()</code> waits for rag-api before returning a payload error.</td><td data-label="On your lane">90 seconds on the chat service</td></tr>
+<tr><td><strong>Meter</strong></td><td data-label="Meaning">One turn's counter of model calls, rupees and time, checked before each model call.</td><td data-label="On your lane">%%MAX_CALLS%% calls, Rs %%BUDGET_INR%%, %%DEADLINE_S%% s</td></tr>
+<tr><td><strong>stopped_by</strong></td><td data-label="Meaning">The limit that ended the turn: <code>model_calls</code>, <code>turn_budget</code>, <code>turn_deadline</code> or <code>recursion_limit</code>; null when none did.</td><td data-label="On your lane">null, until the drill</td></tr>
+<tr><td><strong>401</strong></td><td data-label="Meaning">The chat service could not tell who the token names.</td><td data-label="On your lane"><code>%%NO_EMAIL%%</code></td></tr>
+<tr><td><strong>403</strong></td><td data-label="Meaning">The chat service knows who it is, and no roster lists them.</td><td data-label="On your lane"><code>not a member of any tenant</code></td></tr>
+<tr><td><strong>Empty pool</strong></td><td data-label="Meaning">Retrieval found no candidate, so rag-api answers with its fixed refusal, at no model cost.</td><td data-label="On your lane"><code>pool 0</code> on the row</td></tr>
+<tr><td><strong>The four loggers</strong></td><td data-label="Meaning"><code>documind.chat.brains</code> (the guard), <code>documind.chat.limits</code> (the timer), <code>documind.chat.tools</code> (the adapter), <code>documind.agents.tools</code> (the one <code>retrieve()</code>).</td><td data-label="On your lane">step 3 prints all four</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: an error result says the call did not happen, and a payload error says it happened and could not help. Only the first lands in <code>refusals</code>. A cut call is the second kind, and a stopped turn is neither: it is an answer that says it is incomplete.</p>

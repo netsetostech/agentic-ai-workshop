@@ -1,0 +1,96 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 9 &middot; Serving &middot; Lesson 9.2</div>
+<h1>Serve a supplied or stock model using Ollama: <span>one name for two builds, a GPU that sleeps, a cold start you can time, an answer the gate judges</span></h1>
+<p>Lesson 9.1's sensitive route has nowhere to go until a model runs behind it. The kit serves one with Ollama on a Cloud Run L4 GPU, always under one name, <code>documind-slm</code>. That model is either supplied (a GGUF and the Modelfile generated from its tokenizer) or a stock model from Ollama's library, which stands in until a supplied one exists. The model is built into the image, the service scales to zero, and the GPU bills for every minute an instance lives.</p>
+<p>In this lesson you generate a Modelfile from a tokenizer, and read from the kit how long each caller waits and what the GPU costs. Then you deploy the stand-in, smoke-test it and time a cold start. You send the gateway the PAN it re-routed in lesson 9.1. Then you put the small model behind the API on a candidate revision, and let the gate judge its answers.</p>
+<div class="hero-chips"><div class="hero-chip">make deploy-slm</div><div class="hero-chip">SLM_STOCK</div><div class="hero-chip">ollama/ollama:0.33.3</div><div class="hero-chip">make_modelfile.py</div><div class="hero-chip">nvidia-l4</div><div class="hero-chip">--startup-probe</div><div class="hero-chip">make smoke-slm</div><div class="hero-chip">documind-sensitive</div><div class="hero-chip">MODEL_BACKEND=gateway</div><div class="hero-chip">make slm-off</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A small model on a GPU that sleeps</a></li>
+<li><a href="#s2">The words: Ollama, a GGUF, the Modelfile, the stand-in, documind-slm, the startup probe, a cold start, keep-alive, the idle window, instance billing</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">A Modelfile from the tokenizer</a></li>
+<li><a href="#s4">The waits and the bill, from the kit</a></li>
+<li><a href="#s5">The stand-in, deployed and smoke-tested</a></li>
+<li><a href="#s6">The cold start, timed</a></li>
+<li><a href="#s7">The small model behind the gateway and the API</a></li>
+<li><a href="#s8">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how the kit serves a model on a Cloud Run GPU under one name, whichever build it is. You will learn what a cold start is made of, how long each caller waits for one, and what the GPU bills while nobody is asking. Then you will prove it on your lane: the cold start timed, and a gated answer from the small model.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A small model on a GPU that sleeps</h3><p>Two builds under one name, an image that carries the model, an instance that starts on demand, a bill by the minute.</p></div></div>
+
+<p><strong>Two builds, one name.</strong> <code>make deploy-slm</code> stages a folder, <code>services/slm/build/</code>, and deploys it. The folder holds one of two builds:</p>
+<ul>
+<li><strong>A stock model:</strong> with <code>SLM_STOCK</code> set (this lesson uses <code>%%STOCK%%</code>), the folder holds only the model's name. The image pulls that model from Ollama's library and copies it to <code>documind-slm</code>. This is the stand-in.</li>
+<li><strong>A supplied model:</strong> without <code>SLM_STOCK</code>, the folder gets two files from the datasets bucket. <code>documind-slm.gguf</code> holds the weights, and <code>documind-slm.Modelfile</code> was generated from the model's tokenizer. The image imports them with <code>ollama create</code>. The kit's comments expect a fine-tune of <code>%%TUNED_FROM%%</code>.</li>
+</ul>
+<p>Either way the model is created when the image is built, not when an instance starts. Ollama serves it as <code>documind-slm</code>, and the service's <code>slm-source</code> label says which build is behind it: <code>stock</code> or <code>gguf</code>.</p>
+
+<p><strong>The Modelfile.</strong> A GGUF holds weights. Ollama also needs two things the weights were trained with: the format of a turn (the template), and the tokens that end an answer (the stops). <code>make_modelfile.py</code> takes both from the model's own tokenizer. The kit's comments say why: a template that disagrees with the checkpoint produces fluent text that never stops.</p>
+
+<p><strong>The service.</strong> One L4 GPU with 8 vCPU and 32 GiB. It runs at most one instance and at least zero, serves four requests at a time, allows 600 seconds a request, and sits behind IAM. The gateway's account and the UI's account may invoke it. A startup probe asks <code>/api/tags</code> every 5 seconds, starting 10 seconds in, and allows 30 failures. That gives Ollama 160 seconds to list the model before Cloud Run gives up on the instance.</p>
+
+<p><strong>The cold start.</strong> With zero instances, the first request after an idle spell waits for two things:</p>
+<ol>
+<li><strong>An instance.</strong> Google says an L4 with its drivers is ready in about 5 seconds. Then the container, with its 3.3 GB model, must start and Ollama must answer.</li>
+<li><strong>The model in the GPU's memory.</strong> The first generation loads it.</li>
+</ol>
+<p>Ollama keeps a model loaded for 5 minutes after its last request, by default. Cloud Run may keep an idle GPU instance for up to 10 minutes, and may stop it sooner.</p>
+
+<p><strong>The bill.</strong> A GPU service is billed by the instance, from its start to its stop, idle minutes included, with at least a minute each time. For this shape in <code>us-central1</code> that is $%%HOUR_USD%% an hour, Rs %%HOUR_INR%%. An instance kept up all month (min-instances 1) costs Rs 86,904 by the kit's own figure. That is why <code>make deploy-slm</code> is its own act, never a side effect of deploying everything else, and why every session ends with <code>make slm-off</code>.</p>
+
+<p><strong>The routes and the API.</strong> The gateway's <code>documind-slm</code> route falls back to Gemini when the backend fails. <code>documind-sensitive</code>, where lesson 9.1's hook sends RESTRICTED text, has no fallback. The API reaches the small model on a revision that runs with <code>MODEL_BACKEND=gateway</code> and <code>GENERATOR_MODEL=documind-slm</code>: the same retrieval, the same prompt and the same gate as with Gemini.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127859;</div><div>
+<p><strong>A caterer's kitchen, rented by the minute.</strong> The kitchen is locked until the day's first order comes in. Unlocking it and lighting the gas takes a minute, and heating the tandoor takes a little longer. The tandoor cools five minutes after the last order, but the kitchen stays unlocked for up to ten, and the rent runs until the door is locked. Keeping it open all month costs as much as cooking in it all month.</p>
+<p>The menu has one dish, the house thali. Either it is the caterer's own recipe, cooked from a card written from the chef's notes, or it is a branded thali bought in and served under the house name; a card on the door says which. A recipe card copied from a magazine instead of the chef's notes leaves the cook never knowing when to stop. And the kitchen is not in the city: the nearest one that rents by the minute takes guests by invitation only, so the default kitchen is abroad.</p>
+<p>The kitchen is the Cloud Run instance, and the tandoor is the model in the GPU's memory. The rent is instance-based billing. The house thali is <code>documind-slm</code>, the card on the door is the <code>slm-source</code> label, and the recipe card is the Modelfile. The kitchen abroad is <code>us-central1</code>.</p></div></div>
+
+<h4>What does one request wait for?</h4>
+<p>Pick how long the service has been idle, how long your lane takes to start an instance and to load the model, and who asks. The first box shows what the request waits for. The second shows the timeouts along its path, which one fires first, and what the caller gets. The third shows what the GPU bills.</p>
+
+<div class="diagram pc" id="sl">
+<div class="dg-title">One request to the small model: the wait, the timeouts on its path, the bill</div>
+<div class="pc-in"><label>Idle since the last request<select id="sl-idle">%%IDLE_OPTIONS%%</select></label>
+<label>An instance starts in<select id="sl-start">%%START_OPTIONS%%</select></label>
+<label>The model loads in<select id="sl-load">%%LOAD_OPTIONS%%</select></label>
+<label>Who asks<select id="sl-caller">%%CALLER_OPTIONS%%</select></label></div>
+<div class="sl-cols">
+<div class="pc-box"><b class="h">The wait</b><div class="sl-out" id="sl-wait" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The path</b><div class="sl-out" id="sl-path" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The bill</b><div class="sl-out" id="sl-bill" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The timeouts are the kit's, read from the Makefile, <code>config.yaml</code>, the API's <code>config.py</code>, <code>run_eval.py</code> and <code>smoke_slm.py</code> when this page was built. The 5 minutes are Ollama's default, and the 10 minutes and the rates are Google's. The logic is compared with a Python version on all %%N_CHECKED%% combinations.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It does not know how long your lane takes to start an instance or to load the model: step 6 measures both. It counts a short answer as one second, and an answer to a real question can take several.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: Ollama, a GGUF, the Modelfile, the stand-in, documind-slm, the startup probe, a cold start, keep-alive, the idle window, instance billing</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Ollama</strong></td><td data-label="Meaning">A server that runs GGUF models on a GPU. It has its own API (<code>/api/tags</code>, <code>/api/generate</code>) and an OpenAI-compatible one (<code>/v1/chat/completions</code>).</td><td data-label="On your lane"><code>ollama/ollama:0.33.3</code>, on port 8080</td></tr>
+<tr><td><strong>A GGUF</strong></td><td data-label="Meaning">One file with a model's weights, usually quantized, for llama.cpp-based servers like Ollama.</td><td data-label="On your lane">a supplied model's, in the datasets bucket</td></tr>
+<tr><td><strong>The Modelfile</strong></td><td data-label="Meaning">Ollama's recipe: <code>FROM</code> the weights, the <code>TEMPLATE</code> of a turn, the stop tokens and the context size.</td><td data-label="On your lane">generated by <code>make_modelfile.py</code></td></tr>
+<tr><td><strong>The stand-in</strong></td><td data-label="Meaning">A stock model from Ollama's library, pulled when the image is built.</td><td data-label="On your lane"><code>%%STOCK%%</code>: 4.3B parameters, Q4_K_M, 3.3 GB</td></tr>
+<tr><td><strong>documind-slm</strong></td><td data-label="Meaning">The one name Ollama serves either build under.</td><td data-label="On your lane">label <code>slm-source=stock</code> or <code>gguf</code></td></tr>
+<tr><td><strong>The startup probe</strong></td><td data-label="Meaning">Cloud Run's check that a new instance is ready: here, that Ollama lists the model.</td><td data-label="On your lane"><code>/api/tags</code>, 160 s at most</td></tr>
+<tr><td><strong>A cold start</strong></td><td data-label="Meaning">The first request after an idle spell: an instance to start, then the model to load.</td><td data-label="On your lane">step 6 times it</td></tr>
+<tr><td><strong>Keep-alive</strong></td><td data-label="Meaning">How long Ollama keeps a model in the GPU's memory after its last request.</td><td data-label="On your lane">5 minutes: Ollama's default, and the kit sets none</td></tr>
+<tr><td><strong>The idle window</strong></td><td data-label="Meaning">How long Cloud Run may keep an idle GPU instance before stopping it.</td><td data-label="On your lane">up to 10 minutes, billed</td></tr>
+<tr><td><strong>Instance billing</strong></td><td data-label="Meaning">A GPU service pays for an instance's whole life, from start to stop, idle minutes included.</td><td data-label="On your lane">$%%HOUR_USD%% an hour: Rs %%HOUR_INR%%</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the model is built into the image once, and loaded into the GPU many times. Building takes minutes and happens on every deploy. Loading takes seconds and happens after every idle spell longer than Ollama's five minutes.</p>

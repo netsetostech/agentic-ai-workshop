@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 3.5 Ingest, re-issue, undo, poison - the lifecycle, proved with make | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Ingest &middot; Lesson 3.5</div>
+<h1>Ingest, re-issue, undo, poison: <span>the lifecycle, proved with make</span></h1>
+<p>Lessons 3.1 to 3.4 explained the ingest lane and read its code. This one runs it: eight drills, each one command from <code>code/Makefile</code>, the line to watch, the numbers to expect before you press Enter, the rupees, and what it proved. At the end <code>make smoke-reindex</code> is green on your own lane, and you can say why the undo embedded nothing.</p>
+<div class="hero-chips"><div class="hero-chip">make ingest-one</div><div class="hero-chip">make reindex</div><div class="hero-chip">make retire</div><div class="hero-chip">make poison</div><div class="hero-chip">make reconcile</div><div class="hero-chip">make smoke-reindex</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Before you start: the lane, the exports, the log, the ceiling</a></li>
+<li><a href="#s2">One document in</a></li>
+<li><a href="#s3">The corpus: 31 objects, 1,065 pages</a></li>
+<li><a href="#s4">A re-issue: reused=281 embedded=2 retired=283</a></li>
+<li><a href="#s5">The undo: nothing embedded</a></li>
+<li><a href="#s6">Retire and restore: the tombstone</a></li>
+<li><a href="#s7">Poison, the DLQ and the batch lane</a></li>
+<li><a href="#s8">Reconcile and the gate</a></li>
+<li><a href="#quiz">Check yourself</a></li>
+<li><a href="#exercises">Exercises</a></li>
+</ol></div>
+
+<p>Proof, on this lane, is a line in Cloud Logging with your project id on it and a number you predicted before you ran the command. So every step below has the same shape: the command, the line, the numbers, the rupees, what it showed. Every target on this page exists in <code>code/Makefile</code> today; where a comment in the kit and the code disagree, the page follows the code and says so. Lesson 3.1 said why the ledger works this way, 3.2 drew where the worker sits, 3.3 and 3.4 read the functions - here they are only named. Hashes and generations in the expected output are illustrative; the counts are not.</p>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Step 1 of 8</span><h3>Before you start</h3><p>A live lane from Module 2, three exports, one folder, one read-only check, the way to read the worker's own lines, and the rupee ceiling for the whole lesson.</p></div></div>
+
+<h4>What must already exist</h4>
+<p>Module 2 left you a lane: <code>make up</code> finished, <code>make smoke</code> green, <code>make vector-status</code> showing the index with <code>vectorsCount: '0'</code> - correct, <code>vector.tf</code> creates it empty and the worker fills it in step 3. <code>commands/lesson-12.5.sh</code> deployed the worker with <code>RETENTION_DAYS=30</code>, <code>EMBEDDING_MODEL=text-embedding-005</code> and <code>EMBEDDING_VERSION=1</code>; every number below assumes those three. Every drill uses <code>acme</code>, the tenant that holds all thirteen Acts and the 283-chunk handbook.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export PROJECT=documind-ai-YOUR-ID
+export TENANT=acme
+export REGION=us-central1
+cd code                    <span class="cm"># the kit; a clone of the learner repo names the same folder deploy/</span>
+make preflight PROJECT=$PROJECT TFSTATE_BUCKET=$PROJECT-tfstate</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected - make preflight</span><button class="cp" type="button">copy</button></div><pre tabindex="0">  ok    gcloud on PATH
+  ok    terraform on PATH
+  ok    make on PATH
+  ok    python on PATH
+  ok    terraform 1.9.8 (backend.tf wants &gt;= 1.9)
+  ok    signed in as you@example.com
+  ok    project documind-ai-YOUR-ID exists
+  ok    billing linked
+  ok    state bucket gs://documind-ai-YOUR-ID-tfstate
+  ok    APIs enabled
+  ok    google-cloud-firestore for make roster
+
+preflight clean - next: make plan, then make up
+not checkable from here: the OAuth consent screen (Google Auth Platform &gt; Branding) - IAP needs it</pre></div>
+<p><code>make preflight</code> runs <code>smoke/preflight.sh</code>: read-only, one line per check, a <code>MISS</code> line carrying the command that fixes it. The line that matters now is the last one: <code>make sources</code>, <code>retire</code>, <code>restore</code>, <code>reconcile</code> and <code>queued</code> run <code>reconcile.py</code> or <code>batch.py</code> in <em>your</em> shell, not on Cloud Run, so it needs <code>google-cloud-firestore</code> and <code>google-cloud-storage</code>. The shell that ran <code>make up</code> has both.</p>
+
+<h4>How to read the worker</h4>
+<p>The worker logs one JSON line per event with <code>event</code> as its first field (lesson 3.2 listed them all). The whole query language you need is one filter, kept in a shell variable for the rest of this page, and one command to read it; a second tab tailing the service is the nearest thing to watching the worker think.</p>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">W='resource.type="cloud_run_revision" AND resource.labels.service_name="documind-ingest"'
+gcloud logging read "$W" --project $PROJECT --freshness=1h --limit 20 \
+  --format='value(timestamp,jsonPayload.event,jsonPayload.tenant,jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded,jsonPayload.retired)'
+
+<span class="cm"># a second tab, live: every line the moment the worker writes it</span>
+gcloud beta run services logs tail documind-ingest --region $REGION --project $PROJECT</pre></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Line</th><th>Who writes it</th><th>Read these fields</th><th>Step</th></tr></thead>
+<tbody>
+<tr><td><code>ingest_ok</code></td><td data-label="Who writes it">the worker (<code>lane=push</code>) or the batch job (<code>lane=batch</code>), <code>main.index_document</code></td><td data-label="Read these fields"><code>chunks</code>, <code>pages</code>, <code>kinds</code>, <code>reused</code>, <code>embedded</code>, <code>retired</code>, <code>generation</code>, <code>effective_from</code>, <code>fingerprint</code></td><td data-label="Step">2, 3, 4, 7</td></tr>
+<tr><td><code>ingest_superseded</code></td><td data-label="Who writes it">the worker, beside <code>ingest_ok</code>, only when something was retired</td><td data-label="Read these fields"><code>retired_doc_keys</code>, <code>retired_chunks</code>, <code>expire_days</code>, <code>effective_to</code></td><td data-label="Step">4</td></tr>
+<tr><td><code>ledger_fingerprint</code></td><td data-label="Who writes it"><code>idempotency.refresh_fingerprint</code>, on every change to what is current</td><td data-label="Read these fields"><code>tenant</code>, <code>fingerprint</code>, <code>versions</code></td><td data-label="Step">2 to 6</td></tr>
+<tr><td><code>ingest_reactivated</code></td><td data-label="Who writes it">the worker: the undo</td><td data-label="Read these fields"><code>chunks</code>, <code>reused</code>, <code>embedded</code> (always 0), <code>retired</code>, <code>retired_doc_keys</code></td><td data-label="Step">5, 6</td></tr>
+<tr><td><code>ingest_withdrawn</code></td><td data-label="Who writes it">the worker: the tombstone held</td><td data-label="Read these fields"><code>doc_key</code>, <code>gcs_uri</code>, <code>hint</code></td><td data-label="Step">6</td></tr>
+<tr><td><code>ingest_poison</code></td><td data-label="Who writes it">the worker, before anything is downloaded</td><td data-label="Read these fields"><code>error</code> (the first 200 characters of the validation error)</td><td data-label="Step">7</td></tr>
+<tr><td><code>ingest_queued_batch</code>, <code>batch_run</code></td><td data-label="Who writes it">the worker; the batch job</td><td data-label="Read these fields"><code>pages</code>, <code>consumer</code>; <code>queued</code>, <code>indexed</code>, <code>skipped</code>, <code>gone</code>, <code>failed</code></td><td data-label="Step">7</td></tr>
+<tr><td><code>reconcile_retired</code>, <code>reconcile_done</code></td><td data-label="Who writes it"><code>make reconcile APPLY=1</code> in your shell; the nightly job in its own log</td><td data-label="Read these fields"><code>retired_chunks</code>; <code>retire</code>, <code>reingest</code>, <code>backfill</code>, <code>touch</code>, <code>ok</code>, <code>withdrawn</code>, <code>queued</code>, <code>drift</code></td><td data-label="Step">8</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The rupees, and the ceiling for the whole lesson</h4>
+<div class="box box-amber"><div class="box-title">The rates this page prices with (read off the pricing pages on 21 September 2026 - re-verify before you quote them to anyone)</div>
+<p>Document AI bills per page: the Layout Parser, which <code>RESIDENCY=us</code> - the Makefile's default - selects, at $10 per 1,000 pages; Enterprise Document OCR, which <code>RESIDENCY=india</code> selects in Mumbai (<code>docai.tf</code>, <code>parser.PROCESSORS</code>), at $1.50 per 1,000 pages. <code>text-embedding-005</code> bills per character: $0.000025 per 1,000 online. Sensitive Data Protection (DLP) bills per byte inspected with a free gigabyte a month; the corpus is under 4 MB of text, so every scan here sits inside it. Gemini's three figure captions are a fraction of a rupee. <code>USD_INR = 85</code>. None of these rates is in the code; the page and character counts below are.</p></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Drill</th><th>What bills</th><th>Rs, RESIDENCY=us (default)</th><th>Rs, RESIDENCY=india</th></tr></thead>
+<tbody>
+<tr><td>2 - one document in</td><td data-label="What bills">563 characters embedded; one DLP scan</td><td data-label="Rs, RESIDENCY=us (default)">under 0.01</td><td data-label="Rs, RESIDENCY=india">under 0.01</td></tr>
+<tr><td>3 - the corpus</td><td data-label="What bills">Document AI, 1,065 pages; about 3.5 million characters embedded; three captions</td><td data-label="Rs, RESIDENCY=us (default)">about 915</td><td data-label="Rs, RESIDENCY=india">about 145</td></tr>
+<tr><td>4 - a re-issue</td><td data-label="What bills">2 chunks embedded, about 370 characters; one DLP scan of the handbook</td><td data-label="Rs, RESIDENCY=us (default)">under 0.01</td><td data-label="Rs, RESIDENCY=india">under 0.01</td></tr>
+<tr><td>5 - the undo</td><td data-label="What bills">nothing: Firestore writes, no model call</td><td data-label="Rs, RESIDENCY=us (default)">0</td><td data-label="Rs, RESIDENCY=india">0</td></tr>
+<tr><td>6 - retire and restore</td><td data-label="What bills">nothing</td><td data-label="Rs, RESIDENCY=us (default)">0</td><td data-label="Rs, RESIDENCY=india">0</td></tr>
+<tr><td>7 - poison and the DLQ</td><td data-label="What bills">nothing: the 400 is decided before any download</td><td data-label="Rs, RESIDENCY=us (default)">0</td><td data-label="Rs, RESIDENCY=india">0</td></tr>
+<tr><td>7 - the batch lane (optional)</td><td data-label="What bills">Document AI, 236 pages again; the embeddings are reused by the carry-over</td><td data-label="Rs, RESIDENCY=us (default)">about 200</td><td data-label="Rs, RESIDENCY=india">about 30</td></tr>
+<tr><td>8 - reconcile, the smoke, the questions</td><td data-label="What bills">5 fixture chunks embedded; a dozen Gemini answers</td><td data-label="Rs, RESIDENCY=us (default)">under 5</td><td data-label="Rs, RESIDENCY=india">under 5</td></tr>
+<tr><td>Whole lesson</td><td data-label="What bills">Document AI is the bill; embeddings and DLP are noise</td><td data-label="Rs, RESIDENCY=us (default)">under 1,200</td><td data-label="Rs, RESIDENCY=india">under 200</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>The lane's own hourly floor - the Vector Search endpoint above all - runs whether you drill or not; that is Module 2's number, and <code>make off</code> / <code>make down</code> in step 8 stop it. The module brief calls a corpus load "a few hundred rupees"; the code says that holds for Mumbai's OCR and is about Rs 900 on the default Layout Parser.</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Step 2 of 8</span><h3>One document in</h3><p>One small, dated document into the tenant's prefix, the worker's ingest_ok line back, and the ledger row it wrote.</p></div></div>
+
+<p>The document is <code>evals/demo/gratuity_amendment_2026.md</code>: three chunks, <code>effective_from: 2026-10-01</code> on its own line, not part of the corpus and cited by no golden row. The brief for this lesson named the smoke fixture <code>smoke_note_v1.md</code> here; the code says otherwise - a version is <code>tenant_sha256</code> whatever the object is called, so the same bytes now would make <code>make smoke-reindex</code>'s first upload in step 8 a duplicate, and the smoke's first check filters on a <code>tenant</code> field the <code>ingest_duplicate</code> line does not carry. The fixture stays the smoke's.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ingest-one FILE=evals/demo/gratuity_amendment_2026.md TENANT=acme PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make ingest-one</span><button class="cp" type="button">copy</button></div><pre tabindex="0">&gt;&gt; gs://documind-ai-YOUR-ID-uploads/acme/gratuity_amendment_2026.md - waiting for the worker (up to 5 min)
+&gt;&gt; indexed: acme_5b1c9e...   3   1</pre></div>
+<p>The target (<code>Makefile</code>, <code>ingest-one</code>) copies the file with <code>gcloud storage cp</code> - the content type comes from the extension, <code>text/markdown</code>, so the worker decodes it itself and Document AI is never called - then polls Cloud Logging every ten seconds, up to five minutes, for an <code>ingest_ok</code> line of this tenant newer than the upload, and prints <code>doc_key</code>, <code>chunks</code>, <code>pages</code>. Thirty to sixty seconds is normal. If it prints <code>no ingest_ok in 5 min</code>, read the worker's log for an <code>ingest_failed</code> line (its <code>error</code> field says what threw) and check the push subscription still points at the service (<code>gcloud pubsub subscriptions describe documind-ingest-push</code>). Now the whole line, then the ledger:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "$W AND jsonPayload.event=\"ingest_ok\" AND jsonPayload.tenant=\"$TENANT\"" \
+  --project $PROJECT --freshness=10m --limit 1 --format=json \
+  | python -c "import json,sys; print(json.dumps(json.load(sys.stdin)[0]['jsonPayload'], indent=1))"
+make sources TENANT_ONLY=acme PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - the line, then the ledger</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{
+ "event": "ingest_ok",
+ "tenant": "acme",
+ "lane": "push",
+ "doc_key": "acme_5b1c9e...",
+ "chunks": 3,
+ "pages": 1,
+ "kinds": ["text"],
+ "reused": 0,
+ "embedded": 3,
+ "retired": 0,
+ "generation": "1758450012345678",
+ "effective_from": "2026-10-01",
+ "fingerprint": "9c1e8f2a4b7d3e10"
+}
+source                                       status            gen chunks reused embed retired effective  embedding              indexed_at
+acme/gratuity_amendment_2026.md              indexed 1758450012345678      3      0     3       0 2026-10-01 text-embedding-005@1   2026-09-21T10:15:02
+{"ledger": "acme", "fingerprint": "9c1e8f2a4b7d3e10", "versions": 1, "last_event": "ingest_ok"}</pre></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Field</th><th>Value</th><th>Where it came from</th></tr></thead>
+<tbody>
+<tr><td><code>chunks</code></td><td data-label="Value">3</td><td data-label="Where it came from"><code>main._chunk</code> cut it the way <code>shared/documind_corpus.chunk_document</code> does (lesson 3.3): the text above the first <code>## </code> heading is the <code>preamble</code>, then one chunk per section - <code>s1</code> and <code>s2</code>, because these headings carry no clause code.</td></tr>
+<tr><td><code>pages</code></td><td data-label="Value">1</td><td data-label="Where it came from">A text upload counts form feeds; there are none, so one page.</td></tr>
+<tr><td><code>kinds</code></td><td data-label="Value"><code>["text"]</code></td><td data-label="Where it came from">Not a figure or a segment; a PNG in step 3 will say <code>["figure"]</code>.</td></tr>
+<tr><td><code>reused</code>, <code>embedded</code></td><td data-label="Value">0, 3</td><td data-label="Where it came from">A first version has no current rows of this source to carry over (<code>indexer.embed_with_carry_over</code>), so every chunk was embedded. The two numbers always add up to <code>chunks</code>.</td></tr>
+<tr><td><code>retired</code></td><td data-label="Value">0</td><td data-label="Where it came from">No previous version of <code>acme/gratuity_amendment_2026.md</code> to retire; there is no <code>ingest_superseded</code> line beside this one.</td></tr>
+<tr><td><code>effective_from</code></td><td data-label="Value">2026-10-01</td><td data-label="Where it came from"><code>contracts.effective_from_of</code> read the document's own line; the context header will say <em>effective from 2026-10-01</em> when this chunk is packed (Module 4).</td></tr>
+<tr><td><code>generation</code></td><td data-label="Value">16 digits</td><td data-label="Where it came from">Cloud Storage's version number of the object; the ledger keeps it so an older redelivery is <code>ingest_stale_event</code>.</td></tr>
+<tr><td><code>fingerprint</code></td><td data-label="Value">16 hex characters</td><td data-label="Where it came from">sha256 of the tenant's sorted current <code>doc_key</code>s (<code>idempotency.corpus_fingerprint</code>); <code>versions: 1</code> because this is acme's only current version so far.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>The rupees.</strong> 563 characters embedded at $0.000025 per 1,000 is $0.000014 - about a thousandth of a rupee. The DLP scan is inside the free gigabyte. Document AI was never called. Rs 0.00 on the bill, and the only reason it is not exactly zero is the embedding.</p>
+
+<div class="analogy"><div class="analogy-icon">&#9783;</div><div>
+<p><strong>The bank passbook.</strong> You do not decide whether a cheque cleared by remembering that you deposited it; you get the passbook printed and read the line - date, amount, balance. <code>make sources</code> is the passbook of the corpus: one line per document, what version is current, since which generation, what the last entry cost. When someone says "the handbook is updated", the answer is a printed line, not a feeling.</p></div></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One object landed under <code>acme/</code>, Cloud Storage published its record, Pub/Sub pushed it, and the worker won the claim on <code>documents/acme_5b1c9e...</code>, cut three chunks, scanned them once, embedded all three, wrote them staged, swapped them current, retired nothing, wrote <code>sources/acme~gratuity_amendment_2026.md</code>, refreshed <code>ledger/acme</code> and said so in one line. The date came from the document, not from you.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Step 3 of 8</span><h3>The corpus</h3><p>Thirty-one objects in one push, a line for each, the ANN tier filling behind the rows, and what the thirteen Acts cost.</p></div></div>
+
+<p><code>make ingest-corpus</code> runs <code>evals/upload.sh</code>: one prefix per tenant, and one rule to know before you count - a <code>.md</code> whose <code>.pdf</code> twin exists stays home (it is the pypdf mirror the notebooks and the offline gate read; uploading it too would index every real Act twice). On a fresh clone that is 21 objects for acme (five synthetic documents, three figures, thirteen Acts and Codes as PDFs), 7 for zeta, 3 for globex: 31.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ingest-corpus PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - evals/upload.sh, abridged</span><button class="cp" type="button">copy</button></div><pre tabindex="0">project : documind-ai-YOUR-ID
+bucket  : gs://documind-ai-YOUR-ID-uploads
+
+==&gt; acme (21 files) -&gt; gs://documind-ai-YOUR-ID-uploads/acme/
+    annual_report_2026.md
+    annual_report_2026_fig3.png
+    cgst_act_2017.pdf
+    ...
+==&gt; globex (3 files) -&gt; gs://documind-ai-YOUR-ID-uploads/globex/
+==&gt; zeta (7 files) -&gt; gs://documind-ai-YOUR-ID-uploads/zeta/
+
+Uploaded. Eventarc should now be enqueuing one ingest job per object;
+watch the DLQ if nothing lands:
+  gcloud pubsub subscriptions pull ingest-dlq-sub --auto-ack --limit=10</pre></div>
+
+<p>The target does not wait; the worker does the work over the next ten minutes or so. Pub/Sub pushes 31 messages at once, <code>documind-ingest</code> takes one request per instance and scales to thirty, and Cloud Run's cold-start refusals count against the subscription's attempts - which is why <code>eventarc.tf</code> sets twelve, not five. Count the lines as they land; the last is usually the CGST Act, 236 pages in sixteen Document AI calls, about four minutes.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "$W AND jsonPayload.event=\"ingest_ok\"" --project $PROJECT --freshness=30m --limit 50 \
+  --format='value(jsonPayload.tenant,jsonPayload.pages,jsonPayload.chunks,jsonPayload.embedded,jsonPayload.kinds,jsonPayload.doc_key)'
+gcloud logging read "$W AND jsonPayload.event=\"ingest_ok\"" --project $PROJECT --freshness=30m --limit 50 \
+  --format='value(jsonPayload.doc_key)' | wc -l</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - three of the 31 lines, and the count</span><button class="cp" type="button">copy</button></div><pre tabindex="0">acme    1     283   283   ['text']     acme_497809ff...   <span class="cm"># hr_policy_2026.md: the handbook, one chunk per clause</span>
+acme    236   390   390   ['text']     acme_f7317f3a...   <span class="cm"># cgst_act_2017.pdf: 236 pages, sixteen Document AI slices</span>
+acme    1     1     1     ['figure']   acme_2d4a91c0...   <span class="cm"># annual_report_2026_fig3.png: one caption, written by Gemini</span>
+31</pre></div>
+<p>Two things to notice in your own lines. Every one says <code>reused=0</code>: first versions have nothing to carry over. And the handbook says exactly 283 - the module's number - because a handbook is chunked by section, and 282 sections plus the preamble are 283 chunks in the notebook and in the worker alike (<code>tools/check_real_corpus.py</code> holds them to the same texts). A PDF's count is Document AI's text, not the mirror's, so expect the CGST Act near 390 rather than at it.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make wait-vectors WANT=200 PROJECT=$PROJECT
+make vector-status PROJECT=$PROJECT
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | tail -3</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - the tier, then the ledger's last lines</span><button class="cp" type="button">copy</button></div><pre tabindex="0">&gt;&gt; waiting for &gt;= 200 datapoints in documind-chunks
+&gt;&gt; 2790 datapoints
+displayName: documind-chunks
+indexStats:
+  shardsCount: 1
+  vectorsCount: '2790'
+indexUpdateMethod: STREAM_UPDATE
+displayName: documind-endpoint
+deployedIndexes:
+- id: documind_chunks_v1
+  indexSyncTime: '2026-09-21T10:41:07Z'
+acme/payment_of_gratuity_act_1972.pdf        indexed 1758450398765432     27      0    27       0 -          text-embedding-005@1   2026-09-21T10:33:40
+acme/townhall_2026_q1.md                     indexed 1758450391234567      1      0     1       0 -          text-embedding-005@1   2026-09-21T10:33:12
+{"ledger": "acme", "fingerprint": "e07b3c19d2a48f65", "versions": 22, "last_event": "ingest_ok"}</pre></div>
+<p><code>make wait-vectors</code> blocks until the index's own <code>vectorsCount</code> reaches <code>WANT</code> (twenty minutes at most, then it prints the three causes: the worker never upserted, the corpus never landed, or the tier needs <code>make backfill-vectors APPLY=1</code> from the rows Firestore holds). A streamed upsert takes a few minutes to show, so the count climbs after the lines have landed. <code>versions: 22</code> is acme's 21 objects plus step 2's amendment.</p>
+
+<h4>What the thirteen Acts cost</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Tenant</th><th>Document AI pages (real_sources.json)</th><th>Layout Parser, RESIDENCY=us</th><th>Enterprise OCR, RESIDENCY=india</th><th>Chunks, characters (the mirrors' count)</th></tr></thead>
+<tbody>
+<tr><td>acme</td><td data-label="Document AI pages (real_sources.json)">685 - the four Codes (29, 116, 56, 86), Bonus 31, Gratuity 10, Maternity 11 + 4, POSH 13 (a scan: OCR only), the handbook 38, DPDP 21, IT 34, CGST 236</td><td data-label="Layout Parser, RESIDENCY=us">$6.85 = Rs 582</td><td data-label="Enterprise OCR, RESIDENCY=india">$1.03 = Rs 87</td><td data-label="Chunks, characters (the mirrors' count)">1,628 chunks, 2.06 million characters</td></tr>
+<tr><td>zeta</td><td data-label="Document AI pages (real_sources.json)">325 - the four Codes and the handbook</td><td data-label="Layout Parser, RESIDENCY=us">$3.25 = Rs 276</td><td data-label="Enterprise OCR, RESIDENCY=india">$0.49 = Rs 41</td><td data-label="Chunks, characters (the mirrors' count)">1,002 chunks, 1.22 million characters</td></tr>
+<tr><td>globex</td><td data-label="Document AI pages (real_sources.json)">55 - DPDP 21, IT 34</td><td data-label="Layout Parser, RESIDENCY=us">$0.55 = Rs 47</td><td data-label="Enterprise OCR, RESIDENCY=india">$0.08 = Rs 7</td><td data-label="Chunks, characters (the mirrors' count)">127 chunks, 0.18 million characters</td></tr>
+<tr><td>All three</td><td data-label="Document AI pages (real_sources.json)">1,065 pages</td><td data-label="Layout Parser, RESIDENCY=us">$10.65 = Rs 905</td><td data-label="Enterprise OCR, RESIDENCY=india">$1.60 = Rs 136</td><td data-label="Chunks, characters (the mirrors' count)">2,757 chunks, 3.47 million characters: $0.087 = Rs 7.4 of embeddings; DLP inside the free gigabyte; three captions under Rs 1</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>About Rs 915 on the default lane, about Rs 145 in Mumbai, and in both cases Document AI is more than ninety per cent of it; the embeddings for 2,757 chunks cost less than a plate of vada pav. That ratio is the argument for step 4: the money is in parsing pages, and a re-issue of a PDF pays those pages again whatever changed - the chunker saves you embeddings, never Document AI. (<code>evals/README.md</code> quotes 1,624 / 1,000 / 126 chunks from an earlier build; the chunker gives 1,628 / 1,002 / 127 today.)</p>
+
+<div class="box box-teal"><div class="box-title">If a line never comes</div>
+<p>Three places, in order: <code>gcloud logging read "$W AND jsonPayload.event=\"ingest_failed\""</code>, whose <code>error</code> field is the diagnosis; <code>make dlq</code>, where a message that failed twelve times is parked; and <code>gcloud pubsub subscriptions describe documind-ingest-push</code> - the push endpoint must be the worker's URL and the OIDC account <code>documind-ingest-sa</code>. The two grants in <code>eventarc.tf</code> that let Cloud Storage publish and Pub/Sub mint that token are the ones that fail silently.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Thirty-one objects, thirty-one claims, thirty-one <code>ingest_ok</code> lines, all <code>reused=0</code>. The worker paid Document AI by the page for thirteen PDFs, DLP scanned about 3.5 MB of text for nothing, and the embeddings for 2,757 chunks cost about Rs 7. The ANN tier followed a few minutes behind the rows and holds one datapoint per chunk with the restricts <code>tenant_id</code>, <code>kind</code>, <code>doc_type</code>, <code>current</code>. The ledger has 22 acme rows and one fingerprint.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Step 4 of 8</span><h3>A re-issue</h3><p>The handbook with one clause changed, under the same object name: 281 vectors reused, 2 embedded, 283 rows retired, the answer moved, the caches told.</p></div></div>
+
+<p><code>evals/demo/hr_policy_2026_v2.md</code> is the handbook re-issued: two lines added above the first heading (<em>revision 2</em>, <em>Effective from: 2026-10-01</em>) and NP-03's notice period changed from 60 to 90 days. Everything else is byte for byte the same. Predict the line before you run it: the preamble chunk changed, NP-03 changed, 281 sections did not.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make reindex FILE=evals/demo/hr_policy_2026_v2.md NAME=hr_policy_2026.md TENANT=acme PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make reindex</span><button class="cp" type="button">copy</button></div><pre tabindex="0">&gt;&gt; gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md - waiting for the worker (up to 5 min)
+&gt;&gt; event doc_key chunks reused embedded retired effective_from
+&gt;&gt; ingest_ok   acme_a1f3c8...   283   281   2   283   2026-10-01
+&gt;&gt; retired (doc_keys, chunks, expire days): acme_497809ff...   283   30
+&gt;&gt; the gate, scoped to this document, on a candidate: make eval-live PROJECT=documind-ai-YOUR-ID SOURCE=hr_policy_2026.md API=&lt;candidate url&gt;</pre></div>
+
+<p>Read the target before you trust it (<code>Makefile</code>, <code>reindex</code>). It runs the offline gate scoped to this document first, <code>python evals/run_eval.py --source hr_policy_2026.md</code>, and stops if the golden set is not sound, because a reindex is a release and the rows move with the document in the same commit - green now, since <code>evals/corpus/</code> still holds revision 1 and <code>lk-06</code> still expects 60. Then it uploads the file <em>as</em> <code>NAME</code>, so the worker sees a new generation of a source it knows, polls for <code>ingest_ok</code> <em>or</em> <code>ingest_reactivated</code>, and prints the <code>ingest_superseded</code> line's three fields: which version was retired, how many rows, and that they expire in 30 days.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Collection</th><th>Before the re-issue</th><th>After the re-issue</th></tr></thead>
+<tbody>
+<tr><td><code>chunks</code></td><td data-label="Before the re-issue">283 rows of <code>acme_497809ff...</code>, <code>current=true</code></td><td data-label="After the re-issue">283 new rows of <code>acme_a1f3c8...</code> current (281 with a copied vector, 2 embedded); the old 283 <code>current=false</code>, <code>superseded_by</code>, <code>superseded_at</code>, <code>effective_to=2026-10-01</code>, <code>expire_at</code> = now + 30 days. 566 rows, nothing deleted.</td></tr>
+<tr><td><code>documents</code></td><td data-label="Before the re-issue"><code>acme_497809ff...</code> <code>indexed</code>, chunks 283</td><td data-label="After the re-issue"><code>acme_a1f3c8...</code> <code>indexed</code>, chunks 283, reused 281, embedded 2, generation; <code>acme_497809ff...</code> <code>superseded</code>, <code>retired_at</code> stamped - the undo window's clock.</td></tr>
+<tr><td><code>sources/acme~hr_policy_2026.md</code></td><td data-label="Before the re-issue">doc_key <code>acme_497809ff...</code>, effective_from empty</td><td data-label="After the re-issue">doc_key <code>acme_a1f3c8...</code>, the new generation, effective_from 2026-10-01, reused 281, embedded 2, retired 283, still <code>indexed</code>.</td></tr>
+<tr><td><code>ledger/acme</code></td><td data-label="Before the re-issue">fingerprint <code>e07b3c19...</code>, versions 22</td><td data-label="After the re-issue">a new fingerprint (one of the 22 current keys changed), versions 22, <code>last_event: ingest_ok</code>.</td></tr>
+<tr><td>Vector Search</td><td data-label="Before the re-issue">283 datapoints <code>acme:497809ff...#i</code></td><td data-label="After the re-issue">283 new ids upserted after the swap, the 283 old ids removed; the count is unchanged.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The answer moved, and the gate went red</h4>
+<p>Ask the API the golden question the way <code>smoke_reindex.py</code> asks it - a bearer token minted as the UI's service account (which <code>make roster</code> put on acme's roster), one POST to <code>/v1/query</code>:</p>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+API=https://documind-api-$NUMBER.$REGION.run.app
+TOKEN=$(gcloud auth print-identity-token --include-email \
+  --impersonate-service-account=documind-ui-sa@$PROJECT.iam.gserviceaccount.com --audiences=$API)
+ask() { curl -s -X POST $API/v1/query -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"query\":\"$1\",\"tenant_id\":\"acme\",\"user_id\":\"u_lab\",\"top_k\":5,\"stream\":false}" \
+  | python -c "import json,sys; j=json.load(sys.stdin); print(j.get('answer')); print(j.get('stages'))"; }
+ask "What is the notice period for a confirmed E3?"
+make eval-live PROJECT=$PROJECT SOURCE=hr_policy_2026.md</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - the answer, then the scoped gate</span><button class="cp" type="button">copy</button></div><pre tabindex="0">A confirmed employee at grade E3 or above serves a notice period of 90 days, effective from 2026-10-01 [Source 1].
+{'retrieval_backend': 'vector', 'vector_chunks': 5, ...}
+== eval gate: LIVE ==
+  rows citing hr_policy_2026.md: ...
+  [FAIL] must_contain_rate   ...   <span class="cm"># lk-06 wants "60"; the answer says 90</span>
+  [FAIL] correct_rate        ...   <span class="cm"># vr-01 is in required.json: it blocks on its own</span></pre></div>
+<p>That red gate is the demo, not a bug: <code>vr-01</code> is the ledger's own golden row (<code>must_contain 60</code>, <code>must_not_contain "90 days"</code>), and in a real release the commit that re-issues the handbook moves <code>lk-06</code> and <code>vr-01</code> to 90. Nobody moved them, so the gate says the deployed answer cites a figure the golden set calls retired. Your answer's wording will differ; the 90 and the date will not. One more line matters now: <code>ledger_fingerprint</code>, with a value no cache packed before this minute carries. The API's <code>cache_manager</code> compares the two on every request and runs uncached on a mismatch (<code>cache_stale</code>); a context cache packed in Module 6 shows <em>STALE</em> under <code>make cache CACHE_OP=show</code>. Nothing had to be told; the cache follows the ledger.</p>
+
+<p><strong>The rupees.</strong> Two chunks, about 370 characters: under a paisa. The whole handbook would have been 158,692 characters, Rs 0.34 - the carry-over saved thirty-four paise, and that is the honest number for a Markdown handbook. The lesson is the ratio, 2 of 283; for a PDF Act the same ratio saves embeddings while Document AI bills every page again.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Same name, new bytes, new <code>doc_key</code>. The worker matched every new chunk against the current rows of this source by <code>chunk_hash</code> and the embedding stamp, copied 281 vectors, embedded 2, wrote 283 rows staged, flipped them current in one pass and retired the old 283 with a 30-day <code>expire_at</code> (lesson 3.4 reads <code>swap_versions</code>). The line said <code>reused=281 embedded=2 retired=283</code>, the ledger row moved to revision 2 with its date, the fingerprint changed, the answer said 90, and the scoped gate went red because the golden rows had not moved with the document.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Step 5 of 8</span><h3>The undo</h3><p>The revision-1 bytes again, under the same name: the retired rows flipped back, nothing embedded, the answer back, the fingerprint back - and what happens after thirty days.</p></div></div>
+
+<p>The undo is not a command of its own. It is the old bytes uploaded again: <code>evals/corpus/acme/hr_policy_2026.md</code>, whose sha256 is the <code>doc_key</code> the swap just retired. Predict the line: <code>ingest_reactivated</code>, <code>reused=283</code>, <code>embedded=0</code>, <code>retired=283</code> - revision 2's rows retired in their turn.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make reindex FILE=evals/corpus/acme/hr_policy_2026.md TENANT=acme PROJECT=$PROJECT   <span class="cm"># NAME defaults to the basename</span></pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make reindex</span><button class="cp" type="button">copy</button></div><pre tabindex="0">&gt;&gt; gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md - waiting for the worker (up to 5 min)
+&gt;&gt; event doc_key chunks reused embedded retired effective_from
+&gt;&gt; ingest_reactivated   acme_497809ff...   283   283   0   283</pre></div>
+<p>Two differences from step 4. The event is <code>ingest_reactivated</code>, with no <em>retired (doc_keys ...)</em> line under it, because the undo path logs no <code>ingest_superseded</code> - the retired keys ride on the line itself as <code>retired_doc_keys</code>. And <code>effective_from</code> is empty: revision 1 declares no date, and the undo reads the date off the object name only (<code>effective_from_of(msg.name, None)</code> in <code>main.push</code>). The whole line, and the fingerprint:</p>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "$W AND (jsonPayload.event=\"ingest_reactivated\" OR jsonPayload.event=\"ledger_fingerprint\")" \
+  --project $PROJECT --freshness=10m --limit 2 --format='value(jsonPayload)'
+ask "What is the notice period for a confirmed E3?"
+make eval-live PROJECT=$PROJECT SOURCE=hr_policy_2026.md</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{'event': 'ledger_fingerprint', 'tenant': 'acme', 'fingerprint': 'e07b3c19d2a48f65', 'versions': 22}
+{'event': 'ingest_reactivated', 'tenant': 'acme', 'doc_key': 'acme_497809ff...', 'chunks': 283, 'reused': 283,
+ 'embedded': 0, 'retired': 283, 'retired_doc_keys': ['acme_a1f3c8...'], 'generation': '1758451...', 'fingerprint': 'e07b3c19d2a48f65'}
+A confirmed employee at grade E3 or above serves a notice period of 60 days [Source 1].
+== eval gate: LIVE ==
+  [PASS] must_contain_rate ...
+  [PASS] correct_rate ...</pre></div>
+
+<p>Look at the fingerprint: <code>e07b3c19d2a48f65</code> is the value step 3 ended on - not a coincidence and not a cache. <code>corpus_fingerprint</code> is the sha256 of the tenant's sorted current <code>doc_key</code>s, and the same 22 keys are current again, so the same hash comes out; a context cache packed before step 4 is <em>current</em> again this minute, repacked by nobody. The answer says 60, and the scoped gate is green because <code>lk-06</code> and <code>vr-01</code> never moved.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Collection</th><th>After the undo</th></tr></thead>
+<tbody>
+<tr><td><code>chunks</code></td><td data-label="After the undo">The 283 rows of <code>acme_497809ff...</code> are current again, their <code>superseded_by</code>, <code>superseded_at</code>, <code>expire_at</code> and <code>effective_to</code> deleted, <code>reactivated_at</code> stamped. The 283 rows of <code>acme_a1f3c8...</code> are <code>current=false</code> with a fresh 30-day <code>expire_at</code>. Still 566 rows; still nothing deleted.</td></tr>
+<tr><td><code>documents</code></td><td data-label="After the undo"><code>acme_497809ff...</code> <code>indexed</code>, <code>reactivated_at</code>; <code>acme_a1f3c8...</code> <code>superseded</code>, <code>retired_at</code> - revision 2's own undo window has started.</td></tr>
+<tr><td><code>sources/acme~hr_policy_2026.md</code></td><td data-label="After the undo">doc_key <code>acme_497809ff...</code>, the newest generation (the undo is a third generation of the object), reused 283, embedded 0, retired 283, effective_from empty.</td></tr>
+<tr><td>Vector Search</td><td data-label="After the undo"><code>reupsert</code> put revision 1's 283 ids back up from the rows' own vectors <em>before</em> revision 2's ids were removed, so a reader on the tier never found no version.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>The rupees: zero.</strong> No Document AI, no DLP, no embedding call - the vectors never left the rows. Firestore writes only. This is the module's exit question, and the answer is one sentence: the undo embedded nothing because nothing was deleted; the swap in step 4 flagged the old rows and stamped them, the rows kept their vectors, and <code>reactivate()</code> only flipped the flag back.</p>
+
+<div class="box box-amber"><div class="box-title">After thirty days the same upload is refused - on purpose</div>
+<p><code>reactivate()</code> counts before it flips (lesson 3.4): the retired rows still on disk against the claim's <code>chunks</code>, and the claim's <code>retired_at</code> against <code>RETENTION_DAYS</code>. Past the window the TTL policy has been at the rows, and the line is <code>{"event":"reactivate_incomplete","doc_key":"acme_497809ff...","rows":0,"chunks":283,"age_days":31,"retention_days":30,"reason":"retired longer ago than the undo window"}</code>: nothing flipped, revision 2 still current, and the worker retakes the claim and ingests the bytes as a fresh version - <code>ingest_ok</code> with <code>reused</code> = whatever revision 2 still holds by hash and <code>embedded</code> = the rest. The first version of this function flipped whatever remained; after thirty days that left a source with no current version at all. You cannot run this branch without waiting a month; <code>make purge</code> is the policy's manual twin and finds nothing to do on a lane that has applied it.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The same bytes lost the claim, its status was <code>superseded</code>, the source was not withdrawn, the 283 retired rows were all still here and minutes old, so they were flipped current with their stamps cleared, revision 2 was retired in its turn, the ledger row and the fingerprint went back to their step-3 values, and the answer went back to 60. <code>embedded=0</code>. Rs 0.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Step 6 of 8</span><h3>Retire and restore</h3><p>A document taken down on purpose: the tombstone, the same bytes refused, the nightly walk leaving it alone, and the one command that brings it back.</p></div></div>
+
+<p>Step 5 was a version retiring another version. This is a person retiring a document. Use step 2's amendment, which no golden row cites, and watch three things: the ledger row says <code>withdrawn</code> (not <code>retired</code> - that word means the object left the bucket), the same bytes uploaded again are acked and go nowhere, and the reconcile plan reports it without touching it.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make retire SOURCE=acme/gratuity_amendment_2026.md PROJECT=$PROJECT
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | grep -E "gratuity|ledger"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make retire, then the ledger</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{"event": "reconcile_withdrawn", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/gratuity_amendment_2026.md", "fingerprint": "5d02ab7e91c3f480",
+ "retired_doc_keys": ["acme_5b1c9e..."], "retired_ids": ["acme:5b1c9e...#0", "acme:5b1c9e...#1", "acme:5b1c9e...#2"], "retired_chunks": 3,
+ "note": "a tombstone: the object is kept and nothing automatic re-ingests it; make restore SOURCE= does"}
+acme/gratuity_amendment_2026.md              withdrawn 1758450012345678      3      0     3       0 2026-10-01 text-embedding-005@1   2026-09-21T10:15:02
+{"ledger": "acme", "fingerprint": "5d02ab7e91c3f480", "versions": 21, "last_event": "reconcile_withdrawn"}</pre></div>
+<p><code>make retire</code> runs <code>reconcile.py --retire ... --apply</code> in your shell: <code>retire_previous</code> with no version to keep flags every current row of the source (<code>expire_at</code> in 30 days, never a delete), the managed mirror is told (<code>MANAGED_MIRROR=both</code> is the default, so a <code>mirror_*</code> line may print), the ledger row becomes <code>withdrawn</code> with <code>withdrawn_at</code>, and the fingerprint moves - <code>versions</code> 22 to 21, so every cache goes stale here too. The object is still in the bucket. Now the same bytes again, by hand, because <code>make ingest-one</code> waits only for <code>ingest_ok</code> and would report <em>no ingest_ok in 5 min</em> after the worker had, correctly, done nothing:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud storage cp evals/demo/gratuity_amendment_2026.md gs://$PROJECT-uploads/acme/ --project $PROJECT
+sleep 30; gcloud logging read "$W AND jsonPayload.event=\"ingest_withdrawn\"" --project $PROJECT --freshness=5m --limit 1 --format='value(jsonPayload)'
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - the tombstone held, and the plan</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{'event': 'ingest_withdrawn', 'tenant': 'acme', 'doc_key': 'acme_5b1c9e...', 'gcs_uri': 'gs://documind-ai-YOUR-ID-uploads/acme/gratuity_amendment_2026.md',
+ 'generation': '1758452...', 'hint': 'make restore SOURCE= clears the tombstone'}
+{"reconcile": "withdrawn", "name": "acme/gratuity_amendment_2026.md", "why": "withdrawn, object kept (generation 1758450012345678 -&gt; 1758452...: make restore re-ingests what the object holds now)"}
+{"event": "reconcile_done", "applied": false, "retire": 0, "reingest": 0, "backfill": 0, "touch": 0, "ok": 21, "withdrawn": 1, "queued": 0, "drift": 0}</pre></div>
+<p>The worker downloaded the bytes, lost the claim, asked <code>withdrawn()</code> before <code>reactivate()</code>, and acked with a hint. The plan counts the source as <code>withdrawn: 1</code>, not as drift, and because you re-uploaded it the generation moved, so the <em>why</em> says what <code>make restore</code> would do with the object as it stands. Before 12 September 2026 this row said <code>retired</code>, and the next night's walk resurrected what a person had just taken down; the tombstone is the fix.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make restore SOURCE=acme/gratuity_amendment_2026.md PROJECT=$PROJECT
+sleep 30; gcloud logging read "$W AND jsonPayload.event=\"ingest_reactivated\" AND jsonPayload.tenant=\"acme\"" \
+  --project $PROJECT --freshness=5m --limit 1 --format='value(jsonPayload.event,jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded,jsonPayload.retired)'</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make restore, then the worker</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{"event": "reconcile_restored", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/gratuity_amendment_2026.md", "generation": "1758453...",
+ "next": "ingest_reactivated inside the undo window, ingest_ok (a fresh version) after it"}
+ingest_reactivated   3   3   0   0</pre></div>
+<p><code>make restore</code> does two things and waits for neither: it sets the ledger row to <code>retired</code> (the state a lost event recovers from: if the rewrite's event never arrives, the next walk plans the reingest) and rewrites the object onto itself, a new generation of the same bytes. The worker's own path does the rest: claim lost, <code>superseded</code>, no longer withdrawn, three rows inside the window, <code>ingest_reactivated chunks=3 embedded=0 retired=0</code> - retired 0, because nothing newer was current. A source that is not withdrawn, or whose object is gone, gets a <code>reconcile_restore_refused</code> line with the reason.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>State</th><th>Set by</th><th>The same bytes again</th><th>The nightly walk</th><th>The way back</th></tr></thead>
+<tbody>
+<tr><td><code>superseded</code> (a version)</td><td data-label="Set by">the swap (step 4), <code>make retire</code>, the walk</td><td data-label="The same bytes again"><code>ingest_reactivated</code> inside 30 days; <code>reactivate_incomplete</code> then a fresh <code>ingest_ok</code> after</td><td data-label="The nightly walk">nothing: the source's current version matches its object</td><td data-label="The way back">upload the old bytes (step 5)</td></tr>
+<tr><td><code>retired</code> (a source)</td><td data-label="Set by">the walk, when the object left the bucket; <code>make restore</code>, for a moment</td><td data-label="The same bytes again"><code>ingest_reactivated</code> (the object is back)</td><td data-label="The nightly walk">plans <code>reingest</code> the night the object is back; counts as drift</td><td data-label="The way back">put the object back</td></tr>
+<tr><td><code>withdrawn</code> (a source)</td><td data-label="Set by"><code>make retire</code> only</td><td data-label="The same bytes again"><code>ingest_withdrawn</code>, acked, nothing moves; <code>reactivate_withdrawn</code> if anything asks the undo directly</td><td data-label="The nightly walk">reports <em>withdrawn, object kept</em>; not drift; never rewrites</td><td data-label="The way back"><code>make restore SOURCE=</code> only</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>The rupees: zero.</strong> Both directions are flags and one object rewrite; the reactivation reuses the three vectors the rows still hold.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A person's decision became a state of its own. <code>make retire</code> flagged three rows, wrote <code>withdrawn</code> on the ledger row and moved the fingerprint; the same bytes were acked with a hint; the walk's plan named the source and left it alone; <code>make restore</code> cleared the tombstone and rewrote the object, and the worker's ordinary undo brought the rows back for nothing. Storage absence is repaired by a job. A decision is repaired by a person.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Step 7 of 8</span><h3>Poison, the DLQ and the batch lane</h3><p>A message the worker can never parse, where it ends up and when; the queue for files over 250 pages, and an honest way to see it on a corpus that has no such file.</p></div></div>
+
+<h4>Poison</h4>
+<p><code>make poison</code> puts a zero-byte object named <code>poison-&lt;epoch&gt;.pdf</code> under the tenant's prefix. Cloud Storage announces it like any object; the record says <code>size: "0"</code>; <code>IngestMessage</code> requires <code>size &gt;= 1</code> (<code>contracts.py</code>), so <code>push()</code> fails at the edge, logs <code>ingest_poison</code> with the first 200 characters of the validation error, and answers 400 before anything is downloaded. Predict the error text: it names the field.</p>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make poison PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make poison</span><button class="cp" type="button">copy</button></div><pre tabindex="0">&gt;&gt; zero-byte object in: poison-1758453600.pdf
+&gt;&gt; the worker refused it (400): 1 validation error for IngestMessage
+size
+  Input should be greater than or equal to 1 [type=greater_than_equal, input_value='0', input_type=str]
+    For further information visit https://errors.pydan
+&gt;&gt; Pub/Sub retries a non-2xx five times with backoff, then ingest-dlq: make dlq in a few minutes</pre></div>
+<p>The last line is the target's own comment, and it is stale: <code>eventarc.tf</code> sets <code>max_delivery_attempts = 12</code> with backoff from 10 s doubling to a 600 s ceiling, so the message reaches the dead-letter topic after twelve refusals - about an hour, not a few minutes. (The Makefile, <code>main.py</code>'s comment and <code>README.md</code> still say five; the subscription says twelve, and the subscription is what runs.) A 400 is right precisely because the message would fail the same way every time; a 500 would buy twelve retries of a certainty. <code>make dlq</code> now lists nothing; run it at the end of step 8.</p>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make dlq PROJECT=$PROJECT                                           <span class="cm"># peeks: no ack, the row shows again next time</span>
+gcloud pubsub subscriptions pull ingest-dlq-sub --project $PROJECT --auto-ack --limit=10   <span class="cm"># drains it, when you are done reading</span>
+gcloud storage rm gs://$PROJECT-uploads/acme/poison-*.pdf --project $PROJECT             <span class="cm"># see step 8 for why</span></pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make dlq, an hour after make poison</span><button class="cp" type="button">copy</button></div><pre tabindex="0">MESSAGE_ID         OBJECT_ID                       EVENT_TIME                  DELIVERY_ATTEMPT
+12345678901234567  acme/poison-1758453600.pdf      2026-09-21T11:00:03.412Z    1</pre></div>
+<p>Four columns: Pub/Sub's message id, the object the notification was about, when it was finalised, and the delivery attempt <em>of the dead-letter subscription</em>, which starts again at 1. <code>make dlq</code> pulls without acking, so the row is there for the next person; the second command acks it away; the third removes the object, and step 8 shows what happens every night if you do not. <strong>Rupees: zero</strong> - the 400 is decided before a byte is fetched.</p>
+
+<h4>The batch lane, honestly</h4>
+<p>A PDF over <code>MAX_INLINE_PAGES</code> (250, <code>main.py</code> line 100) is not parsed on the push path: its page count is read off the page tree by pypdf for nothing, <code>ingest_batch/{doc_key}</code> is written, the claim is set to <code>queued</code>, the worker logs <code>ingest_queued_batch</code> with the consumer named and acks. The consumer is <code>documind-ingest-batch</code>, a Cloud Run job on the same image (<code>batch.tf</code>) that runs the worker's own <code>index_document(..., lane="batch")</code> with a 7,200 s timeout, started by the worker as it queues (when <code>BATCH_JOB</code> names it) and hourly at :15 IST regardless. The corpus never takes this lane: its largest file is the CGST Act at 236 pages (<code>real_sources.json</code>; <code>main.py</code>'s own comment says "under two hundred", which is wrong by thirty-six pages and right about the consequence). So on this lane <code>make queued</code> prints <code>0 queued document(s)</code>, and to see the lane you must lower the ceiling and give the worker a version it has not seen.</p>
+
+<div class="box box-teal"><div class="box-title">Why uploading the CGST Act again shows you nothing</div>
+<p>After step 3 the Act's bytes are <code>documents/acme_f7317f3a...</code>, status <code>indexed</code>. The same bytes again - under this name or any other name in acme - hash to the same <code>doc_key</code>, lose the claim, and are acked as <code>ingest_duplicate</code> before <code>index_document</code> and its page count are ever reached. The lane needs <em>new bytes</em> of a big document. A PDF tolerates a comment after its <code>%%EOF</code>, pypdf still counts 236 pages, the sha256 changes, and Document AI produces the same text - so the carry-over will reuse every vector and the drill costs only Document AI's pages: about Rs 200 on the default lane, about Rs 30 in Mumbai.</p></div>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell (optional; about Rs 200)</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># 1. declare the job once (an apply with BATCH_JOB=true; needs the ingest image make up built)</span>
+make batch-job PROJECT=$PROJECT
+<span class="cm"># 2. lower the ceiling: a constant, not an env var, so it is an image</span>
+sed -i 's/^MAX_INLINE_PAGES = 250$/MAX_INLINE_PAGES = 100/' services/ingest/main.py
+make build SERVICES=ingest PROJECT=$PROJECT
+make deploy-services SERVICES=ingest SCRIPTS=commands/lesson-12.5.sh BATCH_JOB=true PROJECT=$PROJECT
+<span class="cm"># 3. a new version of the Act: the same 236 pages, a different sha256</span>
+cp evals/corpus/acme/cgst_act_2017.pdf /tmp/cgst_v2.pdf
+printf '\n%% batch-lane drill: a new version of the same document\n' &gt;&gt; /tmp/cgst_v2.pdf
+gcloud storage cp /tmp/cgst_v2.pdf gs://$PROJECT-uploads/acme/cgst_act_2017.pdf --project $PROJECT
+<span class="cm"># 4. the hand-off, the queue, the job</span>
+sleep 30; gcloud logging read "$W AND jsonPayload.event=\"ingest_queued_batch\"" --project $PROJECT --freshness=5m --limit 1 --format='value(jsonPayload)'
+make queued PROJECT=$PROJECT
+make batch PROJECT=$PROJECT                     <span class="cm"># or wait: the worker started the job itself</span>
+J='resource.type="cloud_run_job" AND resource.labels.job_name="documind-ingest-batch"'
+gcloud logging read "$J AND (jsonPayload.event=\"ingest_ok\" OR jsonPayload.event=\"batch_run\")" --project $PROJECT --freshness=30m --limit 2 --format='value(jsonPayload)'
+<span class="cm"># 5. the undo, then the ceiling back where it was</span>
+gcloud storage cp evals/corpus/acme/cgst_act_2017.pdf gs://$PROJECT-uploads/acme/cgst_act_2017.pdf --project $PROJECT
+git checkout -- services/ingest/main.py
+make build SERVICES=ingest PROJECT=$PROJECT
+make deploy-services SERVICES=ingest SCRIPTS=commands/lesson-12.5.sh BATCH_JOB=true PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - the four lines of the lane</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{'event': 'ingest_queued_batch', 'tenant': 'acme', 'doc_key': 'acme_1249d8cf...', 'gcs_uri': 'gs://documind-ai-YOUR-ID-uploads/acme/cgst_act_2017.pdf',
+ 'pages': 236, 'generation': '1758454...', 'consumer': 'documind-ingest-batch started (projects/.../operations/...); the hourly schedule backstops it'}
+1 queued document(s)
+  acme_1249d8cf5e7a9b3  gs://documind-ai-YOUR-ID-uploads/acme/cgst_act_2017.pdf  pages=236  generation=1758454...
+{'event': 'ingest_ok', 'tenant': 'acme', 'lane': 'batch', 'doc_key': 'acme_1249d8cf...', 'chunks': 390, 'pages': 236, 'kinds': ['text'],
+ 'reused': 390, 'embedded': 0, 'retired': 390, 'generation': '1758454...', 'effective_from': None, 'fingerprint': '...'}
+{'event': 'batch_run', 'queued': 1, 'indexed': 1, 'skipped': 0, 'gone': 0, 'failed': 0}</pre></div>
+<p>Three things this proves. The hand-off costs nothing: pypdf counted the pages and Document AI was not called on the push path. The job is the same pipeline, and its <code>ingest_ok</code> says <code>lane=batch</code> in the <em>job's</em> log (<code>resource.type="cloud_run_job"</code>) - which is why <code>make reindex</code> and <code>make ingest-one</code>, both watching the service's log, would have printed <em>no ingest line in 5 min</em> and exited 1 while the document was indexed correctly. And the carry-over held: same text, <code>reused=390 embedded=0</code>; the bill was 236 pages of Document AI and no embeddings. A worker deployed without <code>BATCH_JOB=true</code> says so in <code>consumer</code> - <em>no job declared (BATCH_JOB unset): make batch runs the queue now, make batch-job declares and schedules it</em>. The undo in line 5 needs no ceiling: the same bytes as a retired version are reactivated before any page is counted. Keep <code>BATCH_JOB=true</code> on every later <code>make plan</code> / <code>make up</code>, or the next apply removes the job.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Line</th><th>Where</th><th>Means</th></tr></thead>
+<tbody>
+<tr><td><code>ingest_queued_batch</code></td><td data-label="Where">the worker's log</td><td data-label="Means">Over the ceiling: <code>ingest_batch/{doc_key}</code> written, the claim <code>queued</code>, <code>consumer</code> says whether the job was started. A redelivery is acked as <code>queued_batch</code>, never as a duplicate.</td></tr>
+<tr><td><code>batch_run</code></td><td data-label="Where">the job's log</td><td data-label="Means">The run's tally: <code>queued</code>, <code>indexed</code>, <code>skipped</code> (another run took the claim), <code>gone</code> (the generation was overwritten before the job read it), <code>failed</code>.</td></tr>
+<tr><td><code>ingest_ok</code> with <code>lane=batch</code></td><td data-label="Where">the job's log</td><td data-label="Means">The same fields as the push path's line. <code>ingest_batch/{doc_key}</code> now says <code>indexed</code> with the counts.</td></tr>
+<tr><td><code>ingest_failed</code> with <code>lane=batch</code></td><td data-label="Where">the job's log</td><td data-label="Means">The claim is released as <code>failed</code> with the error and the batch record says the same; the job never retakes it - <code>make reindex</code>, or the same bytes uploaded again, is the way back.</td></tr>
+<tr><td>the plan's <code>queued</code> line</td><td data-label="Where"><code>make reconcile</code></td><td data-label="Means">A generation the worker handed to the lane is reported and counted apart from the drift; the walk never hashes or rewrites it.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A zero-byte object was refused at the edge with a 400, its message will sit in <code>ingest-dlq-sub</code> after twelve deliveries, and it cost nothing. A 236-page version the ledger had never seen was counted for free, queued in Firestore, indexed by a job with no deadline through the same <code>index_document()</code>, and its vectors all carried over from the version it replaced. Two lanes, one pipeline, one claim per version - and two logs to read.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Step 8 of 8</span><h3>Reconcile and the gate</h3><p>The nightly walk by hand: the plan, an object that leaves the bucket, the drift number; the two other repairs; then the module's gate and the rupees.</p></div></div>
+
+<h4>The plan, and what the poison object does to it</h4>
+<p><code>make reconcile</code> lists the bucket's current generations against <code>sources/</code> and prints one line per action that is not <code>ok</code>, then <code>reconcile_done</code>. Run it before you delete the poison object, then after.</p>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make reconcile PROJECT=$PROJECT
+gcloud storage rm gs://$PROJECT-uploads/acme/poison-*.pdf --project $PROJECT
+make reconcile PROJECT=$PROJECT | tail -1</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - the plan with the poison object still in the bucket, then without it</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{"reconcile": "reingest", "name": "acme/poison-1758453600.pdf", "why": "not in the ledger"}
+{"event": "reconcile_done", "applied": false, "retire": 0, "reingest": 1, "backfill": 0, "touch": 0, "ok": 32, "withdrawn": 0, "queued": 0, "drift": 1}
+{"event": "reconcile_done", "applied": false, "retire": 0, "reingest": 0, "backfill": 0, "touch": 0, "ok": 32, "withdrawn": 0, "queued": 0, "drift": 0}</pre></div>
+<p>The zero-byte object is in the bucket and was never in the ledger, so the planner hashes it (<code>check_bytes</code>), finds no version under that sha, and decides <code>reingest</code>: drift 1. With <code>APPLY=1</code> the walk would rewrite the object onto itself, the worker would refuse it again, and the DLQ would get a fresh copy - every night, until someone deletes the object. That is what <em>Ledger drift above zero for two nights</em> (<code>alerts.tf</code>) exists to catch. <code>ok: 32</code> is 31 corpus objects plus the amendment.</p>
+
+<h4>An object leaves the bucket</h4>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud storage rm gs://$PROJECT-uploads/acme/gratuity_amendment_2026.md --project $PROJECT
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT
+make reconcile TENANT_ONLY=acme APPLY=1 PROJECT=$PROJECT
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | grep gratuity
+make reindex FILE=evals/demo/gratuity_amendment_2026.md TENANT=acme PROJECT=$PROJECT    <span class="cm"># the object back: reactivated, not re-embedded</span>
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT | tail -1</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><button class="cp" type="button">copy</button></div><pre tabindex="0">{"reconcile": "retire", "name": "acme/gratuity_amendment_2026.md", "why": "gone from the bucket"}
+{"event": "reconcile_done", "applied": false, "retire": 1, "reingest": 0, "backfill": 0, "touch": 0, "ok": 21, "withdrawn": 0, "queued": 0, "drift": 1}
+{"reconcile": "retire", "name": "acme/gratuity_amendment_2026.md", "why": "gone from the bucket"}
+{"event": "reconcile_retired", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/gratuity_amendment_2026.md", "retired_doc_keys": ["acme_5b1c9e..."], "retired_ids": [...], "retired_chunks": 3}
+{"event": "reconcile_done", "applied": true, "retire": 1, "reingest": 0, "backfill": 0, "touch": 0, "ok": 21, "withdrawn": 0, "queued": 0, "drift": 1}
+acme/gratuity_amendment_2026.md              retired 1758453...      3      3     0       0 2026-10-01 text-embedding-005@1   2026-09-21T11:20:41
+&gt;&gt; ingest_reactivated   acme_5b1c9e...   3   3   0   0
+{"event": "reconcile_done", "applied": false, "retire": 0, "reingest": 0, "backfill": 0, "touch": 0, "ok": 22, "withdrawn": 0, "queued": 0, "drift": 0}</pre></div>
+<p>Deletions need no trigger: nothing fires when an object leaves, so the walk is the only thing that notices, and it retires the rows (a flag, 30 days) and writes <code>retired</code> on the ledger row. The night's number is the last field: retire, reingest and backfill count one each; a metadata-only change (<code>touch</code>) does not, because the content was right; withdrawn and queued are decisions, counted beside it. The object back in the bucket is the worker's own undo - <code>make reindex</code> matched the <code>ingest_reactivated</code> line - and the next plan is clean. Two drifts on this lane share a word and nothing else: <code>make drift</code> is Terraform's plan-after-apply check (<em>no drift: the plan after apply is empty</em>; <code>make up</code> ends on it), and the ledger's drift is this field.</p>
+
+<h4>The two other repairs, and the night itself</h4>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make drift PROJECT=$PROJECT                     <span class="cm"># Terraform: the plan after apply</span>
+make backfill-current PROJECT=$PROJECT          <span class="cm"># a lane older than the ledger: chunks without `current` get a doc_key and a row</span>
+make reconcile-job PROJECT=$PROJECT             <span class="cm"># the nightly job, 23:30 IST, on the ingest image the lane runs</span>
+gcloud scheduler jobs list --project $PROJECT --location $REGION</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><button class="cp" type="button">copy</button></div><pre tabindex="0">&gt;&gt; no drift: the plan after apply is empty
+{"event": "reconcile_backfill", "chunks": 0, "sources": 0, "applied": true}
+&gt;&gt; documind-reconcile declared on us-central1-docker.pkg.dev/documind-ai-YOUR-ID/documind/ingest:a1b2c3d and scheduled 23:30 IST (reconcile.tf); gcloud run jobs execute documind-reconcile --region us-central1 --project documind-ai-YOUR-ID runs it now
+&gt;&gt; keep RECONCILE_JOB=true on every later make plan / make up, or the next apply removes the job and its schedule
+ID                          LOCATION     SCHEDULE (TZ)                TARGET_TYPE  STATE
+documind-reconcile-nightly  us-central1  30 23 * * * (Asia/Kolkata)   HTTP         ENABLED</pre></div>
+<p><code>make backfill-current</code> prints zeros on a lane born with the ledger; non-zero means rows from before 11 September 2026 just received <code>current=true</code>, a <code>doc_key</code> from their id and a <code>sources/</code> row each, after which <code>RETRIEVAL_CURRENT_ONLY=on</code> is safe to flip on a candidate. <code>make reconcile-job</code> is an apply with <code>RECONCILE_JOB=true</code>: the job on the same image, the IAM grant, the 23:30 IST schedule, and the two alert policies that exist only with it. The job's own <code>reconcile_done</code> line lives under <code>resource.labels.job_name="documind-reconcile"</code>, and <code>alerts.tf</code> turns its <code>drift</code> into the metric <code>documind/reconcile_drift</code>.</p>
+
+<h4>The gate</h4>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make smoke-reindex PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - smoke/smoke_reindex.py</span><button class="cp" type="button">copy</button></div><pre tabindex="0">  DocuMind AI - reindex smoke
+  bucket: gs://documind-ai-YOUR-ID-uploads/acme/smoke_note.md  api: https://documind-api-123456789012.us-central1.run.app
+  --------------------------------------------------------
+  [PASS] v1 indexed  ingest_ok chunks=3
+  [PASS] v2 reindexed  chunks=3 reused=1 embedded=2 retired=3 effective_from=2026-10-01
+  [PASS] v2 dated  effective_from=2026-10-01 read off the document
+  [PASS] answer moved  The smoke lantern is kept in bay 7 of the Pune warehouse [Source 1].
+  [PASS] v1 reactivated  chunks=3 embedded=0 retired=3
+  [PASS] answer restored  The smoke lantern is kept in bay 4 of the Pune warehouse [Source 1].
+  [PASS] ledger row  acme/smoke_note.md reused=3 embedded=0 retired=3 fingerprint=e07b3c19d2a48f65
+  --------------------------------------------------------
+  7 pass &middot; 0 fail</pre></div>
+<p>This is the module's gate: the whole lesson on a three-chunk fixture in about two minutes. <code>smoke_note_v1.md</code> goes in as <code>acme/smoke_note.md</code> (preamble, SM-01, SM-02: all embedded); <code>smoke_note_v2.md</code> under the same name (the preamble gained a revision line, SM-01 moved the lantern from bay 4 to bay 7, SM-02 is byte for byte the same: <code>reused=1 embedded=2 retired=3</code>, dated off the document); the answer moved; version 1 again (<code>ingest_reactivated</code>, <code>embedded=0</code>); the answer back; the ledger row through <code>GET /v1/sources</code>. The fingerprint on the last line is not step 3's, because acme now holds 23 current versions. Run it once per lane: a second run finds version 1 already current, the worker acks it as <code>ingest_duplicate</code> - a line with no <code>tenant</code> field, which the smoke's first check filters on - and that check waits five minutes and fails (the docstring promises a tolerance the filter cannot deliver; on 21 September 2026 that is a kit bug, not your lane). To run the gate again, remove the object and let the walk retire it: <code>gcloud storage rm .../acme/smoke_note.md</code>, <code>make reconcile APPLY=1</code>, and the smoke's version 1 is a reactivation.</p>
+
+<h4>The rupees, and the lights</h4>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make usage HOURS=1 PROJECT=$PROJECT
+make dlq PROJECT=$PROJECT                 <span class="cm"># the poison message should be here by now; drain it with --auto-ack</span>
+make off PROJECT=$PROJECT                 <span class="cm"># the floors to zero tonight (documind-off does the same at 23:00 IST)</span>
+make down PROJECT=$PROJECT                <span class="cm"># when the rehearsal is over: the services, then terraform destroy - Module 14</span></pre></div>
+<div class="cw"><div class="ch-bar"><span>expected - make usage</span><button class="cp" type="button">copy</button></div><pre tabindex="0">14 answers from documind-api in the last 1 h; USD_INR=85
+
+by tenant
+tenant                 answers    tok_in  tok_out       USD       INR  p95 ms  unans
+acme                        14     61240     3920    0.0754      6.41    4210      0</pre></div>
+<p><code>make usage</code> prices the <em>answers</em>: the API's own usage rows in Cloud Logging, grouped the way the <code>tenant_daily</code> view groups them, at the model that answered - here the smoke's two asks, your <code>ask</code> calls and the scoped gate's rows. It does not see the ingest: Document AI's pages, the embeddings and the DLP bytes show up in Billing tomorrow under their own SKUs, and the arithmetic for them is step 1's table. Then the lights: <code>make off</code> floors the GPU, gateway and UI services (the nightly <code>documind-off</code> job does the same at 23:00 IST, half an hour before the reconcile), and <code>make down</code> removes the seven services, the corpora and everything Terraform owns, printing what only deleting the project removes. The batch and reconcile jobs go with the destroy. Neither is a Module 3 decision; both are the last line of a Module 3 session.</p>
+
+<div class="box box-teal"><div class="box-title">Module 3 is finished when</div>
+<p><code>make smoke-reindex</code> printed <em>7 pass</em> on your lane, and you can say, without looking, why the undo embedded nothing: a version is its bytes' hash, the swap flagged the old rows instead of deleting them, the rows kept their vectors and their stamps, and <code>reactivate()</code> counted them and flipped a flag. Everything else on this page - the 281, the 12 attempts, the drift, the tombstone - is that one rule read from a log line.</p></div>
+
+<!-- ============================ QUIZ ============================ -->
+<h2 id="quiz">Check yourself</h2>
+
+<div class="quiz"><div class="quiz-q">1. <code>make smoke-reindex</code> printed <code>v2 reindexed chunks=3 reused=1 embedded=2 retired=3</code>. Which chunk was reused, and what decided it?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-ok="1" data-fb="Right. SM-02's text is unchanged between the two fixtures, so its chunk_hash matched a current row of the same source with the same embedding stamp, and the vector was copied. The preamble gained a revision line and SM-01 moved the lantern, so both were embedded.">SM-02: its whitespace-collapsed text was identical, so its chunk_hash matched a current row of the same source.</button>
+<button class="quiz-opt" type="button" data-fb="No. The preamble is the text above the first heading, and revision 2 added two lines to it, so its hash changed and it was embedded.">The preamble: it is always reused because it has no clause code.</button>
+<button class="quiz-opt" type="button" data-fb="No. The locator says where a chunk sits; SM-01 kept its locator and still changed its text, so it was embedded. Reuse is decided by chunk_hash, not by position.">SM-01: it kept its locator, so it kept its vector.</button>
+<button class="quiz-opt" type="button" data-fb="No. The object generation says the object changed; it says nothing about which chunks changed. The carry-over compares chunk hashes against the source's current rows.">Whichever chunk had the older generation.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">2. After the undo in step 5, <code>ledger_fingerprint</code> showed exactly the value step 3 ended on, and a context cache packed before step 4 was current again. Why?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="No. refresh_fingerprint runs on every reactivation too - the undo path calls it with the event name ingest_reactivated.">The undo does not refresh the fingerprint, so the old value was simply never overwritten.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="Right. corpus_fingerprint hashes the tenant's sorted current doc_keys and nothing else. After the undo the same 22 keys are current, so the same hash comes out, and the cache record that carries it matches again.">The fingerprint is a hash of the set of current doc_keys, and the same set is current again.</button>
+<button class="quiz-opt" type="button" data-fb="No. The cache_manager compares the cache record's fingerprint with ledger/{tenant} on every request; it does not keep old values around.">The cache manager remembers the last two fingerprints and accepts either.</button>
+<button class="quiz-opt" type="button" data-fb="No. The fingerprint carries no timestamp; it is the first 16 hex characters of a sha256 over doc_keys.">The fingerprint includes the timestamp of the last upload, which the undo restored.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">3. Ten minutes after <code>make poison</code> printed the worker's 400, <code>make dlq</code> lists nothing. What is the most likely reason?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="No. A 400 is a non-2xx, so Pub/Sub nacks and retries; only a 2xx acks. The ingest_poison line is proof the worker refused it.">The worker acknowledged the message with the 400, so it was never retried.</button>
+<button class="quiz-opt" type="button" data-fb="No. eventarc.tf declares ingest-dlq-sub on the dead-letter topic, and make dlq pulls from it by name.">There is no dead-letter subscription until the first message fails.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="Right. eventarc.tf sets max_delivery_attempts = 12 with backoff from 10 s doubling to a 600 s ceiling, so the twelfth refusal comes roughly an hour after the first. The Makefile's 'few minutes' predates the change from five attempts to twelve.">The message has not reached twelve failed deliveries yet: with the subscription's backoff that takes about an hour.</button>
+<button class="quiz-opt" type="button" data-fb="No. Nothing on the lane deletes objects, and a deleted object would not remove a message already in flight.">The nightly reconcile deleted the zero-byte object and Pub/Sub dropped the message with it.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">4. You lower <code>MAX_INLINE_PAGES</code> to 100, redeploy the worker, and upload the CGST Act's original bytes again after step 3. Which line do you get?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="No. The page count is read inside index_document, which runs only after the claim is won. The same bytes lose the claim first.">ingest_queued_batch with pages=236: the ceiling is checked before anything else.</button>
+<button class="quiz-opt" type="button" data-fb="No. The batch job only runs a document the worker queued; nothing was queued because the claim was refused.">ingest_ok with lane=batch, minutes later, from the job.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="Right. A version is tenant_sha256, and that doc_key is already indexed from step 3. claim() refuses it, the handler answers duplicate with a 200, and the page count is never consulted. The lane needs new bytes - a comment appended after %%EOF changes the sha and keeps the 236 pages.">ingest_duplicate: the same sha256 is already an indexed claim, and the page count is never reached.</button>
+<button class="quiz-opt" type="button" data-fb="No. A stale event is one whose generation is older than the ledger's; a fresh upload is a newer generation.">ingest_stale_event: the ledger already holds this document.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">5. The morning after the poison drill, <code>make reconcile</code> prints <code>{"reconcile": "reingest", "name": "acme/poison-1758453600.pdf", "why": "not in the ledger"}</code> and <code>drift: 1</code>. What is the right fix?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="No. APPLY=1 rewrites the object onto itself, the worker refuses it as poison again, and the DLQ gets another copy - every night.">make reconcile APPLY=1, so the walk re-ingests it.</button>
+<button class="quiz-opt" type="button" data-fb="No. make restore only acts on a withdrawn source, and this object never had a ledger row; it would print reconcile_restore_refused.">make restore SOURCE=acme/poison-1758453600.pdf.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="Right. The object is in the bucket and can never be in the ledger, so every walk plans a reingest for it and counts one unit of drift. Nothing on the lane deletes objects; a person does, and the next plan is clean.">Delete the zero-byte object from the bucket; the walk cannot repair a file that can never be parsed.</button>
+<button class="quiz-opt" type="button" data-fb="No. backfill-current gives pre-ledger chunk rows a doc_key and a sources row; this object has no rows at all.">make backfill-current, so the ledger learns the object.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<!-- ============================ EXERCISES ============================ -->
+<h2 id="exercises">Exercises</h2>
+<div class="exercise-grid">
+<div class="exercise-card"><span class="exercise-diff d-easy">Easy</span><h4>Read three lines</h4><p>Ingest <code>evals/corpus/acme/msa_acme_2026.md</code> with <code>make ingest-one</code>, then pull its <code>ingest_ok</code> line, the <code>ledger_fingerprint</code> line, and - after <code>make retire SOURCE=acme/msa_acme_2026.md</code> and the same bytes uploaded again - the <code>ingest_withdrawn</code> line, all with <code>gcloud logging read --format=json</code>. Done looks like a table with every field of the three lines and one sentence per field on where it came from; finish with <code>make restore</code>, and the worker's <code>ingest_reactivated</code> line closes the table.</p></div>
+<div class="exercise-card"><span class="exercise-diff d-med">Medium</span><h4>Re-issue a document of your own</h4><p>Copy <code>evals/corpus/acme/hr_policy_2026.md</code>, change LV-01's carry-forward from 30 to 45 days and nothing else, and write the expected <code>reused</code>, <code>embedded</code> and <code>retired</code> down before you run <code>make reindex ... NAME=hr_policy_2026.md</code>. Then undo it with the original bytes. Done looks like your prediction matching the two lines - and one sentence on why the preamble counted as a changed chunk in step 4 but not here.</p></div>
+<div class="exercise-card"><span class="exercise-diff d-hard">Challenge</span><h4>The batch lane, end to end</h4><p>Run step 7's optional block: declare the job, lower the ceiling, upload a new version of the CGST Act, follow it through <code>ingest_queued_batch</code>, <code>make queued</code>, <code>batch_run</code> and the job's <code>ingest_ok</code>, run <code>make reconcile</code> while it is queued (the plan's <code>queued</code> line, drift 0) and after, undo it, and put the ceiling back. Done looks like a one-line runbook entry for every event you saw, the total in rupees from step 1's rates, and <code>make queued</code> printing <code>0 queued document(s)</code>.</p></div>
+</div>
+
+<div class="box box-red"><div class="box-title">The one rule to remember</div>
+<p>Every drill on this page was a line you predicted and then read. A version is its bytes' hash, so the same bytes are never indexed twice and the undo is the old bytes again. A chunk is its text's hash, so a one-clause edit embeds one clause. Nothing on the lane deletes, so the undo costs nothing and the walk can repair storage absence. A person's decision is the one thing no job repairs. Keep those four, and every number here is one you can predict.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Ingest &middot; Lesson 3.5 Ingest, re-issue, undo, poison &middot; v4.0</p><p>Next: Module 4 Retrieval - four places to search, and who chooses</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+</body>
+</html>

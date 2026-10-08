@@ -1,0 +1,202 @@
+<div class="box box-amber"><div class="box-title">One name this lesson reads off the worker</div>
+<p>Whether the batch job is declared on your lane is a fact the worker carries in its environment as <code>BATCH_JOB</code>. Read it once; step 6 uses it.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }   # -n ... p: an entry with an empty value prints nothing
+export BATCH_JOB="$(svc_env documind-ingest BATCH_JOB)"; echo "batch job declared: ${BATCH_JOB:-no (BATCH_JOB is empty)}"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected on a lane deployed with the defaults</span><span class="ro">read only</span></div><pre tabindex="0">batch job declared: no (BATCH_JOB is empty)</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Plumbing</span><h3>The plumbing: read the notification, the topic and the subscription off your lane</h3><p>Three resources and two grants, declared in one Terraform file, and the four read-only commands that show them as the platform holds them.</p></div></div>
+
+<h4>Definition</h4>
+<p>Everything between the bucket and the worker is declared in <code>terraform/eventarc.tf</code>: the two topics (the ingest topic and its dead-letter twin), the bucket notification that publishes <code>OBJECT_FINALIZE</code> records into the first, the push subscription that delivers them to the worker's URL with an OIDC token, and the subscription that lets a person read the dead letters. Two IAM grants make it work and both fail silently without: Cloud Storage's own service agent must be allowed to publish into the topic, and Pub/Sub's service agent must be allowed to mint tokens as the worker's account. The file's opening comment records that an earlier draft used an Eventarc trigger instead, which delivers a CloudEvent around this subscription, its token, its ceiling and its DLQ; the worker, which parses a Pub/Sub envelope, answered 400 to it.</p>
+
+<h4>The code</h4>
+@@tf_notification@@
+@@tf_subscription@@
+<p>Read the comment above the retry policy: it is the reason the ceiling is twelve, and it is a story from the first live load, not a default.</p>
+
+<h4>Read it off the platform</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (all read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud storage buckets notifications list "gs://$PROJECT-uploads" --project "$PROJECT"
+
+gcloud pubsub subscriptions describe documind-ingest-push --project "$PROJECT" \
+  --format='yaml(pushConfig.pushEndpoint,pushConfig.oidcToken.serviceAccountEmail,ackDeadlineSeconds,retryPolicy,deadLetterPolicy)'
+
+gcloud pubsub subscriptions describe ingest-dlq-sub --project "$PROJECT" --format='value(topic)'
+
+gcloud run services describe documind-ingest --region "$REGION" --project "$PROJECT" \
+  --format='yaml(spec.template.spec.timeoutSeconds,spec.template.spec.containerConcurrency,spec.template.metadata.annotations)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your numbers differ; the shape and the settings are the point)</span><span class="ro">read only</span></div><pre tabindex="0">---
+event_types:
+- OBJECT_FINALIZE
+id: '1'
+payload_format: JSON_API_V1
+topic: //pubsub.googleapis.com/projects/documind-ai-YOUR-ID/topics/documind-ingest
+ackDeadlineSeconds: 600
+deadLetterPolicy:
+  deadLetterTopic: projects/documind-ai-YOUR-ID/topics/documind-ingest-dlq
+  maxDeliveryAttempts: 12
+pushConfig:
+  oidcToken:
+    serviceAccountEmail: documind-ingest-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com
+  pushEndpoint: https://documind-ingest-NUMBER.asia-south1.run.app
+retryPolicy:
+  maximumBackoff: 600s
+  minimumBackoff: 10s
+projects/documind-ai-YOUR-ID/topics/documind-ingest-dlq
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '30'
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 1
+      timeoutSeconds: 600</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the same five facts from the platform that the Terraform file declares: one event type, one payload format, one push endpoint that is the worker's URL, one token identity that is the worker's account, and the policy: 600 seconds to answer, 10 to 600 seconds between attempts, twelve attempts, then the dead-letter topic. The worker's own settings close the loop: it answers one request per instance, in at most 600 seconds, on up to thirty instances. Nothing in this step can be changed from here; all of it is what every upload on your lane has been going through since Module 0.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Verdicts</span><h3>The verdicts: the HTTP-code rule, and your last upload's request log</h3><p>The handler that turns a message into a status, its six answers, and the two log records every delivery leaves.</p></div></div>
+
+<h4>Definition</h4>
+<p>The worker's <code>push()</code> handler is the only route the subscription calls. It decodes the envelope, parses the record into the contract, and answers 400 the moment parsing fails, because a message that fails to parse will fail the same way on every retry and the dead-letter queue is where it belongs. Everything after that is a 200 with a different body: <code>stale</code> when the ledger already holds a newer generation, <code>duplicate</code> when the claim is already taken, <code>withdrawn</code> when a person retired the source, <code>queued_batch</code> when the batch lane already has it, <code>already_current</code> when the other lane seeded the version, <code>reactivated</code> for the undo, <code>indexed</code> for the ordinary path. Only one thing is a 500: <code>index_document()</code> raising after it has released the claim with the error, which is the case where a retry might succeed.</p>
+
+<h4>The code</h4>
+@@push_head@@
+@@push_branches@@
+@@push_tail@@
+@@contract_size@@
+<p>The contract's <code>size</code> field carries <code>ge=1</code>: a zero-byte object fails validation, and validation failing is what makes a message poison. That is the whole mechanism <code>make poison</code> exercises in the next step.</p>
+
+<h4>Read the two records your 1.4 upload left</h4>
+<p>Every delivery writes a request log entry (Cloud Run's, with the status the worker answered and how long it took) and, from the worker, a JSON line with the verdict. The first read below lists the last few POSTs the subscription made to the worker; the second lists the worker's own verdicts for the same window. Your note from lesson 1.4 should be there twice: once as the duplicate the unchanged bytes produced, once as the indexed version.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (both read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND logName=\"projects/$PROJECT/logs/run.googleapis.com%2Frequests\" AND timestamp>=\"$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ)\"" \
+  --project "$PROJECT" --limit 6 --format='table(timestamp,httpRequest.requestMethod,httpRequest.status,httpRequest.latency)'
+
+gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event:\"ingest_\" AND timestamp>=\"$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ)\"" \
+  --project "$PROJECT" --limit 6 --format='table(timestamp,jsonPayload.event,jsonPayload.doc_key,jsonPayload.chunks,jsonPayload.lane)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your times and keys differ; widen the window if 1.4 was longer ago)</span><span class="ro">read only</span></div><pre tabindex="0">TIMESTAMP                 REQUEST_METHOD  STATUS  LATENCY
+2026-09-22T12:06:41.118Z  POST            200     7.412s
+2026-09-22T11:58:07.902Z  POST            200     0.611s
+TIMESTAMP                 EVENT             DOC_KEY                 CHUNKS  LANE
+2026-09-22T12:06:41.001Z  ingest_ok         acme_9c41d0e2b7f5...    3       push
+2026-09-22T11:58:07.844Z  ingest_duplicate  acme_111510fcf0a6...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both deliveries were acknowledged, and the request log shows why they looked so different to the worker: the duplicate took a fraction of a second, because the claim was already taken and nothing was downloaded, while the indexed version took several seconds of parsing, embedding and writing. Neither was retried, because a 200 is a 200 whatever the body says. Keep the shape of these two reads: they are how you follow any delivery on this lane, and the next step fills them with a status you have not seen yet.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Poison</span><h3>Poison: a message that can never succeed, and the retries you can watch</h3><p>A zero-byte object, the 400 it earns, and the subscription trying again on the clock from step 1. Start this now: the clock runs for about an hour.</p></div></div>
+
+<h4>Definition</h4>
+<p>A poison message is one the worker refuses before it touches the document, because the record itself is unusable. The kit's drill makes the simplest one: an empty PDF. Cloud Storage publishes its record with <code>size: "0"</code>, the contract requires a size of at least one, validation fails, the worker logs <code>ingest_poison</code> with the field named and answers 400. From the subscription's side a 400 is a failed delivery like any other, so it retries: after ten seconds, then twenty, then forty, doubling to the ten-minute cap, twelve attempts in all. The worker refuses each one in a fraction of a second and costs nothing. The message, not the object, is what travels; the object sits in the bucket untouched, which is why the last step of this lesson deletes it.</p>
+
+<h4>The code</h4>
+@@make_poison@@
+
+<h4>Do it: start the drill, then watch the first retries</h4>
+<p>The first block uploads the empty PDF and waits for the worker's first refusal; it prints the validation error the worker logged. Leave a few minutes, then the second block lists every POST the subscription made and every refusal the worker logged since. Note the gaps between the timestamps.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export POISON_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+make poison PROJECT=$PROJECT TENANT=acme</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">>> zero-byte object in: poison-1758542871.pdf
+>> the worker refused it (400): 1 validation error for IngestMessage
+size
+  Input should be greater than or equal to 1 [type=greater_than_equal, input_value='0', input_type=str]
+>> Pub/Sub retries a non-2xx with backoff (10 s to 600 s, twelve attempts: eventarc.tf), then ingest-dlq: make dlq about an hour after this line</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, a few minutes later (read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND logName=\"projects/$PROJECT/logs/run.googleapis.com%2Frequests\" AND httpRequest.status=400 AND timestamp>=\"$POISON_SINCE\"" \
+  --project "$PROJECT" --limit 12 --format='table(timestamp,httpRequest.status,httpRequest.latency)'
+
+echo "refusals logged so far: $(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event=\"ingest_poison\" AND timestamp>=\"$POISON_SINCE\"" --project "$PROJECT" --limit 12 --format='value(timestamp)' | wc -l) of 12"</pre></div>
+
+<div class="cw"><div class="ch-bar">
+<span>expected, about five minutes in (newest first; your seconds differ)</span><span class="ro">read only</span></div><pre tabindex="0">TIMESTAMP                 STATUS  LATENCY
+2026-09-22T12:22:52.410Z  400     0.031s
+2026-09-22T12:20:32.077Z  400     0.028s
+2026-09-22T12:19:12.615Z  400     0.030s
+2026-09-22T12:18:32.201Z  400     0.027s
+2026-09-22T12:18:12.884Z  400     0.029s
+2026-09-22T12:18:02.560Z  400     0.044s
+refusals logged so far: 6 of 12</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One object produced one message, and the message has been delivered six times in five minutes: the gaps read ten, twenty, forty, eighty and one hundred and sixty seconds, the doubling the policy declares. Every delivery got the same 400 in about thirty milliseconds, because the worker refuses at the contract and never downloads the object. The seventh attempt comes five minutes after the sixth, the eighth ten minutes after that, and from there every ten minutes until the twelfth, about an hour after the first. Then, and only then, the message leaves this subscription for the dead-letter topic. Step 7 reads it there; step 6 fits in the meantime.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Batch lane</span><h3>The batch lane: the 250-page decision, the queued claim, the job</h3><p>The document a push request must not attempt, the record that hands it off, and the consumer that runs the same pipeline without a deadline.</p></div></div>
+
+<h4>Definition</h4>
+<p>A push request has 600 seconds. Document AI reads about a page a second, so a 400-page contract cannot finish, and a worker killed at the deadline cannot release its claim: the retry finds the claim <code>processing</code> and is acknowledged as a duplicate, and the document is stuck until a person notices. The kit refuses to let that happen. Before any page is sent to Document AI, the worker counts a PDF's pages off its page tree (lesson 1.2) and, above <code>MAX_INLINE_PAGES</code> (250), writes two records instead of indexing: an <code>ingest_batch</code> record with everything needed to fetch the same bytes later, and the claim with status <code>queued</code>. The request is acknowledged. The consumer is a Cloud Run job on the very same image, started by the worker the moment it queues (when the job is declared) and by an hourly schedule regardless; it takes each queued claim in a transaction, downloads the bytes by generation, and calls the worker's own <code>index_document()</code> with <code>lane="batch"</code>, which is how the page ceiling is not consulted a second time. A failure leaves the claim <code>failed</code> with the error, and the next run does not retake it.</p>
+
+<h4>The code</h4>
+@@lane_decision@@
+@@enqueue@@
+@@take_batch@@
+@@batch_tf@@
+
+<h4>Read the lane, Rs 0</h4>
+<p>The queue is a Firestore query the kit prints for you. The job and its schedule exist only if <code>BATCH_JOB</code> was set when the lane was deployed; the box above the setup read it off the worker.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make queued PROJECT=$PROJECT
+
+if [ -n "$BATCH_JOB" ]; then
+  gcloud run jobs describe "$BATCH_JOB" --region "$REGION" --project "$PROJECT" --format=json | python -c "
+import json, sys
+def walk(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k in ('image', 'args', 'timeoutSeconds', 'maxRetries', 'taskCount'): print(f'{k}: {v}')
+            walk(v)
+    elif isinstance(o, list):
+        for v in o: walk(v)
+walk(json.load(sys.stdin))"
+  gcloud scheduler jobs describe documind-ingest-batch-hourly --location "$REGION" --project "$PROJECT" --format='value(schedule,timeZone,state)'
+else
+  echo "no batch job on this lane: a queued claim waits until make batch-job declares it (BATCH_JOB=true, a Terraform plan and apply)"
+fi</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected on a lane without the job (the default; a Firestore UserWarning line may precede the count)</span><span class="ro">read only</span></div><pre tabindex="0">0 queued document(s)
+no batch job on this lane: a queued claim waits until make batch-job declares it (BATCH_JOB=true, a Terraform plan and apply)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected on a lane where make batch-job has run</span><span class="ro">read only</span></div><pre tabindex="0">0 queued document(s)
+taskCount: 1
+maxRetries: 0
+timeoutSeconds: 7200s
+image: asia-south1-docker.pkg.dev/documind-ai-YOUR-ID/documind/ingest:3f2a9c1
+args: ['batch.py', '--project', 'documind-ai-YOUR-ID']
+15 * * * *	Asia/Kolkata	ENABLED</pre></div>
+
+<div class="box box-amber"><div class="box-title">Optional, and it costs money: send a 270-page document down the lane</div>
+<p>The corpus has no PDF over 250 pages, so the drill makes one: the CGST Act (236 pages) and the IT Act (34) joined with pypdf on your machine, at no cost. Uploading it costs nothing either, and that is the point of the first half: the worker counts 270 pages, writes the queued claim, answers 200, and no page has been sent to Document AI. The second half is where the money goes. When the job is declared, the worker starts it at once and it parses all 270 pages: about Rs 34 on the OCR processor, about Rs 230 on the Layout Parser (at the list prices lesson 1.2 quoted and Rs 85 to the dollar), plus a few rupees of embeddings for roughly six hundred windows. When the job is not declared, the claim simply waits, and <code>make queued</code> shows it. Decide before you upload.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the join is free; the upload starts the paid parse if the job is declared)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+from pypdf import PdfReader, PdfWriter
+w = PdfWriter()
+for path in ("evals/corpus/acme/cgst_act_2017.pdf", "evals/corpus/acme/it_act_2000.pdf"):
+    for page in PdfReader(path).pages:
+        w.add_page(page)
+with open("/tmp/cgst_it_bundle.pdf", "wb") as f:
+    w.write(f)
+print("bundle pages:", len(PdfReader("/tmp/cgst_it_bundle.pdf").pages))
+PY
+
+SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+gcloud storage cp /tmp/cgst_it_bundle.pdf "gs://$PROJECT-uploads/acme/cgst_it_bundle.pdf"
+for i in $(seq 1 30); do sleep 10
+  LINE="$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event=\"ingest_queued_batch\" AND timestamp>=\"$SINCE\"" \
+    --project "$PROJECT" --limit 1 --format='value(jsonPayload.pages,jsonPayload.consumer)')"
+  [ -n "$LINE" ] &amp;&amp; { echo ">> queued: pages, consumer: $LINE"; break; }
+done
+make queued PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (the consumer line depends on BATCH_JOB)</span><span class="ro">read only</span></div><pre tabindex="0">bundle pages: 270
+>> queued: pages, consumer: 270	documind-ingest-batch started (run requested); the hourly schedule backstops it
+1 queued document(s)
+  acme_3ff3f2ac3237...  gs://documind-ai-YOUR-ID-uploads/acme/cgst_it_bundle.pdf  pages=270  generation=1758543112345678</pre></div>
+<p>With the job declared, the queue empties within minutes and the worker's usual records appear for the bundle, this time with <code>lane: batch</code> on the <code>ingest_ok</code> line and a <code>batch_run</code> line from the job. Without it, the claim stays queued; <code>make batch-job</code> declares and schedules the job with a plan through <code>make plan</code>'s guard, then its apply (keep <code>BATCH_JOB=true</code> on every later <code>make plan</code> or <code>make up</code>, or the guard refuses the plan that would delete the job), and <code>make batch</code> starts a run and waits for it.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the batch lane as three records and one job: the queue (a Firestore query, empty unless you took the optional drill), the job (the ingest image with a different command, two hours instead of ten minutes, no platform retries because the claim carries the retry), and the schedule that drains whatever the worker could not start. The decision that feeds it is made before the first rupee is spent, which you saw if you uploaded the bundle: 270 pages counted for free, a claim written, a 200 returned, and the parse belongs to the job.</p></div>
+

@@ -1,0 +1,70 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>API</code> and <code>tok</code>. You need fastmcp %%PIN%% in the operator venv, and the first cell installs it. Step 4 starts the kit's server on port %%PORT%% of your machine, as a background process that uses your credentials. It reads the roster from Firestore and asks rag-api as <code>documind-ui-sa</code>. Step 6 stops it. Nothing on your lane changes.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Expose</span><h3>Expose: what the server declares</h3><p>The kit's server imported, not run, and its tools listed in memory.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell imports the kit's <code>server.py</code> without running it, and lists its tools through fastmcp's in-memory client. That client talks to the server object directly, with no HTTP and no identity, and listing needs neither. It prints what an MCP client learns first: the server's name, the protocol version both sides agreed, and the instructions the server gives a model. Then it prints each tool with its arguments, their types, defaults and descriptions.</p>
+
+<h4>The code</h4>
+@@tool@@
+
+<h4>Do it: fastmcp</h4>
+%%CELL_PIP%%
+%%OUT_PIP%%
+
+<h4>Do it: what the server declares</h4>
+%%CELL_EXPOSE%%
+%%OUT_EXPOSE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four tools, each built from a function. <code>retrieve</code>'s first docstring line became its description, and its Args lines became the four argument descriptions. Its signature made <code>query</code> required, and gave <code>doc_type</code>, <code>top_k</code> and <code>tenant</code> their defaults. <code>tenant</code> is "string or null" because the signature says <code>str | None</code>. The instructions are for the model: use <code>retrieve</code> for any question about the documents, and never state a figure that no citation carries. Nothing ran on your lane; this is the server describing itself.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Run</span><h3>Start the server on your machine</h3><p>The same code as the deployed <code>documind-mcp</code>, at another address, with your lane behind it.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell starts the kit's server with uvicorn on port %%PORT%%, in the background, with its log in <code>/tmp/mcp121.log</code>. <code>SELF_URL</code> is the audience every bearer token must carry, so it is the server's own address. <code>RAG_API_URL</code> and <code>DOCUMIND_IMPERSONATE_SA</code> point the one <code>retrieve()</code> at your lane's rag-api, as <code>documind-ui-sa</code>. <code>GOOGLE_CLOUD_PROJECT</code> lets the server read the roster from Firestore. Then the cell mints two tokens for that address as <code>documind-ui-sa</code>, one with its email and one without, and waits for <code>/health</code>.</p>
+
+<h4>The code</h4>
+@@app@@
+@@who@@
+
+<h4>Do it</h4>
+%%CELL_START%%
+%%OUT_START%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The server is running on your machine with the gcp profile, so it verifies every call's token and reads your lane's roster. It is the same code the deployed <code>documind-mcp</code> runs, at a different address. The token you minted names <code>localhost:%%PORT%%</code> as its audience, and a token for any other address would fail the check.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Discover</span><h3>Discover: tools/list on the wire</h3><p>One JSON-RPC request as a plain HTTP POST, and the reply it gets.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell sends one JSON-RPC request, <code>tools/list</code>, as a plain HTTP POST with your token. The server needs no <code>initialize</code> first, because it keeps no session. It answers with a server-sent event. The cell prints the status, the content type and the first line. Then it prints each tool with the arguments it needs and the ones it may take.</p>
+
+<h4>Do it</h4>
+%%CELL_DISCOVER%%
+%%OUT_DISCOVER%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>HTTP 200, <code>text/event-stream</code>, and a first line of <code>event: message</code>: the reply is one event, whose data line is the JSON-RPC response. <code>tools/list</code> names four, and that is the first half of the proof. Any client that can reach the server gets the same list, Claude Desktop or an ADK agent alike, because it is the protocol's answer, not fastmcp's.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; Invoke</span><h3>Invoke: retrieve from a local client</h3><p>One answered call, three refused ones, and the line the server kept.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell uses fastmcp's client with the transport <code>make smoke-mcp</code> uses, pointed at your machine. It calls <code>retrieve</code> with the gratuity question for acme, and prints the answer and its first three sources. Then come three calls that fail in three different places: a <code>doc_type</code> the server does not know, a tenant <code>documind-ui-sa</code> is not on, and a token that carries no email. The last cell stops the server and prints the line it logged for each answered call.</p>
+
+<h4>Do it</h4>
+%%CELL_INVOKE%%
+%%OUT_INVOKE%%
+
+<h4>Do it: stop the server</h4>
+%%CELL_STOP%%
+%%OUT_STOP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>retrieve</code> answered from your lane, for acme: rag-api's grounded answer and its citations, through the one <code>retrieve()</code>. That is the second half of the proof. The three failures came back as tool errors, each from a different check: the arguments, then the roster, then the token. The token without an email could still list the tools; only the call asked who it was.</p>
+<p>The log has one <code>mcp_call</code> line, for the answered call. It records the tool, the tenant, the caller, whether the question was answerable, and how many citations came back. The refused calls left no such line.</p></div>

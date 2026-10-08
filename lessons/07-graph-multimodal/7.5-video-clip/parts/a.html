@@ -1,0 +1,107 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 7 &middot; Graph and multimodal &middot; Lesson 7.5</div>
+<h1>Query a video clip and validate media citations: <span>the clip at its second</span></h1>
+<p>A video has no text for the kit to parse. So the ingest worker has Gemini describe it: segments of at most a minute, each with a start, an end and a summary that quotes every number said. The summary is what the kit retrieves and the model reads. A citation of it carries the video's path and the seconds, and the UI opens the video at the second the segment starts.</p>
+<p>In this lesson you build acme's town hall video, send it through the worker and read its segments against the ground truth. Then you ask the golden set's town hall question and check that the cited clip starts where the CFO says it. Last, you turn Module 7's gate green.</p>
+<div class="hero-chips"><div class="hero-chip">media is a document</div><div class="hero-chip">segment</div><div class="hero-chip">start / end</div><div class="hero-chip">media_url</div><div class="hero-chip">[Clip N, mm:ss]</div><div class="hero-chip">the ground truth</div><div class="hero-chip">must_cite_kind</div><div class="hero-chip">make smoke-media</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A video, described; a citation that opens it at its second</a></li>
+<li><a href="#s2">The words: media as a document, segment, summary, media_url, start and end, kind, the pill, the ground truth, the media rows, the gate</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">From a segment to a pill, run</a></li>
+<li><a href="#s4">The clip built, the transcript withdrawn, the video heard</a></li>
+<li><a href="#s5">The clip at its second</a></li>
+<li><a href="#s6">make smoke-media, green</a></li>
+<li><a href="#s7">Why video works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a video becomes evidence: segments with times and quoting summaries, the rows that carry them, and the citation that opens the clip. You will learn the three checks that validate it: the kind of citation, the second it points at, and the gate. Then you will prove it on your lane: an answer whose pill reads <code>[Clip N, mm:ss]</code>, a clip that holds the moment the ground truth names, and <code>make smoke-media</code> green.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A video, described; a citation that opens it at its second</h3><p>What the worker makes of a video, what a citation of it carries, and how to check it.</p></div></div>
+
+<p><strong>Media is a document, described rather than parsed.</strong> The worker picks its path by the content type the upload's event carries. An image becomes one <code>figure</code> chunk, and a video or an MP3 becomes <code>segment</code> chunks. For a video it makes one Gemini call, <code>gemini-3.6-flash</code> by default:</p>
+<ul>
+<li>Gemini reads the video from the bucket (<code>from_uri</code>) at low media resolution, which is enough for what is said and roughly when.</li>
+<li>It returns segments of at most 60 seconds. Each has a start and an end in seconds, and a two-sentence summary of what is said and shown.</li>
+<li>The summary quotes every number, percentage, amount and name exactly as spoken. The kit's comment says why: the first live town hall came back as "a slight contraction" where the speaker said "fell 5.2 per cent". The segment was found and the figure was gone.</li>
+</ul>
+<p>Each segment becomes a row. The summary is its text, the part that is embedded, retrieved, reranked and quoted. The row also keeps <code>media_url</code> (the video's <code>gs://</code> path), <code>start</code>, <code>end</code> and a locator such as <code>t22-58</code>. DLP scans the summaries before anything is indexed. An image's pixels are scanned too, but a video's frames are not.</p>
+
+<p><strong>A citation that opens the clip.</strong> The model reads a segment's summary under a <code>[Source N]</code> header that names the file, and cites it as <code>[N]</code>, like any source. It never sees the video or the time. The Citation the API returns carries <code>kind: segment</code>, <code>media_url</code>, <code>start</code> and <code>end</code>. The Streamlit UI turns these into two things:</p>
+<ul>
+<li>a pill in the answer, <code>[Clip N, mm:ss]</code>: N is the source's number and mm:ss its start;</li>
+<li>under Sources, the video itself, playing from that second, through a link it signs for 15 minutes.</li>
+</ul>
+<p>A segment among the sources also makes the usage row's modality <code>video</code>.</p>
+
+<p><strong>Validating it: three checks.</strong></p>
+<ol>
+<li><strong>The kind.</strong> Golden row mm-03 asks the town hall question and requires a segment citation (<code>must_cite_kind</code>). <code>run_eval</code>'s <code>media_kind_rate</code> must reach 0.80, and mm-03 is a required row that must pass on its own.</li>
+<li><strong>The second.</strong> Nothing in the kit checks it, so this lesson does. <code>make media</code> writes the ground truth beside the video: each speaker turn's start and end, measured from the synthesised audio.</li>
+<li><strong>The gate.</strong> <code>make smoke-media</code> generates an image as a member and has the outsider refused. It asks a figure question, lists the media documents through the MCP server, and uploads through a signed URL that the worker then indexes.</li>
+</ol>
+
+<p><strong>The transcript on your lane.</strong> The video is synthesised from <code>townhall_2026_q1.md</code>, and <code>upload.sh</code> keeps that transcript home once the video exists. But your lane's corpus went up in Module 1, before the video existed, so the transcript is in acme's index as text. Step 4 withdraws it, so the town hall is in acme's corpus only as a video.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127951;</div><div>
+<p><strong>A cricket broadcaster's highlights logger.</strong> Nobody searches ten hours of match footage. A logger watches the match and writes a note for each passage of play: the time it starts and ends, and a line with the numbers exactly as they happened. "Kohli drives for four, 87 off 64" is a useful note; "a fine knock" is not, because nobody searching for 87 will ever find it.</p>
+<p>When the producer asks for "Kohli's 87", the editor searches the notes, not the tape. The note says where to cue it, so the clip starts at that ball. At the end of the day, the official scorecard says what really happened and when, and anyone can check that each cue lands on the right over.</p>
+<p>The logger is the worker's Gemini call. The notes are the segments' summaries, and their times are <code>start</code> and <code>end</code>. The search is retrieval, and the cue is the pill with the player's start. The scorecard is the ground truth <code>make media</code> writes, and checking a cue against it is validating the second.</p></div></div>
+
+<h4>What does a citation turn into?</h4>
+<p>Set a citation's fields, as the API would return them, and see what the kit makes of it:</p>
+<ul>
+<li>the pill the UI draws in the answer;</li>
+<li>what it shows under Sources: the image, the video from a second, or a link;</li>
+<li>the usage row's modality;</li>
+<li>whether a media row of the golden set counts it.</li>
+</ul>
+
+<div class="diagram pc" id="cc">
+<div class="dg-title">One citation, through the UI, the usage row and the eval</div>
+<div class="pc-box"><b class="h">The citation</b>
+<div class="pc-in"><label>kind<select id="cc-kind"><option value="text">text</option><option value="figure">figure</option><option value="table">table</option><option value="segment" selected>segment</option></select></label>
+<label>Its [Source N] number<select id="cc-n"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></label>
+<label>page<select id="cc-page"><option value="none" selected>none</option><option value="12">12</option><option value="30">30</option></select></label>
+<label>start (seconds)<select id="cc-start"><option value="none">none</option><option value="0">0</option><option value="21.6">21.6</option><option value="59.99">59.99</option><option value="200.7" selected>200.7</option></select></label>
+<label>end (seconds)<select id="cc-end"><option value="none">none</option><option value="58">58</option><option value="230" selected>230</option></select></label>
+<label>The other source cited<select id="cc-other"><option value="none">none</option><option value="text" selected>a text chunk</option><option value="figure">a figure</option></select></label>
+<label>The golden row asks for<select id="cc-want"><option value="none">nothing (not a media row)</option><option value="figure">a figure</option><option value="segment" selected>a segment</option></select></label>
+<label class="ck"><input id="cc-media" type="checkbox" checked>the chunk carries a media_url</label></div></div>
+<div class="cc-cols">
+<div class="pc-box"><b class="h">In the answer</b><p id="cc-answer" aria-live="polite"></p></div>
+<div class="pc-box"><b class="h">Under Sources, and after</b><div class="fs-grid" id="cc-under" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The rendering is the kit's: <code>_label</code>, <code>_mmss</code> and the Sources branch of <code>render_with_citations</code> from <code>services/frontend/citations.py</code>, <code>modality_of</code> from the API and <code>run_eval</code>'s kind check. The panel's port was compared with the kit's code, with the UI's module run whole, on all %%N_CHECKED%% combinations of these settings.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It draws one citation, not an answer. Which sources are packed, and which one the model cites, are your lane's to decide. The link it describes is signed by the UI's own account. An API caller gets the <code>gs://</code> path instead (step 7).</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: media as a document, segment, summary, media_url, start and end, kind, the pill, the ground truth, the media rows, the gate</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Media is a document</strong></td><td data-label="Meaning">The worker picks the media path by content type (<code>MEDIA_TYPES</code>): an image becomes a figure, a video or an MP3 becomes segments.</td><td data-label="On your lane"><code>video/mp4</code> &rarr; <code>segment</code></td></tr>
+<tr><td><strong>Segment</strong></td><td data-label="Meaning">A stretch of the video, at most 60 seconds as the worker's prompt asks, with its own row.</td><td data-label="On your lane">the town hall's segments, cut by Gemini</td></tr>
+<tr><td><strong>The summary</strong></td><td data-label="Meaning">Two sentences of what is said and shown, every number quoted as spoken: the chunk's text, the part retrieval finds and the model reads.</td><td data-label="On your lane">"revenue fell 5.2 per cent, from 96 crore to 91 crore"</td></tr>
+<tr><td><strong><code>media_url</code></strong></td><td data-label="Meaning">The asset's path, on the row and on the citation.</td><td data-label="On your lane"><code>gs://documind-ai-YOUR-ID-uploads/acme/townhall_2026_q1.mp4</code></td></tr>
+<tr><td><strong><code>start</code>, <code>end</code></strong></td><td data-label="Meaning">Seconds from the video's beginning. The locator repeats them: <code>tSTART-END</code>.</td><td data-label="On your lane">Gemini's, to the second</td></tr>
+<tr><td><strong><code>kind</code></strong></td><td data-label="Meaning">The citation's modality: <code>text</code>, <code>figure</code>, <code>table</code> or <code>segment</code>.</td><td data-label="On your lane">mm-03 asks for <code>segment</code></td></tr>
+<tr><td><strong>The pill</strong></td><td data-label="Meaning"><code>[Clip N, mm:ss]</code>: N is the source's number in the context, mm:ss its start.</td><td data-label="On your lane">drawn by the Streamlit UI; the API returns the fields</td></tr>
+<tr><td><strong>The ground truth</strong></td><td data-label="Meaning"><code>townhall_2026_q1.segments.json</code>: each speaker turn's start and end, measured from the synthesised audio.</td><td data-label="On your lane">written by <code>make media MEDIA_ARGS=--video</code>; gitignored, never uploaded</td></tr>
+<tr><td><strong>The media rows</strong></td><td data-label="Meaning">Golden rows with <code>must_cite_kind</code>. <code>media_kind_rate</code> is the share of them that got a citation of that kind.</td><td data-label="On your lane">mm-01 and mm-02 figure, mm-03 segment, all three required; threshold 0.80</td></tr>
+<tr><td><strong><code>make smoke-media</code></strong></td><td data-label="Meaning">Module 7's gate: five checks, six PASS lines.</td><td data-label="On your lane">image, outsider, figure citation, media documents, signed upload</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the API says where the clip is, as <code>media_url</code>, <code>start</code> and <code>end</code>. The UI makes it something a person can open: a signed link, and a player at the second. Everything this lesson checks is in the first. Step 5 builds the second in your shell.</p>

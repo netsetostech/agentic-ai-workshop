@@ -1,0 +1,74 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.7</div>
+<h1>Stream answers and handle failures: <span>four events on one connection, the sources before the first token, and the failures that degrade into a line instead of a 500</span></h1>
+<p>Lesson 3.5 returned one JSON. This lesson returns the same answer as it is written. <code>/v1/stream</code> keeps one connection open and sends Server-Sent Events down it: the citations first, because the packed set is known before a single token exists, then each piece of text as the model produces it, then one <code>done</code> event with the envelope, or an <code>error</code> when the guard refuses the finished answer. The stream takes the same roads as the query and keeps the same clocks; a cache hit and an empty pool each arrive as a single token; and when something on the way fails, the retriever's index, the ranker, the classifier, the cache, the month's counter, the tracing, the answer is still served and one line in the log says what stood in. You will read a stream in curl with a clock on each event, see why its citations differ from the query's, stream the empty pool, read the guard's two doors, force a failure on a candidate that takes no traffic and watch the stream continue, and read the table of everything that degrades and what it degrades to.</p>
+<div class="hero-chips"><div class="hero-chip">event: citation, token, done, error</div><div class="hero-chip">curl -N</div><div class="hero-chip">citations first, from the packed set</div><div class="hero-chip">held tokens, blocked_response</div><div class="hero-chip">rerank_fallback in done.stages</div><div class="hero-chip">row event: stream</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Why a stream, what its four events carry, and what degrades into a line</a></li>
+<li><a href="#s2">The words: SSE, citation event, token, done, error, held, blocked, fallback, stream row, first token</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">A stream in curl: the raw events, their order, and a clock on each</a></li>
+<li><a href="#s4">What a stream's citations are, and the streams of one token</a></li>
+<li><a href="#s5">The guard: a prompt refused before the stream, an answer held until it is screened</a></li>
+<li><a href="#s6">A failure forced on a candidate: the ranker silent, the stream still served, the line in the log</a></li>
+<li><a href="#s7">Every failure and what it degrades to</a></li>
+<li><a href="#s8">What a stream costs, what its row says, and who reads it</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the stream's four events carry and in what order, why its citations are the packed set rather than the model's, how the guard sits on both sides of the stream, and how each failure on the way degrades into a log line with the answer still served. Then you will prove it on your lane: time a stream event by event, stream the empty pool, read the guard's column on the rows, force the ranker to stand down on a candidate and read the line, and check the events the lane has never logged.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Why a stream, what its four events carry, and what degrades into a line</h3><p>The first token is the point, the sources come before it, the same clocks run without spans, and a failure is a line in the log rather than an empty screen.</p></div></div>
+
+<p><strong>A stream exists for the first token, and the sources come before it.</strong> <code>/v1/query</code> answers once, when everything is done. <code>/v1/stream</code> answers as Server-Sent Events on one connection: <code>event: citation</code> lines first, one per packed chunk with the fields a <code>Citation</code> carries and the first %%QUOTE_CUT%% characters of the text as its quote; then <code>event: token</code> for each piece of text as the model produces it; then one <code>event: done</code> with the envelope, tokens, model, backend, the three clocks and the pool, the cache verdict and the prompt version. The citations are the packed set because that is known before a single token exists, so the UI can render the sources while the answer is being written; the price is that a stream cites every packed source and the query cites only the ones the model used, and lesson 3.5's resolver never runs here, because JSON cannot usefully be streamed. The tokens are prose with <code>[N]</code> marks, and <code>N</code> is the packed position.</p>
+
+<p><strong>The stream takes the same roads and keeps the same clocks.</strong> The handler's order is the query's: the roster, the filter keys, the guard before the stream starts, so a blocked prompt is a 400 and never a broken stream; then retrieve, rerank with its fallback, and generate, on the same three clocks without spans, because a generator suspended between tokens is no place to hold a span. A cache hit arrives as one token with backend <code>cache</code>; an empty pool arrives as one token with backend <code>none</code> and no model call; the row is logged with event <code>stream</code> and the same columns as a query's. The clock the caller feels is different from the API's: the time to the first citation, the time to the first token, and the time to <code>done</code> are three numbers, and only the last is <code>latency_ms</code>.</p>
+
+<p><strong>A failure degrades into a line, not a 500.</strong> Every rung the request climbs has a stand-in and a name: a classifier that fails is <code>routing_fallback</code> and the generator model answers; a routed tier out of quota before the first token is <code>tier_exhausted</code> and the default model streams; an index that raises is <code>vector_search_fallback</code>; a silent ranker is <code>rerank_fallback</code>; a cache that cannot be read is <code>semantic_cache_failed</code> and a miss; a cache that cannot be written is <code>semantic_cache_store_failed</code>; a month's counter that cannot be written is <code>budget_record_failed</code>; tracing that cannot load is <code>telemetry_not_instrumented</code>. In each case the answer is served, the log names the cause, and where it matters the row counts it. Two things do not degrade, on purpose: a prompt the guard blocks is refused before the stream, and a finished answer the guard blocks becomes <code>event: error</code> after the held tokens are screened, with <code>blocked_response</code> on the row.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127911;</div><div>
+<p><strong>The live commentary.</strong> A radio commentator reads out the team sheets before the whistle, every player who is on the pitch, which is the citations from the packed set. Then the commentary runs play by play, which is the tokens. With the delay censor switched on, the broadcast runs a few seconds behind and either goes out whole or is cut with one announcement, which is the guard holding the tokens and the error event. When the scoreboard feed dies mid-match, the commentator carries on from the referee's list and the producer notes it in the log; nobody at home hears a gap. The final whistle carries the bill, the clocks and who was in the booth, which is <code>done</code>.</p></div></div>
+
+<h4>The stream reader: paste a transcript, read it event by event</h4>
+<p>The reader parses the text <code>curl -N</code> prints, or the transcript step 3 saves: the events in order, the citations with their kinds and dates, the tokens joined back into the answer, and the <code>done</code> event's envelope, read against the handler's rules. It starts on a transcript shaped exactly as main.py writes one, with two of the kit's handbook chunks as the citations and that chunk's own words standing in for the model's; the cases turn it into the other shapes a stream can take.</p>
+
+<div class="diagram sr" id="reader">
+<div class="dg-title">Stream reader - main.py's four events, the handler's rules, and 2.3's reading of the stages</div>
+<div class="sr-controls">
+<label class="sr-l sr-wide">The transcript, as curl -N prints it<textarea id="sr-text" rows="9" spellcheck="false"></textarea></label>
+<label class="sr-l">Cases<select id="sr-case"><option value="">choose a case</option><option value="normal">a cited answer, the tokens of one packed chunk</option><option value="empty">the empty pool: one token, backend none</option><option value="cache">an answer-cache hit: one token, backend cache</option><option value="blocked">the guard blocks the finished answer: event error</option><option value="fallback">the ranker silent: rerank_fallback 1 in done.stages</option></select></label>
+</div>
+<p class="sr-meta" id="sr-meta" aria-live="polite"></p>
+<div class="sr-out" id="sr-out" aria-live="polite"></div>
+<p class="dg-cap">The event names and their fields are main.py's, the sample's clocks are the kit's usage selftest rows, and the readings under <code>done</code> are lesson 2.3's rules for a stages block. Paste your own transcript from step 3 and the numbers are yours.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the reader is not</div>
+<p>It is not a client: it reads a finished transcript and cannot show the one thing a stream is for, the first token arriving before the rest. Step 3's cell times that. And its sample answer is a chunk's own words, because the model's are not known until it writes them.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: SSE, citation event, token, done, error, held, blocked, fallback, stream row, first token</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>SSE</strong></td><td data-label="Meaning">Server-Sent Events: one HTTP response of type <code>text/event-stream</code> that stays open, each event two lines, <code>event: name</code> and <code>data: json</code>, then a blank line. <code>curl -N</code> prints them as they arrive.</td><td data-label="On your lane"><code>/v1/stream</code>; the UI's chat page reads it the same way.</td></tr>
+<tr><td><strong>event: citation</strong></td><td data-label="Meaning">One per packed chunk, before any token: <code>n</code>, the chunk id, source, page, the first %%QUOTE_CUT%% characters as the quote, the kind, the media fields and <code>effective_from</code>. A cache hit sends the stored answer's citations in the same shape.</td><td data-label="On your lane">Five for a default question; three for a query's answer.</td></tr>
+<tr><td><strong>event: token</strong></td><td data-label="Meaning">A piece of the answer's text as the model produced it, <code>{"t": ...}</code>; prose with <code>[N]</code> marks, no schema. A hit or an empty pool is one token.</td><td data-label="On your lane">Dozens for a cited answer.</td></tr>
+<tr><td><strong>event: done</strong></td><td data-label="Meaning">The envelope: <code>tokens_in</code>, <code>tokens_out</code>, <code>cached_tokens</code>, <code>model</code>, <code>backend</code>, <code>latency_ms</code>, <code>stages</code>, <code>cache_hit</code>, <code>prompt</code>. Priced on the row, not in the event, on the vertex backend.</td><td data-label="On your lane">The last event of every stream that was not blocked.</td></tr>
+<tr><td><strong>event: error</strong></td><td data-label="Meaning">Sent instead of the tokens when the guard blocks the finished answer: <code>{"error": reason}</code>, after the row is logged with <code>blocked_response</code>.</td><td data-label="On your lane">Never, with <code>ARMOR</code> off.</td></tr>
+<tr><td><strong>Held tokens</strong></td><td data-label="Meaning">With the guard on, the tokens are collected instead of sent, the whole answer is screened once, and then either every token goes out or the error does. A token stream cannot be screened.</td><td data-label="On your lane">Step 5 reads the code; the lane does not hold.</td></tr>
+<tr><td><strong>blocked_prompt, blocked_response</strong></td><td data-label="Meaning">The guard's two verdicts: a blocked prompt is a 400 before retrieval, with a log line; a blocked response is the error event on the stream and a 502 on the query, with <code>guard: blocked_response</code> on the row.</td><td data-label="On your lane"><code>guard: off</code> on every row.</td></tr>
+<tr><td><strong>Fallback line</strong></td><td data-label="Meaning">A warning with an <code>event</code> name and the error's type, written where a rung stood in for another; the answer is served regardless. Eight names in the API.</td><td data-label="On your lane">Step 7's table; one forced in step 6.</td></tr>
+<tr><td><strong>The stream row</strong></td><td data-label="Meaning">The same usage row as a query's, with <code>event: stream</code>, the three clocks, the pool, the flags and the guard verdict; <code>make usage</code> groups it by surface.</td><td data-label="On your lane">Step 4 reads three of them.</td></tr>
+<tr><td><strong>First token</strong></td><td data-label="Meaning">The clock the caller feels: the citations arrive after retrieval and reranking, the first token when the model starts, <code>done</code> when it stops; only the last is <code>latency_ms</code>.</td><td data-label="On your lane">Step 3 times all three.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction carries the lesson: a <em>fallback</em> serves the answer and writes a line; a <em>refusal</em> serves the contract with <code>answerable false</code>; a <em>failure</em> is a status the caller sees. The stream has all three, and the reader below tells them apart by the events alone.</p>

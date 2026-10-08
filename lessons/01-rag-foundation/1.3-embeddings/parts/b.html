@@ -1,0 +1,230 @@
+<div class="box box-amber"><div class="box-title">Two more packages for this lesson</div>
+<p>Steps 6 and 7 import the worker's own <code>indexer.py</code>, which imports the Vector Search and Gemini SDKs at the top. The setup block installed only the Firestore client; add the other two once. Nothing in this lesson writes to Vector Search.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python -m pip install -q google-cloud-aiplatform google-genai &amp;&amp; python -c "import google.cloud.aiplatform, google.genai; print('ok')"</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Declare</span><h3>One declared embedding, from Terraform to the row</h3><p>Where the model and its version are written down once, how the same pair reaches the worker and the API, and the three places you can read it back.</p></div></div>
+
+<h4>Definition</h4>
+<p>DocuMind never lets the embedding be an accident of whichever library default was current on deploy day. The pair is declared once, as two Terraform variables, and the deploy passes the same two values into the environment of the ingest worker and the API. The worker stamps them on every row it writes and on the ledger row of every source it indexes. The API embeds every question with the same model and reports the pair on <code>/version</code>, beside the generator and the prompt, because when an answer changes and nobody deployed, the embedding pair is the first thing to compare. Bumping the version is a migration: new rows behind a new stamp, old rows repaired by the backfill, never a silent swap.</p>
+
+<h4>See it in the UI</h4>
+<p>Open the deployed UI, go to <em>Documents</em>, and scroll to the <em>Versions</em> table under the upload box. The last column, <code>embedding</code>, reads <code>text-embedding-005@1</code> on every row. It is not a setting the page knows; it is the pair the worker recorded on that source's ledger row the last time it indexed it. The two columns before it, <code>reused</code> and <code>embedded</code>, are the carry-over counts you will change in step 7.</p>
+
+<h4>The code</h4>
+<p>Four excerpts, one per hop. The Terraform variables are the declaration; the worker reads them from its environment into two module constants; the API reads the same two names into its settings and embeds questions with the first of them.</p>
+@@tf_vars@@
+@@indexer_consts@@
+@@config_embed@@
+@@retriever_embed_query@@
+<p>Notice two things in the worker's constants. The client is regional, <code>us-central1</code>, because embedding models are served regionally while Gemini 3.x generation is served only from <code>global</code>: the two-client rule from Module 0, seen from the ingestion side. And the task type and the dimension are not environment variables at all; they are fixed in the file, because they are part of what "this embedding" means, not something an operator should be able to change per deploy.</p>
+
+<h4>Call it: three reads of one pair</h4>
+<p>All read-only. The first prints the worker's environment, the second asks the API what it is serving, the third reads the pair off the ledger rows the Versions table renders.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services describe documind-ingest --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep -E 'EMBEDDING_MODEL|EMBEDDING_VERSION'
+
+curl -s "$API/version" -H "Authorization: Bearer $(tok "$API")" \
+  | python -c "import json,sys; j=json.load(sys.stdin); print('api serves embedding', j['embedding'], '| generator', j['generator_model'], '| retrieval', j['retrieval_mode'], j['retrieval_backend'])"
+
+curl -s "$API/v1/sources?tenant_id=acme" -H "Authorization: Bearer $(tok "$API")" \
+  | python -c "import json,sys; [print(f\"{r['name']:44} chunks {r['chunks']:>4}  reused {r['reused']:>4}  embedded {r['embedded']:>4}  {r['embedding']}\") for r in json.load(sys.stdin)['sources']]"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your generator and retrieval settings may differ; the pair is the point)</span><span class="ro">read only</span></div><pre tabindex="0">{'name': 'EMBEDDING_MODEL', 'value': 'text-embedding-005'}
+{'name': 'EMBEDDING_VERSION', 'value': '1'}
+api serves embedding text-embedding-005@1 | generator gemini-3.6-flash | retrieval hybrid vector
+acme/code_on_wages_2019.pdf                  chunks   67  reused    0  embedded   67  text-embedding-005@1
+acme/dpdp_act_2023.pdf                       chunks   44  reused    0  embedded   44  text-embedding-005@1
+acme/hr_policy_2026.md                       chunks  283  reused    0  embedded  283  text-embedding-005@1
+...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the same two values from three places that never talk to each other: the worker's environment, the API's process, and the ledger rows in Firestore. They agree because one deploy set them, not because anything checks. The <code>reused 0, embedded N</code> on every row says these sources were embedded once, in full, when the corpus was loaded; step 7 is the first time a row on your lane will say anything else.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Call</span><h3>The call: 768 numbers under the document task type</h3><p>The one function that talks to the model, what it insists on before it returns, and a fraction of a paisa to see the task type matter.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>embed_all()</code> is the whole of the worker's conversation with the embedding model. It sends a batch of texts with two settings, <code>output_dimensionality: 768</code> and <code>task_type: RETRIEVAL_DOCUMENT</code>, and gets one vector per text back. Then it checks: exactly as many vectors as texts, every one 768 numbers long, every number finite. Any shortfall raises, the request fails whole, and the document's ingest fails with it (the claim is released, the message retried, and a repeat failure ends in the dead-letter queue from lesson 1.1). Nothing partial is ever written, because a row with a bad vector is a row retrieval would rank wrongly for ever.</p>
+
+<h4>The code</h4>
+@@indexer_embed_all@@
+<p><code>valid_vector()</code> is the same test the validation in step 6 uses on rows that are already stored, so a vector is held to one rule on the way in and on the way back out.</p>
+
+<h4>Do it: embed one clause yourself, both ways</h4>
+<p>This cell costs money, a very small amount: two calls on a 234-character clause, about a tenth of a paisa. It reads NP-03's text and stored vector off the lane, embeds the same text under the document profile with the worker's exact settings, and compares by cosine. Then it embeds the same text under the query profile and compares again.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash; two paid calls)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, math, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+from google import genai
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+row = next(db.collection("chunks").where("tenant_id", "==", "acme")
+             .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/hr_policy_2026.md")
+             .where("current", "==", True).where("locator", "==", "NP-03").stream()).to_dict()
+lane = list(row["embedding"])
+client = genai.Client(enterprise=True, project=PROJECT, location="us-central1")   # embeddings are regional
+def embed(text, task):
+    r = client.models.embed_content(model="text-embedding-005", contents=[text],
+                                    config={"output_dimensionality": 768, "task_type": task})
+    return list(r.embeddings[0].values)
+def cosine(a, b):
+    return sum(x * y for x, y in zip(a, b)) / (math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b)))
+doc, qry = embed(row["text"], "RETRIEVAL_DOCUMENT"), embed(row["text"], "RETRIEVAL_QUERY")
+print("lane vector:", len(lane), "numbers; first three", [round(v, 4) for v in lane[:3]])
+print("same text, RETRIEVAL_DOCUMENT: cosine to the lane's vector", round(cosine(doc, lane), 4))
+print("same text, RETRIEVAL_QUERY:    cosine to the lane's vector", round(cosine(qry, lane), 4))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your numbers differ; the gap between the last two lines is the point)</span><span class="ro">read only</span></div><pre tabindex="0">lane vector: 768 numbers; first three [0.0213, -0.0117, 0.0388]
+same text, RETRIEVAL_DOCUMENT: cosine to the lane's vector 1.0
+same text, RETRIEVAL_QUERY:    cosine to the lane's vector 0.9xxx</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The first comparison came back at 1.0, or within rounding of it: the same model, the same profile and the same text give the same numbers, which is why the lane can copy a vector from one version to the next instead of asking again. The second came back lower on the same text, because the query profile shapes the numbers differently. That gap is not an error; it is the model doing what the profile asks. It is also why the task type is part of the stamp: a row embedded under the query profile would sit at that gap from every properly stored neighbour, and rank accordingly.</p></div>
+
+<div class="box box-amber"><div class="box-title">The two clients, again</div>
+<p>The cell built its client with <code>location="us-central1"</code> because <code>embed_content</code> is served regionally. A client on <code>global</code> would answer 404 for the embedding model, and a client on <code>us-central1</code> answers 404 for Gemini 3.x generation. A notebook that does both needs both, which is the rule Module 0 set and every worker in the kit follows.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Batch</span><h3>Batches: 250 texts and 15,000 tokens per request</h3><p>Two ceilings on one request, the estimate the worker uses to stay under them, and the corpus load that found the ceiling the hard way.</p></div></div>
+
+<h4>Definition</h4>
+<p>The model takes up to 250 texts in one request and up to 20,000 tokens across all of them, and a request over either limit fails whole: not the last text, the whole request. The worker cannot count tokens without a call, so it estimates: three characters per token, and it closes a batch at 250 texts or 15,000 estimated tokens, whichever comes first. The 5,000-token gap is headroom for the estimate being rough. The rule is small, and it was written after the first live corpus load failed every long Act at exactly this point: two-thousand-character windows are about 500 tokens each, and 250 of them are about 125,000.</p>
+
+<h4>The code</h4>
+@@indexer_batches@@
+@@corpus_embed_batches@@
+<p>The same rule twice: once in the worker's file and once in the loader the notebooks use, with the loader's docstring carrying the date and the failure. The two copies are held to identical output on the same texts.</p>
+
+<h4>Try the ceilings</h4>
+<p>The planner below runs the batching rule on real chunk lengths from your corpus: the handbook's 283 clauses (97 to 599 characters) and the Code on Wages mirror's 65 windows (211 to 2,000). Move the two ceilings and watch the request count change; tick the last box to see what one request per document would have sent.</p>
+
+<div class="diagram bp" id="planner">
+<div class="dg-title">Batch planner - the worker's rule on real chunk lengths</div>
+<div class="bp-controls">
+<label class="bp-l">Document <select id="bp-doc"><option value="hb">Handbook: 283 clauses</option><option value="wg">Code on Wages mirror: 65 windows</option></select></label>
+<label class="bp-l">Texts per request <input type="range" id="bp-n" min="10" max="250" step="10" value="250"> <span id="bp-n-v">250</span></label>
+<label class="bp-l">Estimated tokens per request <input type="range" id="bp-t" min="2000" max="20000" step="1000" value="15000"> <span id="bp-t-v">15000</span></label>
+<label class="bp-l bp-chk"><input type="checkbox" id="bp-one"> No rule: one request per document</label>
+</div>
+<p class="bp-sum" id="bp-sum" aria-live="polite"></p>
+<div class="bp-out" id="bp-out"></div>
+<p class="dg-cap">Each bar is one request: its width is its estimated tokens against the model's 20,000-token ceiling, its label the texts it carries. A red bar is a request the model would refuse whole. The worker's own settings (250 and 15,000) never produce one; the box at the end shows why the first corpus load did.</p>
+</div>
+
+<h4>Do it: plan the handbook, Rs 0</h4>
+<p>The loader's copy of the rule, on the chunks you cut in lesson 1.2. No call is made; a plan is printed.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys
+sys.path.insert(0, ".")
+from shared import documind_corpus as dc
+def cut(path, slug):
+    text = open(path, encoding="utf-8").read()
+    return [c["text"] for c in dc.chunk_document({"slug": slug, "doc_type": "x", "source_uri": "gs://x", "text": text}, "acme")]
+for name, texts in (("handbook", cut("evals/corpus/acme/hr_policy_2026.md", "hr_policy_2026")),
+                    ("wages mirror", cut("evals/corpus/acme/code_on_wages_2019.md", "code_on_wages_2019"))):
+    plan = dc.embed_batches(texts)
+    est = [sum(max(1, len(t) // dc.CHARS_PER_TOKEN) for t in b) for b in plan]
+    print(f"{name}: {len(texts)} chunks, {sum(map(len, texts)):,} chars -> {len(plan)} requests of {[len(b) for b in plan]} texts, est tokens {est}")
+one = sum(max(1, len(t) // 3) for t in cut("evals/corpus/acme/hr_policy_2026.md", "hr_policy_2026"))
+print(f"the handbook in one request would carry about {one:,} estimated tokens: over 20,000, refused whole")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">handbook: 283 chunks, 158,692 chars -> 4 requests of [85, 78, 78, 42] texts, est tokens [14833, 14949, 14944, 8057]
+wages mirror: 65 chunks, 102,444 chars -> 3 requests of [28, 28, 9] texts, est tokens [...]
+the handbook in one request would carry about 52,783 estimated tokens: over 20,000, refused whole</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The handbook's short clauses fill a batch by tokens long before they reach 250 texts, so its four requests carry 85, 78, 78 and 42 texts, each just under the 15,000 estimate. The Act's long windows hit the token ceiling at 28. Neither document ever comes near 250 texts; the text ceiling exists for a corpus of one-line chunks. Every number here came from a loop over string lengths, which is the point of estimating: the plan is free, and the call that follows it cannot fail on size.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Validate</span><h3>Validate: the stamp, and the function that reads it</h3><p>What the worker writes beside every vector, the one function that judges a row compatible, and three ways to run it over a whole tenant.</p></div></div>
+
+<h4>Definition</h4>
+<p>When the worker mirrors a version into Firestore, every row gets the vector and, beside it, the stamp: <code>embedding_model</code>, <code>embedding_version</code>, <code>embedding_task_type</code>, plus <code>sparse_encoder_version</code> for the sparse half and <code>schema_version</code> for the row shape. One function, <code>document_embedding_matches()</code>, reads the stamp and the vector and says yes or no. It is asked in three places: by the carry-over, before a previous row is allowed to lend its vector; by the "already current" check, before a version the other lane seeded is accepted without re-embedding; and by the backfill, which repairs whatever fails. A row with no task type on it fails, by design: such rows were embedded under the API's default query profile before the stamp existed, and they are the reason the stamp exists.</p>
+
+<h4>The code</h4>
+@@indexer_mirror_row@@
+@@indexer_valid@@
+@@idem_current@@
+
+<h4>Read the stamp off one row, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+snap = next(db.collection("chunks").where("tenant_id", "==", "acme")
+              .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/hr_policy_2026.md")
+              .where("current", "==", True).where("locator", "==", "NP-03").stream())
+row = snap.to_dict()
+print("row id:", snap.id)
+for k in ("locator", "chunk_hash", "embedding_model", "embedding_version", "embedding_task_type",
+          "sparse_encoder_version", "schema_version", "kind", "doc_type"):
+    print(f"  {k:24} {row.get(k)!r}")
+print(f"  {'embedding':24} {len(row['embedding'])} numbers, first three {[round(v, 4) for v in list(row['embedding'])[:3]]}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your id, hash prefix and numbers differ)</span><span class="ro">read only</span></div><pre tabindex="0">row id: acme:9f3c...#1
+  locator                  'NP-03'
+  chunk_hash               'f4512754ae41...'
+  embedding_model          'text-embedding-005'
+  embedding_version        '1'
+  embedding_task_type      'RETRIEVAL_DOCUMENT'
+  sparse_encoder_version   'blake2b-tf-v1'
+  schema_version           2
+  kind                     'text'
+  doc_type                 'unknown'
+  embedding                768 numbers, first three [0.0213, -0.0117, 0.0388]</pre></div>
+
+<h4>Validate every current row of a tenant, with the worker's own function</h4>
+<p>This cell imports the worker's <code>indexer.py</code> as deployed and runs its test over every current acme row. The import builds the worker's embedding client (which is why the project must be in the environment) but nothing is embedded.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, warnings, collections
+warnings.filterwarnings("ignore", category=UserWarning)
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", os.environ["PROJECT"])
+sys.path[:0] = [".", "services/ingest"]              # shared/ for the sparse encoder, the worker's folder for indexer
+from google.cloud import firestore
+import indexer                                        # the worker's file, exactly as deployed
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+rows = [s.to_dict() for s in db.collection("chunks").where("tenant_id", "==", "acme").where("current", "==", True).stream()]
+ok = [r for r in rows if indexer.document_embedding_matches(r)]
+stamps = collections.Counter((r.get("embedding_model"), str(r.get("embedding_version")), r.get("embedding_task_type"),
+                              len(r["embedding"]) if r.get("embedding") is not None else 0) for r in rows)
+print(f"acme current rows: {len(rows)}  compatible: {len(ok)}  incompatible: {len(rows) - len(ok)}")
+for stamp, n in stamps.most_common():
+    print("  ", n, "rows stamped", stamp)
+print("the worker expects:", (indexer.EMBEDDING_MODEL, indexer.EMBEDDING_VERSION, indexer.EMBEDDING_TASK_TYPE, indexer.EMBEDDING_DIMENSIONS))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (N is your lane's count; the zero is the point)</span><span class="ro">read only</span></div><pre tabindex="0">acme current rows: N  compatible: N  incompatible: 0
+   N rows stamped ('text-embedding-005', '1', 'RETRIEVAL_DOCUMENT', 768)
+the worker expects: ('text-embedding-005', '1', 'RETRIEVAL_DOCUMENT', 768)</pre></div>
+
+<h4>The same check as an operator runs it, and as the tests run it</h4>
+<p>The backfill target prints a plan when <code>APPLY=1</code> is absent: it reads every current row and counts the ones that fail the same function. On a healthy lane the count is zero, and the target is how you would find out otherwise. It needs the index name from Terraform's outputs; if your checkout has no Terraform state, the second form takes the name from the API instead. The unit tests run the worker's file against doubled SDKs, offline, in a fraction of a second.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (both read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make backfill-vectors PROJECT=$PROJECT TENANT_ONLY=acme
+
+# if the line above says VECTOR_INDEX_NAME is empty (no Terraform state in this checkout):
+VECTOR_INDEX_NAME="$(gcloud ai indexes list --region="$REGION" --project="$PROJECT" --filter='displayName=documind-chunks' --format='value(name)')" \
+PYTHONPATH=.:services/ingest GOOGLE_CLOUD_PROJECT="$PROJECT" \
+  python services/ingest/reconcile.py --project "$PROJECT" --tenant acme --backfill-vectors
+
+python -m unittest discover -s commands/tests -p test_document_embeddings.py</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">{"event": "backfill_vectors_plan", "index": "projects/NUMBER/locations/asia-south1/indexes/1234567890123456789", "tenant": "acme", "current_chunks": N, "needs_document_embedding": 0, "invalid_chunks": 0, "embedding_task_type": "RETRIEVAL_DOCUMENT", "note": "Pause uploads/undo/batch writers; keep answer caches off during repair and validation."}
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.014s
+
+OK</pre></div>
+
+@@makefile_backfill@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You ran the worker's own test over a whole tenant three ways and got the same zero each time: from a cell, from the operator's target, and from the plan the repair would follow. The twelve offline tests are what pin the rule: a response with a missing, short, NaN or infinite vector is rejected; a row stamped with the query profile, another version, another model or the wrong length lends nothing to a carry-over; a row without the document stamp is not "already current". Read their names in <code>commands/tests/test_document_embeddings.py</code>; each one is a mistake the kit once made or refused to make.</p></div>
+

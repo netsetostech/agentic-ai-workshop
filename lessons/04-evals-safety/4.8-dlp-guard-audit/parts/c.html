@@ -1,0 +1,98 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; The audit trail</span><h3>The audit trail: the events in the retention bucket</h3><p>The writer every service shares, the bucket that keeps what it writes, and the two events your upload left.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>emit()</code> checks the action against the %%N_ACTIONS%% registered names, builds one event and uploads it as one object. The path starts with the day and the actor's tenant, so one tenant's day is one prefix to list. The bucket's retention policy is five years. Until an object is that old, Cloud Storage refuses to delete or overwrite it, for the project's owner as much as anyone else. Locking is a separate decision. A locked policy can never be shortened or removed, and Google puts a lien on the project, so neither the bucket nor the project can be deleted until the last object ages out. That is why the lab leaves the policy unlocked unless you deploy with <code>AUDIT_LOCK=true</code>. The worker holds only <code>roles/storage.objectCreator</code> on the bucket: it can add an object and nothing else. The cell lists today's acme objects, prints the newest <code>dlp.finding</code> event field by field, reads the retention settings, and then tries to delete that event. The delete must be refused. The cell attempts it only when the bucket reports a retention period.</p>
+
+<h4>The code</h4>
+@@emit@@
+@@retention@@
+
+<h4>Do it</h4>
+%%CELL_AUDIT%%
+%%OUT_AUDIT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One upload left two events under today's acme prefix, <code>dlp.finding</code> and <code>doc.upload</code>, and this is the third proof: the upload, recorded where nobody can remove it. Both events name <code>system:ingest</code> as the actor, because the worker sees an object in a bucket, not the person who put it there. Cloud Storage's own Data Access audit logs can record who wrote the object, if they are enabled. The event's meta carries the types and a count, never the values, the same rule the findings follow. The retention line is the kit's five years, and the refused delete is that policy at work.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; The audit tab</span><h3>The audit tab: what the admin console reads, and what it misses</h3><p>The console's copy of its own events, the tab that lists it, and the note withdrawn.</p></div></div>
+
+<h4>Definition</h4>
+<p>The admin console's <code>emit()</code> calls the same shared writer, then copies the event into <code>audit_index</code> in Firestore. Its audit tab lists that collection, newest first, up to 500 rows. Listing a bucket prefix for every page view would be slow, and the index is the console's answer to that. But nothing else writes the index. Across the whole kit, only the console's own <code>emit()</code> does, and the only event the console emits today is <code>tenant.create</code>. The worker's <code>doc.upload</code> and <code>dlp.finding</code>, and the MCP server's <code>query.submit</code>, go to the bucket alone. The cell counts the index's actions.</p>
+
+<h4>The code</h4>
+@@admin_index@@
+@@audit_tab@@
+
+<h4>Do it</h4>
+%%CELL_INDEX%%
+%%OUT_INDEX%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>doc.upload in it: 0</code>: the tab cannot show the upload you made in step 3, although step 7 found it in the bucket. The course plan asks for "the upload in the audit tab", and on the kit as it stands that proof cannot be met. The event exists, in the record that counts; the page that should show it reads a different store. Either change would close the gap: the worker writes the index as well as the bucket (its account can already write Firestore), or the tab lists the bucket's day-and-tenant prefix, the same read step 7's cell makes. The tab's action list also offers <code>doc.upload</code>, <code>doc.delete</code> and three other actions that nothing writes to the index. It offers neither <code>dlp.finding</code> nor <code>tenant.create</code>, the one action the index does hold.</p></div>
+
+<h4>Clean up: withdraw the note</h4>
+<p>The note came from you, and it should not stay in acme's corpus. <code>make retire</code> flags its chunks, which leave retrieval, and marks its ledger row <code>WITHDRAWN</code>; the object stays in the uploads bucket. Look at what stays. The findings record stays in <code>dlp_findings</code> until someone deletes it. The two audit events stay for five years, whatever anyone wants, which is what retention means. The withdrawal writes no audit event of its own: <code>doc.delete</code> is a registered action, and nothing in the kit emits it.</p>
+%%CELL_RETIRE%%
+%%OUT_RETIRE%%
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the controls are shaped this way, what they cost, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>One list, in one file.</strong> <code>shared/pii.py</code> exists because two lists drift. Then the scan misses a type, the dashboard reports zero findings, and both are working correctly. The admin console's <code>dlp.py</code> imports the list and never defines its own.</li>
+<li><strong>No quotes, anywhere.</strong> <code>include_quote</code> is false in the scan. The template turns on <code>log_sanitize_operations</code>, and its comment gives the rule: log what was sanitised, never the text. A findings log that quotes a PAN has moved the PAN somewhere harder to delete than the document.</li>
+<li><strong>A failed scan is a failed ingest.</strong> DLP's own retries cover a rate-limit refusal for about five minutes. After that the message is nacked and redelivered, and after 12 delivery attempts Pub/Sub moves it to the dead-letter topic, where a person decides. Indexing an unscanned document is the exact thing the control exists to prevent.</li>
+<li><strong>Pictures are scanned too, elsewhere.</strong> A figure's bytes are scanned before its caption is indexed, because a caption of an invoice can carry the invoice's PAN. DLP inspects images only in a short list of locations, and asia-south1 is not on it, so the pixels go to Singapore while the text stays in Mumbai. <code>DLP_IMAGE_LOCATION</code> overrides that.</li>
+<li><strong>A block is a status code, not a polite answer.</strong> A refusal written to look like an answer would hide how often the guard fires. A 400 and a 502 are counted by every dashboard that counts errors.</li>
+<li><strong>The guard fails closed.</strong> Without <code>roles/modelarmor.user</code>, the first sanitize call fails, and so does every question. That is why the role is granted whether the switch is on or off: the role costs nothing while the switch is off.</li>
+<li><strong>The writer refuses to drop an event.</strong> With <code>AUDIT_BUCKET</code> unset, <code>emit()</code> raises instead of skipping the event, and the worker checks for the variable at startup rather than on its first document. The MCP server is the one exception, on purpose: it logs a failed audit write and still answers.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The note's scan and indexing</td><td data-label="Costs">DLP bills by bytes inspected; the note is a few hundred bytes, and <code>shared/pii.py</code> puts a whole corpus scan in cents</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The findings and index reads</td><td data-label="Costs">a hundred-odd Firestore reads</td><td data-label="On your lane">free</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">a revision with no traffic; at the kit's default of zero minimum instances, it runs only while the probes call it</td><td data-label="On your lane">free</td></tr>
+<tr><td>The probes</td><td data-label="Costs">two answered questions, and six sanitize calls on a few dozen tokens each; the blocked questions cost no retrieval and no model</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The audit read and the refused delete</td><td data-label="Costs">a few Cloud Storage operations</td><td data-label="On your lane">free</td></tr>
+<tr><td>The audit bucket itself</td><td data-label="Costs">storage for five years of small JSON objects</td><td data-label="On your lane">paise a month</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point below is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The audit tab never shows a worker event.</strong> Only the admin console writes <code>audit_index</code>, as step 8 showed.</li>
+<li><strong>The template's sensitive-data filter does not know Indian identifiers.</strong> Its comment says it does; the basic configuration's list, on Google's page, does not include them. Step 6's fourth line is the test.</li>
+<li><strong>Nothing expires <code>audit_index</code>.</strong> The console's docstring and caption promise 14 days, and no TTL policy in <code>terraform/</code> names the collection. The tab's action filter also needs a composite index on action and time, and <code>firestore_indexes.tf</code> defines none. Until one exists, Firestore refuses that query and asks for the index.</li>
+<li><strong>The DLP tab's metric says "Chunks with findings" and counts documents.</strong> The label dates from <code>inspect_and_log()</code>, which wrote one record per chunk; nothing calls it now.</li>
+<li><strong>A withdrawal is not audited.</strong> <code>doc.delete</code> is registered, the tab offers it, and nothing emits it.</li>
+</ul></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The note was scanned and then indexed</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>&gt;&gt; indexed: acme_...</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A finding holds no value</td><td data-label="The check">step 4, the last line</td><td data-label="Pass looks like"><code>info_type</code>, <code>likelihood</code>, <code>offset</code>, <code>chunk_id</code> and nothing else</td></tr>
+<tr><td>3</td><td data-label="Claim">The invoice's PAN is in the findings and in the DLP tab</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>INDIA_PAN_INDIVIDUAL</code> on <code>acme/inv_2026_0412.md</code>, and its bar in the tab</td></tr>
+<tr><td>4</td><td data-label="Claim">A plain question passes the guard</td><td data-label="The check">step 6, the first line</td><td data-label="Pass looks like"><code>200</code></td></tr>
+<tr><td>5</td><td data-label="Claim">An injection is refused before retrieval</td><td data-label="The check">step 6, the second line</td><td data-label="Pass looks like"><code>400</code> <code>{"detail":"prompt_blocked"}</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The Hinglish injection is refused too</td><td data-label="The check">step 6, the third line</td><td data-label="Pass looks like"><code>400</code>, or a 200 you record as a finding</td></tr>
+<tr><td>7</td><td data-label="Claim">The basic filter lets a PAN through</td><td data-label="The check">step 6, the fourth line</td><td data-label="Pass looks like"><code>200</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The upload left its events in the bucket</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>dlp.finding</code> and <code>doc.upload</code> under today's acme prefix</td></tr>
+<tr><td>9</td><td data-label="Claim">The bucket refuses to delete an event</td><td data-label="The check">step 7, the last line</td><td data-label="Pass looks like"><code>delete refused: 403 Forbidden</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The audit tab cannot see the upload</td><td data-label="The check">step 8</td><td data-label="Pass looks like"><code>doc.upload in it: 0</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The note was indexed in acme in step 3 and withdrawn in step 8. Its object stays in the uploads bucket, and its ledger row says <code>WITHDRAWN</code>. It also leaves permanent traces: one record in <code>dlp_findings</code>, and two audit events that the bucket will keep for five years. <code>documind-api</code> has one more revision, which serves no traffic and has no tag. The service's configuration says <code>ARMOR=on</code> until the next deploy sets it back, and <code>.candidate-revision</code> is gone. The usage rows of two answered questions, and two guard lines in the API's log. No roster, role, policy or setting changed. Lesson 4.9 reads the failures first, then attacks your own pipeline with a held-out set built on this lesson's four probes.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.8 Exercise DLP, guardrails and audit behavior &middot; v5.0</p><p>Next: Lesson 4.9 Read the failures first, then attack your own pipeline.</p></div>

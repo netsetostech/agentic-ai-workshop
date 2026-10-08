@@ -1,0 +1,95 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 0 &middot; Setup &middot; Lesson 0.3</div>
+<h1>Read the lane, then deploy it: <span>%%N_SA_WORD%% accounts, one checked plan, %%N_SERVICES_WORD%% services and the UI behind IAP</span></h1>
+<p>Lesson 0.2 left you with an operator shell and a lane that runs on your laptop for nothing. This lesson builds the real one in your Google Cloud project, and reads it before it exists: the accounts the kit creates and what each of them may touch, the stores it declares, the switches that would add more, and the items that bill by the hour whether anyone uses them or not. Then you run one <code>make plan</code>, read it, let the kit's guard check it, and run one <code>make up</code> from a blank project: images built, every service deployed as its own account, the UI behind Google's sign-in, and your address on the roster.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_SA%% service accounts</div><div class="hero-chip">%%N_SERVICES%% Cloud Run services</div><div class="hero-chip">%%N_BUCKETS%% buckets</div><div class="hero-chip">%%N_FS_INDEXES%% Firestore indexes</div><div class="hero-chip">%%N_RESOURCES%% resources in one plan</div><div class="hero-chip">No deletes, no replacements</div><div class="hero-chip">IAP on the UI</div><div class="hero-chip">The hourly items, in rupees</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a lane is: one project, its identities, its resource map</a></li>
+<li><a href="#s2">The words: state, plan, account, actAs, invoker, IAP, roster</a></li>
+<li><a href="#setup">Before you run anything: open the operator shell</a></li>
+<li><a href="#s3">A blank project, made ready for a plan</a></li>
+<li><a href="#s4">Identities: %%N_SA%% accounts, %%N_SERVICES_WORD%% of them running a service</a></li>
+<li><a href="#s5">The stores, and the switches that add more</a></li>
+<li><a href="#s6">make plan: a saved plan, checked before you apply it</a></li>
+<li><a href="#s7">make up: apply that plan, then build, deploy and seed</a></li>
+<li><a href="#s8">%%N_SERVICES_CAP%% services, and the account each runs as</a></li>
+<li><a href="#s9">The UI behind IAP, and the roster behind the UI</a></li>
+<li><a href="#s10">What bills by the hour, in rupees</a></li>
+<li><a href="#s11">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the kit creates in your project before it creates it: %%N_SA%% service accounts and what each may touch, the stores, and the items that bill by the hour. Then you deploy the lane once from a blank project with <code>make plan</code> and <code>make up</code>, and prove it: every resource listed in the plan, %%N_SERVICES_WORD%% services up, each as its own account, and the UI behind IAP.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a lane is: one project, its identities, its resource map</h3><p>Three ideas the rest of the page rests on, and a map you can click.</p></div></div>
+
+<p>A <strong>lane</strong> is one complete copy of DocuMind in one Google Cloud project: yours, made in lesson 0.1 with billing and a budget on it. Nothing in it is made by hand. Terraform, reading the kit's <code>terraform/</code> folder, declares the infrastructure: the accounts, the buckets, the databases and their indexes, the network, the search index, the alerts. Cloud Build turns each service's source into an image. Then %%N_SCRIPTS_WORD%% gcloud scripts deploy the services, one script per service. <code>make plan</code> and <code>make up</code> are the two commands that drive all of it.</p>
+
+<p><strong>Identities</strong> are the part that is easy to skip and expensive to get wrong. A program on Google Cloud never acts as "the system". It acts as a <em>service account</em>, an identity with roles but no password, and every call it makes is allowed or refused by what that account holds. The kit gives each of the %%N_SERVICES_WORD%% services its own account, and grants each one what its code uses and nothing it does not: the UI's account cannot read the warehouse, the ingest worker's cannot read a secret, the A2A peer's cannot touch Firestore at all. The same thinking guards the doors. IAM decides which accounts may call a service. IAP, Google's sign-in in front of the UI, decides which people may reach it. The roster, a few documents in Firestore, decides which tenant each signed-in person may read.</p>
+
+<p>The <strong>resource map</strong> is the whole list: %%N_RESOURCES%% resource instances for a blank project, by the kit's own files, and a small part of it that bills by the hour while it exists, used or idle. Knowing which part that is turns "I deployed something" into "I know what I am paying for", which is what lesson 0.4 needs when it switches the lane off.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127970;</div><div>
+<p><strong>A new office building.</strong> The project is the building, on one lease and one electricity meter (the billing account). The service accounts are the staff ID cards: the cleaner's card opens the store rooms, the accountant's opens the finance office, and nobody's card opens every door. The Terraform plan is the architect's drawing, signed before any wall goes up; the kit's guard refuses any drawing that would knock a wall down. <code>make up</code> is the construction crew: it builds exactly the signed drawing, moves the staff in, each with their own card, and hands reception the guest list.</p>
+<p>IAP is the reception desk: it checks your ID at the front door and turns away anyone not on its list. The roster is the floor directory: it says which floor (which tenant) a visitor may go to once inside. And a few rooms keep their lights on day and night whether anyone is in them or not. Those are the hourly items, and step 10 names them with their price.</p></div></div>
+
+<h4>From a blank project to a running lane, in five moves</h4>
+<div class="diagram"><div class="dg-title">What make plan and make up do, in order</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><div class="fs-n">1</div><div><b>Make the project ready.</b> <code>make apis</code> turns on %%N_APIS%% APIs; a state bucket of your own will hold Terraform's record of what it built; <code>infrastructure.py prepare</code> reads your billing account and saves the one GitHub repository you trust to deploy.</div></div><div class="fs-branch"><b>Rule:</b> no step of the kit ever initializes, migrates or switches Terraform's state for you.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">2</div><div><b><code>make plan</code></b> asks Terraform for every change it would make, %%N_RESOURCES%% resources to add on a blank project, saves that plan to a file, and checks it.</div></div><div class="fs-branch"><b>Refused:</b> a plan that deletes or replaces anything, or changes the CI trust.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">3</div><div><b><code>make up</code>, the apply.</b> Exactly the saved plan, checked twice more: %%N_SA%% accounts, %%N_BUCKETS%% buckets, Firestore and %%N_FS_INDEXES%% indexes, Vector Search, %%N_SQL_WORD%% Cloud SQL instances, Spanner, BigQuery, a GKE cluster, the network.</div></div><div class="fs-branch"><b>From here:</b> the hourly items bill until <code>make down</code>.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">4</div><div><b><code>make up</code>, build and deploy.</b> Cloud Build makes %%N_SERVICES_WORD%% images; the %%N_SCRIPTS_WORD%% deploy scripts run each service as its own account, admit only its named callers, and put IAP in front of the UI.</div></div><div class="fs-branch"><b>Each service:</b> one account, named callers only.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">5</div><div><b><code>make up</code>, seed.</b> It waits for the indexes, writes the roster, creates the managed stores, applies a BigQuery view and reports the vector tier, which stays empty until the corpus is ingested.</div></div><div class="fs-branch"><b>Sign-in is IAP's;</b> the tenant is the roster's.</div></div>
+</div>
+<p class="dg-cap">The counts are the kit's own, read from its Terraform and Makefile when this page was built. Steps 3 to 9 run each move on your project and show what it printed on the author's lane.</p></div>
+
+<h4>Click an account, see what it may touch</h4>
+<p>Every account the kit declares is in the menu below, grouped by what it is for. Choose one and the map lights the stores its roles reach, then lists the roles themselves, the grants on single resources (one bucket, one secret, one database), who may call it if it runs a service, and who may act as it. All of it is read from <code>terraform/*.tf</code> and from the deploy scripts <code>make up</code> runs, when this page was built: if the kit changes a grant, the map changes with it.</p>
+
+<div class="diagram" id="resmap">
+<div class="dg-title">Resource map explorer - the kit's accounts and what each may touch</div>
+<label class="rm-l">Account <select id="rm-sel">
+%%RM_OPTIONS%%
+</select></label>
+<p class="rm-sum" id="rm-sum">%%RM_SUM%%</p>
+<div class="rm-stores" id="rm-stores">%%RM_CHIPS%%</div>
+<div class="rm-out" id="rm-out" aria-live="polite">%%RM_DETAIL%%</div>
+<p class="dg-cap">A lit store is one the account's roles or grants reach. A role held at project scope reaches every resource of its kind, including any added later: that is why the ingest worker lights all %%N_BUCKETS_WORD%% buckets while the UI's account lights three, each granted by name. Try <code>documind-agent-sa</code> (Vertex AI and nothing else), <code>documind-outsider-sa</code> (no role at all) and <code>sa-documind-cicd</code> (no data, but it may act as %%N_ACTAS_WORD%% accounts).</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>It is what the kit's files grant, not a live read of your project's IAM. Google's own service agents (Pub/Sub's, IAP's, Dataplex's), roles your organization grants from above, and anything you add by hand are not in it. Two accounts appear that a default lane does not have: the Google Chat bridge's pair, declared only when <code>GCHAT_DOOR=true</code>. Step 8 checks the part that matters most on the live lane: the account each running service really uses.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: state, plan, account, actAs, invoker, IAP, roster</h3><p>Thirteen words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Project</strong></td><td data-label="Meaning">The container every resource, API, permission and bill belongs to. One per learner, thrown away at the end.</td><td data-label="On your lane"><code>documind-ai-YOUR-ID</code>, from lesson 0.1, with billing linked; %%N_APIS%% APIs on after step 3.</td></tr>
+<tr><td><strong>Terraform state</strong></td><td data-label="Meaning">Terraform's record of what it created, so the next plan compares the files with reality instead of starting again. Kept in a bucket so any shell can carry on.</td><td data-label="On your lane"><code>gs://documind-ai-YOUR-ID-tfstate</code>, prefix <code>documind/documind-ai-YOUR-ID</code>.</td></tr>
+<tr><td><strong>Saved plan</strong></td><td data-label="Meaning">The exact list of changes Terraform will make, written to a file. Applying the file applies that list and nothing else; a stale file is refused.</td><td data-label="On your lane"><code>terraform/rag-&lt;UTC time&gt;-&lt;id&gt;.tfplan</code>, selected in <code>runbook-selected-plan.json</code>.</td></tr>
+<tr><td><strong>Service account</strong></td><td data-label="Meaning">An identity a program runs as. It holds roles as a person does, has no password, and its tokens are minted by Google for whatever runs as it.</td><td data-label="On your lane">%%N_SA%% on a default lane; each of the %%N_SERVICES_WORD%% services runs as its own.</td></tr>
+<tr><td><strong>Project role, or a grant on one resource</strong></td><td data-label="Meaning">A role granted on the project reaches every resource of its kind; the same role granted on one bucket, secret or database reaches only that one.</td><td data-label="On your lane">%%N_PROJECT_IAM%% project-role grants in the plan; the UI's account reaches three buckets by name.</td></tr>
+<tr><td><strong>actAs</strong></td><td data-label="Meaning"><code>roles/iam.serviceAccountUser</code> on an account: permission to deploy something that will run as it. Whoever may act as an account may borrow everything it holds.</td><td data-label="On your lane"><code>sa-documind-cicd</code> may act as %%N_ACTAS%% named accounts, itself included, and no others.</td></tr>
+<tr><td><strong>Token Creator</strong></td><td data-label="Meaning"><code>roles/iam.serviceAccountTokenCreator</code> on an account: permission to mint its tokens, which is how a person calls a service as that account.</td><td data-label="On your lane"><code>make up</code> grants it to each address in <code>ADMIN_EMAILS</code> on <code>documind-ui-sa</code> and <code>documind-outsider-sa</code>.</td></tr>
+<tr><td><strong>Invoker</strong></td><td data-label="Meaning"><code>roles/run.invoker</code> on one Cloud Run service: permission to call it at all. Without it a request is refused before the code sees it.</td><td data-label="On your lane"><code>documind-api</code> admits four accounts; <code>documind-ui</code> admits only IAP's service agent.</td></tr>
+<tr><td><strong>CI trust (Workload Identity Federation)</strong></td><td data-label="Meaning">A pool that lets one GitHub repository's workflows, on one branch, become the pipeline's account without any key file.</td><td data-label="On your lane">The repository you name in step 3; a later plan that would change it is refused.</td></tr>
+<tr><td><strong>IAP</strong></td><td data-label="Meaning">Identity-Aware Proxy: Google's sign-in in front of a service. Only accounts holding <code>roles/iap.httpsResourceAccessor</code> on it get through.</td><td data-label="On your lane">On <code>documind-ui</code>, one grant per address in <code>ADMIN_EMAILS</code>.</td></tr>
+<tr><td><strong>Roster</strong></td><td data-label="Meaning">Firestore documents at <code>tenants/{tenant}/members/{email}</code>: which tenant a verified person or account may read. Signing in is not membership.</td><td data-label="On your lane"><code>make roster</code> writes %%N_ROSTER%% memberships: you on acme, the UI's, the MCP server's and the chat service's accounts on all three tenants, the A2A peer's on acme.</td></tr>
+<tr><td><strong>Switch</strong></td><td data-label="Meaning">A Makefile variable that declares resources only while it is true. Once a lane is applied with it on, a plan with it off would delete them, and is refused.</td><td data-label="On your lane">%%N_SWITCHES%% such switches, all off on a first lane.</td></tr>
+<tr><td><strong>Hourly item</strong></td><td data-label="Meaning">A resource billed for every hour it exists, idle or busy, as against one billed for what you store or call.</td><td data-label="On your lane">Five kinds, priced in step 10.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three of these words are about permission to <em>reach</em> something (project role, invoker, IAP) and three about permission to <em>become</em> something (actAs, Token Creator, the CI trust). The second kind is the dangerous kind: a role you cannot hold yourself is a role you can borrow from any account you may become. Every step below comes back to one of them.</p>

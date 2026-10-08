@@ -1,0 +1,57 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>IAM is the door.</strong> The gateway is behind IAM like every service on the lane. A master key would make every caller's ID token an invalid virtual key, so there is none.</li>
+<li><strong>One place decides what may leave.</strong> Presidio lives in the gateway and only there, so the decision "may this text leave our perimeter" is made once, where every route passes.</li>
+<li><strong>The sensitive route has no fallback.</strong> A cold GPU means a slow answer, not a leak.</li>
+<li><strong>Shadow mode first.</strong> <code>ROUTER_ENFORCE=0</code> classifies and logs every request and changes nothing: the safe rollout for a classifier that moves traffic.</li>
+<li><strong>The proxy mints its own tokens.</strong> A pasted token expires at 3 a.m., on a path nobody is watching.</li>
+<li><strong>The gateway prices what it served,</strong> fallbacks included, and the API writes that price on its usage row.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The trace and the token</td><td data-label="Costs">nothing leaves your machine; a venv of about 750 MB</td><td data-label="On your lane">free</td></tr>
+<tr><td><code>make deploy-gateway</code></td><td data-label="Costs">a Cloud Build of the image, with its 400 MB model, and the image's storage in Artifact Registry</td><td data-label="On your lane">build minutes and storage, priced on Google's pages</td></tr>
+<tr><td>The gateway, running</td><td data-label="Costs">CPU-only Cloud Run, at least zero instances and at most three</td><td data-label="On your lane">billed while it serves; nothing while idle</td></tr>
+<tr><td>Its database</td><td data-label="Costs">a <code>db-f1-micro</code> Cloud SQL instance, which Terraform declares with the lane</td><td data-label="On your lane">billed by the hour, whether the gateway runs or not</td></tr>
+<tr><td>The smoke test and the three requests</td><td data-label="Costs">a handful of short Gemini answers</td><td data-label="On your lane">about a paisa or two each, at <code>config.yaml</code>'s rates</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does. The Presidio facts come from the gateway image's own pins, run when this page was built.</p>
+<ul>
+<li><strong>A bare PAN or Aadhaar number leaves.</strong> Presidio 2.2.364 loads no Indian recognizer, and the classifier's second layer needs some entity scored at 0.7 or more; the pattern's own match does not count. A PAN alone is PUBLIC and goes to Gemini. The same PAN beside a date or a name is RESTRICTED.</li>
+<li><strong>The classifier's test cases are a list nothing runs.</strong> Three of its five fail with the image's own pins.</li>
+<li><strong>The smoke test's PAN check cannot fail.</strong> Both branches pass it, so <code>make smoke-gateway</code> is green while the PAN goes to Gemini.</li>
+<li><strong>The mask removes the answer.</strong> A CONFIDENTIAL request has every entity Presidio finds replaced, whatever its score: durations and dates, grade codes, file names. The notice period is masked out of the very context that answers it.</li>
+<li><strong>The tag budgets bind nothing.</strong> <code>config.yaml</code> sets budgets for <code>tenant-acme</code> and <code>tenant-enterprise</code>. The API sends the tenant as metadata, never as a tag, and the lane has no tenant called enterprise.</li>
+<li><strong><code>dlp_audit.py</code> is in the image, and nothing calls it.</strong> The gateway's <code>dlp.user</code> role serves an audit that never runs.</li>
+<li><strong>The database bills without the gateway.</strong> Terraform declares the Cloud SQL instance with the rest of the lane, so it runs by the hour whether <code>make deploy-gateway</code> ever does or not.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Presidio's recognizers</td><td data-label="The check">step 3</td><td data-label="Pass looks like">%%N_RECOG%% names, none of them Indian</td></tr>
+<tr><td>2</td><td data-label="Claim">The classifier's own cases</td><td data-label="The check">step 3</td><td data-label="Pass looks like">three lines of <code>expected RESTRICTED   got PUBLIC</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The hook on four requests</td><td data-label="The check">step 3</td><td data-label="Pass looks like">PUBLIC, PUBLIC, RESTRICTED to <code>documind-sensitive</code>, CONFIDENTIAL masked</td></tr>
+<tr><td>4</td><td data-label="Claim">One token per backend</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>&lt;token 1&gt;</code> twice, then <code>&lt;token 2&gt;</code> and <code>&lt;token 3&gt;</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The door</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>no token is refused at the door  HTTP 403</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The smoke test</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>6 passed</code>, with the PAN <code>served by 'gemini-3.6-flash'</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The cost header on a completion</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>x-litellm-response-cost</code> on the <code>HTTP 200</code> line</td></tr>
+<tr><td>8</td><td data-label="Claim">A PAN re-routed</td><td data-label="The check">step 6</td><td data-label="Pass looks like">the PAN with a date: an error, not a Gemini answer</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>documind-gateway</code> runs on Cloud Run, scaled to zero between calls, and the API's and the UI's accounts may invoke it. Its image is in Artifact Registry, <code>~/gw-venv</code> holds the image's Presidio, and Gemini answered a handful of short questions. The API still answers through Vertex AI (<code>MODEL_BACKEND=vertex</code>). Lesson 9.2 deploys the self-hosted model behind the sensitive route, and puts the API behind the gateway on a candidate revision.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 9 Serving &middot; Lesson 9.1 Trace and authorize gateway routes &middot; v5.0</p><p>Next: Lesson 9.2 Serve a supplied or stock model using Ollama.</p></div>

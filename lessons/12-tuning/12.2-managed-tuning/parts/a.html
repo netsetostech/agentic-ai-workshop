@@ -1,0 +1,102 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 12 &middot; Tuning &middot; Lesson 12.2</div>
+<h1>Validate sanitized datasets and run managed tuning: <span>a checked file, a job, an endpoint</span></h1>
+<p>Lesson 12.1 froze a training file. Before Vertex AI trains on it, you check that it is the file the manifest describes, in the shape the trainer reads. You also check that it carries no personal data and no golden row, and that its tenant lets its text leave India. Only then do you start the job. It runs in <code>us-central1</code>, bills per training token, and returns a tuned model with an endpoint that answers from the location its path names.</p>
+<p>In this lesson you run the kit's two self-tests and validate v2 from the datasets bucket. You submit the tuning job with a name that says v2, and wait for it. Then you call the endpoint once where its path says it lives, and twice where it does not.</p>
+<div class="hero-chips"><div class="hero-chip">make tune</div><div class="hero-chip">tune.py</div><div class="hero-chip">config_for</div><div class="hero-chip">ADAPTER_SIZE_FOUR</div><div class="hero-chip">tuningJobs</div><div class="hero-chip">JOB_STATE_SUCCEEDED</div><div class="hero-chip">locations/us</div><div class="hero-chip">_endpoint_location</div><div class="hero-chip">GENERATOR_LOCATION</div><div class="hero-chip">data_region</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a tuning job needs, does and returns</a></li>
+<li><a href="#s2">The words: managed tuning, the adapter, an epoch, training tokens, config_for, the job, its states, the tuned model, the endpoint, _endpoint_location</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The checks that run before the spend</a></li>
+<li><a href="#s4">The frozen file, validated</a></li>
+<li><a href="#s5">The job, submitted</a></li>
+<li><a href="#s6">The endpoint, and where it answers</a></li>
+<li><a href="#s7">Optional: v3, validated and tuned with its validation file</a></li>
+<li><a href="#s8">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a managed tuning job needs, what it bills and what it hands back. You will learn which failures the kit catches for free before you submit, and which checks it leaves to you. Then you will prove it on your lane: the tuning job's id, and the endpoint's path with its location.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a tuning job needs, does and returns</h3><p>A file, a base and a config in; an adapter trained in the US; an endpoint out, somewhere else.</p></div></div>
+
+<p><strong>What the job needs.</strong> Three things:</p>
+<ul>
+<li><strong>A training file in Cloud Storage.</strong> JSON Lines: each line a system instruction and a conversation, a user turn and then a model turn. That is Google's format, and <code>make trainset</code> wrote v2 in it.</li>
+<li><strong>A base Vertex AI can tune.</strong> Of the Gemini 3 models that is <code>gemini-3.5-flash</code> or <code>gemini-3.1-flash-lite</code>, not <code>gemini-3.6-flash</code>, the model you serve.</li>
+<li><strong>A config:</strong> the number of epochs, the adapter size and a display name.</li>
+</ul>
+<p><code>tune.py</code>'s <code>config_for</code> refuses a base that cannot be tuned, and an adapter size the SDK cannot spell, before anything is submitted. The kit learned the second on its first live run (F37): the SDK spells the size as a word, and a bare 4 failed at submission.</p>
+
+<p><strong>What the job does.</strong> It leaves the base's weights as they are and trains a small adapter beside them, a LoRA adapter. The adapter size is its rank, which sets how many parameters it can learn. The job makes three passes over the rows, three epochs, and bills training tokens: every token in the file, times the epochs. Google's price to tune <code>gemini-3.1-flash-lite</code> is USD 3.00 a million training tokens.</p>
+<p>The job runs where you ask. For both tunable Gemini 3 bases, Google tunes only in <code>us-central1</code> and <code>europe-west4</code>, and the kit asks <code>us-central1</code>. Google keeps the transformed dataset and the tuned model in the job's region, and may run the computation in other US or EU regions.</p>
+
+<p><strong>What it returns.</strong> A job, named by a path that is also its id: <code>projects/NUMBER/locations/us-central1/tuningJobs/...</code>. The job queues, runs, then succeeds, fails or is cancelled, and <code>tune.py --poll</code> prints its state once a minute. When it succeeds, it names a tuned model and the endpoint that serves it.</p>
+<p>For Gemini 3, Google serves tuned models only from the <code>us</code> and <code>eu</code> multi-region endpoints, never from the region the job ran in. The kit's first live job put its endpoint in <code>us</code> while the API assumed <code>us-central1</code> (F41). So the endpoint's path names its location, and the generator calls it there unless <code>GENERATOR_LOCATION</code> says otherwise. <code>tune.py</code>'s own docstring still says the endpoint is regional.</p>
+<p>Once it exists, the endpoint is billed per answer. From Gemini 3 onward, Google prices a tuned endpoint's predictions at 1.5 times the base's; <code>cost.py</code> still prices them at the base rate (lesson 12.1).</p>
+
+<p><strong>Five checks before the spend.</strong> The job reads the file by its URI, and checks none of the rules that make it defensible. So you validate the bytes the job will read:</p>
+<ol>
+<li><strong>The bytes.</strong> They are the ones the manifest's SHA-256 records.</li>
+<li><strong>The shape.</strong> Every row is a system instruction, one user turn and one model turn, text only. The chat file says the same, and every target parses as ModelDraft.</li>
+<li><strong>The test set.</strong> <code>exclude_golden</code> drops none of the rows.</li>
+<li><strong>Personal data.</strong> DLP scans the questions and answers, which <code>make trainset</code> scanned, and the chunks, which it did not. Weights cannot be filtered per tenant afterwards.</li>
+<li><strong>Residency.</strong> The tenant's <code>data_region</code>, through the kit's own <code>permits()</code>: <code>any</code> may be held in <code>us-central1</code>, and <code>in</code> may not.</li>
+</ol>
+<p>Then the size: the training tokens the job will bill, and the longest row against Google's limit of 131,072 tokens an example.</p>
+
+<div class="analogy"><div class="analogy-icon">&#129525;</div><div>
+<p><strong>A ready-made kurta sent for alteration.</strong> The tailoring unit alters it; it does not sew a new one. The tailor takes in a few seams without re-cutting the cloth, over three fittings, and charges for every measurement worked at every fitting. At the counter, an order for a fabric they cannot alter, or a seam allowance they do not stock, is turned away before any cutting, free.</p>
+<p>Before you hand it over, you check the measurement sheet yourself. It is the sheet you signed, written on the tailor's form, with nobody else's details on it. The unit is in another city, so your family's rule must also let the cloth leave town. When the work is done, the kurta waits at a showroom somewhere else again, and the pickup slip names it. Take the slip back to the unit and they tell you it is not there.</p>
+<p>The kurta is the base model, the seams are the adapter and the fittings are the epochs. The charge per measurement is the training token, and the counter is <code>config_for</code>. The sheet checks are the validation, and the family's rule is <code>data_region</code>. The unit is <code>us-central1</code>, the showroom is the <code>us</code> multi-region, and the pickup slip is the endpoint's path.</p></div></div>
+
+<h4>Submit a job, then serve its endpoint</h4>
+<p>Set a tuning config and see what <code>tune.py</code> does with it before anything is sent, what the job would bill for this page's v2, and what the tuned model would be called. Then pick a <code>GENERATOR_MODEL</code> and a <code>GENERATOR_LOCATION</code>, and see which client the generator builds and whether that location answers.</p>
+
+<div class="diagram pc" id="tj">
+<div class="dg-title">make tune's checks, the job's bill, and the generator's client</div>
+<div class="tj-cols">
+<div class="pc-box"><b class="h">Submit: make tune</b>
+<div class="pc-in"><label>TUNE_BASE<select id="tj-base">%%BASE_OPTIONS%%</select></label>
+<label>TUNE_EPOCHS<select id="tj-epochs">%%EPOCH_OPTIONS%%</select></label>
+<label>TUNE_ADAPTER<select id="tj-adapter">%%ADAPTER_OPTIONS%%</select></label>
+<label>--display-name<select id="tj-name">%%NAME_OPTIONS%%</select></label></div>
+<div class="tj-out" id="tj-submit" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">Serve: the generator</b>
+<div class="pc-in"><label>GENERATOR_MODEL<select id="tj-model">%%MODEL_OPTIONS%%</select></label>
+<label>GENERATOR_LOCATION<select id="tj-loc">%%LOC_OPTIONS%%</select></label></div>
+<div class="tj-out" id="tj-serve" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The rules are the kit's: <code>tune.config_for</code>, and <code>generator._client_for</code> with <code>_endpoint_location</code>, ported and compared with the kit's own functions on all %%N_CHECKED%% combinations. The rest is Google's, checked on its pages on 24 September 2026: USD 3.00 a million training tokens for <code>gemini-3.1-flash-lite</code> and 10.00 for <code>gemini-3.5-flash</code>; adapter sizes 1, 2, 4, 8 and 16; and a tuned Gemini 3 endpoint answering only from its multi-region. The tokens are this page's v2, by the kit's estimate.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It follows one config and one setting, and submits nothing. It cannot tell whether your project has room for a job today: Google gives every project a quota of at least one concurrent tuning job, shared across all regions.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: managed tuning, the adapter, an epoch, training tokens, config_for, the job, its states, the tuned model, the endpoint, _endpoint_location</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Managed tuning</strong></td><td data-label="Meaning">Vertex AI trains an adapter on a frozen base, from your rows, and serves the result.</td><td data-label="On your lane"><code>make tune</code>: <code>gemini-3.1-flash-lite</code>, in <code>us-central1</code></td></tr>
+<tr><td><strong>The adapter size</strong></td><td data-label="Meaning">The LoRA rank: how many parameters the job trains. The SDK spells it as a word.</td><td data-label="On your lane">4, sent as <code>ADAPTER_SIZE_FOUR</code></td></tr>
+<tr><td><strong>An epoch</strong></td><td data-label="Meaning">One full pass over the rows.</td><td data-label="On your lane">3 (<code>TUNE_EPOCHS</code>)</td></tr>
+<tr><td><strong>Training tokens</strong></td><td data-label="Meaning">Every token in the file, times the epochs: what the job bills.</td><td data-label="On your lane">about %%TRAIN_TOKENS%% for this page's v2</td></tr>
+<tr><td><strong><code>config_for</code></strong></td><td data-label="Meaning"><code>tune.py</code>'s check before submission: the base is tunable, and the rank is one the SDK spells.</td><td data-label="On your lane">refuses <code>gemini-3.6-flash</code> and rank 3</td></tr>
+<tr><td><strong>The tuning job</strong></td><td data-label="Meaning">The work Vertex AI runs. Its name is a path, and the path is its id.</td><td data-label="On your lane"><code>.../locations/us-central1/tuningJobs/...</code></td></tr>
+<tr><td><strong>Its states</strong></td><td data-label="Meaning">Pending, running, then succeeded, failed or cancelled.</td><td data-label="On your lane"><code>tune.py --poll</code> prints one a minute</td></tr>
+<tr><td><strong>The tuned model</strong></td><td data-label="Meaning">The base plus the adapter, as a model resource with a version.</td><td data-label="On your lane"><code>.../locations/us/models/...@1</code></td></tr>
+<tr><td><strong>The endpoint</strong></td><td data-label="Meaning">Where the tuned model answers. Its path names its location, and nowhere else serves it.</td><td data-label="On your lane"><code>.../locations/us/endpoints/...</code></td></tr>
+<tr><td><strong><code>_endpoint_location</code></strong></td><td data-label="Meaning">The generator's rule: <code>GENERATOR_LOCATION</code>, else the path's location, else the service's region.</td><td data-label="On your lane"><code>us</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the job runs in a region, and the endpoint answers from a location. The job's path says <code>us-central1</code> and the endpoint's says <code>us</code>. Ask for the endpoint anywhere else, and it is not found.</p>

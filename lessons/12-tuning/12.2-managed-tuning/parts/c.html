@@ -1,0 +1,89 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Prove, optional</span><h3>Optional: v3, validated and tuned with its validation file</h3><p>If you built lesson 12.1's v3: the five checks on the served shape, make tune with --validation, and the poll to a second endpoint.</p></div></div>
+
+<p>Lesson 12.1's step 7 wrote v3: the prompt the generator really sends, the house style, a Hinglish twin for every second chunk, and a validation file. This step tunes a second model on it, next to the first. The first job and its endpoint do not change, and lesson 12.3's step 7 serves this one.</p>
+
+<h4>What is different about v3</h4>
+<ul>
+<li><strong>The shape.</strong> A v3 row has no system instruction. Its one user turn is the prompt the generator sends, with <code>SYSTEM</code> inside it, so the model trains on exactly what it will be served. A system instruction is optional in Vertex AI's tuning format.</li>
+<li><strong>The checks read more.</strong> The golden check reads the rows index, which names the chunk behind every row and every chunk beside it in the prompt. DLP reads every prompt, and so every chunk.</li>
+<li><strong>The validation file.</strong> <code>--validation</code> hands the job <code>documind_sft_v3.validation.vertex.jsonl</code>: %%N3H%% rows from one chunk in ten, which the job scores as it trains and never trains on. A validation loss that climbs while the training loss falls means the model is memorising its rows, not learning the habit. Google recommends a validation set, and <code>tune.py</code> has always taken one. v3 is the first file that comes with one.</li>
+<li><strong>The size.</strong> With three sources in every prompt, v3 is about %%V3_RATIO%% times v2's tokens: about %%TOK3_EPOCH%% an epoch, or about Rs %%TRAIN3_RS%% for three epochs. Expect the job to take longer than step 6's.</li>
+</ul>
+
+<h4>Do it</h4>
+%%CELL_V3CHECK%%
+%%OUT_V3CHECK%%
+<p>Then submit the job with a name that says v3 and the validation file, and return at once:</p>
+%%CELL_TUNE3%%
+%%OUT_TUNE3%%
+<p>Then wait for it. The poll only reads, so after a disconnect it is safe to run again:</p>
+%%CELL_POLL3%%
+%%OUT_POLL3%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>v3 passed the checks the plain file needs, and more.</strong> Every row is the served prompt. No row and no chunk in a prompt is golden evidence, and DLP found nothing in any chunk, because <code>make trainset</code> had already dropped what it found.</li>
+<li><strong>The job took the validation file.</strong> <code>make</code> echoes it in <code>TUNE_ARGS</code>, and the job scores it as it trains. The Vertex AI console's page for the job charts its loss beside the training loss.</li>
+<li><strong>A second endpoint, in <code>us</code> like the first.</strong> <code>~/poll172v3.log</code> holds it, and <code>ENDPOINT_V3</code> holds it in this shell. It is billed only when it answers.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Check before you spend.</strong> A base or a rank the service refuses is refused at submission, after the file is written, uploaded and paid for. <code>config_for</code> refuses it first, for nothing, and says why (F37).</li>
+<li><strong>Tuning is an explicit act.</strong> It bills per training token, and nothing else on the lane starts it.</li>
+<li><strong>Personal data and residency are checked before the job, not after.</strong> Weights cannot be filtered per tenant afterwards.</li>
+<li><strong>A regional job, a multi-region endpoint: the path knows.</strong> The generator reads the location from the endpoint's path (F41), and <code>GENERATOR_LOCATION</code> overrides it without a code change.</li>
+<li><strong>A tuned model is a setting.</strong> <code>GENERATOR_MODEL</code> names the endpoint and <code>RAG_MODEL_BASE</code> names its base, for pricing. Lesson 12.3 puts both on a candidate revision that takes no traffic.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The checks</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The validation</td><td data-label="Costs">reads the bucket and Firestore; DLP over less than a megabyte of text</td><td data-label="On your lane">cents at most, by <code>shared/pii.py</code>'s own note</td></tr>
+<tr><td>The job</td><td data-label="Costs">about %%TRAIN_TOKENS%% training tokens: v2, three times</td><td data-label="On your lane">about Rs %%TRAIN_RS%% at USD 3.00 a million, Google's price on 24 September 2026. The second <code>SYSTEM</code> in every row (12.1) is about %%SYS_TOK%% of those tokens, about Rs %%SYS_RS%%</td></tr>
+<tr><td>The poll</td><td data-label="Costs">reads the job</td><td data-label="On your lane">free</td></tr>
+<tr><td>The v3 job (step 7)</td><td data-label="Costs">about %%TRAIN3_TOKENS%% training tokens: v3, three times; its validation file is scored, never trained on</td><td data-label="On your lane">about Rs %%TRAIN3_RS%% at USD 3.00 a million. Optional</td></tr>
+<tr><td>The call</td><td data-label="Costs">one short answer at 1.5 times flash-lite; the two calls that are not found</td><td data-label="On your lane">a few paise; nothing for a 404</td></tr>
+<tr><td>The endpoint, kept</td><td data-label="Costs">billed per answer</td><td data-label="On your lane">Google's pricing page prices a tuned endpoint's predictions, and lists no charge for keeping one</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does. Google's figures were checked on its pages on 24 September 2026.</p>
+<ul>
+<li><strong>Nothing checks the file before the job.</strong> <code>tune.py</code> passes the file's URI and reads neither the manifest nor the bytes. The job trains on whatever the object holds when it starts. Step 4 is that check, and it lives on this page.</li>
+<li><strong>Nothing checks residency.</strong> <code>make trainset</code> takes any <code>TENANT</code>, and <code>tune.py</code> submits to <code>us-central1</code>; neither reads <code>tenant_settings</code>. Google tunes these bases only in the US or the EU, so an <code>in</code> tenant's text would leave India. globex's policy is <code>in</code>, and <code>make trainset TENANT=globex</code> would write %%N_GLOBEX%% of its chunks, its copies of the DPDP and IT Acts, into a file <code>make tune</code> would send.</li>
+<li><strong>No validation split by default.</strong> Google strongly recommends a validation dataset. <code>tune.py</code> accepts <code>--validation</code>, but the plain <code>make trainset</code> writes none and <code>make tune</code> passes none, so a v2 job reports its training metrics only. v3 writes one, and step 7 passes it by hand.</li>
+<li><strong>The display name says v1, whatever you tune.</strong> <code>--display-name</code> defaults to <code>documind-sft-v1</code>, and <code>make tune</code> passes none.</li>
+<li><strong>The rank check is the SDK's, not Google's.</strong> <code>config_for</code> accepts 32, which Google's page does not list for either tunable Gemini 3 base.</li>
+<li><strong>The kit prices a tuned endpoint at its base rate.</strong> <code>cost.py</code> bills an endpoint path at <code>RAG_MODEL_BASE</code>'s price, where Google's page says 1.5 times. The usage rows, <code>make usage</code> and <code>tenant_daily</code> would count a tuned model's answers at two thirds of their price.</li>
+<li><strong>Nothing records what produced the endpoint.</strong> <code>tune.py</code> prints the job and the endpoint once and writes nothing down. <code>--poll</code> prints <code>RAG_MODEL_BASE</code> from its own default, not from the job's base. This page's two log files are the only record.</li>
+</ul></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane. The ninth is for step 7, if you ran it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The self-tests</td><td data-label="The check">step 3</td><td data-label="Pass looks like">three <code>selftest:</code> lines: two from <code>make_trainset.py</code>, one from <code>tune.py</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Refused before the spend</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>gemini-3.6-flash</code> and rank 3 <code>refused before submission</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The bytes the job will read</td><td data-label="The check">step 4</td><td data-label="Pass looks like">both <code>sha256 as the manifest says</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The rows</td><td data-label="The check">step 4</td><td data-label="Pass looks like">every row in shape; <code>would drop 0</code>; <code>0 rows</code> where <code>make trainset</code> scans</td></tr>
+<tr><td>5</td><td data-label="Claim">Residency</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>data_region is any</code> and <code>True</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The tuning job id</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>JOB=projects/NUMBER/locations/us-central1/tuningJobs/...</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The endpoint's path with its location</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>JOB_STATE_SUCCEEDED</code>; <code>ENDPOINT=projects/NUMBER/locations/us/endpoints/...</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Where it answers</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>404</code> at <code>us-central1</code> and <code>global</code>; <code>answered</code> at <code>us</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The v3 job, if you ran it</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>verdict: ready to tune</code>; <code>JOB_V3=...</code>; <code>ENDPOINT_V3=projects/NUMBER/locations/us/endpoints/...</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Your project has one finished tuning job in <code>us-central1</code>, billed once. It has a tuned model and its endpoint in the <code>us</code> multi-region, billed only when the endpoint answers. <code>~/tune172.log</code> holds the job, <code>~/poll172.log</code> holds the endpoint, and <code>ENDPOINT</code> holds it in this shell. v2 and the datasets bucket are as lesson 12.1 left them. Lesson 12.3 serves the endpoint on a candidate revision with no traffic, with <code>make candidate PROJECT="$PROJECT" GENERATOR_MODEL="$ENDPOINT" RAG_MODEL_BASE=gemini-3.1-flash-lite</code>, and compares it with the served model. If you ran step 7, there is a second job and a second endpoint, with <code>~/tune172v3.log</code> and <code>~/poll172v3.log</code>, and lesson 12.3's step 7 serves that one.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 12 Tuning &middot; Lesson 12.2 Validate sanitized datasets and run managed tuning &middot; v5.0</p><p>Next: Lesson 12.3 Compare the tuned candidate with an uncontaminated baseline.</p></div>

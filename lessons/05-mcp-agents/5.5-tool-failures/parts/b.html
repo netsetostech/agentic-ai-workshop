@@ -1,0 +1,92 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>tok</code>. You need <code>~/graph-venv</code> from lesson 5.4, and the step 3 cell makes it if it is missing. The chat service must be running in your region, from lesson 5.1's step 3, built from this lesson's kit: an older image has no <code>limits</code> on its <code>/health</code>, and <code>make limits</code> says so. Step 4's drill changes one setting on the chat service for a minute or two and puts it back. Step 5 sends three requests to the chat service, and step 6 makes two retrievals.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Five failures</span><h3>Five failures through the kit's LangChain brain</h3><p>A scripted model asks for five things that go wrong. The kit's guard, LangChain, the timer and the tool layer answer.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell builds the kit's <code>LangChainBrain</code>, the chat service's default, with a scripted model and an in-memory saver. It starts a rag-api on your machine that takes two seconds to answer, points the one <code>retrieve()</code> at it with a client timeout of half a second, and stands in its ID token. It captures the log lines of the guard, the timer, the adapter and <code>retrieve()</code>. Then it runs five turns, each with a <code>Meter</code> of its own. Each asks for one tool call and prints how long the turn took, <code>refusals</code>, the Meter's <code>tool_timeouts</code>, and the result the model read, with its status. The five are:</p>
+<ul>
+<li><strong>blocked:</strong> <code>delete_document</code>, a blocked name;</li>
+<li><strong>bad args:</strong> the cost tool with <code>total_pages="many"</code>;</li>
+<li><strong>no such:</strong> <code>summon_rain</code>, a tool that does not exist;</li>
+<li><strong>timed out:</strong> <code>retrieve</code> against the slow rag-api, whose client gives up first;</li>
+<li><strong>cut:</strong> <code>retrieve</code> again, with a client that would wait five seconds and a budget of one.</li>
+</ul>
+
+<h4>The code</h4>
+@@limits@@
+@@guard@@
+@@timed@@
+@@asdata@@
+@@adapter@@
+
+<h4>Do it: the venv</h4>
+%%CELL_VENV%%
+%%OUT_VENV%%
+
+<h4>Do it: five failures</h4>
+%%CELL_FAIL%%
+%%OUT_FAIL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three turns ended with a non-empty <code>refusals</code>: the blocked name, the bad argument and the unknown tool. That is the first proof. Each was an error result, and the model read why. The three look alike in <code>refusals</code>. Only the result's text tells a policy refusal from a mistake. The timed-out retrieval took half a second, the client timeout, and was not left hanging. The model read <code>document search is unavailable</code> as ordinary data, so <code>refusals</code> stayed empty. The cut retrieval took one second, its budget, though its client would have waited five. The model read that <code>retrieve</code> did not answer within 1s and was abandoned, <code>refusals</code> stayed empty, and <code>tool_timeouts</code> named it. That is the second: a timed-out tool reported, and counted. The log shows each layer saying so in its own words: the one <code>retrieve()</code>, the adapter and the timer. The timer's line for the timed-out run names a budget of %%SHELL_RETRIEVE_S%% seconds: <code>RAG_TIMEOUT_S</code> is not set in your shell, so it is its default, %%SHELL_RAG_S%%, plus 5, computed when <code>tools.py</code> was imported. Setting <code>dt.RAG_TIMEOUT_S</code> to 0.5 afterwards does not move it; the cell sets <code>tools.TIMEOUTS["retrieve"]</code> itself before the cut run, which is why the next line reads <code>budget 1s</code>. Read the last two lines: the abandoned call ran on in its thread and finished at two seconds, after the turn had moved on. On the lane, rag-api answers that call and bills it on its own row, but the call writes nothing into the turn: its cost is not charged to the turn's <code>Meter</code>, and a citation it brings back is not numbered, so the answer never lists a source the model did not read.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The turn's limits</span><h3>A turn that will not stop: the call cap, the rupees and the deadline</h3><p>A looping model on your machine, every brain in the kit's tests, then your lane's limits and a capped turn on it.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat service makes a <code>Meter</code> for each turn and hands it to the brain in the runtime context. Before each model call the brain asks it <code>allow_model_call()</code>. The first call is always allowed. After that the Meter refuses a call once the turn has made %%MAX_CALLS%% calls, once it has spent Rs %%BUDGET_INR%%, or once fewer than %%MIN_S%% of its %%DEADLINE_S%% seconds are left. Each model call also gets a timeout of its own: the smaller of %%MODEL_S%% seconds and the time left divided by its %%ATTEMPTS%% attempts. A refused call is never made. The brain ends the turn with the stop sentence instead, and the Meter records the reason. In the LangChain brain that check is <code>TurnLimitsMiddleware</code>, which wraps the model call and nothing else, so a turn writes the same checkpoints it did before.</p>
+<p>The first cell builds the LangChain brain on a model that asks for the cost tool on every call, with a cap of 3 so the run is short, then asks a second question on the same thread with a model that answers. <code>make limits-check</code>, which is <code>commands/limits-check.sh</code>, runs the kit's own test file, <code>commands/tests/test_chat_limits.py</code>, on all three agent brains: the cap, the rupees and the deadline, a slow search, a hung model, and the chat service's HTTP 200. <code>make limits</code> reads what your deployed chat publishes. <code>make limits-drill STOP=model_calls</code>, which is <code>commands/limits-drill.sh</code>, sets <code>CHAT_MAX_MODEL_CALLS=1</code> on the chat service, runs <code>make smoke-chat</code>'s test expecting every agent brain to stop, puts the setting back and runs the test again. <code>STOP=turn_budget</code> does the same with the rupee cap, in lesson 11.6.</p>
+
+<h4>The code</h4>
+@@meter@@
+@@mw@@
+
+<h4>Do it: a model that never stops asking</h4>
+%%CELL_LOOP%%
+%%OUT_LOOP%%
+
+<h4>Do it: every brain, offline</h4>
+%%CELL_CHECK%%
+%%OUT_CHECK%%
+
+<h4>Do it: your lane's limits</h4>
+%%CELL_LIMITS%%
+%%OUT_LIMITS%%
+
+<h4>Do it: a capped turn on your lane</h4>
+%%CELL_DRILL%%
+%%OUT_DRILL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The looping model made three calls and ran the cost tool three times. The Meter refused the fourth call, so it was never made, and the turn ended with the stop sentence and <code>stopped_by model_calls</code>. The thread holds ten messages, and every tool call in it has its result, so the second question was answered as if nothing had happened. <code>make limits-check</code> ran %%N_TESTS%% tests, and they include the same stop through the LangGraph and ADK brains. <code>make limits</code> shows the numbers your chat runs under. The A2A peer, which lesson 10.6 traces, publishes no cap yet, so ADK's own default of 500 applies there. In the drill, every agent brain answered HTTP 200 with the stop sentence after one model call, and <code>direct</code>, which makes no model call of its own here, answered as usual. With the setting restored, the same test passed with no stop. That is the proof for the turn's limits: a turn on your lane stopped at its limit, and still answered.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The door</span><h3>Access failures at the chat service's door</h3><p>The outsider, a token that names nobody, and a roster member, each asking the same question.</p></div></div>
+
+<h4>Definition</h4>
+<p>IAM admits all three accounts to the chat service: <code>documind-ui-sa</code> and <code>documind-outsider-sa</code> both hold the invoker role on it. The service then asks <code>shared/iap.identity()</code> who is calling. A bearer token minted without <code>--include-email</code> names nobody, which is a 401. The outsider is somebody, and <code>tenant_for()</code> finds them on no roster, which is a 403. The member reaches the default brain and gets an answer. The first two never reach a brain, a tool or a model.</p>
+
+<h4>The code</h4>
+@@door@@
+
+<h4>Do it</h4>
+%%CELL_ACCESS%%
+%%OUT_ACCESS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three statuses, three layers. The 403 came from the roster: the outsider's token was fine, and no tenant lists it. The 401 came from the identity check: the token was genuine, but carried no email to look up. The 200 came from a member, whose tenant the roster supplied. None of the requests could have named a tenant, because the chat request has no field for one. These two refusals cost nothing, because they are decided before a model is called.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; An argument</span><h3>An argument the corpus cannot honour</h3><p>One question with and without a <code>doc_type</code> filter, then what rag-api's rows say about it.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat service's <code>retrieve</code> tool tells the model it may filter by <code>doc_type</code>: policy, contract, invoice, form or research_paper. The worker stamps every text upload <code>unknown</code>, as lesson 2.1 found, so each of those values filters out every text document. The filter is a valid argument, so nothing refuses it. The pool simply comes back empty, and rag-api answers with its fixed empty-pool text, at no model cost. The cell asks about the April invoice with no filter, then with <code>doc_type</code> <code>invoice</code>, through the one <code>retrieve()</code>. It then reads rag-api's rows for both calls.</p>
+
+<h4>Do it</h4>
+%%CELL_FILTER%%
+%%OUT_FILTER%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Without the filter, five citations and the invoice's total. With <code>doc_type</code> <code>invoice</code>, nothing: no citations, <code>answerable</code> false, and the empty-pool text, which reads exactly like a corpus that holds no invoice. Asked by a model, this turn ends with <code>tool_calls ['retrieve']</code> and <code>refusals []</code>. The only trace of the bad argument is rag-api's row: <code>pool 0</code>, beside a question the corpus can answer. The filter itself appears on no row and in no log.</p></div>

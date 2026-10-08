@@ -1,0 +1,91 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.1</div>
+<h1>Build a useful evaluation dataset: <span>rows that can fail, that find their evidence, and that cannot quietly vanish</span></h1>
+<p>Module 4 measures the answer, and the measure is a set of questions with answer keys: the kit's golden set, %%N_ROWS%% rows over %%N_TENANTS%% tenants. You find the one clause of ACME's handbook that no row asks about and write a row for it, which the offline gate accepts. Then you write the hardest shape, an isolation row for Zeta. The gate refuses it twice, each time with a sentence that says why, and accepts it on the third try. You ask both rows once against the API, label two paraphrases, and see why a question generated from a chunk is a candidate and not a row. Only step 6 and the last cell of step 7 call the cloud.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_ROWS%% rows, five shapes</div><div class="hero-chip">must_contain: a figure</div><div class="hero-chip">must_not_contain: another tenant's</div><div class="hero-chip">must_retrieve: a code and a slug</div><div class="hero-chip">required.json: %%N_REQ%% ids</div><div class="hero-chip">make eval: exit 0 or 1</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a golden row promises, and what makes it useful</a></li>
+<li><a href="#s2">The words: row, shape, must_contain, must_not_contain, anchor, answerable, source, required, gate, pair, candidate</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The set as it stands: the gate, the rows that cite the handbook, and the clause no row asks about</a></li>
+<li><a href="#s4">A lookup row: written into build_golden.py, built, and judged</a></li>
+<li><a href="#s5">An isolation row: the marker that cannot work, the list it must join, and the gate green again</a></li>
+<li><a href="#s6">Ask the two rows once: the live half's own functions, and the outsider's 403</a></li>
+<li><a href="#s7">Paraphrase pairs and generated candidates: two kinds of row that are not golden</a></li>
+<li><a href="#s8">What rows cost, how a golden set rots, and handing the kit back</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what makes a golden row useful. It can fail, its evidence can be found, and the rows that would go red cannot be deleted without a reviewed change. You will learn how the offline gate checks each of these, and the one thing no gate can check for you. Then you will prove it on your lane: add a lookup row and an isolation row to the kit's golden set, watch the gate refuse the isolation row twice and accept it on the third try, and ask both rows once against the API.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a golden row promises, and what makes it useful</h3><p>A question with an answer key, and four things the key must be. The gate can check three of them.</p></div></div>
+
+<p><strong>A golden row is a question with an answer key.</strong> Each row names a tenant and a question. It says which figures a right answer contains, where the evidence lives, and whether the tenant's documents can answer at all. The kit keeps %%N_ROWS%% of them in <code>evals/golden.jsonl</code>. The eval gate judges the model with these rows, so the rows have to be judged first. A row that can never fail lets a broken system through. A row that can never pass blocks a good one. Both look like tests.</p>
+
+<p><strong>There are five shapes, and each catches a different way to be wrong.</strong> A lookup asks for one fact from one clause. A join needs two clauses, so the packing order and the budget of lesson 3.4 matter. A refusal asks for something the tenant's documents do not hold, and the right answer says so. An isolation row asks one tenant for a fact that only another tenant holds, or holds differently. An answer that carries the other tenant's figure is a leak. A version row asks about a document that has been re-issued, and forbids the figure only the retired version carries.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Shape</th><th>What it asks</th><th>How an answer fails it</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>lookup</strong></td><td data-label="What it asks">one fact from one clause</td><td data-label="How an answer fails it">the figure is missing, or the reply refuses</td><td data-label="In the kit">%%N_LOOKUP%% rows, at least %%MIN_LOOKUP%%</td></tr>
+<tr><td><strong>join</strong></td><td data-label="What it asks">two facts, from two clauses or two documents</td><td data-label="How an answer fails it">either figure is missing</td><td data-label="In the kit">%%N_JOIN%% rows, at least %%MIN_JOIN%%</td></tr>
+<tr><td><strong>refusal</strong></td><td data-label="What it asks">something the tenant's documents do not hold</td><td data-label="How an answer fails it">the reply answers anyway</td><td data-label="In the kit">%%N_REFUSAL%% rows, at least %%MIN_REFUSAL%%</td></tr>
+<tr><td><strong>isolation</strong></td><td data-label="What it asks">a fact another tenant holds, or holds differently</td><td data-label="How an answer fails it">the other tenant's figure appears</td><td data-label="In the kit">%%N_ISO%% rows, at least %%MIN_ISO%%; every one required</td></tr>
+<tr><td><strong>version</strong></td><td data-label="What it asks">a fact from a document that was re-issued</td><td data-label="How an answer fails it">the retired version's figure appears</td><td data-label="In the kit">%%N_VERSION%% row, at least %%MIN_VERSION%%; required</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>Useful means four things, and the gate can check three of them.</strong> The row is <em>falsifiable</em>: every figure it demands is in its own tenant's files, and every figure it forbids is in another tenant's files and not its own. It is <em>anchored</em>: every <code>must_retrieve</code> anchor, a clause code or a document's slug, can be found. It is <em>covered</em>: every isolation, version and media row is listed in <code>required.json</code>, so deleting one is a change somebody reviews. The fourth is that the key is right: that 45 days really answers the question you asked. No gate checks that, because a wrong figure from the right tenant's files passes every rule. You check it by reading the clause.</p>
+
+<p><strong>An anchor is a figure, a date or a code, never a sentence.</strong> The live half matches figures, not wording. It lower-cases both sides, drops the commas, turns number words into digits and "per cent" into %, and then requires the figure to stand on its own. So "twelve weeks" matches "12 weeks", and "60" does not match "160 days". The words around the figure still have to match exactly. The kit learned this from its own rows. Three overtime rows anchored on "twice the rate of wages", and a model that wrote "twice the normal rate of wages" was scored wrong. A refusal row asked for a GST rate, and the invoice says "GST @ 18%", so the model was right and the row was wrong. Each fix is a line in <code>build_golden.py</code>, with a note that says why.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128221;</div><div>
+<p><strong>A question paper and its moderator.</strong> A teacher sets a paper and writes the answer key. Before the exam, a moderator checks the paper. Every answer in the key must be printed in the textbook, every page reference must exist, and the questions the board requires must all still be there. The moderator cannot tell whether the key's answer to question 7 is the right answer to question 7. Only someone who has read the chapter can. The offline gate is the moderator. You are the teacher. The live run of lesson 4.2 is the exam.</p></div></div>
+
+<h4>The row scorer: a row, the evidence the offline gate finds, and an answer scored the way the live half scores it</h4>
+<p>Pick a row. The first box shows it as <code>golden.jsonl</code> holds it, without its note, and what the offline gate finds for each assertion. The second box scores an answer by the live half's rules: try the presets, then type your own. The %%N_SCORER%% rows are kit rows that each carry a lesson, two rows as they were first written, and the rows you will add.</p>
+
+<div class="diagram rs" id="scorer">
+<div class="dg-title">Row scorer - run_eval.py's matching rules, on %%N_SCORER%% rows and %%N_PRESETS%% preset answers</div>
+<label class="rs-l">Row<select id="rs-row"></select></label>
+<pre class="rs-json" id="rs-json" tabindex="0"></pre>
+<p class="rs-why" id="rs-why"></p>
+<div class="rs-box" id="rs-off"></div>
+<div class="rs-box"><b class="h">Live: score an answer</b>
+<div class="rs-chips" id="rs-chips"></div>
+<label class="rs-l">The API's answer<textarea id="rs-ans" rows="3" spellcheck="false"></textarea></label>
+<label class="rs-said"><input type="checkbox" id="rs-said"> the API answered it (answerable true in its reply)</label>
+<div id="rs-out" aria-live="polite"></div></div>
+<p class="dg-cap">The evidence is the gate's own matching rule, run over <code>evals/corpus</code> when this page was built. The scorer is <code>normalise()</code>, <code>contains()</code> and the per-row judgment of <code>live()</code>, ported from <code>run_eval.py</code>. For every preset, the build checked the scorer's verdict against the kit's own <code>live()</code>.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the scorer is not</div>
+<p>It has no model and no retriever, so the answer is whatever you type. It assumes a valid citation of the right kind; the live half also checks that every citation names the row's tenant, its own document and a current version. It cannot tell you whether a refusal row is right, and neither can the offline gate. Only a live run can, which is how rf-07 was found.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: row, shape, must_contain, must_not_contain, anchor, answerable, source, required, gate, pair, candidate</h3><p>Twelve rows, each with the value it takes in the kit you cloned.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In your kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Golden row</strong></td><td data-label="Meaning">One JSON line: <code>id</code>, <code>shape</code>, <code>question</code>, <code>tenant</code>, <code>must_contain</code>, <code>must_retrieve</code>, <code>answerable</code>, and optional fields. It is written as an <code>R(...)</code> call in <code>build_golden.py</code>, which checks it and writes <code>golden.jsonl</code>.</td><td data-label="In your kit">%%N_ROWS%% rows over %%N_TENANTS%% tenants and %%N_DOCS%% text files</td></tr>
+<tr><td><strong>Shape</strong></td><td data-label="Meaning">lookup, join, refusal, isolation or version. <code>MIN_ROWS</code> in <code>run_eval.py</code> is the fewest of each the gate accepts.</td><td data-label="In your kit">%%N_LOOKUP%%, %%N_JOIN%%, %%N_REFUSAL%%, %%N_ISO%% and %%N_VERSION%%</td></tr>
+<tr><td><strong>must_contain</strong></td><td data-label="Meaning">The figures a right answer contains. Offline, each must be in the tenant's own files. Live, each must be found by <code>contains()</code>.</td><td data-label="In your kit">lk-06: <code>60</code></td></tr>
+<tr><td><strong>must_not_contain</strong></td><td data-label="Meaning">Figures a right answer never contains. An isolation row's must be in another tenant's files and not its own. A version row's must be absent from the current document and present in a retired one under <code>evals/demo</code>.</td><td data-label="In your kit">iso-01: <code>40,000</code>; vr-01: <code>90 days</code></td></tr>
+<tr><td><strong>must_cite_kind</strong></td><td data-label="Meaning">A media row asks for a figure or a video-segment citation, not only the right words.</td><td data-label="In your kit">mm-01 to mm-03</td></tr>
+<tr><td><strong>Anchor</strong></td><td data-label="Meaning">An entry of <code>must_retrieve</code>: a clause code or a document's slug, matched against the file names and the text joined together. The slug is also what <code>--source</code> scopes by.</td><td data-label="In your kit">lk-06: <code>NP-03</code>, <code>hr_policy_2026</code></td></tr>
+<tr><td><strong>answerable</strong></td><td data-label="Meaning">Whether the tenant's documents can answer. False for every refusal and for most isolation rows.</td><td data-label="In your kit">%%N_ANSWERABLE%% true, %%N_UNANSWERABLE%% false</td></tr>
+<tr><td><strong>source</strong></td><td data-label="Meaning">A version row's document. The current version is under <code>evals/corpus</code>, the retired ones under <code>evals/demo</code>.</td><td data-label="In your kit">vr-01: <code>hr_policy_2026.md</code></td></tr>
+<tr><td><strong>required.json</strong></td><td data-label="Meaning">The ids that must exist and must pass one by one, live: every isolation, version and media row. Removing one is a reviewed change to this file.</td><td data-label="In your kit">%%N_REQ%% ids</td></tr>
+<tr><td><strong>The offline gate</strong></td><td data-label="Meaning"><code>make eval</code>: three checks over the committed file, named falsifiable, anchors and coverage. No credentials, no network, no cost. Exit 0 merges, anything else blocks.</td><td data-label="In your kit">part of <code>make dryrun</code>, which CI runs on every pull request that touches the kit</td></tr>
+<tr><td><strong>Paraphrase pair</strong></td><td data-label="Meaning">A reworded question against a golden row, labelled <code>same</code> (a cache hit would be right) or not (a hit would serve a wrong answer). It measures the answer cache's threshold, not the model.</td><td data-label="In your kit">%%N_PAIRS%% pairs: %%N_SAME%% same, %%N_DIFF%% different</td></tr>
+<tr><td><strong>Candidate row</strong></td><td data-label="Meaning">A question Gemini writes from one chunk of the quality-gated feed. <code>make make-evalset</code> writes candidates to <code>golden_generated.jsonl</code>, which the gate never reads.</td><td data-label="In your kit">none until the feed has rows</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: <em>sound</em> and <em>right</em> are two different claims. The gate proves a row is sound: it can fail, it can pass, and it cannot vanish unnoticed. Only the author can say the row is right, that the figure it demands answers the question it asks. Step 4 shows the gate accepting a row whose key is wrong.</p>

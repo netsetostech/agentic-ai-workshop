@@ -1,0 +1,46 @@
+<div class="box box-teal"><div class="box-title">Which cells cost money</div>
+<p>Steps 3, 4 and 5 run on numpy alone, with no network and no account: Rs 0, and they print exactly what this page prints, because their random draws come from a seeded generator written out in the cell. Steps 7 and 8 call Gemini on the project you make in lesson 0.1, and each of their labels gives its ceiling in rupees.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Score</span><h3>From scores to one token: greedy and sampling</h3><p>Seven logits, the softmax that turns them into probabilities, and the two ways to pick: always the top one, or a seeded draw.</p></div></div>
+
+<h4>Definition</h4>
+<p>One turn of the loop, on the toy's seven candidates after "...serves a notice period of". The logits are the model's output. Softmax subtracts the largest logit first, so that no exponential overflows (the result is the same), then exponentiates and divides by the total. Greedy decoding reads off the largest probability and stops there. Sampling needs a random number: a draw <em>u</em> between 0 and 1, and the pick is the first candidate whose running total of probabilities passes <em>u</em>, so a candidate with probability 0.75 owns three quarters of the line from 0 to 1. The draws come from a tiny generator in the cell: give it the same seed and it gives the same draws, on any machine.</p>
+
+<h4>Do it: one turn of the loop, Rs 0</h4>
+%%CELL_SCORE%%
+%%OUT_SCORE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The seven logits became seven probabilities that add up to %%TOTAL%%, still in the logits' order. 60 takes %%P60%%, sixty %%PSIXTY%%, and the five figures the clause does not say share %%OTHER_T1%% between them. Greedy picked 60, and would pick it on every run. The seeded draws picked 60 most of the time and something else now and then, and seed 1 printed the same ten picks both times, because a seed fixes the draws. Over 10,000 draws every candidate came out within %%MAXDEV%% of its probability. That is sampling in one sentence: faithful to the distribution on average, unpredictable one draw at a time, and the second half is run-to-run variance.</p></div>
+
+<p>60 and sixty are one figure in two spellings, which is why the cell counts them together. The kit's evaluator, <code>evals/run_eval.py</code>, turns number words into digits before it checks an answer for exactly this reason. The other five are not random either: 15, 45 and 90 all appear elsewhere in acme's documents (probation's notice, the cap on encashed leave, the contract's notice), which is the kind of mix-up a real model can make when it has read all of them.</p>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Shape</span><h3>Reshape the odds: temperature, top-k and top-p</h3><p>Three knobs that change the probabilities before the pick, and what each one does to the figures the clause does not say.</p></div></div>
+
+<h4>Definition</h4>
+<p><strong>Temperature</strong> divides every logit by T before the softmax. Below 1 the gaps between the logits grow, so the likeliest token takes more of the probability; above 1 they shrink and the tail grows; as T falls to 0 the softmax becomes greedy, and 0 is used to mean exactly that. <strong>Top-k</strong> keeps the k likeliest candidates and gives the rest probability 0. <strong>Top-p</strong>, also called nucleus sampling, keeps the fewest likeliest candidates whose probabilities reach p. Both then renormalise what is left so that it adds up to 1 again. The function below applies the three in that order, and it is the order the explorer in step 1 uses.</p>
+
+<h4>Do it: eight settings on one turn, Rs 0</h4>
+%%CELL_SHAPE%%
+%%OUT_SHAPE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Temperature moved probability between the likeliest token and the tail without removing anything: 60 went from %%P60_T05%% at 0.5 to %%P60_T15%% at 1.5, and the chance of a figure the clause does not say went from %%PO_T05%% to %%PO_T15%%, and to %%PO_T20%% at 2.0, while all seven candidates stayed possible. Top-k 2 and top-p 0.90 cut the tail off outright: two candidates left, both saying 60. Top-p 0.95 needed a third candidate to reach 0.95, and let 15 back in. A sharper distribution does not make the likeliest token any more correct; it only makes the others rarer. That is all these knobs can do, on a model that honours them.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Loop</span><h3>The loop, and five runs of one prompt counted</h3><p>The whole decode loop on the toy, until the end token or the cap; then five seeded runs per setting, with the distinct answers counted.</p></div></div>
+
+<h4>Definition</h4>
+<p>The loop is step 3's turn, repeated until it stops. The toy remembers only the last token it wrote, so its whole "model" is a table: for each last token, the logits of the tokens that may follow. A real decoder computes those logits from the whole text, every time, but the loop around it is the same: score, shape, pick, append, look again. It stops in one of two ways, and the kit's code reads which: the model picks the end token (finish reason <code>STOP</code>), or the cap on output tokens comes first (<code>MAX_TOKENS</code>). Then the experiment this lesson is about: one prompt, five runs, the distinct answers counted, at five settings of the temperature and one of top-k, with the same five seeds every time so that only the setting changes.</p>
+
+<h4>Do it: thirty runs and one cut short, Rs 0</h4>
+%%CELL_LOOP%%
+%%OUT_LOOP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Greedy wrote "60 days ." five times: one distinct answer, because nothing in the loop was left to chance. Sampling at temperature 1.0 wrote %%D_T10%% distinct answers of five, every one with the right figure: the variance was wording, "sixty" for "60" and "from acknowledgement" added, which a reader would accept. Heating it raised the count to %%D_T15%% at 1.5 and %%D_T20%% at 2.0, and the figure itself started to move: at 1.5, %%W_T15%% of the five stated a figure the clause does not say, and at 2.0, %%W_T20%%. Top-k 2 at 2.0 kept %%D_K2%% distinct wordings and the figure right in all five. The cap of two tokens cut the greedy answer off as "60 days" with finish reason MAX_TOKENS: an answer that never finished, which is a different failure from a wrong one, and the reason the kit's code reads the finish reason before it reads the answer.</p></div>
+
+<p>Hold on to the shape of that result, because step 7 asks the same question of a real model: does it say the same thing five times, and when it does not, is the difference wording or the figure? The toy answered it by construction. Gemini answers it by measurement, with one difference that matters: there, you cannot turn the temperature down.</p>
+

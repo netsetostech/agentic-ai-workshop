@@ -1,0 +1,96 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; The floor</span><h3>The direct brain: one retrieve(), no loop</h3><p>A chat turn with no model in the chat service, and the tenant it was answered for.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>/v1/chat</code> first looks up the caller's tenant from the roster, then builds the thread id from the tenant, the user and the session, then hands the brain a context: the tenant, the user, the assertion and the brain's name. <code>DirectBrain.answer()</code> calls the one <code>retrieve()</code> with the question, the tenant from the context and <code>top_k</code> 5. It returns rag-api's answer with the citations, and <code>tool_calls</code> set to <code>['retrieve']</code>. That list is written by the code, not chosen by a model, because there is no model in this brain. The cell defines <code>chat10</code>, a small function that posts one turn as <code>documind-ui-sa</code> and prints the brain, the two lists, the citations (with their numbers, when an agent brain numbered them), the time and the start of the answer. <code>documind-ui-sa</code> is on three rosters, and <code>tenant_for()</code> takes the first, acme.</p>
+
+<h4>The code</h4>
+@@turn@@
+@@direct@@
+
+<h4>Do it</h4>
+%%CELL_DIRECT%%
+%%OUT_DIRECT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A direct-brain answer with <code>retrieve</code> in <code>tool_calls</code>: this lesson's proof. The answer is rag-api's, with five citations, in about the time of one rag-api call. That is the floor. Every agent answer that follows has to justify its extra seconds against it. The turn was made for acme because the roster said so. Nothing in the request could have said otherwise.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 3 &middot; The loop</span><h3>The loop: the model chooses its tools</h3><p>The same question to the LangChain brain, then a question only a tool can answer, to both brains.</p></div></div>
+
+<h4>Definition</h4>
+<p>The LangChain brain is <code>create_agent</code> with the two tools, the system prompt and a guard. The model reads the question and the schemas and emits tool calls; the runtime runs them and returns each result as a message; the model decides again until it answers. The checkpointer hands back the whole conversation, so <code>_turn()</code> gives each question an id, and <code>_summary()</code> reads only that question and what follows it. <code>tool_calls</code> is every tool call the model made in this turn, in order. <code>refusals</code> is every tool result marked as an error. <code>citations</code> is every passage this turn's searches returned, numbered from 1 by <code>search()</code>; the system prompt asks the model to cite them as <code>[n]</code>. Every brain returns the same four keys, so the UI never asks which brain answered. The cost question needs a page count and a multiplication. The system prompt asks the model to search for a page count before it estimates a cost.</p>
+
+<h4>The code</h4>
+@@summary@@
+
+<h4>Do it</h4>
+%%CELL_LOOP%%
+%%OUT_LOOP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>On the policy question, the model chose <code>retrieve</code> itself and wrote its own answer from the citations; it took longer than the direct brain for the same fact. Its citations are numbered 1 to 5, and its answer cites <code>[1]</code>. The cost question went to the same session, so the thread held the first turn too, and the list still names only this turn's two tools, with its citations numbered from 1 again. The second tool, <code>calculate_processing_cost</code>, priced %%COST_USD%% US dollars for 283 pages at the priority rate, Rs %%COST_INR%%. The direct brain could only look the question up, and could only answer from what the documents say. The two brains may even give different numbers, because they consult different sources: the tool's price list, and whatever rate a document mentions. Your lists are the truth for your lane. A model that skipped the search, or searched twice, is still inside the contract.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; The rows</span><h3>The rows: what each brain cost, and which row records it</h3><p>rag-api's row for every retrieve(), and the chat service's row for every turn.</p></div></div>
+
+<p>Each <code>retrieve()</code> posts to rag-api's <code>/v1/query</code>, and rag-api writes its usage row, now labelled with the brain that asked. The chat service writes a row of its own for each turn: the brain, the tenant, the user, the session, the time and the two lists, and the turn's own model calls, their tokens and their cost, beside what its searches billed. Lesson 5.5 shows the limits those numbers are counted against. The cell reads both kinds since step 5, the shell's own retrieval included, labelled <code>ui</code> because it named no brain.</p>
+%%CELL_ROWS%%
+%%OUT_ROWS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every <code>retrieve()</code> left one rag-api row, whichever brain made it, and each row is a full answer: retrieval, reranking and a model call. The direct brain's row is its whole cost. The LangChain brain's rag-api row is only part of its cost. It paid for rag-api's grounded answer, threw that answer away, and then paid its own model to write another. Those model turns are on the chat service's row: the keys printed beside each turn include <code>model_calls</code>, <code>cost_usd</code> for its own calls, and <code>rag_cost_usd</code> for what its searches billed. That is why the floor matters. The direct brain makes no model call of its own, so its rag-api row states its whole cost.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the contract is shaped this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>One retrieval, checked by shape.</strong> Nobody copies <code>retrieve</code> and keeps the name. The second copy is called <code>quick_lookup</code>, written under deadline for a different <code>top_k</code>. So the course's check parses the tool layer for any function that takes a query and reaches the corpus itself, and allows adapters that delegate.</li>
+<li><strong>Removing a field beats validating it.</strong> The chat request once carried <code>tenant_id</code> and <code>user_id</code>, and the agent believed them. A validation is something a later edit can loosen; a field that does not exist is not.</li>
+<li><strong>Hidden and delivered.</strong> <code>InjectedToolArg</code> hides an argument from the model and never fills it. <code>ToolRuntime</code> is hidden and filled. The first version used the former, and every tool call ran for an empty tenant.</li>
+<li><strong>Failures are data.</strong> An exception ends the turn with nothing to say. A result with <code>error</code> set lets the model tell the person that retrieval is down, and the smoke test checks that no answer carries those words.</li>
+<li><strong>A switch, not a fork.</strong> The brain is an allow-listed name on the request. Each framework is imported only when its brain is first used, so an image without one reports that brain as 501 rather than failing to start.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The chat redeploy</td><td data-label="Costs">one Cloud Build of the chat image, and a migration job that runs for seconds</td><td data-label="On your lane">a few build minutes</td></tr>
+<tr><td>The one retrieve()</td><td data-label="Costs">one rag-api answer</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>Two direct turns</td><td data-label="Costs">one rag-api answer each</td><td data-label="On your lane">under a rupee each</td></tr>
+<tr><td>Two LangChain turns</td><td data-label="Costs">one rag-api answer per retrieve, plus the agent's own two or three model calls, which the chat row prices</td><td data-label="On your lane">a rupee or two each</td></tr>
+<tr><td>The checkpointer</td><td data-label="Costs">the Cloud SQL instance the lane already runs</td><td data-label="On your lane">nothing new</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>An agent's retrieval pays for an answer it throws away.</strong> rag-api has one retrieval-only route, <code>/v1/passages</code>: the same retrieval with each passage's full text and no model call, which <code>retrieve(passages=True)</code> asks for. The chat brains do not use it yet. Their adapter calls <code>/v1/query</code>, which always generates, keeps the citations and drops rag-api's answer. Lesson 10.4's desks are its first callers.</li>
+<li><strong>The month's totals leave the agent's own calls out.</strong> The chat service's row prices each turn, but the warehouse's <code>tenant_daily</code> view and <code>make usage</code> read rag-api's rows only.</li>
+<li><strong>A check the kit names but does not ship.</strong> <code>documind_tools.py</code> tells you to run <code>tools/check_one_retrieval.py</code>. It lives in the course's own repository, not in the kit you cloned.</li>
+</ul></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The chat service calls your API</td><td data-label="The check">step 3, the describe line</td><td data-label="Pass looks like"><code>RAG_API_URL</code> in your region</td></tr>
+<tr><td>2</td><td data-label="Claim">Four brains, one default</td><td data-label="The check">step 3, <code>/health</code></td><td data-label="Pass looks like">four names, <code>"default_brain":"langchain"</code></td></tr>
+<tr><td>3</td><td data-label="Claim">No tool argument names a tenant</td><td data-label="The check">step 4</td><td data-label="Pass looks like">two signatures, <code>hidden: runtime</code> once</td></tr>
+<tr><td>4</td><td data-label="Claim">The one retrieve() answers your shell</td><td data-label="The check">step 5</td><td data-label="Pass looks like">citations, <code>answerable True</code>, rag-api's answer</td></tr>
+<tr><td>5</td><td data-label="Claim">A direct-brain answer with retrieve in tool_calls</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>direct    tool_calls ['retrieve']</code>, citations 5</td></tr>
+<tr><td>6</td><td data-label="Claim">The loop chose its own tools</td><td data-label="The check">step 7, the cost question</td><td data-label="Pass looks like"><code>calculate_processing_cost</code> in the list</td></tr>
+<tr><td>7</td><td data-label="Claim">Each turn reports its own tools, and numbers its citations from 1</td><td data-label="The check">step 7, the second LangChain turn</td><td data-label="Pass looks like"><code>['retrieve', 'calculate_processing_cost']</code>, and <code>n [1, ...]</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Every retrieve() leaves a rag-api row, labelled</td><td data-label="The check">step 8</td><td data-label="Pass looks like">rows for <code>direct</code> and <code>langchain</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The chat row prices the agent's own turn</td><td data-label="The check">step 8, the keys</td><td data-label="Pass looks like"><code>model_calls</code>, <code>cost_usd</code>, <code>rag_cost_usd</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The chat service runs in your region, from the kit's current script, with IAP on and its checkpointer migrated. The UI's account and the outsider may invoke it, and so may the Desk's six accounts once Terraform has created them. You may mint tokens as the UI's account and the outsider. The usage rows of five retrievals and four chat turns, and one conversation of two turns in the checkpointer, session <code>lesson101-langchain</code>. The direct brain keeps no conversation. No roster, policy or setting changed. Lesson 5.2 exposes the same tools to any MCP client, and lesson 5.4 opens the LangGraph brain: the hand-built graph, its refuse node, and the checkpointer that keeps a conversation.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 5 MCP and agents &middot; Lesson 5.1 Understand tool contracts and the direct agent loop &middot; v5.0</p><p>Next: Lesson 5.2 Expose, discover and invoke MCP tools.</p></div>

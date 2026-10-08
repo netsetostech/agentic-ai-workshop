@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Practice Lab 3.5 &mdash; Ingest, re-issue, undo, poison | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+.lab-hero-inner{}
+.exercise{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:22px 0;}
+.exercise h3{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:var(--h3-size);}
+.ex-num{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:var(--small-size);}
+.diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:10px;}
+.ex-body p,.ex-body li{font-size:var(--small-size);}
+.steps-list{margin:8px 0 12px;padding-left:22px;}
+.answer{background:var(--teal-light);border-left:4px solid var(--teal);border-radius:10px;padding:var(--card-pad);margin:12px 0;font-size:var(--small-size);}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner lab-hero-inner"><div class="hero-crumb">Module 3 &middot; Ingest &middot; Practice Lab 3.5</div><h1>Practice Lab: <span>Ingest, re-issue, undo, poison</span></h1><p>Six drills on the ingest lane, each with the command, the line to watch and the numbers to predict before you run it. Two are Rs 0 and run on the cloned kit alone; four need the live lane from Module 2. By the end you have read every lifecycle line the worker writes, predicted the carry-over counts twice and been right, and left the lane in the state the nightly walk expects.</p></div></div>
+
+<div class="content">
+
+<div class="box box-amber"><div class="box-title">Before you start</div>
+<p>Exercises 2 and 6 are Rs 0: the kit cloned (<code>code/</code>; a clone of the learner repo names the same folder <code>deploy/</code>), Python 3.12, <code>pip install pydantic</code>. Exercises 1, 3, 4 and 5 need a deployed lane from Module 2 with <code>make up</code> done and <code>make smoke</code> green, and in your shell: <code>export PROJECT=documind-ai-YOUR-ID TENANT=acme REGION=us-central1</code>, <code>cd code</code>, <code>google-cloud-firestore</code> and <code>google-cloud-storage</code> installed (the shell that ran <code>make up</code> has them), and the log filter <code>W='resource.type="cloud_run_revision" AND resource.labels.service_name="documind-ingest"'</code> exported. Do the live exercises after lesson 3.5's steps 2 and 3 (the amendment and the corpus are in), and do not ingest <code>evals/demo/smoke_note_v1.md</code> yourself: it is <code>make smoke-reindex</code>'s fixture, and the same bytes under any name would make the smoke's first upload a duplicate. Costs: exercises 1, 3, 4 and 5 are under a rupee each; the optional block in exercise 5 parses 236 pages again, about Rs 200 on the default lane.</p></div>
+
+<div class="exercise"><h3><span class="ex-num">1</span> One document in, and the passbook</h3><span class="diff d-easy">Easy</span>
+<div class="ex-body"><p>Ingest a small synthetic document, read the worker's line field by field, and match every number against the ledger row <code>make sources</code> prints. Done looks like the three numbers on the <code>ingest-one</code> line, the nine fields of the <code>ingest_ok</code> line and the ledger row all agreeing, and you able to say why <code>reused</code> is 0.</p>
+<ol class="steps-list"><li>Run <code>make ingest-one</code> with <code>evals/corpus/acme/msa_acme_2026.md</code>. Before it prints, write down what <code>chunks</code> will be (the file has a title paragraph above five <code>## </code> sections).</li><li>Read the whole <code>ingest_ok</code> line with <code>gcloud logging read</code>.</li><li>Run <code>make sources TENANT_ONLY=acme</code> and find the row.</li></ol>
+<h4>Complete solution</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ingest-one FILE=evals/corpus/acme/msa_acme_2026.md TENANT=acme PROJECT=$PROJECT
+gcloud logging read "$W AND jsonPayload.event=\"ingest_ok\" AND jsonPayload.tenant=\"acme\"" \
+  --project $PROJECT --freshness=10m --limit 1 --format=json \
+  | python -c "import json,sys; print(json.dumps(json.load(sys.stdin)[0]['jsonPayload'], indent=1))"
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | grep -E "msa_acme|ledger"</pre></div>
+<div class="answer"><strong>What you should see.</strong> If the corpus is already in (lesson 3.5 step 3), the first command prints <em>no ingest_ok in 5 min</em> and exits 1: the same bytes are already <code>documents/acme_&lt;sha&gt;</code> with status <code>indexed</code>, the worker acked the message as <code>ingest_duplicate</code> (a line with only <code>doc_key</code> on it), and nothing was parsed or embedded - which is the first lesson of the exercise. Read that line instead with <code>jsonPayload.event="ingest_duplicate"</code>. On a lane without the corpus, the target prints <code>&gt;&gt; indexed: acme_&lt;sha&gt; 6 1</code> and the line says <code>chunks: 6, pages: 1, kinds: ["text"], reused: 0, embedded: 6, retired: 0, effective_from: null</code>: the preamble (the title and the disclaimer) plus five sections, MSA-01 to MSA-12, and <code>reused</code> is 0 because a first version has no current rows of this source to carry over. The ledger row says <code>indexed</code>, chunks 6, the same generation as the line, and <code>text-embedding-005@1</code>. The cost is 897 characters of embedding: under a paisa.</div>
+</div></div>
+
+<div class="exercise"><h3><span class="ex-num">2</span> Predict the re-issue offline</h3><span class="diff d-easy">Easy</span>
+<div class="ex-body"><p>Rs 0. The worker and the notebooks chunk with the same two rules, and <code>shared/documind_corpus.py</code> is importable and pure, so the counts a live <code>make reindex</code> will print can be computed on your laptop before you spend a rupee. Done looks like two predictions - the handbook's re-issue and the smoke fixture's - that lesson 3.5's steps 4 and 8 then confirm.</p>
+<ol class="steps-list"><li>From the kit root, load acme's documents the notebooks' way and find the handbook.</li><li>Chunk revision 1 and revision 2 (<code>evals/demo/hr_policy_2026_v2.md</code>); count the hashes of revision 2 that exist in revision 1.</li><li>Do the same for <code>smoke_note_v1.md</code> and <code>smoke_note_v2.md</code>, and name the reused chunk.</li></ol>
+<h4>Complete solution</h4>
+<div class="cw"><div class="ch-bar"><span>python &mdash; from the kit root, Rs 0</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">import</span> sys
+sys.path.insert(<span class="nu">0</span>, <span class="st">"."</span>)
+<span class="kw">from</span> shared <span class="kw">import</span> documind_corpus <span class="kw">as</span> m
+
+docs = m.load_documents(<span class="st">"acme"</span>, <span class="st">"evals"</span>, <span class="st">"documind-ai-YOUR-ID"</span>)
+hr = <span class="kw">next</span>(d <span class="kw">for</span> d <span class="kw">in</span> docs <span class="kw">if</span> d[<span class="st">"slug"</span>] == <span class="st">"hr_policy_2026"</span>)
+
+<span class="kw">def</span> <span class="fn">plan</span>(old_text, new_text, name):
+    <span class="cm"># the carry-over rule of indexer.plan_carry_over: reuse by chunk_hash, embed the rest</span>
+    v1 = m.chunk_document(<span class="kw">dict</span>(hr, text=old_text), <span class="st">"acme"</span>)
+    v2 = m.chunk_document(<span class="kw">dict</span>(hr, text=new_text), <span class="st">"acme"</span>)
+    have = {c[<span class="st">"chunk_hash"</span>] <span class="kw">for</span> c <span class="kw">in</span> v1}
+    reused = [c[<span class="st">"locator"</span>] <span class="kw">for</span> c <span class="kw">in</span> v2 <span class="kw">if</span> c[<span class="st">"chunk_hash"</span>] <span class="kw">in</span> have]
+    changed = [c[<span class="st">"locator"</span>] <span class="kw">for</span> c <span class="kw">in</span> v2 <span class="kw">if</span> c[<span class="st">"chunk_hash"</span>] <span class="kw">not in</span> have]
+    <span class="kw">print</span>(f<span class="st">"{name}: chunks={len(v2)} reused={len(reused)} embedded={len(changed)} retired={len(v1)} changed={changed}"</span>)
+
+read = <span class="kw">lambda</span> p: <span class="kw">open</span>(p, encoding=<span class="st">"utf-8"</span>).read()
+plan(hr[<span class="st">"text"</span>], read(<span class="st">"evals/demo/hr_policy_2026_v2.md"</span>), <span class="st">"handbook"</span>)
+plan(read(<span class="st">"evals/demo/smoke_note_v1.md"</span>), read(<span class="st">"evals/demo/smoke_note_v2.md"</span>), <span class="st">"smoke"</span>)</pre></div>
+<div class="answer"><strong>What you should see.</strong> <code>handbook: chunks=283 reused=281 embedded=2 retired=283 changed=['preamble', 'NP-03']</code> and <code>smoke: chunks=3 reused=1 embedded=2 retired=3 changed=['preamble', 'SM-01']</code>. The handbook's 282 sections plus the preamble are 283 chunks; revision 2 added two lines above the first heading (a new preamble hash) and changed NP-03's 60 to 90, and every other section is byte for byte the same. The smoke fixture's SM-02 is the reused one. These are exactly the numbers <code>make reindex</code> prints in lesson 3.5 step 4 and <code>make smoke-reindex</code> prints in step 8, because <code>main._chunk</code> and <code>chunk_document</code> mint the same texts and hashes - the gate in <code>tools/check_real_corpus.py</code> holds them to it.</div>
+</div></div>
+
+<div class="exercise"><h3><span class="ex-num">3</span> Re-issue, watch the answer move, undo</h3><span class="diff d-med">Medium</span>
+<div class="ex-body"><p>Lesson 3.5's steps 4 and 5 as one drill, with the ledger read between them. Done looks like the two <code>make reindex</code> lines matching exercise 2's prediction, the answer moving from 60 to 90 days and back, and the fingerprint after the undo equal to the fingerprint before the re-issue.</p>
+<ol class="steps-list"><li>Record acme's fingerprint from <code>make sources</code>.</li><li>Re-issue the handbook as revision 2; read the line and the <code>ingest_superseded</code> line; ask the API the notice-period question.</li><li>Upload revision 1 again; read the line; ask again; compare the fingerprint.</li></ol>
+<h4>Complete solution</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make sources TENANT_ONLY=acme PROJECT=$PROJECT | tail -1
+make reindex FILE=evals/demo/hr_policy_2026_v2.md NAME=hr_policy_2026.md TENANT=acme PROJECT=$PROJECT
+NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)'); API=https://documind-api-$NUMBER.$REGION.run.app
+TOKEN=$(gcloud auth print-identity-token --include-email --impersonate-service-account=documind-ui-sa@$PROJECT.iam.gserviceaccount.com --audiences=$API)
+ask() { curl -s -X POST $API/v1/query -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"query\":\"$1\",\"tenant_id\":\"acme\",\"user_id\":\"u_lab\",\"top_k\":5,\"stream\":false}" | python -c "import json,sys; print(json.load(sys.stdin).get('answer'))"; }
+ask "What is the notice period for a confirmed E3?"
+make reindex FILE=evals/corpus/acme/hr_policy_2026.md TENANT=acme PROJECT=$PROJECT
+ask "What is the notice period for a confirmed E3?"
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | tail -1</pre></div>
+<div class="answer"><strong>What you should see.</strong> First line: <code>ingest_ok acme_&lt;rev2&gt; 283 281 2 283 2026-10-01</code>, then <em>retired (doc_keys, chunks, expire days): acme_&lt;rev1&gt; 283 30</em>. The answer says 90 days and, because revision 2 declares a date, <em>effective from 2026-10-01</em>. Second line: <code>ingest_reactivated acme_&lt;rev1&gt; 283 283 0 283</code> with no <em>retired</em> line under it - the undo logs no <code>ingest_superseded</code>. The answer says 60 days. The two <code>make sources</code> tails print the same fingerprint and <code>versions: 22</code> (23 if exercise 1 added the MSA on a lane without the corpus), because <code>corpus_fingerprint</code> hashes the set of current doc_keys and the same set is current again. Cost: two chunks embedded on the way out, nothing on the way back, two Gemini answers - under a rupee.</div>
+</div></div>
+
+<div class="exercise"><h3><span class="ex-num">4</span> The tombstone against every path</h3><span class="diff d-med">Medium</span>
+<div class="ex-body"><p>A withdrawn source must survive three things that would bring a merely retired one back: the same bytes uploaded again, a redelivery, and the nightly walk. Prove all three on the amendment, then bring it back the one way that works. Done looks like the <code>ingest_withdrawn</code> line, the plan's <em>withdrawn, object kept</em> line with <code>drift: 0</code>, a refused <code>make restore</code> on a source that is not withdrawn, and the <code>ingest_reactivated</code> line after the real restore.</p>
+<ol class="steps-list"><li><code>make retire</code> the amendment; check the ledger row's status.</li><li>Upload the same bytes; read the worker's line. Run the plan.</li><li>Try <code>make restore</code> on <code>acme/msa_acme_2026.md</code> (not withdrawn) and read the refusal; then restore the amendment and read the worker's line.</li></ol>
+<h4>Complete solution</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make retire SOURCE=acme/gratuity_amendment_2026.md PROJECT=$PROJECT
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | grep gratuity
+gcloud storage cp evals/demo/gratuity_amendment_2026.md gs://$PROJECT-uploads/acme/ --project $PROJECT
+sleep 30; gcloud logging read "$W AND jsonPayload.event=\"ingest_withdrawn\"" --project $PROJECT --freshness=5m --limit 1 --format='value(jsonPayload)'
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT
+make restore SOURCE=acme/msa_acme_2026.md PROJECT=$PROJECT; echo "exit $?"
+make restore SOURCE=acme/gratuity_amendment_2026.md PROJECT=$PROJECT
+sleep 30; gcloud logging read "$W AND jsonPayload.event=\"ingest_reactivated\"" --project $PROJECT --freshness=5m --limit 1 \
+  --format='value(jsonPayload.doc_key,jsonPayload.chunks,jsonPayload.embedded,jsonPayload.retired)'</pre></div>
+<div class="answer"><strong>What you should see.</strong> <code>reconcile_withdrawn</code> with <code>retired_chunks: 3</code> and a new fingerprint; the ledger row <code>withdrawn</code>. The worker's line for the re-upload is <code>ingest_withdrawn</code> with <code>hint: make restore SOURCE= clears the tombstone</code> - it downloaded the bytes, lost the claim, asked <code>withdrawn()</code> before <code>reactivate()</code>, and acked. The plan prints <code>{"reconcile": "withdrawn", ..., "why": "withdrawn, object kept (generation A -&gt; B: make restore re-ingests what the object holds now)"}</code> and ends <code>"withdrawn": 1, "drift": 0</code>: a decision is not drift. The first restore prints <code>reconcile_restore_refused</code> with <em>only a withdrawn source is restored</em> and exits 1. The second prints <code>reconcile_restored</code> with the new generation, and thirty seconds later the worker says <code>ingest_reactivated</code> - <code>chunks 3, embedded 0, retired 0</code> - because the ledger row went to <code>retired</code> first and the rewrite took the worker's ordinary undo path. Rs 0.</div>
+</div></div>
+
+<div class="exercise"><h3><span class="ex-num">5</span> Poison, the DLQ, and the object that drifts every night</h3><span class="diff d-hard">Challenge</span>
+<div class="ex-body"><p>Break the lane on purpose, read what Pub/Sub did with it an hour later, and find the trap the zero-byte object sets for the nightly walk. Done looks like the <code>ingest_poison</code> error text naming the field, the DLQ row, a reconcile plan that says <code>reingest</code> for the poison object with <code>drift: 1</code>, and a clean plan after you fix it the only right way.</p>
+<ol class="steps-list"><li><code>make poison</code>; write down which field of <code>IngestMessage</code> refused it and why the worker answered 400 rather than 500.</li><li>Run the reconcile plan while the object is still in the bucket.</li><li>Fix it; run the plan again. About an hour after step 1, <code>make dlq</code>, then drain it.</li><li>Optional, about Rs 200: step 7's batch-lane block from lesson 3.5, with <code>make reconcile</code> run while the document is queued.</li></ol>
+<h4>Complete solution</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make poison PROJECT=$PROJECT
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT
+gcloud storage rm gs://$PROJECT-uploads/acme/poison-*.pdf --project $PROJECT
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT | tail -1
+<span class="cm"># about an hour later</span>
+make dlq PROJECT=$PROJECT
+gcloud pubsub subscriptions pull ingest-dlq-sub --project $PROJECT --auto-ack --limit=10</pre></div>
+<div class="answer"><strong>What you should see.</strong> <code>make poison</code> prints the worker's refusal within two minutes: <em>1 validation error for IngestMessage / size / Input should be greater than or equal to 1</em> - <code>contracts.IngestMessage</code> declares <code>size: int = Field(ge=1)</code>, and Cloud Storage's record for an empty object says <code>"0"</code>. The worker answers 400 because the message would fail identically on every retry; a 500 would buy twelve retries of a certainty. The plan prints <code>{"reconcile": "reingest", "name": "acme/poison-&lt;epoch&gt;.pdf", "why": "not in the ledger"}</code> and <code>"drift": 1</code>: the object is in the bucket, its sha is not a version, so the walk would rewrite it every night and the worker would refuse it every night. After <code>gcloud storage rm</code>, <code>drift: 0</code>. <code>make dlq</code> shows one row (message id, <code>acme/poison-&lt;epoch&gt;.pdf</code>, the event time, delivery attempt 1 of the dead-letter subscription) only once twelve deliveries have failed - the Makefile's <em>few minutes</em> predates <code>eventarc.tf</code>'s twelve attempts, so expect about an hour. For the optional block, the plan while the Act is queued prints <code>{"reconcile": "queued", ..., "why": "handed to the batch lane; the batch job indexes it, the claim says queued"}</code> and <code>"queued": 1, "drift": 0</code>.</div>
+</div></div>
+
+<div class="exercise"><h3><span class="ex-num">6</span> Price the corpus load before you run it</h3><span class="diff d-hard">Challenge</span>
+<div class="ex-body"><p>Rs 0. Every rupee in lesson 3.5's cost table comes from two counts the kit already holds - Document AI pages in <code>evals/real_sources.json</code>, characters from the chunker - and three rates. Recompute the table for both residencies, then for a corpus of your own. Done looks like a table per tenant (pages, characters, Rs on Layout Parser, Rs on OCR, Rs of embeddings) whose totals match the lesson's 1,065 pages, 3.47 million characters, about Rs 905 / Rs 136 / Rs 7.</p>
+<ol class="steps-list"><li>Sum <code>pages</code> per tenant from <code>real_sources.json</code> (the <code>tenants</code> list says who holds each Act).</li><li>Chunk every tenant's documents with <code>chunk_document</code> and sum the characters.</li><li>Price them at $10 and $1.50 per 1,000 pages and $0.000025 per 1,000 characters, at <code>USD_INR = 85</code>.</li></ol>
+<h4>Complete solution</h4>
+<div class="cw"><div class="ch-bar"><span>python &mdash; from the kit root, Rs 0</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">import</span> json, sys
+sys.path.insert(<span class="nu">0</span>, <span class="st">"."</span>)
+<span class="kw">from</span> shared <span class="kw">import</span> documind_corpus <span class="kw">as</span> m
+
+USD_INR = <span class="nu">85</span>
+LAYOUT, OCR, EMBED = <span class="nu">10</span> / <span class="nu">1000</span>, <span class="nu">1.5</span> / <span class="nu">1000</span>, <span class="nu">0.000025</span> / <span class="nu">1000</span>   <span class="cm"># $ per page, per page, per character - re-verify on the pricing pages</span>
+real = json.load(<span class="kw">open</span>(<span class="st">"evals/real_sources.json"</span>, encoding=<span class="st">"utf-8"</span>))
+pages = {t: <span class="nu">0</span> <span class="kw">for</span> t <span class="kw">in</span> (<span class="st">"acme"</span>, <span class="st">"zeta"</span>, <span class="st">"globex"</span>)}
+<span class="kw">for</span> r <span class="kw">in</span> real:
+    <span class="kw">for</span> t <span class="kw">in</span> r[<span class="st">"tenants"</span>]:
+        pages[t] += r[<span class="st">"pages"</span>]
+total_p = total_c = <span class="nu">0</span>
+<span class="kw">for</span> t <span class="kw">in</span> pages:
+    chars = <span class="kw">sum</span>(<span class="kw">len</span>(c[<span class="st">"text"</span>]) <span class="kw">for</span> d <span class="kw">in</span> m.load_documents(t, <span class="st">"evals"</span>, <span class="st">"documind-ai-YOUR-ID"</span>)
+                <span class="kw">for</span> c <span class="kw">in</span> m.chunk_document(d, t))
+    total_p += pages[t]; total_c += chars
+    <span class="kw">print</span>(f<span class="st">"{t:7} pages={pages[t]:5} chars={chars:9,} layout=Rs {pages[t]*LAYOUT*USD_INR:6.0f} ocr=Rs {pages[t]*OCR*USD_INR:5.0f} embed=Rs {chars*EMBED*USD_INR:4.1f}"</span>)
+<span class="kw">print</span>(f<span class="st">"all     pages={total_p:5} chars={total_c:9,} layout=Rs {total_p*LAYOUT*USD_INR:6.0f} ocr=Rs {total_p*OCR*USD_INR:5.0f} embed=Rs {total_c*EMBED*USD_INR:4.1f}"</span>)</pre></div>
+<div class="answer"><strong>What you should see.</strong> <code>acme pages=685 chars=2,064,459 layout=Rs 582 ocr=Rs 87 embed=Rs 4.4</code>, <code>zeta pages=325 ... layout=Rs 276 ocr=Rs 41 embed=Rs 2.6</code>, <code>globex pages=55 ... layout=Rs 47 ocr=Rs 7 embed=Rs 0.4</code>, and <code>all pages=1065 chars=3,471,913 layout=Rs 905 ocr=Rs 136 embed=Rs 7.4</code>. The characters are the mirrors' - the POSH scan has no mirror and the three figures are captions written at ingest, so the worker's real character count is a little higher - and Document AI is more than ninety per cent of the bill on either processor. The rates are the only inputs not in the code; the page says where they were read and when.</div>
+</div></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Ingest &middot; Practice Lab 3.5 Ingest, re-issue, undo, poison &middot; v4.0</p><p>Next: Module 4 Retrieval - four places to search, and who chooses</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+</body>
+</html>

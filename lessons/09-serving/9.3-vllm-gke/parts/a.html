@@ -1,0 +1,92 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 9 &middot; Serving &middot; Lesson 9.3</div>
+<h1>Inspect the vLLM service and the GKE alternative: <span>an engine that batches, a pod that never sleeps, a manifest read before you pay for it, and the sum that picks between them</span></h1>
+<p>Lesson 9.2 served the small model with Ollama. The kit holds two more ways to serve it, both optional, and no lesson deploys either. One is vLLM, an engine built to answer many requests at once, on the same Cloud Run L4. The other runs vLLM on GKE Autopilot: a pod that stays up all month, billed every hour, and the only self-serve L4 in Mumbai.</p>
+<p>In this lesson you read the vLLM service and the GKE manifest from their files, the way you would before paying for either. Then you inspect what your lane actually has. Last, you work out from your own traffic when an always-on pod costs less than an instance that sleeps.</p>
+<div class="hero-chips"><div class="hero-chip">services/gemma-vllm</div><div class="hero-chip">make build-vllm</div><div class="hero-chip">make deploy-vllm</div><div class="hero-chip">--concurrency 32</div><div class="hero-chip">documind-inference</div><div class="hero-chip">gke/vllm-deployment.yaml</div><div class="hero-chip">GKE Autopilot</div><div class="hero-chip">make gke-up</div><div class="hero-chip">documind-gke</div><div class="hero-chip">duty cycle</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three ways to serve the same small model</a></li>
+<li><a href="#s2">The words: vLLM, continuous batching, the gemma-vllm image, documind-inference, GKE Autopilot, the lab cluster, node billing, the manifest, ClusterIP, the duty cycle</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The vLLM service, read</a></li>
+<li><a href="#s4">The manifest, read</a></li>
+<li><a href="#s5">The lane's cluster, inspected</a></li>
+<li><a href="#s6">The duty-cycle sum</a></li>
+<li><a href="#s7">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what vLLM does that Ollama does not, and how GKE Autopilot bills a GPU. You will learn why an always-on pod and an instance that scales to zero are a question of duty cycle. Then you will prove it on your lane: the manifest read against the image it runs, and the duty-cycle sum for your own traffic.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three ways to serve the same small model</h3><p>Ollama on Cloud Run, vLLM on Cloud Run, vLLM on GKE: the same L4 class, different engines, different bills.</p></div></div>
+
+<p><strong>vLLM on Cloud Run.</strong> vLLM is an inference engine built for many requests at once. It adds new requests to a running batch as they arrive (continuous batching), and pages the model's attention cache through GPU memory, as an operating system pages memory. Ollama answers a few requests at a time: the kit lets an Ollama instance take 4, and a vLLM instance 32.</p>
+<ul>
+<li><strong>The service.</strong> The kit's vLLM service, <code>services/gemma-vllm</code>, is its own FastAPI app around vLLM's engine. It loads Gemma 3 4B into the GPU before it answers. Then it serves an OpenAI-compatible <code>/v1/chat/completions</code>, and two DocuMind endpoints that classify and extract with structured output.</li>
+<li><strong>The targets.</strong> <code>make build-vllm</code> builds the image on Cloud Build. <code>make deploy-vllm</code> deploys it on the same L4 shape as the SLM, behind IAM, and lets the gateway's and the UI's accounts call it.</li>
+<li><strong>The route.</strong> The gateway's <code>documind-inference</code> route points at it through the token proxy, and falls back to <code>documind-slm</code>, then to Gemini. <code>config.yaml</code> logs its answers at 6.80 USD a million tokens, against the SLM's 20.50. Both are rates, not prices: the price is the GPU's hour.</li>
+</ul>
+
+<p><strong>GKE Autopilot.</strong> Autopilot is Kubernetes where Google runs the nodes. You submit a pod, and Autopilot finds or creates a node that fits it. A pod that asks for a GPU gets a whole node of that class, here a <code>g2-standard-8</code> with one L4. It pays for the node plus an Autopilot premium, busy or not.</p>
+<ul>
+<li><strong>The manifest.</strong> <code>gke/vllm-deployment.yaml</code> runs one replica of the vLLM image, with no autoscaler. It is always up and always has the model in the GPU, so there is no cold start, and there is a bill at 3 a.m.</li>
+<li><strong>The address.</strong> Its Service is a ClusterIP: an address only inside the cluster, which you reach with <code>kubectl port-forward</code>.</li>
+<li><strong>Mumbai.</strong> GKE is the only self-serve way to an L4 in Mumbai, because Cloud Run's L4 there is by invitation.</li>
+</ul>
+
+<p><strong>The lane's cluster.</strong> <code>make up</code> creates a cluster called <code>documind-autopilot</code>, but by default it is not Autopilot. Since 17 September 2026, <code>gke.tf</code> has built a Standard cluster with one small CPU node, an <code>e2-standard-2</code>, because Autopilot needs SSD quota a new project may not have. That lab cannot schedule the GPU pod, so <code>make gke-up</code> checks the mode and stops. Setting <code>gke_autopilot</code> to true replaces the cluster.</p>
+
+<p><strong>The duty cycle.</strong> Cloud Run bills an instance for as long as it lives: each burst of traffic, plus up to 10 idle minutes after it. The duty cycle is that time as a share of the month. Cloud Run bills it at $%%RUN_H%% an hour. An always-on pod bills every hour, but at less: $%%GKE_US%% in Iowa and $%%GKE_IN%% in Mumbai, plus a $0.10 cluster fee unless the free tier pays it. So the sum has a crossover. Above roughly two-thirds to four-fifths of the month, the pod is cheaper; below it, the instance that sleeps.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127869;</div><div>
+<p><strong>Office lunches in Bengaluru: a caterer on call, or a canteen with its own cook.</strong> The caterer comes when you call, cooks, stays a few minutes to clear up, and bills for every hour he was in the building. The canteen cook is on the payroll every hour of the month, cooking or not. His hourly rate is lower, and lunch is ready the moment anyone walks in. If the office eats in short bursts, call the caterer. If someone is eating most of the day, hire the cook: past roughly three-quarters of the day, the payroll is the cheaper bill.</p>
+<p>The caterer's firm works only from another city; the cook can be hired locally. Before hiring, you read the job description. This one gives the cook instructions he never reads, sends him to a kitchen with no tandoor, and forgets his groceries.</p>
+<p>The caterer is Cloud Run, and clearing up is the idle window. The cook is the GKE pod, and the payroll is the always-on node. The job description is the manifest. The kitchen with no tandoor is the lane's CPU cluster, and the groceries are the model's weights.</p></div></div>
+
+<h4>Always on, or on demand?</h4>
+<p>Pick how often your traffic comes, how long each burst lasts, on how many days, where the pod would run, and who pays the cluster fee. The first box sums the time a Cloud Run instance lives. The second prices an always-on pod. The third says which is cheaper and where the crossover sits.</p>
+
+<div class="diagram pc" id="dc">
+<div class="dg-title">The duty-cycle sum: an instance that sleeps against a pod that never does</div>
+<div class="pc-in"><label>Bursts a day<select id="dc-bursts">%%BURSTS_OPTIONS%%</select></label>
+<label>Each burst<select id="dc-minutes">%%MINUTES_OPTIONS%%</select></label>
+<label>Days a month<select id="dc-days">%%DAYS_OPTIONS%%</select></label>
+<label>The pod runs in<select id="dc-region">%%REGION_OPTIONS%%</select></label>
+<label>The cluster fee<select id="dc-fee">%%FEE_OPTIONS%%</select></label></div>
+<div class="dc-cols">
+<div class="pc-box"><b class="h">Cloud Run, on demand</b><div class="dc-out" id="dc-run" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">GKE, always on</b><div class="dc-out" id="dc-gke" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The sum</b><div class="dc-out" id="dc-sum" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The rates are Google's, from the Cloud Run, Compute Engine and GKE pricing pages on 24 September 2026. The 10 idle minutes are Cloud Run's limit for a GPU instance, and a month is 730 hours, as Google counts it. The sum is compared with a Python version on all %%N_CHECKED%% combinations.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It counts only the minutes an instance lives, not the minutes an instance takes to start (lesson 9.2 timed that start on your lane). It prices Cloud Run in <code>us-central1</code>, the one self-serve L4 region the kit uses. It leaves out disks, image storage and network.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: vLLM, continuous batching, the gemma-vllm image, documind-inference, GKE Autopilot, the lab cluster, node billing, the manifest, ClusterIP, the duty cycle</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>vLLM</strong></td><td data-label="Meaning">An inference engine for many requests at once: continuous batching and a paged attention cache.</td><td data-label="On your lane">v0.28.0, the gemma-vllm image's base</td></tr>
+<tr><td><strong>Continuous batching</strong></td><td data-label="Meaning">New requests join a running batch as it generates, instead of waiting for it to finish.</td><td data-label="On your lane">32 requests at a time an instance</td></tr>
+<tr><td><strong>The gemma-vllm image</strong></td><td data-label="Meaning">The kit's FastAPI app around vLLM's engine, serving Gemma 3 4B.</td><td data-label="On your lane">built by <code>make build-vllm</code>; not built</td></tr>
+<tr><td><strong>documind-inference</strong></td><td data-label="Meaning">The gateway's route to the vLLM service, through the token proxy.</td><td data-label="On your lane">falls back to <code>documind-slm</code>, then Gemini</td></tr>
+<tr><td><strong>GKE Autopilot</strong></td><td data-label="Meaning">Kubernetes where Google runs the nodes. It bills pods, or whole nodes for pods that ask for a GPU.</td><td data-label="On your lane">not on your lane: <code>gke_autopilot=false</code></td></tr>
+<tr><td><strong>The lab cluster</strong></td><td data-label="Meaning">What <code>make up</code> builds by default: a regional Standard cluster with one CPU node.</td><td data-label="On your lane"><code>documind-autopilot</code>, one <code>e2-standard-2</code></td></tr>
+<tr><td><strong>Node billing</strong></td><td data-label="Meaning">An Autopilot pod that asks for a GPU pays for its whole node, plus a premium.</td><td data-label="On your lane"><code>g2-standard-8</code>: $%%GKE_US%% an hour in Iowa, $%%GKE_IN%% in Mumbai</td></tr>
+<tr><td><strong>The manifest</strong></td><td data-label="Meaning">The Kubernetes objects <code>make gke-up</code> applies: a Deployment and a Service.</td><td data-label="On your lane"><code>gke/vllm-deployment.yaml</code></td></tr>
+<tr><td><strong>ClusterIP</strong></td><td data-label="Meaning">A Service address that exists only inside the cluster.</td><td data-label="On your lane">reached with <code>kubectl port-forward</code></td></tr>
+<tr><td><strong>The duty cycle</strong></td><td data-label="Meaning">The share of the month an instance lives and bills, its idle minutes included.</td><td data-label="On your lane">step 6 sums yours</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: Cloud Run bills an instance while it lives, and GKE bills a node while it exists. An idle instance stops by itself; a node stays until the pod or the cluster is deleted.</p>

@@ -1,0 +1,97 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 7 &middot; Graph and multimodal &middot; Lesson 7.2</div>
+<h1>Compare Firestore and Spanner graph paths: <span>seeded by a name, or by meaning</span></h1>
+<p>Lesson 7.1 built the handbook's graph. A walk through it has to start somewhere: a seed, the node the question is about. The kit can keep the same graph in two stores, and they find the seed in different ways. Firestore looks for a stored name inside the question, so "Who signs off on a big purchase?" finds nothing: the handbook says Purchase approval and names the CFO, and the question says neither. Spanner compares the question's meaning with every node's name, so it can start from Purchase approval, and one hop along an edge reaches the CFO.</p>
+<p>In this lesson you walk both graphs with that question, build the Spanner copy, and put the walk in front of the dense pool on a candidate, once from each store.</p>
+<div class="hero-chips"><div class="hero-chip">FirestoreGraph</div><div class="hero-chip">SpannerGraph</div><div class="hero-chip">containment</div><div class="hero-chip">COSINE_DISTANCE</div><div class="hero-chip">GRAPH_SEED_DISTANCE</div><div class="hero-chip">DocuMindGraph</div><div class="hero-chip">RETRIEVAL_GRAPH=auto</div><div class="hero-chip">/version</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Two ways into one graph</a></li>
+<li><a href="#s2">The words: seed, containment, candidate name, meaning, cosine distance, threshold, hop, property graph, interleaving, graph_chunks</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The seeders, run</a></li>
+<li><a href="#s4">The Firestore path: a name the question contains</a></li>
+<li><a href="#s5">The Spanner path: build it, read it, walk it by meaning</a></li>
+<li><a href="#s6">The walk in front of the dense pool, on a candidate</a></li>
+<li><a href="#s7">Why two paths, what each costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a walk starts, and the two ways the kit finds its seed: containment on Firestore, cosine distance on Spanner. You will see what the walk hands the retriever, and when <code>auto</code> lets it run. Then you will prove it on your lane: the CFO question, which never says CFO, answered with the walk in front of the pool, and <code>/version</code> naming the store that walked.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Two ways into one graph</h3><p>A seed, a walk, and what the walk hands the pool.</p></div></div>
+
+<p><strong>A walk needs a seed.</strong> The graph from lesson 7.1 is nodes and edges, and each carries the chunk ids that state it. <code>retriever.graph_candidates()</code> uses it in three moves:</p>
+<ol>
+<li><strong>Seed.</strong> Find the nodes the question is about: at most five.</li>
+<li><strong>Walk.</strong> Follow edges from them in either direction, <code>GRAPH_HOPS</code> hops (one by default), keeping at most <code>GRAPH_CAP</code> nodes (20).</li>
+<li><strong>Hand over.</strong> Fetch the chunks those nodes cite, by id, and put them in the pool ahead of the dense candidates.</li>
+</ol>
+<p>The graph can help only a question it can seed.</p>
+
+<p><strong>Firestore seeds by name.</strong> <code>FirestoreGraph.seed()</code> reads every node of the tenant. It keeps a node when the node's name is inside the lower-cased question, or when the name contains a capitalised run of the question of five letters or more (question words such as Who and Which are left out). There is no model call. A stored name has to appear in the question, even if only as part of a word.</p>
+
+<p><strong>Spanner seeds by meaning.</strong> <code>make graph GRAPH_BACKEND=spanner</code> stores each node's name with its text-embedding-005 vector, in a column called <code>embedding</code>. At question time <code>SpannerGraph.seed_by_vector()</code> embeds the question once and asks Spanner for the five names nearest to it by cosine distance. A name farther than <code>GRAPH_SEED_DISTANCE</code> (0.4) does not seed, so a question about nothing in the graph seeds nothing.</p>
+
+<p><strong>The walk itself.</strong> On Firestore, each hop is two <code>in</code> queries per 30 node ids: edges out, then edges in. On Spanner, the whole walk is one GQL statement over the <code>DocuMindGraph</code> property graph. The seeds, their neighbours and the neighbours' chunk ids are all read in one consistent snapshot.</p>
+
+<p><strong>When the walk runs.</strong> <code>RETRIEVAL_GRAPH</code> is off on the lane:</p>
+<ul>
+<li><code>on</code> walks every question that finds a seed.</li>
+<li><code>auto</code> also needs a relational word, such as who, which, whose, depend or supersede. <code>choose_mode()</code> checks for one with a regular expression, not a model.</li>
+</ul>
+<p>Either way, the walk's chunks join the pool first, at score 1.0, and the reranker then orders the whole pool.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127973;</div><div>
+<p><strong>The directory board and the enquiry counter at a government hospital.</strong> At the gate, a board lists the departments by name: Cardiology, Orthopaedics, Nephrology. A visitor who knows the word walks straight there. A visitor who says "my father has chest pain" gets nothing from the board.</p>
+<p>The clerk at the enquiry counter understands what the visitor means and sends them to Cardiology. From Cardiology, a sign in the corridor points on to the ECG room.</p>
+<p>The board is containment: free and instant, but useless without the department's name. The clerk is meaning, and costs a salary whether or not anyone asks, as Spanner bills by the hour. A good clerk who is unsure says "go to the general OPD" rather than guess: that is the threshold, past which the dense pool answers alone. The corridor signs are the edges.</p></div></div>
+
+<h4>One question, two ways in</h4>
+<p>Pick one of the seven questions, or type your own. The panel runs both seeders over the handbook's graph from lesson 7.1:</p>
+<ul>
+<li>the Firestore column runs the kit's containment rule exactly, on any question you type;</li>
+<li>the Spanner column ranks the names by distance, and the slider sets <code>GRAPH_SEED_DISTANCE</code>;</li>
+<li>both show whether <code>RETRIEVAL_GRAPH</code> lets the walk run, the nodes it reaches, and the clauses it puts first in the pool.</li>
+</ul>
+
+<div class="diagram pc" id="gp">
+<div class="dg-title">One question, two ways into the handbook's graph</div>
+<div class="pc-box"><b class="h">The question and the settings</b>
+<div class="pc-in"><label>Question<select id="gp-q"></select></label><label id="gp-own-l" hidden>Your question<input id="gp-own" type="text" value="Who approves Form 16?" autocomplete="off"></label></div>
+<div class="pc-in"><label>RETRIEVAL_GRAPH<select id="gp-mode"><option value="auto">auto</option><option value="on">on</option></select></label><label>GRAPH_HOPS<select id="gp-hops"><option value="1">1</option><option value="2">2</option></select></label><label>GRAPH_SEED_K<select id="gp-k"><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option></select></label><label>GRAPH_SEED_DISTANCE <span id="gp-dv">0.40</span><input id="gp-d" type="range" min="0.2" max="0.6" step="0.01" value="0.4"></label></div></div>
+<div class="gp-cols">
+<div class="pc-box"><b class="h">Firestore: by name</b><div class="fs-grid" id="gp-fs" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">Spanner: by meaning</b><div class="fs-grid" id="gp-sp" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The graph is lesson 7.1's: %%N_NODES%% nodes and %%N_EDGES%% edges from the stand-in's extractions. The Firestore column is the kit's own <code>_candidate_names()</code>, <code>_seed_match()</code>, <code>choose_mode()</code> and walk, ported and checked against the kit's code on %%N_CHECKED%% cases. The Spanner column's distances come from this page's stand-in for text-embedding-005; step 5 prints yours.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>The distances come from a stand-in: a vector per phrase built from a small table of concepts, plus noise, so that related phrases land near each other. Your lane's numbers will differ, and so may the names that fall inside 0.4. The rules both columns apply are the kit's own.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: seed, containment, candidate name, meaning, cosine distance, threshold, hop, property graph, interleaving, graph_chunks</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Seed</strong></td><td data-label="Meaning">A node a walk starts from.</td><td data-label="On your lane">at most five per question</td></tr>
+<tr><td><strong>Containment</strong></td><td data-label="Meaning">Firestore's rule: a stored name inside the question, or a candidate name inside a stored name. Lower case, any substring, no model.</td><td data-label="On your lane"><code>FirestoreGraph.seed()</code>, which reads every node of the tenant</td></tr>
+<tr><td><strong>Candidate name</strong></td><td data-label="Meaning">A capitalised run of the question, five letters or more, question words left out. With none, the whole question stands in.</td><td data-label="On your lane">"Purchase" in "a Purchase above two lakh"; none in "a purchase above two lakh"</td></tr>
+<tr><td><strong>Seeding by meaning</strong></td><td data-label="Meaning">Spanner's rule: the question's embedding compared with each node name's.</td><td data-label="On your lane">text-embedding-005, <code>SEMANTIC_SIMILARITY</code>, 768 numbers per name</td></tr>
+<tr><td><strong>Cosine distance</strong></td><td data-label="Meaning">One minus the cosine of the angle between two vectors: 0 when they point the same way, larger as they differ.</td><td data-label="On your lane"><code>COSINE_DISTANCE(embedding, @q)</code>, exact, over every node</td></tr>
+<tr><td><strong><code>GRAPH_SEED_K</code>, <code>GRAPH_SEED_DISTANCE</code></strong></td><td data-label="Meaning">How many of the nearest names are considered, and how far away one may be and still seed.</td><td data-label="On your lane">5 and 0.4; <code>config.py</code> calls 0.4 unverified on the real corpus</td></tr>
+<tr><td><strong>Hop</strong></td><td data-label="Meaning">One step along an edge, in either direction.</td><td data-label="On your lane"><code>GRAPH_HOPS</code> 1 (or 2), at most <code>GRAPH_CAP</code> 20 nodes</td></tr>
+<tr><td><strong>Property graph</strong></td><td data-label="Meaning">Spanner's graph view of ordinary tables, queried in GQL.</td><td data-label="On your lane"><code>DocuMindGraph</code>: <code>GraphNode</code>, and <code>GraphEdge</code> labelled <code>RELATES_TO</code></td></tr>
+<tr><td><strong>Interleaving</strong></td><td data-label="Meaning">Child rows stored with their parent row.</td><td data-label="On your lane">each <code>GraphEdge</code> inside its source <code>GraphNode</code>; deleting the node deletes its edges</td></tr>
+<tr><td><strong><code>RETRIEVAL_GRAPH</code>, <code>graph_chunks</code></strong></td><td data-label="Meaning">The switch (off, on or auto), and how many chunks of the pool the walk put there.</td><td data-label="On your lane">off on the live revision; <code>/version</code> names the store as <code>graph_backend</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the seed decides where a walk starts, and the edges decide where it goes. Spanner changes the first and not the second. Both stores hold the same nodes and edges, so from the same seeds they reach the same nodes; only which of them survive the 20-node cap can differ.</p>

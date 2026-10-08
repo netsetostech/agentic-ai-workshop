@@ -1,0 +1,123 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>API</code> and <code>ME</code> set by the setup above. You also need lesson 7.3's lane: <code>MANAGED_MIRROR=both</code>, zeta pinned to <code>vertex_search</code>, and zeta's two stores in sync.</p>
+<ul>
+<li><strong>rank-bm25.</strong> The ablation's hybrid arm imports <code>rank_bm25</code>. The Makefile's comment above <code>ablate</code> names it, but no requirements file installs it, so step 4's first line does. Lesson 2.2 installed it already, and running it again is safe.</li>
+<li><strong>The pin window.</strong> The setup moved acme to the kit's own index. Nothing here asks acme through the API: the ablation queries each store directly, and the drills ask zeta, which stays pinned to Vertex AI Search.</li>
+<li><strong>What the lesson changes.</strong> It uploads a second version of zeta's handbook, then the first version's bytes again. Then it withdraws the handbook and restores it. It ends where it started: version 1 current, and in both stores.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The four events through the kit's mirror, run</h3><p>The kit's Mirror and the check behind <code>make managed-status</code>, with two stand-in stores and a stand-in ledger.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell imports the kit's <code>managed.py</code> and runs its <code>Mirror</code> with two stand-in stores, one in us-central1 and one in <code>global</code>, as the real ones declare. It also needs a stand-in ledger. That is the handbook's rows (<code>chunks</code>) and its ledger row (<code>sources</code>), the two collections the mirror and <code>status()</code> read. The five moves:</p>
+<ol>
+<li>v1 is ingested: the worker's swap, then <code>after_swap()</code>;</li>
+<li>v2 replaces it: <code>after_swap()</code>, with v1 in the swap's <code>retired_doc_keys</code>;</li>
+<li>the undo: the rows flipped back to v1, then <code>after_undo()</code>, which is given no text;</li>
+<li><code>make retire</code>: the rows retired and the ledger row withdrawn, then <code>retired(..., "withdrawn")</code>;</li>
+<li><code>make restore</code>, with the stand-in Vertex AI Search refusing one import: the rows current again, then <code>after_undo()</code>.</li>
+</ol>
+<p>After each move, the kit's <code>status()</code>, which is what <code>make managed-status</code> prints, holds both stores against the ledger.</p>
+
+<h4>The code</h4>
+@@after_undo@@
+
+<h4>Do it</h4>
+%%CELL_RULES%%
+%%OUT_RULES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>A new version is one call with two effects.</strong> <code>after_swap()</code> copied v2 into both stores and took v1 out of both (<code>delete:superseded</code>). Each store ends up holding one version, the one the ledger calls current.</li>
+<li><strong>The undo was given no text.</strong> <code>after_undo()</code> read v1's text off its rows, which is why both stores now hold "a notice period of 30 days". Then it took v2 out. Nothing was parsed or embedded.</li>
+<li><strong><code>make retire</code> emptied both stores</strong> (<code>delete:withdrawn</code>). The ledger row is withdrawn, so the ledger has no current version, and <code>in sync</code> means that both stores hold nothing.</li>
+<li><strong>The restore took the undo's path.</strong> When Vertex AI Search refused the import, the mirror wrote <code>mirror_failed</code> and went on, because a copy never fails an ingest. Only <code>make managed-status</code> saw it: <code>vertex_search drift, missing ['v1']</code>.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Measure</span><h3>Six arms, one golden set: is a store as good?</h3><p>The kit's ablation harness, with the two stores beside its four arms: recall, MRR and a miss list for each.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make ablate</code> runs <code>evals/ablate.py</code> with the lane's settings, and <code>--arms all</code> adds the two store arms to the kit's four. Every arm gets the same %%N_ROWS%% rows, each asked of its own tenant. No model answers anything: the harness calls only the embeddings, the stores and the reranker, so it takes a few minutes.</p>
+@@arms@@
+@@source_of@@
+<p>A store's context names its version by doc_key, and <code>source_of()</code> finds that version's source through the kit's rows. So an anchor that is a file's name can match a store's chunk, as it does the kit's own. It reads the rows whatever their <code>current</code> flag says.</p>
+
+<h4>Do it</h4>
+%%CELL_ABLATE%%
+%%OUT_ABLATE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The expected output comes from a stand-in whose retrieval is word overlap. The shape is the kit's, but the numbers are not yours. Read it in the order the harness prints under the table:</p>
+<ul>
+<li><strong>recall@depth is the reranker's ceiling.</strong> On the stand-in, dense 20, dense 50 and hybrid all reach 1.00 at their depth, and all score 0.94 recall@5. Depth is not the knob there, and their three misses are <code>ranked out</code>: the reranker's.</li>
+<li><strong>A store arm's depth is what the store returned, not 20.</strong> RAG Engine returns only the contexts inside distance 0.5, and Vertex AI Search returns up to three segments a document. <code>not retrieved at depth 0</code> is a row for which the store returned nothing at all.</li>
+<li><strong>The two failed rows are globex's.</strong> globex has no corpus and no data store (lesson 7.3), so each store arm scores 45 rows. The harness prints the failures beside the line instead of scoring them as zeros.</li>
+<li><strong>Hold each store row against the lane's row.</strong> The rows and the reranker are the same, and only the retriever changed. For a real reference, the kit's docstring records one run from Cloud Shell on 8 September 2026, over 43 rows: dense 5 alone 0.91 recall@5 and 0.81 MRR; the lane's dense 20 &rarr; rerank 5 0.96 and 0.91; dense 50 &rarr; rerank 5 0.99 and 0.94.</li>
+</ul></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Update</span><h3>A new version, then the undo</h3><p>zeta's handbook with a longer notice period, then its first bytes again, and the stores held against the ledger after each.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell writes a second version of zeta's handbook with one change: a confirmed employee's notice period goes from 30 days to 45. <code>make reindex</code> uploads it under the same name and waits for the worker's line. Then <code>fresh154</code> checks three things:</p>
+<ol>
+<li>the mirror's <code>doc.mirror</code> events for zeta since the upload, read from the audit bucket;</li>
+<li><code>make managed-status TENANT_ONLY=zeta</code> every 20 seconds, until the handbook's ledger status is the one asked for and both stores are <code>in sync</code>. It prints only the changes of state;</li>
+<li>zeta, asked the notice-period question through the API as <code>documind-ui-sa</code>.</li>
+</ol>
+<p>The audit events are the one record that every event leaves. Step 6 shows why the cell reads them instead of the logs: <code>make retire</code>'s deletes print no line. The cell defines <code>fresh154</code> in your shell, and the three cells after it call it again, so run all four in the same shell.</p>
+
+<h4>Do it</h4>
+%%CELL_UPDATE%%
+%%OUT_UPDATE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The worker reused 282 of the 283 chunks and embedded one,</strong> the chunk with the changed clause. The swap retired version 1's 283 rows, which expire 30 days later.</li>
+<li><strong>The mirror sent version 2 (<code>%%K2%%</code>) to both stores and took version 1 out of both.</strong> Those are the four <code>doc.mirror</code> events, the same moves as step 3.</li>
+<li><strong><code>make managed-status</code> read <code>drift</code> for Vertex AI Search first.</strong> The import had been requested, not finished. At 0:20 both stores were in sync, with 7 versions each. On a real data store the import takes minutes, so expect the drift line to stand longer.</li>
+<li><strong>zeta, answered from Vertex AI Search, says 45 days,</strong> and the chunk it cites carries version 2's doc_key.</li>
+</ul></div>
+
+<p>Now the undo: the same name, with the first version's bytes, straight from the kit's corpus. This is the worker's branch for a version it has seen before:</p>
+@@undo@@
+%%CELL_UNDO%%
+%%OUT_UNDO%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong><code>ingest_reactivated</code>, with 283 reused and 0 embedded.</strong> The worker found version 1's claim superseded and flipped its rows back instead of ingesting the bytes again. Its <code>retired</code> column, 283, is version 2's rows.</li>
+<li><strong>The mirror did the update in reverse:</strong> version 1 (<code>%%K1%%</code>) into both stores, version 2 out of both. <code>after_undo()</code> read the text off version 1's rows.</li>
+<li><strong>In sync at 0:20, and zeta says 30 days again,</strong> citing version 1's doc_key.</li>
+</ul></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>A withdrawal, then the restore</h3><p>The handbook taken down by hand, every store emptied of it, and then brought back.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make retire SOURCE=</code> runs <code>reconcile.py --retire</code>, with the mirror and the audit bucket the nightly job has. It retires every current row of the source, tells every store, and turns the ledger row into a tombstone:</p>
+@@retire@@
+<p><code>make restore SOURCE=</code> refuses anything but a withdrawn source. For a withdrawn one, it lifts the tombstone to <code>retired</code> and rewrites the object onto itself:</p>
+@@restore@@
+
+<h4>Do it</h4>
+%%CELL_RETIRE%%
+%%OUT_RETIRE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong><code>reconcile_withdrawn</code> names the version it retired</strong> and its 283 chunk ids, cut here to the first and the last. It also carries a new fingerprint for zeta's corpus.</li>
+<li><strong>Two <code>doc.mirror</code> events: <code>delete:withdrawn</code>, one from each store.</strong> The cell has to read them from the audit bucket. <code>reconcile.py</code> configures no logging, so the mirror's <code>mirror_ok</code> lines, which are INFO, are dropped, in your shell and in the nightly job alike.</li>
+<li><strong>In sync at once:</strong> the ledger counts 6 current versions for zeta, and each store holds 6. A delete takes effect at once; only an import is long-running.</li>
+<li><strong>zeta's answer is "The context does not say."</strong> The notice period is gone from both stores and from the kit's own index.</li>
+</ul></div>
+
+<p>Then the restore:</p>
+%%CELL_RESTORE%%
+%%OUT_RESTORE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>reconcile_restored</code>: the tombstone went to <code>retired</code>, and the object was rewritten onto itself as a new generation. Its event reached the worker, which reactivated version 1's rows inside the 30-day undo window, with nothing embedded. The mirror copied version 1 into both stores, and there was nothing to take out, because no other version was current. In sync at 0:20, 7 versions each, and zeta says 30 days again.</p>
+<p>That is the proof: <code>make managed-status</code> reads <code>in sync</code> after a reindex, an undo, a withdrawal and a restore.</p></div>

@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson B.3 Read a transformer block, with layer normalization - six words, two heads, one block in numpy | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.ax-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px 16px;margin-bottom:12px;}
+.ax-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.ax-l select{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.ax-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+.ax-grid{--ax-cell:34px;--ax-gap:3px;--ax-font:12px;--ax-pad:6px;display:grid;grid-template-columns:max-content repeat(6,minmax(var(--ax-cell),1fr));gap:var(--ax-gap);font-family:var(--mono);font-size:var(--ax-font);}
+.ax-col{display:flex;align-items:flex-end;justify-content:center;font-size:var(--kicker-size);font-weight:700;color:var(--navy);padding:2px 0 4px;}
+.ax-r{font:inherit;font-weight:700;color:var(--navy);background:var(--card);border:1px solid var(--border);border-radius:7px;padding:4px var(--ax-pad);text-align:right;cursor:pointer;min-height:max(34px,var(--touch));}
+.ax-r.on{border-color:var(--teal);background:var(--teal-light);box-shadow:inset 3px 0 0 var(--teal);}
+.ax-r:active{transform:scale(.97);}
+.ax-c{display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--navy);min-height:34px;}
+.ax-c.dark{color:#fff;}
+.ax-c.sel{box-shadow:inset 0 0 0 2px var(--cyan);}
+.ax-c.ax-m{background:repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 4px,#e2e8f0 4px,#e2e8f0 8px);color:var(--slate-light);}
+.ax-sum{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal-dark);margin:10px 0 0;overflow-wrap:anywhere;line-height:1.6;}
+@media (max-width: 640px){.ax-col{display:block;writing-mode:vertical-rl;justify-self:center;align-self:end;padding:4px 0;}}
+@media (max-width: 380px){.ax-grid{--ax-cell:29px;--ax-gap:2px;--ax-font:11px;--ax-pad:4px;}}
+@media (hover:hover) and (pointer:fine){.ax-r:hover{border-color:var(--teal);}}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.3</div>
+<h1>Read a transformer block, with layer normalization: <span>six words, two heads, one block in numpy</span></h1>
+<p>Gemini, the model family that writes DocuMind's answers, is built from transformer blocks, and every token the kit sends it passes through every one of them. This page builds one block in numpy on a six-word sentence, a part at a time, so that each part is a few lines you can read and a matrix you can check: the words as vectors, one attention head and its weights, two heads joined, the residual path, layer normalization and the feed-forward step. You will watch a head's weights add up to 1 in every row, every word leave layer normalization at mean 0 and variance 1, and the block hand back six vectors of eight numbers, ready for the next block. Then you will see where the kit meets the same design: in the token counts it plans every call around.</p>
+<div class="hero-chips"><div class="hero-chip">6 tokens, 8 numbers each</div><div class="hero-chip">2 heads of 4</div><div class="hero-chip">every row adds up to 1</div><div class="hero-chip">mean 0, variance 1</div><div class="hero-chip">840 numbers to learn</div><div class="hero-chip">numpy only, Rs 0</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a transformer block does</a></li>
+<li><a href="#s2">The words: query, key, value, head, residual, layer norm</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">Six words, eight numbers each</a></li>
+<li><a href="#s4">One head: queries, keys, values and the weights</a></li>
+<li><a href="#s5">Two heads, joined, and what a head may see</a></li>
+<li><a href="#s6">The residual path: add the input back</a></li>
+<li><a href="#s7">Layer normalization: mean 0, variance 1, then a scale and a shift</a></li>
+<li><a href="#s8">The block, assembled</a></li>
+<li><a href="#s9">Where the kit meets the block: tokens and their ceilings</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will build one transformer block in numpy on the sentence <em>the employee serves ninety days notice</em>: the words as vectors, one attention head and the table of weights it computes, two heads joined, the residual path, layer normalization (each word's eight numbers checked at mean 0 and variance 1) and the feed-forward step, assembled in two orders. Then you will read where DocuMind's kit meets the design: the token ceilings of its embedding requests and the token budget of its prompts.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a transformer block does</h3><p>Six vectors in, six vectors out, and the one step in between where the words look at each other.</p></div></div>
+
+<p><strong>A block takes vectors and returns vectors of the same shape.</strong> A model reads text as tokens, and each token as a vector of numbers (lesson B.2). A transformer block takes the vectors of a whole sequence at once, six of them for a six-word sentence, and hands back six vectors of the same size. A model is a stack of these blocks, each with weights of its own, the output of one being the input of the next. What changes on the way up is what the numbers carry. Going in, the vector for <em>employee</em> says only "employee, second word"; coming out of a block, it also carries something of the words around it, such as who does what.</p>
+
+<p><strong>Attention is the only step where words meet.</strong> Inside the block, three weight matrices turn each word's vector into three smaller ones: a <em>query</em>, what the word is looking for; a <em>key</em>, what it offers to be found by; and a <em>value</em>, what it hands over when it is found. Every query is compared with every key by a dot product, each row of scores becomes shares that add up to 1 (the softmax), and each word receives the share-weighted sum of all the values. One set of the three matrices is a <em>head</em>. A block runs several heads side by side, each free to look for something different, and joins what they return. Every other step in the block works on each word alone.</p>
+
+<p><strong>Two plain-looking parts make a deep stack work.</strong> The <em>residual path</em> adds each step's input back to its output, so a word keeps what it was and gains what it found. <em>Layer normalization</em> then moves each word's numbers to a mean of 0 and a variance of 1, followed by a learned scale and shift, so every step receives numbers on the same scale, whatever the step before it did. The last part, the <em>feed-forward</em> step, is a small two-layer network applied to every word on its own.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128101;</div><div>
+<p><strong>A stand-up meeting.</strong> Six engineers stand in a circle. Each writes the question on their mind on a card (the query), wears a badge saying what they can speak to (the key), and holds their notes (the value). Everyone reads every badge, splits their attention, all of it and no more, by how well each badge answers their card, and copies that share of each colleague's notes into a notebook. Two rounds run at once with different cards: one asks "who spoke just before me?", the other "whose work does mine fit with?". Those are two heads.</p>
+<p>Nobody tears out their own pages: what they heard is written beside what they had (the residual path). Before the next meeting everyone rewrites their notebook to one standard size, so the colleague who writes large does not drown out the one who writes small (layer normalization). Then each one thinks alone for a minute over what they now have (the feed-forward step). The next meeting is the next block.</p></div></div>
+
+<h4>The block, part by part</h4>
+<div class="diagram"><div class="dg-title">One transformer block, in the order the 2017 paper draws it</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><div class="fs-n">1</div><div><b>In: X, 6 &times; 8.</b> Each word's vector plus its position's: six rows, eight numbers each.</div></div><div class="fs-branch"><b>Step 3</b> builds X.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">2</div><div><b>Multi-head attention.</b> Two heads read X side by side; their outputs are joined and multiplied by W<sub>O</sub>, back to 6 &times; 8.</div></div><div class="fs-branch"><b>Steps 4 and 5.</b> The only part where one word reads another.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">3</div><div><b>Add.</b> X + attention(X): the input comes back around the attention.</div></div><div class="fs-branch"><b>Step 6.</b> The residual path.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">4</div><div><b>Layer norm.</b> Each word's eight numbers to mean 0 and variance 1, then a scale γ and a shift β.</div></div><div class="fs-branch"><b>Step 7.</b> One word at a time.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">5</div><div><b>Feed-forward.</b> The same small network on every word: eight numbers out to 32 and back to eight.</div></div><div class="fs-branch"><b>Step 8.</b> Each word alone.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">6</div><div><b>Add, then layer norm, again.</b> The residual path around the feed-forward step, and a second norm.</div></div><div class="fs-branch"><b>Step 8.</b> The same wrapping as parts 3 and 4.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">7</div><div><b>Out: Y, 6 &times; 8.</b> The same shape as X, so the next block reads Y exactly as this one read X.</div></div><div class="fs-branch"><b>A model</b> is this block, stacked, each copy with weights of its own.</div></div>
+</div>
+<p class="dg-cap">The order is the one in the 2017 paper that introduced the design (Vaswani and others, <em>Attention Is All You Need</em>): each sub-layer, then add, then norm. GPT-2 and most models since move each norm to the front of its sub-layer and add one more at the very top; step 8 builds both orders from the same parts.</p></div>
+
+<h4>Try it: the toy sentence's attention, head by head</h4>
+<p>The explorer shows the weights this page's cells compute for the sentence <em>the employee serves ninety days notice</em>, one table per head. A row is a word asking, a column the word it looks at, and each row's six shares add up to 1. Head 1 looks one word back, and reads only the position numbers. Head 2 looks for the word each word fits with, and reads only the meaning numbers: a thing looks for the action, the action for the person, the amount for the time. The second switch applies the causal mask a GPT-style model uses, under which a word may look only at itself and the words before it.</p>
+
+<div class="diagram ax" id="ax">
+<div class="dg-title">Attention explorer - the real weights from steps 4 and 5</div>
+<div class="ax-controls">
+<label class="ax-l">Head <select id="ax-head"><option value="1">Head 1: one word back</option><option value="2">Head 2: the word it fits with</option></select></label>
+<label class="ax-l">Mask <select id="ax-mask"><option value="none">None, as in an encoder</option><option value="causal">Causal, as in a decoder</option></select></label>
+</div>
+<div class="ax-scroll" tabindex="0"><div class="ax-grid" id="ax-grid"></div></div>
+<p class="ax-sum" id="ax-sum" aria-live="polite"></p>
+<p class="dg-cap">Darker is a larger share. A hatched cell is masked: its score is set to minus infinity before the softmax, so the rest of the row shares the whole 1. Pick a word on the left to read its row in full. Every number here is one that step 4 or step 5 prints.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">Hand-written weights, not trained ones</div>
+<p>Every weight in this block was written by hand, so that each head does one thing you can name. A trained model learns its weights from text; its heads are rarely this tidy, and there are many more of them. What carries over is the arithmetic, which is exactly the same.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: query, key, value, head, residual, layer norm</h3><p>Thirteen words, each with the value it takes in this page's block.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In this page's block</th></tr></thead>
+<tbody>
+<tr><td><strong>Token</strong></td><td data-label="Meaning">The unit a model reads: a word, a piece of a word, a punctuation mark (lesson B.2).</td><td data-label="In this page's block">One word is one token: 6 tokens.</td></tr>
+<tr><td><strong>Vector</strong>, d<sub>model</sub></td><td data-label="Meaning">The numbers a token is carried as, through every block. Their count is the model's width.</td><td data-label="In this page's block">8 numbers: 4 for the word, 4 for its position.</td></tr>
+<tr><td><strong>Position signal</strong></td><td data-label="Meaning">Numbers added to each token's vector to say where it stands, because attention on its own ignores order.</td><td data-label="In this page's block">Columns 4 to 7: two sine waves, turning 45 and 90 degrees a word.</td></tr>
+<tr><td><strong>Query, key, value</strong></td><td data-label="Meaning">Three projections of each token's vector, by W<sub>Q</sub>, W<sub>K</sub> and W<sub>V</sub>: what it looks for, what it is found by, what it hands over.</td><td data-label="In this page's block">4 numbers each, from 8 &times; 4 matrices.</td></tr>
+<tr><td><strong>Score</strong></td><td data-label="Meaning">A query's dot product with a key, divided by √d<sub>k</sub>, the square root of how many numbers each of them has.</td><td data-label="In this page's block">d<sub>k</sub> = 4, so every dot product is halved.</td></tr>
+<tr><td><strong>Softmax</strong>, attention weights</td><td data-label="Meaning">e to each score in a row, over the row's total: shares that add up to 1. The table of them is the head's weights.</td><td data-label="In this page's block">6 &times; 6 per head. Head 1: <em>employee</em> gives 0.90 to <em>the</em>.</td></tr>
+<tr><td><strong>Head</strong></td><td data-label="Meaning">One W<sub>Q</sub>, W<sub>K</sub> and W<sub>V</sub>, with its own table of weights.</td><td data-label="In this page's block">2 heads: one word back, and the word it fits with.</td></tr>
+<tr><td><strong>Concatenation</strong>, W<sub>O</sub></td><td data-label="Meaning">The heads' outputs side by side, then one more matrix back to the block's width.</td><td data-label="In this page's block">6 &times; 8, then an 8 &times; 8 W<sub>O</sub>.</td></tr>
+<tr><td><strong>Mask</strong></td><td data-label="Meaning">Which words a word may attend to: all of them in an encoder (BERT-style); itself and earlier words only in a decoder (GPT-style).</td><td data-label="In this page's block">The causal mask sets every later word's score to minus infinity.</td></tr>
+<tr><td><strong>Residual path</strong></td><td data-label="Meaning">A step's input added back to its output: x + sublayer(x).</td><td data-label="In this page's block">Every word stays close to itself: cos(X, H) at least 0.82.</td></tr>
+<tr><td><strong>Layer normalization</strong></td><td data-label="Meaning">Per token: subtract the mean of its numbers, divide by their standard deviation (with a small ε added to the variance), then scale by γ and shift by β, both learned.</td><td data-label="In this page's block">Mean 0.000000, variance 0.999939 to 0.999982, with ε = 0.00001.</td></tr>
+<tr><td><strong>Feed-forward step</strong></td><td data-label="Meaning">Two weight matrices with a ReLU between them, applied to each token alone.</td><td data-label="In this page's block">8 &rarr; 32 &rarr; 8.</td></tr>
+<tr><td><strong>Block</strong></td><td data-label="Meaning">Attention and the feed-forward step, each wrapped in a residual path and a norm. The same shape out as in.</td><td data-label="In this page's block">6 &times; 8 in, 6 &times; 8 out, 840 numbers to learn.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three of these come from lesson B.2: the token, the vector and the dot product. The rest is the machinery between them. Lesson B.4 and lesson B.5 put it to work, as an encoder that reads a whole text at once and as a decoder that writes one token after another.</p>
+
+<h3 id="setup">Before you run anything: set up your laptop</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>Every cell on this page runs on your own laptop, in a bash shell: the Terminal on macOS or Linux, WSL or Git Bash on Windows, or Cloud Shell in a browser. The Python is 3.12, the version the kit's services run in their images (<code>python:3.12-slim</code>), inside a virtual environment of its own, <code>~/basics-venv</code>, so nothing is installed into the Python your system uses. Most cells need no account and no network. The cells that call Gemini need the Google Cloud project you create in lesson 0.1 and Application Default Credentials, and their labels say so.</p>
+
+<p>Set up the venv once. The block below finds a Python 3.12 or newer, makes the venv the first time and activates it every time after. Then it installs the two libraries the Basics pages use, at fixed versions: numpy for the arithmetic, and google-genai, at the version the kit pins, for the calls to Gemini. The last line proves both import.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in a bash shell on your laptop, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export BASICS_VENV="$HOME/basics-venv"
+PY312="$(command -v python3.12 || command -v python3)"; [ -n "$PY312" ] || PY312="py -3.12"   <span class="cm"># Windows, Git Bash: the py launcher</span>
+[ -d "$BASICS_VENV" ] || $PY312 -m venv "$BASICS_VENV"                                      <span class="cm"># the first time only</span>
+source "$BASICS_VENV/bin/activate" 2&gt;/dev/null || source "$BASICS_VENV/Scripts/activate"   <span class="cm"># macOS and Linux, else Windows</span>
+python -m pip install -q "numpy==2.5.3" "google-genai==2.22.0"                             <span class="cm"># numpy 2.5 needs Python 3.12 or newer</span>
+python -c "import sys, numpy, google.genai as g; print(sys.version.split()[0], numpy.__version__, g.__version__)"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (the first number is your Python's own patch release)</span><span class="ro">read only</span></div><pre tabindex="0">3.12.x 2.5.3 2.22.0</pre></div>
+
+<p>The cells that call Gemini need two more things: your project from lesson 0.1, and Application Default Credentials, the sign-in Google's client libraries read. Run the block below once, after lesson 0.1, in the same shell; the browser opens for the sign-in. It uses the gcloud CLI, which lesson 0.2 installs on a laptop and Cloud Shell already has. As in the kit, Gemini 3 models are called on the <code>global</code> location and the embedding model on <code>us-central1</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run once, for the cells that call Gemini (after lesson 0.1)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud auth application-default login                                <span class="cm"># once: the sign-in client libraries read</span>
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)"     <span class="cm"># the project from lesson 0.1</span>
+gcloud services enable aiplatform.googleapis.com --project "$PROJECT"   <span class="cm"># Vertex AI, where the kit calls Gemini</span>
+echo "PROJECT=$PROJECT"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">PROJECT=documind-ai-YOUR-ID</pre></div>
+
+<div class="box box-teal"><div class="box-title">This page needs the first setup block only</div>
+<p>Every cell below is numpy and plain Python: no network, no account, no Google Cloud project and no cost. The second block above, the project and Application Default Credentials, is for the Basics pages that call Gemini; you can leave it for later. Each cell is complete on its own, so you can paste any of them first.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Vectors</span><h3>Six words, eight numbers each</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_3/demo_03_six_words_eight_numbers_each.py" target="_blank" rel="noopener"><code>demo_03_six_words_eight_numbers_each.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The sentence as the block reads it: each word's own numbers, plus a signal for where it stands.</p></div></div>
+
+<h4>Definition</h4>
+<p>A block never sees words, only numbers. Each token arrives as a vector; a trained model's vectors are learned and run to hundreds or thousands of numbers. This page's have eight, and you can read every one. Columns 0 to 3 are the word: four numbers set by hand, saying whether it is a thing, an action or an amount, and whether it names a person (+1) or a span of time (−1). Columns 4 to 7 are its position: the sine and cosine of two waves, a slow one that turns 45 degrees from one word to the next and a fast one that turns 90. The word's vector and the position's vector are added before the first block, as in the 2017 paper; here they sit in separate columns, so the sum is also the two side by side.</p>
+<p>The position columns are not decoration. Attention compares every word with every word, in no particular order, so without them nothing in a block could tell <em>the employee serves</em> from <em>serves the employee</em>. Step 5 proves it.</p>
+
+<h4>Do it: build X, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell, in the basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+
+words = ["the", "employee", "serves", "ninety", "days", "notice"]
+# each word's own four numbers, set by hand: thing, action, amount, who/when (+1 a person, -1 a time)
+meaning = np.array([[0, 0, 0, 0],      # the
+                    [1, 0, 0, 1],      # employee: a thing, and a person
+                    [0, 1, 0, 0],      # serves: an action
+                    [0, 0, 1, 0],      # ninety: an amount
+                    [1, 0, 0, -1],     # days: a thing, and a time
+                    [1, 0, 0, 0]])     # notice: a thing
+# each position's four numbers: a slow wave that turns 45 degrees a word, and a fast one that turns 90
+p = np.arange(6)[:, None] * np.pi / 4
+waves = np.hstack([np.sin(p), np.cos(p), np.sin(2 * p), np.cos(2 * p)])
+word_vec = np.hstack([meaning, np.zeros((6, 4))])     # the word, in columns 0 to 3
+pos_vec = np.hstack([np.zeros((6, 4)), waves])        # its position, in columns 4 to 7
+X = word_vec + pos_vec                                # what the block reads: 6 words x 8 numbers
+columns = ["thing", "action", "amount", "who/when", "slow sin", "slow cos", "fast sin", "fast cos"]
+
+def show(title, M, d=2, rows=words, cols=words):
+    print(title)
+    print(" " * 10 + "".join(f"{c:&gt;9}" for c in cols))
+    for name, row in zip(rows, np.round(M, d) + 0.0):
+        print(f"{name:&gt;10}" + "".join(f"{v:9.{d}f}" for v in row))
+
+print("tokens:", X.shape[0], "| numbers per token:", X.shape[1])
+show("X = word vector + position vector", X, cols=columns)
+D = waves @ waves.T
+positions = [f"pos {t}" for t in range(6)]
+show("position . position: one position's waves against another's", D, rows=positions, cols=positions)
+print("the same along every diagonal, so it measures distance only:",
+      all(np.allclose(np.diag(D, k), np.diag(D, k)[0]) for k in range(6)))
+print("every position's signal has the same length:", " ".join(f"{v:.2f}" for v in np.round(np.linalg.norm(waves, axis=1), 2)))
+print("adding the two is the same as setting them side by side:", np.array_equal(X, np.hstack([meaning, waves])))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">tokens: 6 | numbers per token: 8
+X = word vector + position vector
+              thing   action   amount who/when slow sin slow cos fast sin fast cos
+       the     0.00     0.00     0.00     0.00     0.00     1.00     0.00     1.00
+  employee     1.00     0.00     0.00     1.00     0.71     0.71     1.00     0.00
+    serves     0.00     1.00     0.00     0.00     1.00     0.00     0.00    -1.00
+    ninety     0.00     0.00     1.00     0.00     0.71    -0.71    -1.00     0.00
+      days     1.00     0.00     0.00    -1.00     0.00    -1.00     0.00     1.00
+    notice     1.00     0.00     0.00     0.00    -0.71    -0.71     1.00     0.00
+position . position: one position's waves against another's
+              pos 0    pos 1    pos 2    pos 3    pos 4    pos 5
+     pos 0     2.00     0.71    -1.00    -0.71     0.00    -0.71
+     pos 1     0.71     2.00     0.71    -1.00    -0.71     0.00
+     pos 2    -1.00     0.71     2.00     0.71    -1.00    -0.71
+     pos 3    -0.71    -1.00     0.71     2.00     0.71    -1.00
+     pos 4     0.00    -0.71    -1.00     0.71     2.00     0.71
+     pos 5    -0.71     0.00    -0.71    -1.00     0.71     2.00
+the same along every diagonal, so it measures distance only: True
+every position's signal has the same length: 1.41 1.41 1.41 1.41 1.41 1.41
+adding the two is the same as setting them side by side: True</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>X is the whole input: 6 rows, one per token, 8 numbers each. The second table is the property step 4 will use. The dot product of two positions' waves is 2.00 for a position with itself, 0.71 for neighbours, −1.00 two apart and −0.71 three apart, and it is the same at every point in the sentence: it measures how far apart two words are and nothing else. Every position's signal has the same length, 1.41: positions differ in direction, not in size, so no position weighs more than another.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; One head</span><h3>One head: queries, keys, values and the weights</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_3/demo_04_one_head_queries_keys_values_and_the_weights.py" target="_blank" rel="noopener"><code>demo_04_one_head_queries_keys_values_and_the_weights.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Three weight matrices, one table of scores, a softmax per row and a weighted sum: the whole of one head.</p></div></div>
+
+<h4>Definition</h4>
+<p>A head is four lines of arithmetic. Multiply X by three weight matrices to get the queries Q = X W<sub>Q</sub>, the keys K = X W<sub>K</sub> and the values V = X W<sub>V</sub>. Score every query against every key, Q K<sup>T</sup> / √d<sub>k</sub>, which for six words is a 6 &times; 6 table. Turn each row of scores into shares with the softmax: e to each score, over the row's total, so every share is positive and each row adds up to 1. Those shares are the head's <em>weights</em>. Finally, each word's output is its row of weights times V: a weighted sum of every word's value.</p>
+<p>The division by √d<sub>k</sub>, the square root of how many numbers each query and key has, is the "scaled" in the paper's name for it, scaled dot-product attention. If a query's and a key's numbers were independent, with mean 0 and variance 1, their dot product would have a variance of d<sub>k</sub>: the longer the head, the larger the scores, until the softmax hands almost everything to one key. Dividing by √d<sub>k</sub> brings the variance back to 1. Here d<sub>k</sub> = 4, so every dot product is halved.</p>
+
+<h4>Head 1: one word back</h4>
+<p>W<sub>Q</sub> is the matrix to read. It takes only the four wave columns, turns each wave back by one word's angle (45 degrees for the slow wave, 90 for the fast), and multiplies by 4. So the query of the word at position <em>t</em> is four times the waves of position <em>t</em> − 1. W<sub>K</sub> leaves each key as the word's own waves. By step 3's table, two positions' waves have their largest dot product when they are the same position, so every query scores highest against the key one word back. W<sub>V</sub> copies the meaning columns: what head 1 hands each word is, mostly, the meaning of the word before it.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell, in the basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+
+words = ["the", "employee", "serves", "ninety", "days", "notice"]
+meaning = np.array([[0, 0, 0, 0], [1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, -1], [1, 0, 0, 0]])
+p = np.arange(6)[:, None] * np.pi / 4                                          # step 3's positions, as angles
+X = np.hstack([meaning, np.sin(p), np.cos(p), np.sin(2 * p), np.cos(2 * p)])   # step 3's X: 6 words x 8 numbers
+columns = ["thing", "action", "amount", "who/when", "slow sin", "slow cos", "fast sin", "fast cos"]
+
+def show(title, M, d=2, rows=words, cols=words):
+    print(title)
+    print(" " * 10 + "".join(f"{c:&gt;9}" for c in cols))
+    for name, row in zip(rows, np.round(M, d) + 0.0):
+        print(f"{name:&gt;10}" + "".join(f"{v:9.{d}f}" for v in row))
+
+def softmax(S):                                      # row by row: e to each score, over the row's total
+    e = np.exp(S - S.max(axis=1, keepdims=True))     # taking the row's largest off first changes nothing but overflow
+    return e / e.sum(axis=1, keepdims=True)
+
+# head 1's three weight matrices, 8 x 4 each
+c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)
+W_Q = np.zeros((8, 4)); W_Q[4:] = 4 * np.array([[c, s, 0, 0], [-s, c, 0, 0], [0, 0, 0, 1], [0, 0, -1, 0]])
+W_K = np.zeros((8, 4)); W_K[4:] = np.eye(4)          # a key: the word's own position, as it is
+W_V = np.zeros((8, 4)); W_V[:4] = np.eye(4)          # a value: the word's own meaning, as it is
+
+Q, K, V = X @ W_Q, X @ W_K, X @ W_V                  # 6 x 4 each
+scores = Q @ K.T / np.sqrt(4)                        # 6 x 6: every query against every key
+weights = softmax(scores)                            # 6 x 6: each row, one word's attention in shares
+out = weights @ V                                    # 6 x 4: each word's weighted sum of the values
+
+show("W_Q: both waves turned back one word, times 4 (rows: X's columns)", W_Q, rows=columns, cols=["q1", "q2", "q3", "q4"])
+show("Q | K", np.hstack([Q, K]), cols=["q1", "q2", "q3", "q4", "k1", "k2", "k3", "k4"])
+show("scores = Q @ K.T / 2 (rows: the word asking; columns: the word it looks at)", scores)
+show("weights = softmax(scores)", weights)
+print("each row sums to:", " ".join(f"{v:.2f}" for v in np.round(weights.sum(axis=1), 2)))
+show("out = weights @ V: what head 1 hands each word", out, cols=columns[:4])
+for word, row in zip(words, weights):
+    print(f"{word:&gt;10} looks at {words[row.argmax()]:&lt;9}{np.round(row.max(), 2):.2f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">W_Q: both waves turned back one word, times 4 (rows: X's columns)
+                 q1       q2       q3       q4
+     thing     0.00     0.00     0.00     0.00
+    action     0.00     0.00     0.00     0.00
+    amount     0.00     0.00     0.00     0.00
+  who/when     0.00     0.00     0.00     0.00
+  slow sin     2.83     2.83     0.00     0.00
+  slow cos    -2.83     2.83     0.00     0.00
+  fast sin     0.00     0.00     0.00     4.00
+  fast cos     0.00     0.00    -4.00     0.00
+Q | K
+                 q1       q2       q3       q4       k1       k2       k3       k4
+       the    -2.83     2.83    -4.00     0.00     0.00     1.00     0.00     1.00
+  employee     0.00     4.00     0.00     4.00     0.71     0.71     1.00     0.00
+    serves     2.83     2.83     4.00     0.00     1.00     0.00     0.00    -1.00
+    ninety     4.00     0.00     0.00    -4.00     0.71    -0.71    -1.00     0.00
+      days     2.83    -2.83    -4.00     0.00     0.00    -1.00     0.00     1.00
+    notice     0.00    -4.00     0.00     4.00    -0.71    -0.71     1.00     0.00
+scores = Q @ K.T / 2 (rows: the word asking; columns: the word it looks at)
+                the employee   serves   ninety     days   notice
+       the     1.41    -2.00    -1.41     0.00    -1.41    -2.00
+  employee     4.00     1.41    -2.00    -1.41     0.00    -1.41
+    serves     1.41     4.00     1.41    -2.00    -1.41     0.00
+    ninety    -2.00     1.41     4.00     1.41    -2.00    -1.41
+      days    -1.41    -2.00     1.41     4.00     1.41    -2.00
+    notice     0.00    -1.41    -2.00     1.41     4.00     1.41
+weights = softmax(scores)
+                the employee   serves   ninety     days   notice
+       the     0.70     0.02     0.04     0.17     0.04     0.02
+  employee     0.90     0.07     0.00     0.00     0.02     0.00
+    serves     0.06     0.85     0.06     0.00     0.00     0.02
+    ninety     0.00     0.06     0.86     0.06     0.00     0.00
+      days     0.00     0.00     0.06     0.86     0.06     0.00
+    notice     0.02     0.00     0.00     0.06     0.85     0.06
+each row sums to: 1.00 1.00 1.00 1.00 1.00 1.00
+out = weights @ V: what head 1 hands each word
+              thing   action   amount who/when
+       the     0.09     0.04     0.17    -0.02
+  employee     0.09     0.00     0.00     0.05
+    serves     0.87     0.06     0.00     0.85
+    ninety     0.07     0.86     0.06     0.06
+      days     0.07     0.06     0.86    -0.06
+    notice     0.92     0.00     0.06    -0.85
+       the looks at the      0.70
+  employee looks at the      0.90
+    serves looks at employee 0.85
+    ninety looks at serves   0.86
+      days looks at ninety   0.86
+    notice looks at days     0.85</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the <em>employee</em> row. Its query, 0 4 0 4, is four times the waves of position 0, and the key at position 0, the one for <em>the</em>, is 0 1 0 1. Their dot product is 8, which halved is 4.00, the largest score in the row, and the softmax turns it into 0.90. Every row after the first gives 0.85 to 0.90 of its attention to the word before it and spreads the rest thin, because a softmax never gives exactly nothing. The first word has no word before it. Its query points at position −1, so its best match is itself (0.70), with 0.17 left over for <em>ninety</em>, four places from position −1, where the fast wave comes round again. The <code>out</code> table is the payoff: <em>serves</em> receives 0.87 of a thing and 0.85 of a person, which is <em>employee</em>, the word before it.</p></div>
+
+<p>That table of weights is this lesson's proof that a head is arithmetic you can check: 6 rows, each adding up to 1.00, each row one word's attention shared out over all six.</p>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; Heads</span><h3>Two heads, joined, and what a head may see</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_3/demo_05_two_heads_joined_and_what_a_head_may_see.py" target="_blank" rel="noopener"><code>demo_05_two_heads_joined_and_what_a_head_may_see.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A second head with its own question, the two outputs side by side, W<sub>O</sub>; then the causal mask, and the order of the words.</p></div></div>
+
+<h4>Definition</h4>
+<p>A block runs several heads on the same input, each with its own three matrices, so that each can look for something different. Their outputs are set side by side (concatenated) and multiplied by one more matrix, W<sub>O</sub>, which maps them back to the block's own width; step 6 needs that, because it adds the result to X. In the cell, <code>head()</code> packs step 4's lines into one function, with a switch for the mask used below, and <code>attention()</code> runs both heads and W<sub>O</sub>.</p>
+
+<h4>Head 2: the word it fits with</h4>
+<p>Head 2 reads only the meaning columns, and each of its first three columns is one question and the answer it wants. A thing asks for an action (W<sub>Q</sub> reads <code>thing</code>, W<sub>K</sub> reads <code>action</code>). An action asks for a person (<code>who/when</code> at +1). An amount asks for a time (<code>who/when</code> at −1). Its fourth column is left empty. W<sub>O</sub> adds half of each head's output into the meaning columns and writes nothing into the position columns.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell, in the basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+
+words = ["the", "employee", "serves", "ninety", "days", "notice"]
+meaning = np.array([[0, 0, 0, 0], [1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, -1], [1, 0, 0, 0]])
+p = np.arange(6)[:, None] * np.pi / 4                                          # step 3's positions, as angles
+X = np.hstack([meaning, np.sin(p), np.cos(p), np.sin(2 * p), np.cos(2 * p)])   # step 3's X: 6 words x 8 numbers
+columns = ["thing", "action", "amount", "who/when", "slow sin", "slow cos", "fast sin", "fast cos"]
+
+def show(title, M, d=2, rows=words, cols=words):
+    print(title)
+    print(" " * 10 + "".join(f"{c:&gt;9}" for c in cols))
+    for name, row in zip(rows, np.round(M, d) + 0.0):
+        print(f"{name:&gt;10}" + "".join(f"{v:9.{d}f}" for v in row))
+
+def softmax(S):
+    e = np.exp(S - S.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)                    # head 1: one word back (step 4)
+W_Q1 = np.zeros((8, 4)); W_Q1[4:] = 4 * np.array([[c, s, 0, 0], [-s, c, 0, 0], [0, 0, 0, 1], [0, 0, -1, 0]])
+W_K1 = np.zeros((8, 4)); W_K1[4:] = np.eye(4)
+W_V1 = np.zeros((8, 4)); W_V1[:4] = np.eye(4)
+W_Q2, W_K2, W_V2 = np.zeros((8, 4)), np.zeros((8, 4)), W_V1.copy()   # head 2: the word it fits with
+W_Q2[0, 0], W_K2[1, 0] = 6, 1                                  # a thing asks for an action
+W_Q2[1, 1], W_K2[3, 1] = 6, 1                                  # an action asks for a person
+W_Q2[2, 2], W_K2[3, 2] = 6, -1                                 # an amount asks for a time
+W_O = np.zeros((8, 8)); W_O[:4, :4] = W_O[4:, :4] = 0.5 * np.eye(4)   # half of each head, into the meaning columns
+
+def head(Z, W_Q, W_K, W_V, causal=False):
+    scores = (Z @ W_Q) @ (Z @ W_K).T / np.sqrt(W_Q.shape[1])
+    if causal:                                                  # a word may not look at the words after it
+        scores = np.where(np.triu(np.ones(scores.shape), 1) == 1, -np.inf, scores)
+    weights = softmax(scores)
+    return weights, weights @ (Z @ W_V)
+
+def attention(Z):                                               # both heads, side by side, then W_O
+    return np.hstack([head(Z, W_Q1, W_K1, W_V1)[1], head(Z, W_Q2, W_K2, W_V2)[1]]) @ W_O
+
+weights1, out1 = head(X, W_Q1, W_K1, W_V1)
+weights2, out2 = head(X, W_Q2, W_K2, W_V2)
+show("W_Q2 | W_K2 (rows: X's columns)", np.hstack([W_Q2, W_K2]), rows=columns, cols=["q1", "q2", "q3", "q4", "k1", "k2", "k3", "k4"])
+show("head 2's weights", weights2)
+for word, row in zip(words, weights2):
+    if np.round(row.max() - row.min(), 2) == 0:
+        print(f"{word:&gt;10} asks nothing, so its attention spreads evenly")
+    else:
+        print(f"{word:&gt;10} looks at {words[row.argmax()]:&lt;9}{np.round(row.max(), 2):.2f}")
+both = np.hstack([out1, out2])                       # 6 x 8: head 1's four numbers, then head 2's
+attn = both @ W_O                                    # 6 x 8: back in X's own eight columns
+heads8 = ["1 thing", "1 action", "1 amount", "1 who", "2 thing", "2 action", "2 amount", "2 who"]
+show("concat = [head 1 | head 2]", both, cols=heads8)
+show("W_O (rows: the concat's columns)", W_O, rows=heads8, cols=columns)
+show("attention output = concat @ W_O", attn, cols=columns)
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">W_Q2 | W_K2 (rows: X's columns)
+                 q1       q2       q3       q4       k1       k2       k3       k4
+     thing     6.00     0.00     0.00     0.00     0.00     0.00     0.00     0.00
+    action     0.00     6.00     0.00     0.00     1.00     0.00     0.00     0.00
+    amount     0.00     0.00     6.00     0.00     0.00     0.00     0.00     0.00
+  who/when     0.00     0.00     0.00     0.00     0.00     1.00    -1.00     0.00
+  slow sin     0.00     0.00     0.00     0.00     0.00     0.00     0.00     0.00
+  slow cos     0.00     0.00     0.00     0.00     0.00     0.00     0.00     0.00
+  fast sin     0.00     0.00     0.00     0.00     0.00     0.00     0.00     0.00
+  fast cos     0.00     0.00     0.00     0.00     0.00     0.00     0.00     0.00
+head 2's weights
+                the employee   serves   ninety     days   notice
+       the     0.17     0.17     0.17     0.17     0.17     0.17
+  employee     0.04     0.04     0.80     0.04     0.04     0.04
+    serves     0.04     0.83     0.04     0.04     0.00     0.04
+    ninety     0.04     0.00     0.04     0.04     0.83     0.04
+      days     0.04     0.04     0.80     0.04     0.04     0.04
+    notice     0.04     0.04     0.80     0.04     0.04     0.04
+       the asks nothing, so its attention spreads evenly
+  employee looks at serves   0.80
+    serves looks at employee 0.83
+    ninety looks at days     0.83
+      days looks at serves   0.80
+    notice looks at serves   0.80
+concat = [head 1 | head 2]
+            1 thing 1 action 1 amount    1 who  2 thing 2 action 2 amount    2 who
+       the     0.09     0.04     0.17    -0.02     0.50     0.17     0.17     0.00
+  employee     0.09     0.00     0.00     0.05     0.12     0.80     0.04     0.00
+    serves     0.87     0.06     0.00     0.85     0.88     0.04     0.04     0.83
+    ninety     0.07     0.86     0.06     0.06     0.88     0.04     0.04    -0.83
+      days     0.07     0.06     0.86    -0.06     0.12     0.80     0.04     0.00
+    notice     0.92     0.00     0.06    -0.85     0.12     0.80     0.04     0.00
+W_O (rows: the concat's columns)
+              thing   action   amount who/when slow sin slow cos fast sin fast cos
+   1 thing     0.50     0.00     0.00     0.00     0.00     0.00     0.00     0.00
+  1 action     0.00     0.50     0.00     0.00     0.00     0.00     0.00     0.00
+  1 amount     0.00     0.00     0.50     0.00     0.00     0.00     0.00     0.00
+     1 who     0.00     0.00     0.00     0.50     0.00     0.00     0.00     0.00
+   2 thing     0.50     0.00     0.00     0.00     0.00     0.00     0.00     0.00
+  2 action     0.00     0.50     0.00     0.00     0.00     0.00     0.00     0.00
+  2 amount     0.00     0.00     0.50     0.00     0.00     0.00     0.00     0.00
+     2 who     0.00     0.00     0.00     0.50     0.00     0.00     0.00     0.00
+attention output = concat @ W_O
+              thing   action   amount who/when slow sin slow cos fast sin fast cos
+       the     0.29     0.10     0.17    -0.01     0.00     0.00     0.00     0.00
+  employee     0.10     0.40     0.02     0.03     0.00     0.00     0.00     0.00
+    serves     0.87     0.05     0.02     0.84     0.00     0.00     0.00     0.00
+    ninety     0.47     0.45     0.05    -0.38     0.00     0.00     0.00     0.00
+      days     0.09     0.43     0.45    -0.03     0.00     0.00     0.00     0.00
+    notice     0.52     0.40     0.05    -0.42     0.00     0.00     0.00     0.00</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Head 2's rows read like grammar. <em>employee</em>, <em>days</em> and <em>notice</em> look at <em>serves</em> (0.80); <em>serves</em> looks at <em>employee</em> (0.83); <em>ninety</em> looks at <em>days</em> (0.83). <em>the</em> asks nothing, since none of its meaning numbers is set: all its scores are 0, and the softmax splits its attention evenly, one sixth each, 0.17. The concatenation is 6 &times; 8, head 1's four numbers and then head 2's, and W<sub>O</sub> folds the two back into X's eight columns. In the attention output, <em>employee</em>'s action column, 0 in X, is 0.40: from head 2 it has picked up the action it goes with, <em>serves</em>.</p></div>
+
+<h4>What a head may see: the mask, and the order of the words</h4>
+<p>An encoder, the BERT-style model of lesson B.4, lets every word attend to every word. A decoder, the GPT-style model of lesson B.5, writes one token after another, so a word must not attend to the words after it: when it is written, they do not exist yet. Before the softmax the decoder sets those scores to minus infinity, which the softmax turns into a share of exactly 0. That is the causal mask. The second half of the cell is the reason for step 3's position columns: reverse the six words, keep the positions where they were, and see which head notices.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell, in the basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+
+words = ["the", "employee", "serves", "ninety", "days", "notice"]
+meaning = np.array([[0, 0, 0, 0], [1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, -1], [1, 0, 0, 0]])
+p = np.arange(6)[:, None] * np.pi / 4                                          # step 3's positions, as angles
+X = np.hstack([meaning, np.sin(p), np.cos(p), np.sin(2 * p), np.cos(2 * p)])   # step 3's X: 6 words x 8 numbers
+columns = ["thing", "action", "amount", "who/when", "slow sin", "slow cos", "fast sin", "fast cos"]
+
+def show(title, M, d=2, rows=words, cols=words):
+    print(title)
+    print(" " * 10 + "".join(f"{c:&gt;9}" for c in cols))
+    for name, row in zip(rows, np.round(M, d) + 0.0):
+        print(f"{name:&gt;10}" + "".join(f"{v:9.{d}f}" for v in row))
+
+def softmax(S):
+    e = np.exp(S - S.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)                    # head 1: one word back (step 4)
+W_Q1 = np.zeros((8, 4)); W_Q1[4:] = 4 * np.array([[c, s, 0, 0], [-s, c, 0, 0], [0, 0, 0, 1], [0, 0, -1, 0]])
+W_K1 = np.zeros((8, 4)); W_K1[4:] = np.eye(4)
+W_V1 = np.zeros((8, 4)); W_V1[:4] = np.eye(4)
+W_Q2, W_K2, W_V2 = np.zeros((8, 4)), np.zeros((8, 4)), W_V1.copy()   # head 2: the word it fits with
+W_Q2[0, 0], W_K2[1, 0] = 6, 1                                  # a thing asks for an action
+W_Q2[1, 1], W_K2[3, 1] = 6, 1                                  # an action asks for a person
+W_Q2[2, 2], W_K2[3, 2] = 6, -1                                 # an amount asks for a time
+W_O = np.zeros((8, 8)); W_O[:4, :4] = W_O[4:, :4] = 0.5 * np.eye(4)   # half of each head, into the meaning columns
+
+def head(Z, W_Q, W_K, W_V, causal=False):
+    scores = (Z @ W_Q) @ (Z @ W_K).T / np.sqrt(W_Q.shape[1])
+    if causal:                                                  # a word may not look at the words after it
+        scores = np.where(np.triu(np.ones(scores.shape), 1) == 1, -np.inf, scores)
+    weights = softmax(scores)
+    return weights, weights @ (Z @ W_V)
+
+def attention(Z):                                               # both heads, side by side, then W_O
+    return np.hstack([head(Z, W_Q1, W_K1, W_V1)[1], head(Z, W_Q2, W_K2, W_V2)[1]]) @ W_O
+
+masked1, _ = head(X, W_Q1, W_K1, W_V1, causal=True)
+masked2, _ = head(X, W_Q2, W_K2, W_V2, causal=True)
+show("head 1's weights under the causal mask: each word sees itself and the words before it", masked1)
+show("head 2's weights under the causal mask", masked2)
+_, out1 = head(X, W_Q1, W_K1, W_V1)
+_, out2 = head(X, W_Q2, W_K2, W_V2)
+order = [5, 4, 3, 2, 1, 0]                                 # the same six words, back to front
+Xr = np.hstack([meaning[order], X[:, 4:]])                 # the words move; the positions stay where they were
+weights1r, out1r = head(Xr, W_Q1, W_K1, W_V1)
+_, out2r = head(Xr, W_Q2, W_K2, W_V2)
+print("reversed:", " ".join(words[i] for i in order))
+print("head 2 hands every word the same numbers as before:", np.allclose(out2r, out2[order]))
+print("head 1 hands every word the same numbers as before:", np.allclose(out1r, out1[order]))
+print("one word back from serves is now:", words[order[weights1r[order.index(2)].argmax()]])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">head 1's weights under the causal mask: each word sees itself and the words before it
+                the employee   serves   ninety     days   notice
+       the     1.00     0.00     0.00     0.00     0.00     0.00
+  employee     0.93     0.07     0.00     0.00     0.00     0.00
+    serves     0.07     0.87     0.07     0.00     0.00     0.00
+    ninety     0.00     0.07     0.87     0.07     0.00     0.00
+      days     0.00     0.00     0.07     0.86     0.07     0.00
+    notice     0.02     0.00     0.00     0.06     0.85     0.06
+head 2's weights under the causal mask
+                the employee   serves   ninety     days   notice
+       the     1.00     0.00     0.00     0.00     0.00     0.00
+  employee     0.50     0.50     0.00     0.00     0.00     0.00
+    serves     0.05     0.91     0.05     0.00     0.00     0.00
+    ninety     0.33     0.02     0.33     0.33     0.00     0.00
+      days     0.04     0.04     0.83     0.04     0.04     0.00
+    notice     0.04     0.04     0.80     0.04     0.04     0.04
+reversed: notice days ninety serves employee the
+head 2 hands every word the same numbers as before: True
+head 1 hands every word the same numbers as before: False
+one word back from serves is now: ninety</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Head 1 barely changes under the mask: it was already looking back, and only <em>the</em>, with nothing before it, now gives itself everything. Head 2 changes wherever its answer lay ahead. <em>employee</em> can no longer see <em>serves</em>, so its row splits between <em>the</em> and itself, 0.50 each. <em>ninety</em> cannot see <em>days</em>: it spreads over itself and the words before it, still keeping away from <em>employee</em> (0.02). Reversed, head 2 hands every word the same numbers it handed before, because it reads no position: to head 2 a sentence is a bag of words. Head 1 does not, and one word back from <em>serves</em> is now <em>ninety</em>. In this block the position signal is the only thing that knows the order of the words.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 5 &middot; Residual</span><h3>The residual path: add the input back</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_3/demo_06_the_residual_path_add_the_input_back.py" target="_blank" rel="noopener"><code>demo_06_the_residual_path_add_the_input_back.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>One addition that lets a word keep what it was, and what happens to six words without it.</p></div></div>
+
+<h4>Definition</h4>
+<p>The residual path is the plus sign in x + sublayer(x): the sub-layer's output is added to its input instead of replacing it. That is why W<sub>O</sub> had to map back to eight columns, since two arrays must have the same shape to be added. It does two jobs. A word keeps its own vector and gains what attention found, so a sub-layer only has to learn a correction to what is already there. And in a stack, the residual paths give the signal a direct route from the first block to the last, around every sub-layer; that is a large part of why dozens of blocks can be trained at all.</p>
+
+<h4>Do it: add, then stack four times with and without it</h4>
+<p>The cell adds the attention output to X, compares each word's new vector with its old one by cosine (1 is the same direction, 0 unrelated), then applies the attention sub-layer four times over, once without the residual path and once with it.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell, in the basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+
+words = ["the", "employee", "serves", "ninety", "days", "notice"]
+meaning = np.array([[0, 0, 0, 0], [1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, -1], [1, 0, 0, 0]])
+p = np.arange(6)[:, None] * np.pi / 4                                          # step 3's positions, as angles
+X = np.hstack([meaning, np.sin(p), np.cos(p), np.sin(2 * p), np.cos(2 * p)])   # step 3's X: 6 words x 8 numbers
+columns = ["thing", "action", "amount", "who/when", "slow sin", "slow cos", "fast sin", "fast cos"]
+
+def show(title, M, d=2, rows=words, cols=words):
+    print(title)
+    print(" " * 10 + "".join(f"{c:&gt;9}" for c in cols))
+    for name, row in zip(rows, np.round(M, d) + 0.0):
+        print(f"{name:&gt;10}" + "".join(f"{v:9.{d}f}" for v in row))
+
+def softmax(S):
+    e = np.exp(S - S.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)                    # head 1: one word back (step 4)
+W_Q1 = np.zeros((8, 4)); W_Q1[4:] = 4 * np.array([[c, s, 0, 0], [-s, c, 0, 0], [0, 0, 0, 1], [0, 0, -1, 0]])
+W_K1 = np.zeros((8, 4)); W_K1[4:] = np.eye(4)
+W_V1 = np.zeros((8, 4)); W_V1[:4] = np.eye(4)
+W_Q2, W_K2, W_V2 = np.zeros((8, 4)), np.zeros((8, 4)), W_V1.copy()   # head 2: the word it fits with
+W_Q2[0, 0], W_K2[1, 0] = 6, 1                                  # a thing asks for an action
+W_Q2[1, 1], W_K2[3, 1] = 6, 1                                  # an action asks for a person
+W_Q2[2, 2], W_K2[3, 2] = 6, -1                                 # an amount asks for a time
+W_O = np.zeros((8, 8)); W_O[:4, :4] = W_O[4:, :4] = 0.5 * np.eye(4)   # half of each head, into the meaning columns
+
+def head(Z, W_Q, W_K, W_V, causal=False):
+    scores = (Z @ W_Q) @ (Z @ W_K).T / np.sqrt(W_Q.shape[1])
+    if causal:                                                  # a word may not look at the words after it
+        scores = np.where(np.triu(np.ones(scores.shape), 1) == 1, -np.inf, scores)
+    weights = softmax(scores)
+    return weights, weights @ (Z @ W_V)
+
+def attention(Z):                                               # both heads, side by side, then W_O
+    return np.hstack([head(Z, W_Q1, W_K1, W_V1)[1], head(Z, W_Q2, W_K2, W_V2)[1]]) @ W_O
+
+attn = attention(X)
+H = X + attn                                               # the residual path: the input, added back
+show("H = X + attention output", H, cols=columns)
+
+def cos(A, B):                                             # per word: 1 is the same direction, 0 unrelated
+    return (A * B).sum(axis=1) / (np.linalg.norm(A, axis=1) * np.linalg.norm(B, axis=1))
+print(f"{'':&gt;10}{'cos(X, attention output)':&gt;26}{'cos(X, H)':&gt;11}")
+for word, a, b in zip(words, np.round(cos(X, attn), 2) + 0.0, np.round(cos(X, H), 2)):
+    print(f"{word:&gt;10}{a:26.2f}{b:11.2f}")
+
+def gaps(Z):                                               # the closest two words, and the farthest two
+    d = np.sqrt(((Z[:, None] - Z[None, :]) ** 2).sum(axis=2))[np.triu_indices(6, 1)]
+    return np.round(d.min(), 2), np.round(d.max(), 2)
+plain, kept = X, X
+for layer in range(1, 5):                                  # the attention sub-layer, four times over
+    plain, kept = attention(plain), kept + attention(kept)
+    print(f"layer {layer}: without the residual path the farthest two words are {gaps(plain)[1]:.2f} apart;"
+          f" with it the closest two are {gaps(kept)[0]:.2f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">H = X + attention output
+              thing   action   amount who/when slow sin slow cos fast sin fast cos
+       the     0.29     0.10     0.17    -0.01     0.00     1.00     0.00     1.00
+  employee     1.10     0.40     0.02     1.03     0.71     0.71     1.00     0.00
+    serves     0.87     1.05     0.02     0.84     1.00     0.00     0.00    -1.00
+    ninety     0.47     0.45     1.05    -0.38     0.71    -0.71    -1.00     0.00
+      days     1.09     0.43     0.45    -1.03     0.00    -1.00     0.00     1.00
+    notice     1.52     0.40     0.05    -0.42    -0.71    -0.71     1.00     0.00
+            cos(X, attention output)  cos(X, H)
+       the                      0.00       0.97
+  employee                      0.16       0.98
+    serves                      0.03       0.82
+    ninety                      0.04       0.92
+      days                      0.10       0.96
+    notice                      0.38       0.94
+layer 1: without the residual path the farthest two words are 1.36 apart; with it the closest two are 1.76
+layer 2: without the residual path the farthest two words are 0.18 apart; with it the closest two are 1.81
+layer 3: without the residual path the farthest two words are 0.00 apart; with it the closest two are 1.98
+layer 4: without the residual path the farthest two words are 0.00 apart; with it the closest two are 2.07</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>H is X plus the attention output, and every word stays close to itself: cos(X, H) is between 0.82 and 0.98. The attention output on its own points elsewhere (0.00 to 0.38), because it is made of the other words. The stack shows why the plus sign matters. Without it, the sub-layer averages the six words into one: by layer 3 the two farthest words are 0.00 apart to two decimals, six copies of a single vector. W<sub>O</sub> writes nothing into the position columns, so after one layer head 1 has no positions left to read, and each layer is then a weighted average of the one before: averages of averages converge. With the residual path, the position columns ride through every layer untouched, and the two closest words are never nearer than 1.76.</p></div>
+
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 6 &middot; Layer norm</span><h3>Layer normalization: mean 0, variance 1, then a scale and a shift</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_3/demo_07_layer_normalization_mean_0_variance_1_then_a_scale_and_a_shift.py" target="_blank" rel="noopener"><code>demo_07_layer_normalization_mean_0_variance_1_then_a_scale_and_a_shift.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Each word's eight numbers moved to one common scale, checked to six decimals, then given the scale and shift a model learns.</p></div></div>
+
+<h4>Definition</h4>
+<p>Layer normalization works on one word at a time, across that word's own numbers. Take its eight numbers, subtract their mean, divide by their standard deviation, and the eight come out with a mean of 0 and a variance of 1. A small ε (epsilon; here 0.00001, PyTorch's default) is added to the variance before the square root, so that a word whose eight numbers are all equal does not divide by zero. It leaves the variance a hair under 1, which the cell lets you see in the fifth decimal. Then two learned vectors give the model its say: γ (gamma), a scale for each column, and β (beta), a shift for each column. In one line, for each word: LN(x) = γ &times; (x − mean) / √(variance + ε) + β. Training starts with γ = 1 and β = 0, which leave the normalized numbers as they are.</p>
+<p>It is not batch normalization, which normalizes each column across many examples, so that one example's result depends on the others in its batch. Layer normalization depends on the word alone, and the cell checks that too. Recent open models such as Llama and Gemma use a lighter variant, RMSNorm, which divides by the root of the mean square, with no mean taken off and no shift added; the cell computes it for comparison.</p>
+
+<h4>Do it: normalize H, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell, in the basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+
+words = ["the", "employee", "serves", "ninety", "days", "notice"]
+meaning = np.array([[0, 0, 0, 0], [1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, -1], [1, 0, 0, 0]])
+p = np.arange(6)[:, None] * np.pi / 4                                          # step 3's positions, as angles
+X = np.hstack([meaning, np.sin(p), np.cos(p), np.sin(2 * p), np.cos(2 * p)])   # step 3's X: 6 words x 8 numbers
+columns = ["thing", "action", "amount", "who/when", "slow sin", "slow cos", "fast sin", "fast cos"]
+
+def show(title, M, d=2, rows=words, cols=words):
+    print(title)
+    print(" " * 10 + "".join(f"{c:&gt;9}" for c in cols))
+    for name, row in zip(rows, np.round(M, d) + 0.0):
+        print(f"{name:&gt;10}" + "".join(f"{v:9.{d}f}" for v in row))
+
+def softmax(S):
+    e = np.exp(S - S.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)                    # head 1: one word back (step 4)
+W_Q1 = np.zeros((8, 4)); W_Q1[4:] = 4 * np.array([[c, s, 0, 0], [-s, c, 0, 0], [0, 0, 0, 1], [0, 0, -1, 0]])
+W_K1 = np.zeros((8, 4)); W_K1[4:] = np.eye(4)
+W_V1 = np.zeros((8, 4)); W_V1[:4] = np.eye(4)
+W_Q2, W_K2, W_V2 = np.zeros((8, 4)), np.zeros((8, 4)), W_V1.copy()   # head 2: the word it fits with
+W_Q2[0, 0], W_K2[1, 0] = 6, 1                                  # a thing asks for an action
+W_Q2[1, 1], W_K2[3, 1] = 6, 1                                  # an action asks for a person
+W_Q2[2, 2], W_K2[3, 2] = 6, -1                                 # an amount asks for a time
+W_O = np.zeros((8, 8)); W_O[:4, :4] = W_O[4:, :4] = 0.5 * np.eye(4)   # half of each head, into the meaning columns
+
+def head(Z, W_Q, W_K, W_V, causal=False):
+    scores = (Z @ W_Q) @ (Z @ W_K).T / np.sqrt(W_Q.shape[1])
+    if causal:                                                  # a word may not look at the words after it
+        scores = np.where(np.triu(np.ones(scores.shape), 1) == 1, -np.inf, scores)
+    weights = softmax(scores)
+    return weights, weights @ (Z @ W_V)
+
+def attention(Z):                                               # both heads, side by side, then W_O
+    return np.hstack([head(Z, W_Q1, W_K1, W_V1)[1], head(Z, W_Q2, W_K2, W_V2)[1]]) @ W_O
+
+H = X + attention(X)                                       # step 6's H
+mean = H.mean(axis=1, keepdims=True)                       # one mean per word, over its own 8 numbers
+var = H.var(axis=1, keepdims=True)                         # one variance per word: the mean squared distance from it
+eps = 1e-5                                                 # keeps a word of eight equal numbers from dividing by zero
+H_hat = (H - mean) / np.sqrt(var + eps)
+print("each word's mean and variance, before and after")
+print(f"{'':&gt;10}{'mean':&gt;9}{'variance':&gt;10}  -&gt;{'mean':&gt;11}{'variance':&gt;11}")
+for word, m0, v0, m1, v1 in zip(words, np.round(mean[:, 0], 4), np.round(var[:, 0], 4),
+                                np.round(H_hat.mean(axis=1), 6) + 0.0, np.round(H_hat.var(axis=1), 6)):
+    print(f"{word:&gt;10}{m0:9.4f}{v0:10.4f}  -&gt;{m1:11.6f}{v1:11.6f}")
+show("H_hat = (H - mean) / sqrt(variance + eps)", H_hat, cols=columns)
+print("every word's length is now the square root of 8:", " ".join(f"{v:.2f}" for v in np.round(np.linalg.norm(H_hat, axis=1), 2)))
+
+gamma = np.array([1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5])    # the learned scale, set by hand here
+beta = np.array([0.2, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0])     # the learned shift, set by hand here
+show("gamma * H_hat + beta: the meaning columns turned up, the position columns down", gamma * H_hat + beta, cols=columns)
+
+def layer_norm(Z):
+    return (Z - Z.mean(axis=1, keepdims=True)) / np.sqrt(Z.var(axis=1, keepdims=True) + eps)
+print("a word ten times as loud comes out the same:", np.allclose(layer_norm(10 * H), H_hat, atol=1e-3))
+changed = H.copy()
+changed[2] = -3 * H[2]                                     # change serves, and only serves
+print("changing one word moves no other word:", np.allclose(np.delete(layer_norm(changed), 2, axis=0), np.delete(H_hat, 2, axis=0)))
+R = H / np.sqrt((H ** 2).mean(axis=1, keepdims=True) + eps)   # RMSNorm: no mean taken off, and no shift
+print("RMSNorm per word, mean:           ", " ".join(f"{v:6.3f}" for v in np.round(R.mean(axis=1), 3)))
+print("RMSNorm per word, mean of squares:", " ".join(f"{v:6.3f}" for v in np.round((R ** 2).mean(axis=1), 3)))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">each word's mean and variance, before and after
+               mean  variance  -&gt;       mean   variance
+       the   0.3196    0.1635  -&gt;   0.000000   0.999939
+  employee   0.6210    0.1686  -&gt;   0.000000   0.999941
+    serves   0.3482    0.4504  -&gt;   0.000000   0.999978
+    ninety   0.0743    0.4550  -&gt;   0.000000   0.999978
+      days   0.1183    0.5675  -&gt;   0.000000   0.999982
+    notice   0.1418    0.5611  -&gt;   0.000000   0.999982
+H_hat = (H - mean) / sqrt(variance + eps)
+              thing   action   amount who/when slow sin slow cos fast sin fast cos
+       the    -0.06    -0.53    -0.37    -0.81    -0.79     1.68    -0.79     1.68
+  employee     1.18    -0.53    -1.46     0.99     0.21     0.21     0.92    -1.51
+    serves     0.78     1.05    -0.49     0.73     0.97    -0.52    -0.52    -2.01
+    ninety     0.59     0.56     1.45    -0.68     0.94    -1.16    -1.59    -0.11
+      days     1.30     0.42     0.44    -1.53    -0.16    -1.48    -0.16     1.17
+    notice     1.84     0.35    -0.12    -0.75    -1.13    -1.13     1.15    -0.19
+every word's length is now the square root of 8: 2.83 2.83 2.83 2.83 2.83 2.83
+gamma * H_hat + beta: the meaning columns turned up, the position columns down
+              thing   action   amount who/when slow sin slow cos fast sin fast cos
+       the     0.10    -0.60    -0.36    -1.02    -0.40     0.84    -0.40     0.84
+  employee     1.97    -0.60    -1.99     1.68     0.10     0.10     0.46    -0.76
+    serves     1.37     1.77    -0.53     1.30     0.49    -0.26    -0.26    -1.00
+    ninety     1.09     1.04     2.38    -0.82     0.47    -0.58    -0.80    -0.06
+      days     2.14     0.83     0.86    -2.09    -0.08    -0.74    -0.08     0.59
+    notice     2.96     0.72     0.02    -0.93    -0.57    -0.57     0.57    -0.09
+a word ten times as loud comes out the same: True
+changing one word moves no other word: True
+RMSNorm per word, mean:             0.620  0.834  0.461  0.110  0.155  0.186
+RMSNorm per word, mean of squares:  1.000  1.000  1.000  1.000  1.000  1.000</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Before, the six words sat on different scales: means from 0.0743 to 0.6210, variances from 0.1635 to 0.5675. After, every mean is 0.000000 and every variance 0.999939 to 0.999982: a hair under 1, by about ε divided by the word's own variance, so the most where the variance was smallest. Every normalized word now has the same length, √8 = 2.83: the notebooks of the analogy, rewritten to one size. γ and β then turn the meaning columns up and the position columns down, and the mean and variance become whatever they make them. A word ten times as loud comes out the same, and changing <em>serves</em> moves no other word: each word is normalized alone. RMSNorm's words have a mean square of 1.000, but their means are not 0.</p></div>
+
+<p>Those six zeros and six variances of 1, to ε, are the second half of this lesson's proof.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 7 &middot; The block</span><h3>The block, assembled</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_3/demo_08_the_block_assembled.py" target="_blank" rel="noopener"><code>demo_08_the_block_assembled.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Attention, add, norm, feed-forward, add, norm: the same parts in the 2017 order and in the norm-first order of GPT-2 and later.</p></div></div>
+
+<h4>Definition</h4>
+<p>The feed-forward step is the last part: two weight matrices with a ReLU between them (every negative number set to 0), applied to each word on its own. It takes eight numbers out to 32, four times the block's width, the ratio the 2017 paper used, and back to eight. Its weights here come from a cosine and a sine of their row and column numbers, standing in for trained ones, and its biases are zero. With it, the block is two sub-layers, each wrapped the same way. In the paper's order that is LayerNorm(x + Sublayer(x)). GPT-2 and most models since put the norm first, x + Sublayer(LayerNorm(x)), and add one final norm after the last block.</p>
+
+<h4>Do it: one block, both orders, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell, in the basics venv (numpy only, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+
+words = ["the", "employee", "serves", "ninety", "days", "notice"]
+meaning = np.array([[0, 0, 0, 0], [1, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, -1], [1, 0, 0, 0]])
+p = np.arange(6)[:, None] * np.pi / 4                                          # step 3's positions, as angles
+X = np.hstack([meaning, np.sin(p), np.cos(p), np.sin(2 * p), np.cos(2 * p)])   # step 3's X: 6 words x 8 numbers
+columns = ["thing", "action", "amount", "who/when", "slow sin", "slow cos", "fast sin", "fast cos"]
+
+def show(title, M, d=2, rows=words, cols=words):
+    print(title)
+    print(" " * 10 + "".join(f"{c:&gt;9}" for c in cols))
+    for name, row in zip(rows, np.round(M, d) + 0.0):
+        print(f"{name:&gt;10}" + "".join(f"{v:9.{d}f}" for v in row))
+
+def softmax(S):
+    e = np.exp(S - S.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)                    # head 1: one word back (step 4)
+W_Q1 = np.zeros((8, 4)); W_Q1[4:] = 4 * np.array([[c, s, 0, 0], [-s, c, 0, 0], [0, 0, 0, 1], [0, 0, -1, 0]])
+W_K1 = np.zeros((8, 4)); W_K1[4:] = np.eye(4)
+W_V1 = np.zeros((8, 4)); W_V1[:4] = np.eye(4)
+W_Q2, W_K2, W_V2 = np.zeros((8, 4)), np.zeros((8, 4)), W_V1.copy()   # head 2: the word it fits with
+W_Q2[0, 0], W_K2[1, 0] = 6, 1                                  # a thing asks for an action
+W_Q2[1, 1], W_K2[3, 1] = 6, 1                                  # an action asks for a person
+W_Q2[2, 2], W_K2[3, 2] = 6, -1                                 # an amount asks for a time
+W_O = np.zeros((8, 8)); W_O[:4, :4] = W_O[4:, :4] = 0.5 * np.eye(4)   # half of each head, into the meaning columns
+
+def head(Z, W_Q, W_K, W_V, causal=False):
+    scores = (Z @ W_Q) @ (Z @ W_K).T / np.sqrt(W_Q.shape[1])
+    if causal:                                                  # a word may not look at the words after it
+        scores = np.where(np.triu(np.ones(scores.shape), 1) == 1, -np.inf, scores)
+    weights = softmax(scores)
+    return weights, weights @ (Z @ W_V)
+
+def attention(Z):                                               # both heads, side by side, then W_O
+    return np.hstack([head(Z, W_Q1, W_K1, W_V1)[1], head(Z, W_Q2, W_K2, W_V2)[1]]) @ W_O
+
+def layer_norm(Z, gamma, beta, eps=1e-5):
+    return gamma * (Z - Z.mean(axis=1, keepdims=True)) / np.sqrt(Z.var(axis=1, keepdims=True) + eps) + beta
+gamma1, beta1, gamma2, beta2 = np.ones(8), np.zeros(8), np.ones(8), np.zeros(8)   # where training starts them
+r8, r32 = np.arange(8), np.arange(32)
+W_1, b_1 = np.cos(r8[:, None] + 2 * r32) / 2, np.zeros(32)    # 8 x 32: a formula standing in for trained weights
+W_2, b_2 = np.sin(r32[:, None] + 3 * r8) / 4, np.zeros(8)     # 32 x 8
+
+def feed_forward(Z):                                       # each word alone: 8 -&gt; 32 -&gt; 8, with ReLU between
+    return np.maximum(0, Z @ W_1 + b_1) @ W_2 + b_2
+
+def block(Z):                                              # the 2017 paper's order: add, then norm
+    H1 = layer_norm(Z + attention(Z), gamma1, beta1)
+    return layer_norm(H1 + feed_forward(H1), gamma2, beta2)
+
+def block_norm_first(Z):                                   # GPT-2's order, and most models' since: norm, then add
+    H1 = Z + attention(layer_norm(Z, gamma1, beta1))
+    return H1 + feed_forward(layer_norm(H1, gamma2, beta2))
+
+Y = block(X)
+show("Y = block(X)", Y, cols=columns)
+print("in", X.shape, "-&gt; out", Y.shape, "-&gt; a second block reads Y and returns", block(Y).shape)
+print("per word, mean:    ", " ".join(f"{v:6.3f}" for v in np.round(Y.mean(axis=1), 3) + 0.0))
+print("per word, variance:", " ".join(f"{v:6.3f}" for v in np.round(Y.var(axis=1), 3)))
+Yn = block_norm_first(X)
+print("norm first, mean:    ", " ".join(f"{v:6.3f}" for v in np.round(Yn.mean(axis=1), 3) + 0.0))
+print("norm first, variance:", " ".join(f"{v:6.3f}" for v in np.round(Yn.var(axis=1), 3)))
+learned = {"attention": [W_Q1, W_K1, W_V1, W_Q2, W_K2, W_V2, W_O], "feed-forward": [W_1, b_1, W_2, b_2],
+           "layer norms": [gamma1, beta1, gamma2, beta2]}
+sizes = {part: sum(w.size for w in ws) for part, ws in learned.items()}
+print("numbers a trained block learns:", sum(sizes.values()), sizes)
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">Y = block(X)
+              thing   action   amount who/when slow sin slow cos fast sin fast cos
+       the    -0.12    -0.43    -0.44    -0.67    -0.85     1.68    -0.87     1.69
+  employee     1.20    -0.57    -1.39     0.92     0.27     0.15     0.97    -1.55
+    serves     0.77     1.08    -0.53     0.77     0.93    -0.48    -0.59    -1.98
+    ninety     0.61     0.52     1.47    -0.70     0.96    -1.18    -1.55    -0.13
+      days     1.21     0.55     0.24    -1.34    -0.46    -1.22    -0.52     1.54
+    notice     1.84     0.53    -0.41    -0.52    -1.62    -0.82     0.74     0.27
+in (6, 8) -&gt; out (6, 8) -&gt; a second block reads Y and returns (6, 8)
+per word, mean:      0.000  0.000  0.000  0.000  0.000  0.000
+per word, variance:  1.000  1.000  1.000  1.000  1.000  1.000
+norm first, mean:      0.079  0.507  0.071  0.052  0.174  0.153
+norm first, variance:  0.371  0.180  0.679  0.538  0.595  0.625
+numbers a trained block learns: 840 {'attention': 256, 'feed-forward': 552, 'layer norms': 32}</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Six vectors of eight numbers went in, six of eight came out, and a second block took them as they were: that is all a stack is. In the paper's order the block ends on a norm, so every word leaves at mean 0.000 and variance 1.000, with γ and β still at their starting values. In the norm-first order the block ends on an addition, and its words leave with means from 0.052 to 0.507 and variances from 0.180 to 0.679; that is why those models normalize once more at the very top. The block has 840 numbers a training run would set: 256 in attention, 552 in the feed-forward step and 32 in the two norms. In the standard design, where the feed-forward width is four times the block's, the feed-forward step holds about two thirds of a block's weights, as it does here.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 8 &middot; The kit</span><h3>Where the kit meets the block: tokens and their ceilings</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_3/demo_09_where_the_kit_meets_the_block_tokens_and_their_ceilings.py" target="_blank" rel="noopener"><code>demo_09_where_the_kit_meets_the_block_tokens_and_their_ceilings.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The kit never builds a block. It calls models that read tokens, and it plans every call in that unit.</p></div></div>
+
+<h4>Definition</h4>
+<p>DocuMind calls two kinds of model. Gemini writes the answers. Google's model card for Gemini 3 Pro describes it as a "sparse mixture-of-experts (MoE)" transformer-based model and cites the 2017 paper this page follows; in a mixture-of-experts model, each token is routed to a few of many sets of weights, the experts. The card gives no layer count, width or number of heads. <code>text-embedding-005</code> turns every chunk into the 768 numbers of lesson 1.3. The kit never touches a head or a norm. What it meets is the unit both models read, the token, and the ceilings on how many tokens one call may carry.</p>
+<p>The reason those ceilings are counted in tokens is in the block you built. Its feed-forward step does the same work for every token, and its attention scores every token of a sequence against every other: in a block like this page's, <em>n</em> tokens make <em>n</em> &times; <em>n</em> scores, for every head in every layer.</p>
+
+<h4>The code: the ceilings the kit plans around</h4>
+<p>The worker cuts a document's text into chunks of at most 2,000 characters (lesson 1.2); the comment above this line in <code>main.py</code> calls that about 500 tokens.</p>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - the longest chunk the worker cuts</span><span class="ro">read only</span></div><pre tabindex="0">CHUNK_CHARS, CHUNK_OVERLAP = <span class="nu">2000</span>, <span class="nu">200</span></pre></div>
+
+<p>The indexer embeds the chunks in requests. It cannot count tokens without a call, so it estimates at three characters a token, which puts a full chunk at 666, above the comment's 500 and so on the safe side. A request closes at 250 texts or 15,000 estimated tokens, whichever comes first.</p>
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - the request ceilings, and the token estimate</span><span class="ro">read only</span></div><pre tabindex="0">EMBED_BATCH = <span class="nu">250</span>
+EMBED_TOKENS = <span class="nu">15_000</span>
+CHARS_PER_TOKEN = <span class="nu">3</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - batches(): no request over 250 texts or about 15,000 tokens</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">batches</span>(texts: list[str]) -&gt; list[list[str]]:
+    out, cur, cur_tokens = [], [], <span class="nu">0</span>
+    <span class="kw">for</span> text <span class="kw">in</span> texts:
+        tokens = max(<span class="nu">1</span>, len(text) // CHARS_PER_TOKEN)
+        <span class="kw">if</span> cur <span class="kw">and</span> (len(cur) &gt;= EMBED_BATCH <span class="kw">or</span> cur_tokens + tokens &gt; EMBED_TOKENS):
+            out.append(cur)
+            cur, cur_tokens = [], <span class="nu">0</span>
+        cur.append(text)
+        cur_tokens += tokens
+    <span class="kw">if</span> cur:
+        out.append(cur)
+    <span class="kw">return</span> out</pre></div>
+
+<p>The loader's copy of the rule says why: the model's own ceilings are 250 texts and 20,000 tokens per request, and a request over either fails whole. The indexer's 15,000 stays 5,000 below the model's 20,000, room for the estimate to be wrong.</p>
+<div class="cw"><div class="ch-bar"><span>shared/documind_corpus.py - embed_batches(): the model&#x27;s own ceilings, and the day the kit found them</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">embed_batches</span>(texts: list) -&gt; list:
+    <span class="st">&quot;&quot;&quot;Batches of at most EMBED_BATCH texts AND about EMBED_TOKENS tokens. text-embedding-005 takes
+    250 texts per request and 20,000 tokens across them, and a request over either limit fails
+    whole; a two-thousand-character chunk is ~500 tokens, so 250 of them are ~125,000. The first
+    live corpus load (6 Sept 2026) failed every long Act exactly here - the same rule now lives in
+    services/ingest/indexer.py.&quot;&quot;&quot;</span></pre></div>
+
+<p>On the answering side, the API packs the retrieved chunks into a prompt of at most 8,000 estimated tokens and caps the answer at 2,048 tokens (lesson 3.4). Its estimate is four characters a token; a real count, <code>client.models.count_tokens</code>, can be passed in its place.</p>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/config.py - the prompt budget, and the answer&#x27;s</span><span class="ro">read only</span></div><pre tabindex="0">    max_context_tokens: int = <span class="nu">8000</span>
+    <span class="cm"># 2048, not 1024: a statute answer with its quotes - and the thinking drawn from the same</span>
+    <span class="cm"># budget on the 3.x family - outran 1024 on fourteen rows of the second live eval, and each</span>
+    <span class="cm"># cut-off JSON was scored as a refusal. generator.py retries once with three times this.</span>
+    max_answer_tokens: int = <span class="nu">2048</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/context_budget.py - estimate_tokens(): four characters a token</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">estimate_tokens</span>(text: str) -&gt; int:
+    <span class="kw">return</span> max(<span class="nu">1</span>, len(text) // <span class="nu">4</span>)</pre></div>
+
+
+<h4>Do it: the kit's numbers, squared, Rs 0</h4>
+<p>The cell copies those constants, the toy sentence's six tokens beside them, and puts each through the square, then fills one embedding request the way <code>batches()</code> does.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the same shell (plain Python, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
+CHUNK_CHARS = 2000                       # services/ingest/main.py: the longest chunk, in characters
+CHARS_PER_TOKEN = 3                      # services/ingest/indexer.py: the worker's token estimate
+EMBED_BATCH, EMBED_TOKENS = 250, 15_000  # indexer.py: the most texts, and estimated tokens, in one request
+MAX_CONTEXT_TOKENS = 8000                # services/rag-api/config.py: the prompt budget for one answer
+
+def pairs(n):                            # one head in one layer scores every token against every token
+    return n * n
+
+chunk = CHUNK_CHARS // CHARS_PER_TOKEN
+print("one sequence: its tokens, and the scores one head computes in one layer of a block like this page's")
+for name, n in (("the toy sentence", 6), ("one chunk of 2,000 characters", chunk), ("the API's prompt budget", MAX_CONTEXT_TOKENS)):
+    print(f"  {name:31}{n:&gt;6,} tokens{pairs(n):&gt;13,} scores")
+texts, tokens = 0, 0                     # batches() in indexer.py: stop at 250 texts or 15,000 estimated tokens
+while texts &lt; EMBED_BATCH and tokens + chunk &lt;= EMBED_TOKENS:
+    texts, tokens = texts + 1, tokens + chunk
+print(f"one embedding request of full chunks: {texts} texts, {tokens:,} estimated tokens")
+print(f"  each text its own sequence: {texts} x {pairs(chunk):,} = {texts * pairs(chunk):,} scores")
+print(f"  the same tokens as one sequence: {pairs(tokens):,} scores, {pairs(tokens) // (texts * pairs(chunk))} times as many")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (printed by this cell when the page was built; your laptop prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">one sequence: its tokens, and the scores one head computes in one layer of a block like this page's
+  the toy sentence                    6 tokens           36 scores
+  one chunk of 2,000 characters     666 tokens      443,556 scores
+  the API's prompt budget         8,000 tokens   64,000,000 scores
+one embedding request of full chunks: 22 texts, 14,652 estimated tokens
+  each text its own sequence: 22 x 443,556 = 9,758,232 scores
+  the same tokens as one sequence: 214,681,104 scores, 22 times as many</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One chunk is 666 tokens by the indexer's estimate, and one head of a block like this page's computes 443,556 scores for it in one layer; for the API's prompt budget, 64 million. The embedding request shows that a request's tokens are not one sequence. 22 full chunks fill a request, 14,652 estimated tokens under the indexer's 15,000, and because each text is its own sequence, the request costs 22 small squares rather than one large one: 22 times fewer scores than the same tokens as a single text. Chunks are cut for retrieval (lesson 1.2); they keep every square small as well.</p></div>
+
+<div class="box box-amber"><div class="box-title">What these numbers are not</div>
+<p>Google does not publish the inner workings of Gemini or <code>text-embedding-005</code>, and production models use many techniques to make long sequences cheaper. Read the squares as the arithmetic of the block you built, not as a measurement of either model. The ceilings themselves are Google's (250 texts and 20,000 tokens per embedding request) and the kit's own (the 15,000-token margin, the 8,000-token prompt and the 2,048-token answer), and the kit plans around all of them with estimates, because an exact count is a call of its own.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 8 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one cell above, each with the value that proves it on your laptop.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">The laptop is ready</td><td data-label="The check">the last line of the setup block</td><td data-label="Pass looks like"><code>3.12.x 2.5.3 2.22.0</code></td></tr>
+<tr><td>1</td><td data-label="Claim">Six tokens, eight numbers each, position by distance</td><td data-label="The check">the cell in step 3</td><td data-label="Pass looks like"><code>tokens: 6 | numbers per token: 8</code>, and <code>measures distance only: True</code></td></tr>
+<tr><td>2</td><td data-label="Claim">One head's weights, each row a set of shares</td><td data-label="The check">the cell in step 4</td><td data-label="Pass looks like"><code>each row sums to: 1.00</code> six times; <em>employee</em> looks at <em>the</em> with 0.90</td></tr>
+<tr><td>3</td><td data-label="Claim">Two heads look for different things</td><td data-label="The check">the first cell in step 5</td><td data-label="Pass looks like"><em>serves</em> looks at <em>employee</em> 0.83; <em>the</em> spreads evenly, 0.17; the concat is 6 &times; 8</td></tr>
+<tr><td>4</td><td data-label="Claim">The mask hides later words; only position knows order</td><td data-label="The check">the second cell in step 5</td><td data-label="Pass looks like"><em>employee</em> at 0.50 and 0.50 under the mask; head 2 <code>True</code>, head 1 <code>False</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The residual path keeps each word itself</td><td data-label="The check">the cell in step 6</td><td data-label="Pass looks like"><code>cos(X, H)</code> at least 0.82; without it, <code>0.00 apart</code> by layer 3</td></tr>
+<tr><td>6</td><td data-label="Claim">Layer norm: mean 0 and variance 1</td><td data-label="The check">the cell in step 7</td><td data-label="Pass looks like">every mean <code>0.000000</code>, every variance 0.999939 to 0.999982</td></tr>
+<tr><td>7</td><td data-label="Claim">A block returns the shape it reads</td><td data-label="The check">the cell in step 8</td><td data-label="Pass looks like"><code>in (6, 8) -&gt; out (6, 8)</code>; means <code>0.000</code>, variances <code>1.000</code>; <code>840</code> numbers to learn</td></tr>
+<tr><td>8</td><td data-label="Claim">The kit's ceilings, in tokens</td><td data-label="The check">the cell in step 9</td><td data-label="Pass looks like"><code>22 texts, 14,652 estimated tokens</code>; <code>22 times as many</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your laptop</div>
+<p>Nothing outside the setup's <code>~/basics-venv</code>. Every cell computed in memory and printed: no file was written, nothing was sent anywhere, and no account or rupee was used. You have read every number in one transformer block, from the words' vectors to the six normalized rows it hands on. Lesson B.4 stacks blocks like this one into encoders, BERT-style, and compares the two ways they score a passage against a question: one vector each, or the two read together.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Basics &middot; Lesson B.3 Read a transformer block, with layer normalization &middot; v5.0</p><p>Next: Lesson B.4 Encode with BERT-style models: embeddings and rankers.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var D = {"words":["the","employee","serves","ninety","days","notice"],"weights":{"1-none":[["0.70","0.02","0.04","0.17","0.04","0.02"],["0.90","0.07","0.00","0.00","0.02","0.00"],["0.06","0.85","0.06","0.00","0.00","0.02"],["0.00","0.06","0.86","0.06","0.00","0.00"],["0.00","0.00","0.06","0.86","0.06","0.00"],["0.02","0.00","0.00","0.06","0.85","0.06"]],"1-causal":[["1.00","0.00","0.00","0.00","0.00","0.00"],["0.93","0.07","0.00","0.00","0.00","0.00"],["0.07","0.87","0.07","0.00","0.00","0.00"],["0.00","0.07","0.87","0.07","0.00","0.00"],["0.00","0.00","0.07","0.86","0.07","0.00"],["0.02","0.00","0.00","0.06","0.85","0.06"]],"2-none":[["0.17","0.17","0.17","0.17","0.17","0.17"],["0.04","0.04","0.80","0.04","0.04","0.04"],["0.04","0.83","0.04","0.04","0.00","0.04"],["0.04","0.00","0.04","0.04","0.83","0.04"],["0.04","0.04","0.80","0.04","0.04","0.04"],["0.04","0.04","0.80","0.04","0.04","0.04"]],"2-causal":[["1.00","0.00","0.00","0.00","0.00","0.00"],["0.50","0.50","0.00","0.00","0.00","0.00"],["0.05","0.91","0.05","0.00","0.00","0.00"],["0.33","0.02","0.33","0.33","0.00","0.00"],["0.04","0.04","0.83","0.04","0.04","0.00"],["0.04","0.04","0.80","0.04","0.04","0.04"]]}};
+  var grid = document.getElementById('ax-grid'), sum = document.getElementById('ax-sum'),
+      selH = document.getElementById('ax-head'), selM = document.getElementById('ax-mask');
+  if (!grid || !sum || !selH || !selM) return;
+  var row = 2, rows = [], cells = [];
+  function el(tag, cls, text){ var e = document.createElement(tag); e.className = cls; if (text !== undefined) { e.textContent = text; } return e; }
+  function now(){ return D.weights[selH.value + '-' + selM.value]; }
+  function mark(){
+    var W = now(), causal = selM.value === 'causal';
+    rows.forEach(function(b, i){ b.classList.toggle('on', i === row); b.setAttribute('aria-pressed', i === row ? 'true' : 'false'); });
+    cells.forEach(function(r, i){ r.forEach(function(c){ c.classList.toggle('sel', i === row && !c.classList.contains('ax-m')); }); });
+    var seen = W[row].map(function(v, j){ return {w: D.words[j], v: v, j: j}; }).filter(function(p){ return !(causal && p.j > row); });
+    seen.sort(function(a, b){ return parseFloat(b.v) - parseFloat(a.v); });
+    sum.textContent = D.words[row] + ' (head ' + selH.value + ', ' + (causal ? 'causal mask' : 'no mask') + ') gives: ' +
+      seen.map(function(p){ return p.w + ' ' + p.v; }).join(', ') + (causal && row < W.length - 1 ? '; every later word is masked' : '');
+  }
+  function build(){
+    var W = now(), causal = selM.value === 'causal';
+    grid.textContent = ''; rows = []; cells = [];
+    var corner = el('div', 'ax-col', ''); corner.setAttribute('aria-hidden', 'true'); grid.appendChild(corner);
+    D.words.forEach(function(w){ grid.appendChild(el('div', 'ax-col', w)); });
+    W.forEach(function(r, i){
+      var b = el('button', 'ax-r', D.words[i]); b.type = 'button';
+      b.addEventListener('click', function(){ row = i; mark(); });
+      grid.appendChild(b); rows.push(b); cells.push([]);
+      r.forEach(function(v, j){
+        var c, x = parseFloat(v);
+        if (causal && j > i) { c = el('div', 'ax-c ax-m', '-'); c.title = 'masked'; }
+        else { c = el('div', 'ax-c' + (x >= 0.5 ? ' dark' : ''), v); c.style.background = 'rgba(13,148,136,' + Math.max(0.05, x).toFixed(2) + ')'; }
+        grid.appendChild(c); cells[i].push(c);
+      });
+    });
+    mark();
+  }
+  selH.addEventListener('change', build);
+  selM.addEventListener('change', build);
+  build();
+})();
+</script>
+</body>
+</html>

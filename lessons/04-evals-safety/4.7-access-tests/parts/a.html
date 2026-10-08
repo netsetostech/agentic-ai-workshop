@@ -1,0 +1,80 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.7</div>
+<h1>Test valid access, denied access and cross-tenant requests: <span>the door, a 401 and a 403 side by side, the isolation rows, and a residency policy that overrules a pin</span></h1>
+<p>Lesson 4.6 traced how a request becomes an identity and a tenant. This lesson tests it. You send four requests side by side and get the door's refusal, a 401, a 403 and an answer. You ask every isolation row twice: as the outsider, who must be refused each time, and as a member, whose answers must never carry another tenant's marker. Then you pin a tenant that must keep its text in India to a store outside India, and read the usage row that shows the policy won.</p>
+<div class="hero-chips"><div class="hero-chip">no token: the door</div><div class="hero-chip">401: who</div><div class="hero-chip">403: whether</div><div class="hero-chip">%%N_ISO%% isolation rows</div><div class="hero-chip">data_region: in or any</div><div class="hero-chip">policy_fallback 1</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Four answers a request can get, and the walls between tenants</a></li>
+<li><a href="#s2">The words: the door, 401, 403, outsider, isolation row, the two walls, data_region, pin, policy_fallback</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The refusal ladder: the door, a 401 and a 403 side by side</a></li>
+<li><a href="#s4">Cross-tenant: every isolation row, as the outsider and as a member</a></li>
+<li><a href="#s5">Residency: each tenant's data_region, and the rule that applies it</a></li>
+<li><a href="#s6">The policy against a pin: a tenant kept in India, pinned to a store outside it</a></li>
+<li><a href="#s7">The kit's own tests of the same refusals</a></li>
+<li><a href="#s8">Why the tests are shaped this way, and what they cost</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what each refusal means and where it comes from, why a test suite must assert refusals and not only answers, and how the kit keeps one tenant's text away from another and inside the region its policy names. Then you will prove it on your lane: a 401 and a 403 side by side, the outsider refused on every isolation row, a member's answers free of every other tenant's marker, and a residency policy overruling a pin.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Four answers a request can get, and the walls between tenants</h3><p>Each refusal comes from a different check, and a test is only useful if it can tell them apart.</p></div></div>
+
+<p><strong>A request can get four answers, and each means something different.</strong> A refusal at the door comes from Cloud Run itself, before any kit code runs: the caller brought no token, or an account the service does not admit. A 401 from the API means a token reached it but proved nobody: no email, the wrong audience, a forged assertion. A 403 from the API means the API knows exactly who is asking, and that identity is not on the tenant's roster. A 200 means all three checks passed. A test that only checks for the 200 cannot tell an open service from a closed one, which is why the kit's smoke test asserts a refusal too.</p>
+
+<p><strong>Two walls stand between tenants.</strong> The first is the roster: an identity may ask only for the tenants whose rosters list it. The second is the retrieval filter: every vector query is restricted on <code>tenant_id</code>, and the Firestore rung carries the same equality, so even an identity on two rosters gets only the named tenant's chunks. The isolation rows test both walls. The outsider asks each one and must be refused. A member asks each one, and the answer must not carry the marker that only another tenant's documents hold.</p>
+
+<p><strong>The outsider is a fixture built to fail in one place.</strong> IAM admits it, with <code>roles/run.invoker</code> on the API, and no roster lists it. So its refusal has to come from the roster, as a 403, and never from the network. A 401 or a door refusal for the outsider would mean the test proved nothing about the roster. It is never admitted to the A2A peer, which has no roster of its own to refuse it with.</p>
+
+<p><strong>Residency is a third wall: where a tenant's text may be held.</strong> <code>tenant_settings/{tenant}.data_region</code> says <code>in</code>, meaning the kit's own rows in India and nothing else, or <code>any</code>, meaning a managed store outside India may hold a copy. An absent policy means <code>in</code>. If a tenant marked <code>in</code> is pinned to a managed store, the API overrules the pin on every request. It serves from its own index instead, and writes <code>policy_fallback</code> 1 on the usage row. Only the operator writes either field.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127974;</div><div>
+<p><strong>A bank's locker hall.</strong> No card, and the guard at the gate turns you away: the door. A card that names nobody is refused at the counter: the 401. A known customer who has no locker in this branch is refused too, politely and by name: the 403. Inside, your key opens only your locker, even if you rent two: the retrieval filter. And some customers' valuables never leave the city vault, whatever a form elsewhere says: residency.</p></div></div>
+
+<h4>The test plan: every identity against every tenant, and where a tenant's text is searched</h4>
+<p>The matrix is what this lesson's tests should find. Each cell is one identity asking one tenant, and a tap shows its path through the door, the verifier and the roster. The panel below it applies a tenant's policy and pin the way the API does.</p>
+
+<div class="diagram am" id="access">
+<div class="dg-title">Access matrix and residency panel - the invoker list, make roster's plan, choose_for() and retrieval_backend_for()</div>
+<div class="am-grid" id="am-grid"></div>
+<div class="am-box" id="am-why" aria-live="polite"></div>
+<div class="am-box"><b class="h">Residency: which store answers one tenant</b>
+<div class="rp-in">
+<label>The tenant's data_region<select id="rp-policy"><option value="in">in</option><option value="any">any</option><option value="">absent</option></select></label>
+<label>The tenant's pin<select id="rp-pin"><option value="rag_engine">rag_engine</option><option value="vertex_search">vertex_search</option><option value="vector">vector</option><option value="firestore">firestore</option><option value="">no pin</option><option value="bogus">a typo</option></select></label>
+<label>The deployment's backend<select id="rp-dep"><option>vector</option><option>firestore</option></select></label>
+<label>The retrieval mode<select id="rp-mode"><option>dense</option><option>hybrid</option></select></label>
+</div>
+<p class="rp-out" id="rp-out" aria-live="polite"></p></div>
+<p class="dg-cap">The matrix is computed from the invoker list in <code>commands/lesson-12.2.sh</code> and the plan <code>make roster</code> writes. The residency panel ports the pin rule in <code>choose_for()</code> and all of <code>retrieval_backend_for()</code>. For all %%N_RES%% combinations of its choices, the build ran the kit's own two functions, and the panel had to agree with each.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the matrix is not</div>
+<p>It is the plan, not your lane. Your rosters may list more people, and an operator can bind the invoker role more widely. The tests in steps 3 and 4 are what check the lane itself. The panel shows the store the API would search; it cannot tell you whether that store holds your documents.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: the door, 401, 403, outsider, isolation row, the two walls, data_region, pin, policy_fallback</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>The door's refusal</strong></td><td data-label="Meaning">Cloud Run refuses a request with no token, or from an account without <code>roles/run.invoker</code>, before the container runs. Google's own page, not the API's JSON.</td><td data-label="On your lane">401 or 403</td></tr>
+<tr><td><strong>401</strong></td><td data-label="Meaning">The API's <code>IapError</code>: a token reached it and proved nobody.</td><td data-label="On your lane"><code>the bearer token carries no verified email</code></td></tr>
+<tr><td><strong>403</strong></td><td data-label="Meaning">The API's roster check: a known identity, not on that tenant's roster.</td><td data-label="On your lane"><code>not a member of this tenant</code></td></tr>
+<tr><td><strong>The outsider</strong></td><td data-label="Meaning"><code>documind-outsider-sa</code>: admitted by IAM on the API, on no roster. Its refusal must be the roster's.</td><td data-label="On your lane"><code>otok</code> mints its token</td></tr>
+<tr><td><strong>Isolation row</strong></td><td data-label="Meaning">A golden row that asks one tenant for a fact another tenant holds, with the marker that must never appear.</td><td data-label="On your lane">%%N_ISO%% rows, all required</td></tr>
+<tr><td><strong>The two walls</strong></td><td data-label="Meaning">The roster decides who may ask for a tenant. The retrieval filter keeps every search inside the named tenant.</td><td data-label="On your lane"><code>enforce_membership()</code>; <code>tenant_id</code> restricts</td></tr>
+<tr><td><strong>check_isolation()</strong></td><td data-label="Meaning">The live gate's isolation test: the outsider asks every isolation row and must get 403 every time. It is <code>isolation_403_rate</code>, and its threshold is 1.00.</td><td data-label="On your lane">lesson 4.2's run printed it</td></tr>
+<tr><td><strong>data_region</strong></td><td data-label="Meaning"><code>in</code>: the kit's own rows in India. <code>any</code>: a managed store outside India may hold a copy. Absent or unreadable means <code>in</code>.</td><td data-label="On your lane">acme %%P_ACME%%, zeta %%P_ZETA%%, globex %%P_GLOBEX%%, if <code>make roster</code> wrote them</td></tr>
+<tr><td><strong>Pin</strong></td><td data-label="Meaning"><code>tenant_settings/{tenant}.retrieval_backend</code>: which store answers one tenant. The API reads it once a minute.</td><td data-label="On your lane"><code>make tenant-backend</code></td></tr>
+<tr><td><strong>policy_fallback</strong></td><td data-label="Meaning">1 on the usage row when the policy overruled a pin to a managed store and the kit's own index answered.</td><td data-label="On your lane">step 6's row</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the roster and the filter guard against different mistakes. The roster stops the wrong identity from asking at all. The filter stops the right identity from reading the wrong tenant's chunks. Lesson 4.2's gate tests the first with the outsider; the member's answers in step 4 test the second.</p>

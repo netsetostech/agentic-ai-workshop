@@ -1,0 +1,152 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Model</span><h3>The model call by hand: the schema, the thinking, the usage, the price</h3><p>generate_content with the kit's own config and the kit's own schema on two packed chunks, the parsed draft, the resolution, and the usage priced as the API would.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>_call()</code> is one <code>generate_content</code> on the client the model needs, with the system prompt, the packed context and the question as one text part, the packed figures as image parts when a chunk is one, and a config of five lines: JSON as the mime type, <code>ModelDraft</code> as the schema, the reserve as <code>max_output_tokens</code>, a low thinking level, and the tenant's cache when one is live. No temperature, top-p or top-k, because the model ignores all three and a knob that does nothing reads like one that does. The reply's <code>parsed</code> is the draft; its <code>usage_metadata</code> carries the prompt tokens, the answer's and the thoughts', and the cached count. The cell does the same call with the same schema from the kit's shared module, on the global client, for two handbook sections packed by the kit's packer, then resolves and prices what came back.</p>
+
+<h4>The code</h4>
+@@call_fn@@
+@@usage_fn@@
+@@draft_fn@@
+
+<h4>Do it: the same call, from the shell</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; one model call at the generator's rate, a few paise)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, ast, json
+sys.path[:0] = [".", "services/rag-api"]
+from google import genai
+from google.genai import types
+from shared.documind_schemas import ModelDraft, resolve
+from shared import documind_corpus as dc
+from context_budget import pack_chunks, estimate_tokens
+K = {n.targets[0].id: ast.literal_eval(n.value) for n in ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read()).body
+     if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "SYSTEM"}
+client = genai.Client(enterprise=True, project=os.environ["PROJECT"], location="global")          # _client: a model NAME is served on the global endpoint
+MODEL = os.environ.get("GENERATOR_MODEL", "%%GEN_MODEL%%")
+handbook = dc.chunk_document({"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://uploads/acme/hr_policy_2026.md",
+                              "text": open("evals/corpus/acme/hr_policy_2026.md", encoding="utf-8").read()}, "acme")
+context, packed, dropped = pack_chunks([next(c for c in handbook if c["locator"] == L) for L in ("NP-03", "PB-02")], %%CHUNK_BUDGET_RAW%%, estimate_tokens)
+Q = "What is the notice period for a confirmed E3?"
+prompt = f"{K['SYSTEM']}\n\nContext:\n{context}\n\nQuestion: {Q}"                                # generate(): no dated rule, no packed chunk carries a date
+r = client.models.generate_content(model=MODEL, contents=[prompt], config=types.GenerateContentConfig(
+    response_mime_type="application/json", response_schema=ModelDraft, max_output_tokens=%%ANSWER_RAW%%,
+    thinking_config=types.ThinkingConfig(thinking_level="LOW")))                                 # _call(), without a tenant cache
+draft = r.parsed if isinstance(r.parsed, ModelDraft) else ModelDraft.model_validate(json.loads(r.text))
+print("finish:", r.candidates[0].finish_reason.name, "| the draft:", json.dumps(draft.model_dump(), ensure_ascii=False)[:200], "...")
+ans = resolve(draft, packed)
+print("resolved:", [(c.chunk_id, c.page, c.score) for c in ans.citations], "| answerable", ans.answerable, "| confidence", ans.confidence)
+u = r.usage_metadata
+thoughts = getattr(u, "thoughts_token_count", None) or 0
+print("usage: prompt", u.prompt_token_count, "| candidates", u.candidates_token_count, "| thoughts", thoughts, "| cached", getattr(u, "cached_content_token_count", None) or 0)
+try:
+    from cost import price                                                                        # the API's own arithmetic
+    p = price(MODEL, u.prompt_token_count or 0, (u.candidates_token_count or 0) + thoughts, 0)
+    print(f"priced as the API would: ${p['usd']} = Rs {p['inr']} at {p['usd_inr_rate']}")
+except ImportError as e:
+    print("cost.price() needs google-cloud-bigquery in the venv:", e)
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the model's words and counts are its own; the draft's shape, the resolved ids and the priced line are the point)</span><span class="ro">read only</span></div><pre tabindex="0">finish: STOP | the draft: {"answer": "A confirmed employee in grade E3 ... [1]", "citations": [{"source": 1, "quote": "..."}], "confidence": "high", "answerable": true} ...
+resolved: [('acme:hr_policy_2026#NP-03', 1, 0.0)] | answerable True | confidence high
+usage: prompt 4xx | candidates 1xx | thoughts xxx | cached 0
+priced as the API would: $0.00xxxx = Rs 0.xxxx at %%USD_INR%%.0</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The model was called the way the API calls it, and it returned the class, not prose: the SDK parsed the JSON into <code>ModelDraft</code> because the schema was in the config, and the draft's <code>[1]</code> became the chunk id the chunker gave NP-03, with a page of 1 because the kit's markdown mirror numbers its sections and a score of 0 because nothing ranked these two. The usage showed the three counts the row sums: the prompt, the answer, and the thoughts the model spent before it, which are billed as output whether or not you see them. The price was the kit's own arithmetic on those counts, in both currencies.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Setting</span><h3>The model as a setting: the global client, a tuned endpoint, a pin and a router</h3><p>Where the model is decided per request, why a name and an endpoint path need different clients, and the three settings that can change the model without a code change.</p></div></div>
+
+<h4>Definition</h4>
+<p>The model for a request is decided in <code>choose_for()</code>: a tenant's pin in <code>tenant_settings</code> first, else the router's tier when <code>ROUTING</code> is on, else <code>GENERATOR_MODEL</code>. The value then chooses its own client: a model name is served from the global endpoint, where the 3.x family lives, and a tuned model is an endpoint path, <code>projects/.../locations/.../endpoints/...</code>, served from the location the path names, because the global client answers 404 for it; <code>GENERATOR_LOCATION</code> can override that without a code change, which the first live tuning job needed when its endpoint landed in the <code>us</code> multi-region. A tuned endpoint is priced as its base, <code>RAG_MODEL_BASE</code>, and the cache is the model's, not the tenant's. A 429 from a routed tier is answered by the default model with a <code>tier_exhausted</code> line, never a 500. Nothing above the API changes for any of this; the UI, the agents and the MCP server see the same contract.</p>
+
+<h4>The code</h4>
+@@client_for@@
+@@endpoint_location@@
+@@choose_model@@
+@@exhausted@@
+
+<h4>Read the lane, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (three reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/lane.py tenant-backend acme
+python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+ts = firestore.Client(project=os.environ["PROJECT"]).collection("tenant_settings").document("acme").get().to_dict() or {}
+print("acme's tenant_settings:", {k: ts.get(k) for k in ("generator_model", "model_backend", "retrieval_backend", "data_region")})
+PY
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND (jsonPayload.event="tier_exhausted" OR jsonPayload.event="routing_fallback")' \
+  --project "$PROJECT" --freshness 7d --limit 3 --format='value(timestamp,jsonPayload.event,jsonPayload.model,jsonPayload.fallback)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (no model pin and no routing on this lane, so the generator model serves everything and the log has neither event)</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector
+acme's tenant_settings: {'generator_model': None, 'model_backend': None, 'retrieval_backend': 'vector', 'data_region': 'any'}</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three settings that could change the model, and on your lane none of them does: acme has no model pin, routing is off, and no tier has ever run out. The point is where they live. A pin is a field read once a minute, the router is a flag, and the generator model is a variable, so a tuned endpoint from Module 12 or a self-hosted route from Module 9 is a change of one value behind the same <code>retrieve()</code> and the same contract, and every answer's <code>model</code> field says which one answered.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What an answer costs, and the failure that is not a refusal</h3><p>The rupee line for an answer and for each refusal, and a candidate whose reserve is too small for any JSON: the 502, the two log lines, and the reserve back.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Answer</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A cited answer</td><td data-label="Costs">the prompt at $%%RATE_IN%% per million in, the answer and its thoughts at $%%RATE_OUT%% out; Rs %%RS_1K_IN%% per thousand input tokens at %%USD_INR%%</td><td data-label="On your lane">step 4's <code>cost_usd</code>, under a rupee</td></tr>
+<tr><td>The model's refusal</td><td data-label="Costs">the same prompt, a shorter output: nearly the price of an answer</td><td data-label="On your lane">step 5's first two lines</td></tr>
+<tr><td>The empty pool's refusal</td><td data-label="Costs">nothing: no model call, and never stored in the answer cache</td><td data-label="On your lane">step 5's third line, <code>cost_usd 0.0</code></td></tr>
+<tr><td>A repaired quote</td><td data-label="Costs">nothing extra: the reply is trimmed in the API</td><td data-label="On your lane">a <code>generation_repaired</code> line when it happens</td></tr>
+<tr><td>A truncated answer</td><td data-label="Costs">two calls, both billed and summed into one row</td><td data-label="On your lane">none in a day, step 6.1 checked</td></tr>
+<tr><td>The candidate below</td><td data-label="Costs">two short calls that produce no answer, a few paise, and no row</td><td data-label="On your lane">then reverted</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The failure that is not a refusal</h4>
+<p>A reserve too small for any JSON is the cleanest way to see the rule that a cut-off answer is never scored as the model declining. On a candidate that takes no traffic, set the reserve to 16 tokens: the first attempt hits the cap before a draft exists, the generator logs <code>generation_truncated</code> and asks once more with 48, which is still not enough, and the handler returns 502 with <code>generation_unparsed</code> and the finish reason in the message. No usage row is written for it, so the tenant is not billed a refusal it never got, and lesson 7's gate counts it as plumbing. The variable is not set on the live service, so the undo removes it.</p>
+
+<h4>The code</h4>
+@@retry_guard@@
+@@unparsed@@
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; one question that fails on purpose; one log read; the undo)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars MAX_ANSWER_TOKENS=16 --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+curl -s -o /tmp/cand62.json -w "HTTP %{http_code}\n" -X POST "$CAND/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}'; cat /tmp/cand62.json; echo
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND (jsonPayload.event="generation_truncated" OR jsonPayload.event="generation_unparsed")' \
+  --project "$PROJECT" --freshness 5m --limit 4 --format='value(timestamp,jsonPayload.event,jsonPayload.max_output_tokens,jsonPayload.tokens_out,jsonPayload.finish_reason)'
+gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate --remove-env-vars MAX_ANSWER_TOKENS --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet
+echo "template now: $(svc_env documind-api MAX_ANSWER_TOKENS)"; echo "(empty means unset: the default, %%ANSWER_RAW%%)"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (newest log line first)</span><span class="ro">read only</span></div><pre tabindex="0">HTTP 502
+{"detail":"generation produced no parseable answer (MAX_TOKENS)"}
+2026-09-2xT1x:xx:xx.xxxxxxZ	generation_unparsed			MAX_TOKENS
+2026-09-2xT1x:xx:xx.xxxxxxZ	generation_truncated	16	1x
+template now:
+(empty means unset: the default, %%ANSWER_RAW%%)</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The candidate produced no answer twice, said so with a 502 whose message names the finish reason, and wrote no row. That is the difference between a refusal and a failure made visible: a refusal is the contract with <code>answerable false</code>, a failure is an error the caller sees and the gate counts as plumbing, and before 12 September the second was disguised as the first. The reserve went back to its default with the variable's removal, and the live service never saw a request.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A draft's numbers become citations with ids the draft never held</td><td data-label="The check">step 3</td><td data-label="Pass looks like">two citations with chunk ids and pages</td></tr>
+<tr><td>2</td><td data-label="Claim">A number that was never packed is dropped, not raised</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>2 of 3 citations kept</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The schema refuses what it should</td><td data-label="The check">step 3</td><td data-label="Pass looks like">three <code>refused</code> lines naming the field</td></tr>
+<tr><td>4</td><td data-label="Claim">A lane answer's marks match its citations, and its quotes are in the rows</td><td data-label="The check">step 4</td><td data-label="Pass looks like">marks equal to the citation count; <code>quote in the row True</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The model refuses a full pool that does not answer</td><td data-label="The check">step 5, the first two lines</td><td data-label="Pass looks like"><code>answerable False</code>, <code>backend vertex</code>, tokens spent</td></tr>
+<tr><td>6</td><td data-label="Claim">The API refuses an empty pool without a model</td><td data-label="The check">step 5, the third line</td><td data-label="Pass looks like"><code>backend none</code>, <code>tokens 0 + 0</code>, <code>cost_usd 0.0</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The model returns the class when asked with the schema</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>finish: STOP</code>, a draft with source 1, the kit's chunk id resolved</td></tr>
+<tr><td>8</td><td data-label="Claim">Nothing on the lane overrides the generator model</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>generator_model None</code>, no tier or routing lines</td></tr>
+<tr><td>9</td><td data-label="Claim">A cut-off answer is a 502, not a refusal</td><td data-label="The check">step 8</td><td data-label="Pass looks like"><code>HTTP 502</code>, <code>generation_truncated</code> then <code>generation_unparsed</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. A candidate revision took no traffic, failed twice on purpose, and lost its variable before the tag was dropped. The questions you asked are usage rows, three of them with the unanswerable flag, which lesson 11.5's alert will count as three on a day it should. Lesson 3.6 checks each quote against the passage it cites and versions the prompt, and lesson 3.7 sends the same contract as a stream: the citations first, the tokens as they come, and every failure named as it degrades.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Generation &middot; Lesson 3.5 Generate structured answers, citations and refusals &middot; v5.0</p><p>Next: Lesson 3.6 Check quotes and version prompts.</p></div>

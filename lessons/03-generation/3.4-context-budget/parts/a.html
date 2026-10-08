@@ -1,0 +1,77 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.4</div>
+<h1>Pack evidence within the context budget: <span>the lines of one prompt, the packer that fills them most relevant first, and the counter that says what the packed set costs</span></h1>
+<p>Module 2 ended with a ranked pool. This lesson is about the space it has to fit into. A prompt is a sum of lines, the system rules, the question, the evidence, and a reserve for the answer, and the kit gives the evidence whatever is left of a total after the fixed parts are counted. <code>pack_chunks()</code> fills that room most relevant first, one <code>[Source N]</code> header per chunk carrying the file, the page and the date the document declares, drops what does not fit and logs the drop, and the citations resolve against what was packed. The count behind all of it is an estimate, four characters a token, and a real counter can be injected where the estimate misleads. You will read the budget's lines from the kit, pack real chunks offline with the kit's own functions, put the model's counter beside the estimate for English and for Hindi, read one answer's <code>tokens_in</code> against the estimate of its packed set and price it in rupees, watch a dated document put its date on the header and the dated rule in the prompt, and shrink the budget on a candidate revision to see the drop line appear.</p>
+<div class="hero-chips"><div class="hero-chip">TokenBudget.fit()</div><div class="hero-chip">%%TOTAL%% tokens, %%ANSWER%% reserved</div><div class="hero-chip">[Source N] name, p., effective from</div><div class="hero-chip">context_budget_drop</div><div class="hero-chip">len // 4, or count_tokens</div><div class="hero-chip">tokens_in, priced at %%USD_INR%%</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a prompt is made of, and why the evidence gets the remainder</a></li>
+<li><a href="#s2">The words: budget line, fit, estimate, counter, header, dated rule, drop, reserve, tokens_in, price</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The budget's lines and the packer, offline on the kit's own documents</a></li>
+<li><a href="#s4">The model's counter beside the estimate: English, Hindi, and a pool trimmed by the exact count</a></li>
+<li><a href="#s5">One answer's tokens: the packed set's estimate, the model's count, and the price</a></li>
+<li><a href="#s6">A dated document on the lane: the header's date, the rule in the prompt, the citation event</a></li>
+<li><a href="#s7">The answer's reserve, the retry, and the tokens on the rows</a></li>
+<li><a href="#s8">What the budget costs, the knob on a candidate, and the lines this lesson leaves empty</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the five lines of a request's budget are, how the API computes its own with <code>TokenBudget.fit()</code>, why packing is most relevant first with a header per source and a log line per drop, and why the four-characters rule is an estimate that a real counter can replace. Then you will prove it on your lane: pack the kit's documents offline, count with the model, read <code>tokens_in</code> and price an answer, see a document's date reach the header and the citation event, and shrink the budget on a candidate that takes no traffic.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a prompt is made of, and why the evidence gets the remainder</h3><p>Five lines, one total, a packer that walks the ranker's order, and a count that is an estimate until a counter says otherwise.</p></div></div>
+
+<p><strong>A prompt has lines, and the budget is their sum.</strong> The kit's <code>TokenBudget</code> names five: the system prompt, a tenant pack that Module 6 fills as a cached prefix, the chunks, a rolling history that the chat service keeps, and a reserve for the answer. The kit's teaching split is %%TB_SYSTEM%%, %%TB_PACK%%, %%TB_CHUNKS%%, %%TB_HISTORY%% and %%TB_ANSWER%% tokens. The API builds its own with <code>fit()</code>: it counts the fixed parts of its prompt, the system rules, the dated rule held in reserve, the scaffolding and the question, and gives the chunks whatever is left of <code>max_context_tokens</code>, %%TOTAL%% by default, with the pack and history lines at zero because this service holds neither. Until 12 September the whole total went to the chunks and the fixed parts rode on top, so every full request was over budget by their size.</p>
+
+<p><strong>Packing is most relevant first, one header per source.</strong> <code>pack_chunks()</code> walks the ranker's order. Each block is a header and the chunk's text; the header is <code>[Source N]</code> with the file's name, the page when there is one, the section, and <code>effective from</code> a date when the ledger stamped one on the row, which the worker read off the document's first lines or its name. A block that does not fit is dropped whole, never cut, and the walk goes on, so a smaller chunk later in the order can still get in. Every drop is one <code>context_budget_drop</code> line in the log, because "the answer got worse after we added documents" starts there. The model cites by <code>[N]</code>, and <code>resolve()</code> maps that number against the packed list, never the pool. When any packed chunk carries a date, a sixth rule joins the system prompt: follow the source with the latest effective date, cite it, say from when it applies. The five rules themselves never change, so the tuned model is served behind the prompt it was trained behind.</p>
+
+<p><strong>The count is an estimate until a counter says otherwise.</strong> <code>estimate_tokens()</code> is the length in characters divided by four: close for English prose, wrong for a script that costs more tokens a character, which Devanagari does. So <code>pack_chunks()</code> takes a <code>count_fn</code>: after packing by the estimate it asks the counter for the exact size and trims from the tail while it exceeds the budget; the API passes the estimate, and the model's own <code>count_tokens</code> can be passed in its place, there and in <code>fit()</code> alike. What the packed set finally costs is on the answer as <code>tokens_in</code>, the model's own count of the prompt, and <code>cost.price()</code> turns it into dollars and rupees at the model's rate, with cached input at a tenth. The answer's reserve is %%ANSWER%% tokens because thinking draws from the same output budget and a cut-off JSON was once scored as a refusal; when a first attempt is cut off, the generator asks once more with three times the room and bills both.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128194;</div><div>
+<p><strong>The briefing folder.</strong> A secretary fills a folder for a minister who reads a fixed number of pages. The cover note and the question go in first and take their pages. Then the evidence, most important memo first, each with a tab that names the file, the page and the date it took effect; a memo that would not fit stays on the desk, and a note on the folder says how many stayed. The folder is weighed by page count, a rough scale that is right for typed English and wrong for a dense script, so a real scale stands beside it and when the real scale says heavier, the last memos come out. The reply has its own page allowance, and a reply that runs over is asked for again with triple the pages. The minister cites tabs, never memos that stayed on the desk.</p></div></div>
+
+<h4>The packing bench: the kit's rules on the kit's chunks</h4>
+<p>Pick a golden question. The pool is acme's own chunks in the order lesson 2.2's BM25 leg puts them, standing in for the ranker's. The bench applies <code>fit()</code> to the fixed prompt, packs the first <code>top_k</code> chunks by <code>pack_chunks()</code> with the kit's headers, and shows the lines, the packed and dropped sets, the log line, the estimate of <code>tokens_in</code> and the rupee price of the request at the model's rate. Two switches change the arithmetic: a counter that reads more than the estimate, as the model does for some scripts, and the dated smoke note from Module 1 put first, whose date reaches its header and adds the sixth rule.</p>
+
+<div class="diagram pb" id="bench">
+<div class="dg-title">Packing bench - TokenBudget.fit(), source_header(), pack_chunks() and cost.price(), as rules</div>
+<div class="pb-controls">
+<label class="pb-l">Golden question<select id="pb-q">%%BENCH_OPTIONS%%</select></label>
+<label class="pb-l">max_context_tokens: <span id="pb-total-v">%%TOTAL_RAW%%</span> <input type="range" id="pb-total" min="1000" max="32000" step="250" value="%%TOTAL_RAW%%"></label>
+<label class="pb-l">top_k, the chunks offered: <span id="pb-k-v">5</span> <input type="range" id="pb-k" min="1" max="20" step="1" value="5"></label>
+<label class="pb-l">The counter<select id="pb-counter"><option value="1">the estimate: four characters a token</option><option value="1.6">a counter reading 60 percent more, as for a denser script</option></select></label>
+<label class="pb-l pb-check"><label><input type="checkbox" id="pb-dated"> put the dated smoke note (revision 2) first</label></label>
+</div>
+<div class="pb-lines" id="pb-lines" aria-live="polite"></div>
+<div class="pb-out" id="pb-out" aria-live="polite"></div>
+<p class="dg-cap">Computed when this page was built by the kit's own code: the chunks are acme's mirrors through <code>shared/documind_corpus.py</code>, their order lesson 2.2's BM25 port; the fixed prompt is <code>generator.SYSTEM</code> and the dated rule; the rates are <code>cost.py</code>'s for <code>%%GEN_MODEL%%</code> at USD_INR %%USD_INR%%. The packing, the headers and the trim are the kit's functions, line for line, in JavaScript.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the bench is not</div>
+<p>It is not the ranker: BM25 orders the pool here because the ranker needs your lane, and the API's order for the same question can differ. It is not the model's counter either: the second counter is a stand-in that reads sixty percent more everywhere, where the real one reads more for some scripts and less for others; step 4 puts the real one beside the estimate.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: budget line, fit, estimate, counter, header, dated rule, drop, reserve, tokens_in, price</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>TokenBudget</strong></td><td data-label="Meaning">A frozen record of five lines in tokens: system, tenant_pack, chunks, history, answer, with <code>input_total</code> the sum of the first four. The defaults are 4.5's teaching split.</td><td data-label="On your lane">%%TB_SYSTEM%% / %%TB_PACK%% / %%TB_CHUNKS%% / %%TB_HISTORY%% / %%TB_ANSWER%% by default; the API never uses those.</td></tr>
+<tr><td><strong>fit()</strong></td><td data-label="Meaning">The API's budget: the fixed prompt counted with the counter, the chunks given <code>total</code> minus that, never below zero, pack and history at zero, the answer reserve passed through.</td><td data-label="On your lane">%%FIXED_TOKENS%% fixed and %%CHUNK_BUDGET%% for the chunks, for the notice-period question.</td></tr>
+<tr><td><strong>max_context_tokens</strong></td><td data-label="Meaning">The input total the API budgets to, a setting, far below the model's window: a choice about cost and latency, not a limit the model imposes.</td><td data-label="On your lane">%%TOTAL%% by default; 600 on step 8's candidate.</td></tr>
+<tr><td><strong>estimate_tokens</strong></td><td data-label="Meaning"><code>max(1, len(text) // 4)</code>: the counter the API packs by, per block.</td><td data-label="On your lane">Step 4 measures it against the model, for English and for Hindi.</td></tr>
+<tr><td><strong>count_fn</strong></td><td data-label="Meaning">A counter injected into <code>pack_chunks()</code> and <code>fit()</code>: after the estimate packs, the exact count trims from the tail while it exceeds the budget. Tests pass a fake; the API can pass the model's.</td><td data-label="On your lane"><code>client.models.count_tokens</code> on the global client, step 4.</td></tr>
+<tr><td><strong>source_header, [Source N]</strong></td><td data-label="Meaning">The line above each packed chunk: its number, the file's name, <code>p.</code> and the page when there is one, the section, <code>effective from</code> and the date when the row carries one. The model cites the number.</td><td data-label="On your lane"><code>[Source 1] hr_policy_2026.md, p.1, NP-03 — Notice period</code>, the section's own title.</td></tr>
+<tr><td><strong>The dated rule</strong></td><td data-label="Meaning">A sixth rule appended to the system prompt only when a packed chunk carries a date; the five rules stay byte-identical to the tuning set's.</td><td data-label="On your lane">Absent for the handbook; present for the dated smoke note in step 6.</td></tr>
+<tr><td><strong>context_budget_drop</strong></td><td data-label="Meaning">The log line <code>_pack()</code> writes when any chunk did not fit: how many packed, how many dropped. Never silent.</td><td data-label="On your lane">None at %%TOTAL%% for five handbook sections; one on step 8's candidate.</td></tr>
+<tr><td><strong>max_answer_tokens</strong></td><td data-label="Meaning">The output reserve, %%ANSWER%%: thinking and the JSON share it. A first attempt cut off at it is logged <code>generation_truncated</code> and retried once with three times the room, both attempts billed.</td><td data-label="On your lane">Step 7 reads the log for the event.</td></tr>
+<tr><td><strong>tokens_in, cached_tokens, price</strong></td><td data-label="Meaning">The model's count of the prompt, the part of it served from a context cache, and <code>cost.price()</code>: input at the model's rate, cached input at a tenth, output at its rate, in USD and INR at %%USD_INR%%.</td><td data-label="On your lane">Step 5; %%GEN_MODEL%% at $%%RATE_IN%% in and $%%RATE_OUT%% out per million.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One number to keep apart from the rest: <code>top_k</code> is how many chunks the packer is offered, and the budget is how many it keeps. At the default budget the two agree for handbook sections and disagree for full Act pages, which is the whole reason the drop line exists.</p>

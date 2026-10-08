@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Live Session 3.5 &mdash; Ingest, re-issue, undo, poison | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner"><div class="hero-crumb">Module 3 &middot; Ingest &middot; Live Session 3.5</div><h1>Live Session: <span>Ingest, re-issue, undo, poison</span></h1><p>Ninety minutes of the lifecycle run live on the instructor's lane, with the room predicting every number before the command runs. The corpus goes in before the session, the poison goes in an hour before, and the session ends on <code>make smoke-reindex</code> green and the one sentence the module asks for.</p></div></div>
+
+<div class="content">
+
+<h2>Session goal</h2>
+<p>Every learner leaves able to run the eight drills of lesson 3.5 on their own lane and to read each line the worker writes without a page in front of them. They have predicted <code>reused=281 embedded=2 retired=283</code> and seen it, seen the undo embed nothing and the fingerprint return to its old value, and watched a tombstone hold against the same bytes and the nightly walk. They can say, unprompted, why the undo cost nothing.</p>
+
+<h2>Prep checklist</h2>
+<div class="box box-amber"><div class="box-title">Before the room fills</div>
+<ul>
+<li>A lane from Module 2 with <code>make up</code> done and <code>make smoke</code> green; <code>PROJECT</code>, <code>TENANT=acme</code>, <code>REGION</code> exported; <code>cd code</code>; the shell that ran <code>make up</code> (it has <code>google-cloud-firestore</code> and <code>google-cloud-storage</code>).</li>
+<li>Thirty minutes before: <code>make ingest-corpus</code>, then <code>make wait-vectors WANT=200</code>. Do not ingest the amendment or the smoke fixture yet.</li>
+<li>Sixty minutes before: <code>make poison</code>, so <code>make dlq</code> has a row to show at minute 60. Leave the zero-byte object in the bucket on purpose (minute 70 uses it).</li>
+<li>Tabs open: Cloud Shell with the lesson's <code>W</code> filter exported; a second Cloud Shell tab running <code>gcloud beta run services logs tail documind-ingest --region $REGION --project $PROJECT</code>; the Firestore console on <code>sources</code>; lesson 3.5's step 1 table of lines on a screen the room can read.</li>
+<li>A saved query in Logs Explorer: <code>resource.labels.service_name="documind-ingest" AND jsonPayload.event=~"^ingest_"</code>.</li>
+<li>The <code>ask</code> shell function from lesson 3.5 step 4 defined, and one answer already fetched so the API is warm.</li>
+</ul></div>
+
+<h2>Agenda</h2>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Minute</th><th>Segment</th><th>What the instructor does</th><th>What the learners do</th></tr></thead>
+<tbody>
+<tr><td>0-5</td><td data-label="Segment">The passbook and the POD</td><td data-label="What the instructor does">Shows the corpus's 31 <code>ingest_ok</code> lines already in the log; states the rule of the session: predict, then read.</td><td data-label="What the learners do">Write down what a first version's <code>reused</code> must be.</td></tr>
+<tr><td>5-15</td><td data-label="Segment">Drill 1: one document in</td><td data-label="What the instructor does"><code>make ingest-one</code> with the amendment; reads the line field by field; <code>make sources</code>.</td><td data-label="What the learners do">Predict <code>chunks</code> and <code>effective_from</code> before Enter.</td></tr>
+<tr><td>15-25</td><td data-label="Segment">Drill 2: the corpus's bill</td><td data-label="What the instructor does"><code>make vector-status</code>; the cost table; the CGST Act's line.</td><td data-label="What the learners do">Compute the Layout Parser rupees for 1,065 pages themselves.</td></tr>
+<tr><td>25-40</td><td data-label="Segment">Drill 3: the re-issue</td><td data-label="What the instructor does"><code>make reindex</code> revision 2; the line; the answer moves to 90; the scoped gate red.</td><td data-label="What the learners do">Predict reused / embedded / retired; name the two changed chunks.</td></tr>
+<tr><td>40-50</td><td data-label="Segment">Drill 4: the undo</td><td data-label="What the instructor does">Revision 1 again; <code>ingest_reactivated</code>; the fingerprint back; the answer back; the gate green.</td><td data-label="What the learners do">Say why <code>embedded=0</code> before the line appears.</td></tr>
+<tr><td>50-60</td><td data-label="Segment">Drill 5: retire and restore</td><td data-label="What the instructor does"><code>make retire</code>; the same bytes; the plan's <em>withdrawn, object kept</em>; <code>make restore</code>.</td><td data-label="What the learners do">Predict the event name for the same bytes.</td></tr>
+<tr><td>60-70</td><td data-label="Segment">Drill 6: poison and the DLQ</td><td data-label="What the instructor does">The <code>ingest_poison</code> line from an hour ago; <code>make dlq</code>; the retry ceiling from <code>eventarc.tf</code>.</td><td data-label="What the learners do">Explain 400 versus 500 to a neighbour in one sentence.</td></tr>
+<tr><td>70-80</td><td data-label="Segment">Drill 7: reconcile and drift</td><td data-label="What the instructor does">The plan with the poison object (drift 1); delete it; delete the amendment; the walk retires it; the object back.</td><td data-label="What the learners do">Predict the drift number before each plan.</td></tr>
+<tr><td>80-88</td><td data-label="Segment">The gate</td><td data-label="What the instructor does"><code>make smoke-reindex</code> live; reads the seven lines; the batch lane in two minutes on slides.</td><td data-label="What the learners do">Name the reused chunk of the fixture.</td></tr>
+<tr><td>88-90</td><td data-label="Segment">Close</td><td data-label="What the instructor does">The one sentence; the homework; <code>make off</code>.</td><td data-label="What the learners do">Write the sentence down.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h2>Minute 0-5: the passbook and the POD</h2>
+<p>Open with the log, not with slides. Thirty-one lines are already there from the prep; show them and make the point that the session will never claim a document is indexed - it will read the line that says so, the way a courier's proof of delivery is read and a passbook is read.</p>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "$W AND jsonPayload.event=\"ingest_ok\"" --project $PROJECT --freshness=2h --limit 50 \
+  --format='value(jsonPayload.tenant,jsonPayload.pages,jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded)' | sort | head -40</pre></div>
+<p>Point at the <code>reused</code> column: every line says 0. Ask the room why, before you tell them: a first version has no current rows of its source to carry over. Then ask what the handbook's line says under <code>chunks</code> - 283 - and tell them that number will come back three times today.</p>
+
+<h2>Minute 5-15: drill 1, one document in</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">head -6 evals/demo/gratuity_amendment_2026.md
+make ingest-one FILE=evals/demo/gratuity_amendment_2026.md TENANT=acme PROJECT=$PROJECT
+gcloud logging read "$W AND jsonPayload.event=\"ingest_ok\" AND jsonPayload.tenant=\"acme\"" --project $PROJECT --freshness=5m --limit 1 --format='value(jsonPayload)'
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | grep -E "gratuity|ledger"</pre></div>
+<p>Show the file's first six lines first and take predictions: how many chunks (three: the preamble and two sections whose headings have no clause code), what <code>effective_from</code> will be (2026-10-01, from the document's own line, not from anyone typing it). Run it. The line to point at is <code>"reused": 0, "embedded": 3</code>, then the ledger row's <code>effective</code> column. Question for the room: if a second person uploads this same file as <code>gratuity_v2.md</code> tomorrow, what line does the worker write? (<code>ingest_duplicate</code>: a version is the hash, not the name.)</p>
+
+<h2>Minute 15-25: drill 2, the corpus's bill</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make vector-status PROJECT=$PROJECT
+gcloud logging read "$W AND jsonPayload.event=\"ingest_ok\" AND jsonPayload.pages&gt;100" --project $PROJECT --freshness=2h --limit 5 \
+  --format='value(jsonPayload.tenant,jsonPayload.pages,jsonPayload.chunks,jsonPayload.doc_key)'</pre></div>
+<p>The line to point at is <code>vectorsCount</code> - the ANN tier's own number, a few minutes behind the rows - and the CGST Act's 236 pages. Put lesson 3.5's cost table up and have the room do one row: 1,065 pages at $10 per 1,000 is $10.65, Rs 905 at 85; at Mumbai's OCR rate $1.60, Rs 136. Then the embeddings for 2,757 chunks: Rs 7. Ask: where does the money go on a re-issue of a PDF? (Document AI parses every page again; the carry-over saves embeddings only.) Say plainly that the rates are from the pricing pages, not the code, and dated.</p>
+
+<h2>Minute 25-40: drill 3, the re-issue</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">diff evals/corpus/acme/hr_policy_2026.md evals/demo/hr_policy_2026_v2.md
+make reindex FILE=evals/demo/hr_policy_2026_v2.md NAME=hr_policy_2026.md TENANT=acme PROJECT=$PROJECT
+ask "What is the notice period for a confirmed E3?"
+make eval-live PROJECT=$PROJECT SOURCE=hr_policy_2026.md</pre></div>
+<p>Run the <code>diff</code> first: two lines added above the first heading, 60 changed to 90 in NP-03. Take predictions for <code>reused</code>, <code>embedded</code>, <code>retired</code> and write the room's numbers on the board before Enter. The line: <code>ingest_ok ... 283 281 2 283 2026-10-01</code>, then the retired line with revision 1's key and <code>30</code>. Point at the 2 and ask which two (the preamble and NP-03). Then the answer: 90 days, effective from 2026-10-01. Then the scoped gate, and let it go red; the question for the room is whether that is a bug (no: <code>vr-01</code> and <code>lk-06</code> did not move with the document, and in a real release they move in the same commit).</p>
+
+<h2>Minute 40-50: drill 4, the undo</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make sources TENANT_ONLY=acme PROJECT=$PROJECT | tail -1
+make reindex FILE=evals/corpus/acme/hr_policy_2026.md TENANT=acme PROJECT=$PROJECT
+make sources TENANT_ONLY=acme PROJECT=$PROJECT | tail -1
+ask "What is the notice period for a confirmed E3?"</pre></div>
+<p>Before Enter: what is the event name, what is <code>embedded</code>, and will the fingerprint be new? The line: <code>ingest_reactivated ... 283 283 0 283</code>, and the fingerprint on the second <code>make sources</code> tail is the one from before drill 3. Ask the room to explain the fingerprint (a hash over the set of current doc_keys; the same set again) and then to explain <code>embedded=0</code> - this is the module's exit sentence, and every learner should say it aloud once. Mention the thirty-day rule and the <code>reactivate_incomplete</code> line without running it.</p>
+
+<h2>Minute 50-60: drill 5, retire and restore</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make retire SOURCE=acme/gratuity_amendment_2026.md PROJECT=$PROJECT
+gcloud storage cp evals/demo/gratuity_amendment_2026.md gs://$PROJECT-uploads/acme/ --project $PROJECT
+sleep 30; gcloud logging read "$W AND jsonPayload.event=\"ingest_withdrawn\"" --project $PROJECT --freshness=5m --limit 1 --format='value(jsonPayload)'
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT
+make restore SOURCE=acme/gratuity_amendment_2026.md PROJECT=$PROJECT</pre></div>
+<p>Prediction first: the same bytes after a retire - reactivated or refused? The line is <code>ingest_withdrawn</code> with its hint. Then the plan: <em>withdrawn, object kept</em>, <code>drift: 0</code>. Ask why the plan does not count it (a decision, not storage absence) and tell the 12 September story: the row used to say <code>retired</code>, and the walk resurrected what a person had taken down. After <code>make restore</code>, show the worker's <code>ingest_reactivated</code> in the tail tab.</p>
+
+<h2>Minute 60-70: drill 6, poison and the DLQ</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "$W AND jsonPayload.event=\"ingest_poison\"" --project $PROJECT --freshness=2h --limit 1 --format='value(jsonPayload.error)'
+make dlq PROJECT=$PROJECT
+grep -n -B3 max_delivery_attempts terraform/eventarc.tf</pre></div>
+<p>The error text names the field - <code>size</code>, greater than or equal to 1 - and the room should be able to say why that is a 400 (it would fail identically every time) and what a 500 would have bought (twelve retries). Then the DLQ row from the poison you ran an hour ago, and the <code>grep</code>: twelve attempts, and the comment above it explaining why twelve and not five (cold-start refusals on a corpus upload count as attempts). Say that the Makefile's own <em>few minutes</em> is stale and the subscription is what runs.</p>
+
+<h2>Minute 70-80: drill 7, reconcile and drift</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make reconcile TENANT_ONLY=acme PROJECT=$PROJECT
+gcloud storage rm gs://$PROJECT-uploads/acme/poison-*.pdf --project $PROJECT
+gcloud storage rm gs://$PROJECT-uploads/acme/gratuity_amendment_2026.md --project $PROJECT
+make reconcile TENANT_ONLY=acme APPLY=1 PROJECT=$PROJECT
+make reindex FILE=evals/demo/gratuity_amendment_2026.md TENANT=acme PROJECT=$PROJECT
+make reconcile TENANT_ONLY=acme PROJECT=$PROJECT | tail -1</pre></div>
+<p>Three plans, three predictions. First: the poison object is <code>reingest</code>, drift 1 - ask what <code>APPLY=1</code> would do to it every night (rewrite it, poison again, DLQ again) and why deleting it is the only fix. Second, after the amendment is deleted: <code>retire</code>, drift 1, and with <code>APPLY=1</code> the <code>reconcile_retired</code> line and the ledger row <code>retired</code>. Third, after the object is back through <code>make reindex</code> (which matches the <code>ingest_reactivated</code> line): drift 0. Close the segment with the two drifts that share a word: <code>make drift</code> is Terraform's, this field is the ledger's.</p>
+
+<h2>Minute 80-88: the gate</h2>
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make smoke-reindex PROJECT=$PROJECT</pre></div>
+<p>Take one prediction while it runs: which of the fixture's three chunks will be reused (SM-02). Read the seven PASS lines aloud as they come - the whole session again on three chunks in two minutes. Then two minutes on the batch lane with lesson 3.5's step 7 on the screen: the corpus has no file over 250 pages, the same bytes would be a duplicate, and what it takes to see the lane. Say that the smoke runs once per lane and why (the duplicate line has no tenant field; the smoke's first check filters on it).</p>
+
+<h2>Minute 88-90: close</h2>
+<p>Ask for the sentence one more time - why did the undo embed nothing - and run <code>make off PROJECT=$PROJECT</code> on screen so the floors go to zero before anyone leaves. Assign the homework.</p>
+
+<h2>If it breaks</h2>
+<div class="box box-red"><div class="box-title">make ingest-one prints "no ingest_ok in 5 min"</div>
+<p>Read <code>gcloud logging read "$W AND jsonPayload.event=\"ingest_failed\"" --freshness=10m</code> first: the <code>error</code> field is the diagnosis. If there is no line at all, the push never arrived: <code>gcloud pubsub subscriptions describe documind-ingest-push --project $PROJECT</code> must show the worker's URL and <code>documind-ingest-sa</code> as the OIDC account, and <code>make dlq</code> may already hold the message. If the line is <code>ingest_duplicate</code> or <code>ingest_withdrawn</code>, nothing broke - the target only waits for <code>ingest_ok</code>; say so and move on.</p></div>
+<div class="box box-red"><div class="box-title">make reindex stops before uploading: "the golden set is not sound"</div>
+<p>The offline gate ran first and was red: someone edited <code>evals/golden.jsonl</code> or <code>evals/corpus/</code> on this checkout. Run <code>python evals/run_eval.py</code> and read the first failing check; a reindex is a release and the target refuses on purpose. For the session, <code>git stash</code> the change and re-run; do not bypass the gate.</p></div>
+<div class="box box-red"><div class="box-title">make smoke-reindex fails its first check: "no worker line in time"</div>
+<p>Version 1 of the fixture was already current on this lane - a previous run, or someone ingested <code>smoke_note_v1.md</code> by hand - so the worker acked it as <code>ingest_duplicate</code>, a line the smoke's tenant filter cannot see. Recover in three commands: <code>gcloud storage rm gs://$PROJECT-uploads/acme/smoke_note.md</code>, <code>make reconcile APPLY=1</code> (the walk retires it), <code>make smoke-reindex</code> again - the first check now reads <code>ingest_reactivated</code>.</p></div>
+
+<h2>Discussion prompts</h2>
+<ol>
+<li>The carry-over saved thirty-four paise on the handbook. Why does the course still call it the most important number in Module 3?</li>
+<li>Deleting an object and running <code>make retire</code> both flag the same rows for thirty days. Name every way the two states behave differently afterwards.</li>
+<li>Twelve delivery attempts with backoff to 600 s means a poisoned message takes about an hour to reach the DLQ. What would you change for a customer who wants poison visible in five minutes, and what would it cost you on a corpus upload?</li>
+<li><code>make usage</code> prices answers, not ingests. Where would you put the ingest's rupees so that <code>tenant_daily</code> could show them next to the answers?</li>
+<li>The smoke runs once per lane because of a filter on a field one line does not carry. Is the fix in the worker, the smoke, or the filter - and who should own it?</li>
+</ol>
+
+<div class="box box-teal"><div class="box-title">Homework before the next lesson</div>
+<p>Practice Lab 3.5, exercises 2 and 6 tonight (Rs 0, on the cloned kit): predict the handbook's and the fixture's counts, and reprice the corpus for both residencies. Exercises 3 and 4 on your own lane before Module 4 starts; exercise 5 if you can leave an hour for the DLQ. Bring your <code>make smoke-reindex</code> output - seven lines - to the next session.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Ingest &middot; Live Session 3.5 Ingest, re-issue, undo, poison &middot; v4.0</p><p>Next: Module 4 Retrieval - four places to search, and who chooses</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+</body>
+</html>

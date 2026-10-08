@@ -1,0 +1,123 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Probe</span><h3>The probe: the kit's read-only check of the combined filters</h3><p>A command that verifies the rung's plumbing with a real source's stored metadata, both current modes, and leaves an evidence file; what it checks and what it refuses to certify.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>commands/check-firestore-fallback.py</code> is the kit's own probe of this rung, written for the day the fallback answered with the wrong tenant's rows. It reads the handbook's ledger row and refuses to continue unless the ledger's hash matches the kit's copy of the file, so the check runs against a version it can vouch for; it picks one current row as the seed, verifies the embedding stamps lesson 1.3 wrote, and uses that row's stored <code>doc_type</code> and <code>kind</code> as the combined filter. Then it calls <code>_firestore_fallback()</code> in-process with current off and on, and for every row that comes back it requires the tenant, both filters, no staging and, in the second mode, <code>current</code>. It writes what it saw to an evidence file and says plainly what it did not test: classification and answer quality are not its business, and it notes when the stored <code>doc_type</code> differs from the manifest, which on a lane whose uploads went through the bucket it does.</p>
+
+<h4>The code</h4>
+@@probe_verify@@
+@@probe_modes@@
+
+<h4>Do it: the probe, then its evidence</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one embedding read off a row, a few dozen Firestore reads; nothing written to the cloud)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export GOOGLE_CLOUD_PROJECT="$PROJECT"                                    <span class="cm"># the probe insists the two agree</span>
+python commands/check-firestore-fallback.py
+python -c "import json; r = json.load(open('operator-evidence/firestore-combined-filters.json')); print('evidence:', r['filters'], '| current off:', len(r['results']['off']['ids']), 'rows | current on:', len(r['results']['on']['ids']), 'rows | doc_key', r['doc_key'][:17] + '...')"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your key; the NOTE is the lane's own truth about doc_type)</span><span class="ro">read only</span></div><pre tabindex="0">{"project": "documind-ai-YOUR-ID", "collection": "chunks", "source_uri": "gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md", "source_status": "indexed", "source_doc_key": "acme_497809ff..."}
+Verified HR source: 283 current chunks; stored doc_type='unknown'; manifest doc_type='policy'
+NOTE: stored metadata differs from the manifest. This probe tests the stored equality filters; it does not certify policy classification or repair metadata.
+PASS: combined doc_type='unknown'+kind='text', current=off, rows=5
+PASS: combined doc_type='unknown'+kind='text', current=on, rows=5
+PASS: both Firestore filter modes verified. Evidence: operator-evidence/firestore-combined-filters.json
+evidence: {'doc_type': 'unknown', 'kind': 'text'} | current off: 5 rows | current on: 5 rows | doc_key acme_497809ff...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The probe did in one command what steps 3 and 4 did by hand, against a source it first proved was the version the ledger holds: the combined filter held on the rung with current off and with it on, every returned row belonged to acme, carried both filter values, was not staged, and in the second mode was current. It refused nothing on your lane because the plumbing is right, and it said what it would not vouch for, which is the honest shape of a probe. The evidence file is the kind of artefact a release review reads: which key, which filters, which rows, in a file rather than in someone's memory. It sits inside the kit's clone; <code>git status</code> will show it, and it is yours to keep or delete.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Tier</span><h3>The tier from the rows: vector-status, backfill-vectors, and the rows that count the rung</h3><p>The index's own count, the plan that would refill it from the rows without a model, and the usage rows that say which rung served the pool for the last hour.</p></div></div>
+
+<h4>Definition</h4>
+<p>Because Firestore holds every vector, the ANN tier is rebuildable from the rows: <code>backfill-vectors</code> reads every current row of a tenant, checks that its stored vector was made with the document profile, and streams the datapoints up, with no embedding call. It exists for two states, a worker deployed before the index did and an apply that lost its index, and it is the second half of the smoke's own advice. Without <code>APPLY=1</code> it is a plan: the current rows, how many would need a fresh document embedding, how many are invalid, and a note on what to pause during a repair. <code>vector-status</code> is the first half, the index's own datapoint count and the deployment's last sync, which is what a claim about Vector Search rests on. The last cell reads the usage rows the way lesson 2.3 did, grouped by the rung that served the pool: the pinned minutes of step 4 sit in a <code>firestore</code> row of their own.</p>
+
+<h4>The code</h4>
+@@mk_status@@
+@@mk_backfill@@
+@@backfill_plan@@
+@@usage_backend@@
+
+<h4>Do it: count the tier, plan its refill, read the rows by rung, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (read-only: the plan writes nothing without --apply)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/lane.py vector-status                             <span class="cm"># the same as: make vector-status PROJECT=$PROJECT</span>
+python commands/lane.py backfill-vectors --tenant acme            <span class="cm"># the same as: make backfill-vectors PROJECT=$PROJECT TENANT_ONLY=acme</span>
+make usage PROJECT=$PROJECT HOURS=1 | sed -n '/by retrieval backend/,/^$/p'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts; the plan's zeros are the point, and the firestore row is step 4's)</span><span class="ro">read only</span></div><pre tabindex="0">index: %%INDEX_NAME%%  datapoints: 4xxx  shards: 1  update: STREAM_UPDATE
+endpoint: %%ENDPOINT_NAME%%  deployed: documind_chunks_v1  synced: 2026-09-2xT1x:xx:xx.xxxxxxZ
+{"event": "backfill_vectors_plan", "index": "projects/NUMBER/locations/asia-south1/indexes/1234567890123456789", "tenant": "acme", "current_chunks": 1xxx, "needs_document_embedding": 0, "invalid_chunks": 0, "embedding_task_type": "RETRIEVAL_DOCUMENT", "note": "Pause uploads/undo/batch writers; keep answer caches off during repair and validation."}
+
+by retrieval backend (which store served the pool; 13 September 2026)
+retrieval_backend      answers    tok_in  tok_out       USD       INR  p95 ms  unans
+------------------------------------------------------------------------------------
+firestore                    5      xxxx      xxx    0.0xxx      x.xx    2xxx   0.20
+vector                       6      xxxx      xxx    0.0xxx      x.xx    2xxx   0.00</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The index reported its own count, a few thousand datapoints across the three tenants, synced; the plan found every current acme row already carrying a document-profile vector and nothing invalid, so a repair would upload them all and embed none; and the usage rows showed the last hour split by rung, the minutes acme spent pinned in a row of their own with the one unanswerable question from the emptied pool counted against it. That table is also where a day of silent fallbacks would show: a <code>vector</code> row whose answers came from beneath still reads <code>vector</code> here, which is why the smoke reads <code>vector_chunks</code> and not this column.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What the rung costs, where it cannot go, and the policy that sends a tenant home</h3><p>The rupee line, the two places the rung cannot serve, and the data-region rule run offline.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A question on the rung</td><td data-label="Costs">Firestore reads: one per hundred index entries the flat scan visits and one per document returned, at the listed read rate; about %%READS_EST%% for a tenant the size of acme's mirror</td><td data-label="On your lane">a fraction of a paisa each; steps 3 and 4</td></tr>
+<tr><td>The kit's index</td><td data-label="Costs">the deployed index bills by the hour whether it is asked or not; a question on the rung saves nothing there</td><td data-label="On your lane">unchanged by this lesson</td></tr>
+<tr><td>A pin</td><td data-label="Costs">one Firestore write; the API re-reads it within a minute, no deploy</td><td data-label="On your lane">step 4, twice</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle at <code>MIN_INSTANCES</code> 0; one question at the generator's rate</td><td data-label="On your lane">step 5, a rupee, then reverted</td></tr>
+<tr><td>The probe and the plan</td><td data-label="Costs">a few dozen reads; the plan streams every current row of the tenant once</td><td data-label="On your lane">Rs 0 in practice</td></tr>
+<tr><td>A real backfill</td><td data-label="Costs">the rows read once and the datapoints streamed up; no embedding</td><td data-label="On your lane">not run: nothing to fill</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Where the rung cannot go</h4>
+<p>Two places. It has no sparse leg, so <code>RETRIEVAL_MODE=hybrid</code> with <code>RETRIEVAL_BACKEND=firestore</code> is refused at startup by the validator lesson 2.2 ran, and a hybrid deployment that falls onto the rung is served dense for that request. And it holds only the kit's rows: a tenant whose pool comes from a managed store is on a different tier with its own copy, which is Module 7's, and the only part of that story this lesson needs is the policy below.</p>
+
+<h4>The policy that sends a tenant home</h4>
+<p>A tenant's <code>data_region</code> says where its text may be held: <code>any</code> lets the managed mirror copy its current versions abroad, <code>in</code> keeps it on the kit's rows in India, and a missing or unknown value is <code>in</code>, because an unreadable policy is the strict one. <code>retrieval_backend_for()</code> holds every request's backend against it: a managed pin for an <code>in</code> tenant is served from the kit's own rung instead, the deployment's if that is vector or firestore, otherwise Firestore, with <code>policy_fallback 1</code> on the row, which the warehouse sums into a column. The cell runs the two pure functions behind that decision offline; nothing leaves the machine.</p>
+@@policy_of@@
+@@backend_for@@
+@@view_policy@@
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys
+sys.path.insert(0, ".")
+from shared.tenancy import policy_of, permits
+for doc in ({}, {"data_region": "any"}, {"data_region": "in"}, {"data_region": "eu"}):
+    print(f"{str(doc):24} -> policy {policy_of(doc)}")
+for policy, region in (("in", "asia-south1"), ("in", "us-central1"), ("in", "global"), ("any", "us-central1")):
+    print(f"{policy:4} tenant, a store in {region:12} -> {'may hold it' if permits(policy, region) else 'may not'}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">{}                       -> policy in
+{'data_region': 'any'}   -> policy any
+{'data_region': 'in'}    -> policy in
+{'data_region': 'eu'}    -> policy in
+in   tenant, a store in asia-south1  -> may hold it
+in   tenant, a store in us-central1  -> may not
+in   tenant, a store in global       -> may not
+any  tenant, a store in us-central1  -> may hold it</pre></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Firestore finds the same clause from the rows alone</td><td data-label="The check">step 3, the first run</td><td data-label="Pass looks like">NP-03 first, <code>found_by firestore</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The caller's filters are predicates on the rung too</td><td data-label="The check">step 3, the two runs with F</td><td data-label="Pass looks like">0 rows under <code>doc_type=policy</code>, 20 under <code>kind=text</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A pin moves one tenant beneath the index without a deploy</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>backend firestore | vector_chunks 0</code> within a minute</td></tr>
+<tr><td>4</td><td data-label="Claim">Two tenants on two rungs do not cross</td><td data-label="The check">step 4, the last two questions</td><td data-label="Pass looks like">Rs 40,000 for acme, Rs 25,000 for zeta</td></tr>
+<tr><td>5</td><td data-label="Claim">A chosen rung is not a fault</td><td data-label="The check">step 4, the first smoke</td><td data-label="Pass looks like"><code>[ -- ] vector tier ... skipped</code></td></tr>
+<tr><td>6</td><td data-label="Claim">An index that raises is answered from beneath, logged</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>backend vector | vector_chunks 0</code>, a <code>vector_search_fallback</code> line</td></tr>
+<tr><td>7</td><td data-label="Claim">The smoke refuses that pair, and the template is back</td><td data-label="The check">step 5</td><td data-label="Pass looks like">the <code>[FAIL] vector tier</code> sentence; <code>template now: documind_chunks_v1</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The combined filters hold with current off and on</td><td data-label="The check">step 6</td><td data-label="Pass looks like">two <code>PASS: combined</code> lines and the evidence file</td></tr>
+<tr><td>9</td><td data-label="Claim">The tier is countable and rebuildable from the rows</td><td data-label="The check">step 7</td><td data-label="Pass looks like">a datapoint count; <code>needs_document_embedding 0, invalid_chunks 0</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. acme's pin went to <code>firestore</code> and back to <code>vector</code>, where lesson 1.1 left it. A candidate revision of the API took no traffic and its wrong index name was replaced by the real one on the template before the tag was dropped; run <code>make plan</code> if you want Terraform's word that the service matches its declaration. The probe wrote <code>operator-evidence/firestore-combined-filters.json</code> inside the kit's clone. The questions you asked are usage rows, five of them under <code>firestore</code>. Lesson 2.5 rewrites the question before it reaches this pool and measures whether that helps; Module 3 then takes the pool into the prompt.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 2 Retrieval &middot; Lesson 2.4 Test fallback without losing tenant or metadata filters &middot; v5.0</p><p>Next: Lesson 2.5 Rewrite the query before retrieval, and measure it.</p></div>

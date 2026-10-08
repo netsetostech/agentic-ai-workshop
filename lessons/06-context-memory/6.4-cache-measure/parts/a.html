@@ -1,0 +1,83 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.4</div>
+<h1>Measure latency, avoided calls and false cache hits: <span>the threshold on labelled pairs, the same pairs asked live, and what the hits saved</span></h1>
+<p>One number decides what the answer cache is worth: how similar a new question must be to an earlier one before it gets the earlier answer. Set it too low and the cache answers the wrong question fast; too high and it never answers at all. You measure that number offline on the kit's %%N_PAIRS%% labelled pairs. Then you ask the same pairs live on a candidate at the kit's 0.95, and check whether the offline curve predicted the live false hits. Finally you turn the hits into avoided calls in rupees, and set their latency beside a model answer's.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_PAIRS%% labelled pairs</div><div class="hero-chip">hit rate and false-hit rate</div><div class="hero-chip">the lowest safe threshold</div><div class="hero-chip">the rule of three</div><div class="hero-chip">avoided calls in rupees</div><div class="hero-chip">p95: hit and model</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">One number, two rates, and what a hit is worth</a></li>
+<li><a href="#s2">The words: threshold, similarity, pairs, hit rate, false-hit rate, the rule of three, avoided call</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The curve: every candidate threshold on the labelled pairs</a></li>
+<li><a href="#s4">The replay: the same pairs, asked live at 0.95</a></li>
+<li><a href="#s5">Avoided calls in rupees, and the latency of a hit</a></li>
+<li><a href="#s6">Choosing the threshold, and the clean-up</a></li>
+<li><a href="#s7">Why the cache is tuned this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why the questions most likely to be served a wrong answer are the ones one word away, how a labelled set turns a guessed threshold into a measured one, and how much a set this size can promise. Then you will prove it on your lane: the threshold curve from your own embeddings, the live false hits beside it, and the calls the hits avoided, in rupees.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>One number, two rates, and what a hit is worth</h3><p>The threshold buys savings and wrong answers together; a labelled set says how many of each.</p></div></div>
+
+<p><strong>One number decides what the answer cache is worth.</strong> On the near rung, a new question gets an earlier answer when the cosine similarity of the two questions' embeddings is at or above the threshold. Every threshold therefore buys two rates. The hit rate is the share of genuine rephrasings that are answered from the cache, which is the saving. The false-hit rate is the share of near-miss questions that are answered from it too, which is a wrong answer. The two move together: lower the threshold and both rise.</p>
+
+<p><strong>The dangerous questions are the ones one word away.</strong> "The notice period for a confirmed E3" and "for a confirmed E2" differ by one character. So do Rs 3,00,000 and Rs 30,000, "minimum" and "maximum", and "before" and "after". An embedding summarises what a question is about, and one token barely moves the summary. Such pairs are often the most similar pairs of all, which is why the kit chose 0.95 rather than a looser 0.92, and why the switch stays off until the number is measured.</p>
+
+<p><strong>Measure it on labelled pairs, and read how big the set is.</strong> <code>evals/paraphrases.jsonl</code> holds %%N_SAME%% pairs that ask a golden row's fact in other words, where a hit is right, and %%N_DIFF%% pairs a few words away with a different answer, where a hit is wrong. <code>cache_threshold.py</code> embeds both sides the way the API embeds a query and prints both rates for nine candidate thresholds. The kit's rule is to take the lowest candidate with no false hit. But zero false hits on %%N_DIFF%% pairs does not prove zero. By the rule of three, the true rate could still be as high as about %%RULE3%%%, with 95% confidence. Only a bigger, harder set narrows that.</p>
+
+<p><strong>Then count what the hits bought, and what they cost.</strong> Every hit is a model call not made: its row says <code>cache</code> at a cost of 0, and its latency is an embedding and a Firestore read. The rupees avoided are the hits times the average cost of a model answer. A false hit is counted among those hits as well: it saved a call by being wrong. So report both numbers side by side.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128138;</div><div>
+<p><strong>A pharmacy counter.</strong> An assistant is allowed to hand over what was dispensed a minute ago when the next customer asks for the same thing, so the pharmacist is not called every time. "Paracetamol 500" and "the 500 milligram paracetamol tablet" are the same request, and serving it at once is right. "Paracetamol 650" looks almost identical and is a different dose, and serving that is the mistake that matters. A careful pharmacy tests the assistant on labelled pairs before allowing it, counts how many pharmacist minutes the assistant saves, and knows that twenty clean tests do not prove the assistant never errs.</p></div></div>
+
+<h4>The threshold explorer</h4>
+<p>Each dot is one pair, placed by its similarity: teal pairs ask the same fact, red pairs ask something else. Move the line and read what the cache would serve. It starts on an invented example; step 3 gives you your own report to paste in.</p>
+
+<div class="diagram pc" id="thx">
+<div class="dg-title">The labelled pairs against a threshold - cache_threshold.py's curve() and recommend(), and a day's arithmetic</div>
+<div class="pc-box"><b class="h">Similarity, 0.80 to 1.00: same-fact pairs above, different pairs below</b>
+<div class="th-strip" id="th-strip"></div>
+<div class="th-axis"><span>0.80</span><span>0.85</span><span>0.90</span><span>0.95</span><span>1.00</span></div>
+<label class="pc-in" style="display:block">Threshold <b id="th-tv">0.950</b><input class="th-range" id="th-t" type="range" min="0.80" max="1.00" step="0.005" value="0.95"></label>
+<div class="pc-in">
+<label>Questions a day<input id="th-n" type="number" min="0" step="100" value="2000" inputmode="numeric"></label>
+<label>Rephrasings of an earlier question, %<input id="th-share" type="number" min="0" max="100" step="1" value="15" inputmode="numeric"></label>
+<label>One word from an earlier question, %<input id="th-near" type="number" min="0" max="100" step="1" value="5" inputmode="numeric"></label>
+<label>Rupees a model answer<input id="th-cost" type="number" min="0" step="0.05" value="%%PRICE_RS%%" inputmode="decimal"></label>
+</div>
+<ol class="pc-steps" id="th-out" aria-live="polite"></ol>
+<label class="pc-in" style="display:block">Your report: paste the output of <code>cat ~/cache93_curve.json</code><textarea class="th-paste" id="th-paste" spellcheck="false"></textarea></label>
+<button class="th-btn" type="button" id="th-load">Read my report</button></div>
+<p class="dg-cap">The counts and the recommendation are <code>curve()</code> and <code>recommend()</code> from <code>evals/cache_threshold.py</code>. The build ran the kit's two functions on the example and on %%N_TESTS%% random sets, and the port agreed with each. The day's figures are arithmetic on your inputs; the rupee default is the example rows' average model answer at <code>cost.py</code>'s rates.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>The starting similarities are invented for this page. There is no recorded measurement, and the example exists to show the shape of the trade. Your own report, from step 3, is the only curve that says anything about your lane. The explorer places each pair against its own golden question, as the tool does; the live cache compares a question with every stored one, and step 4 shows where that differs.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: threshold, similarity, pairs, hit rate, false-hit rate, the rule of three, avoided call</h3><p>Eleven rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Threshold</strong></td><td data-label="Meaning">The similarity at or above which the near rung serves an earlier question's answer. <code>SEMANTIC_CACHE_THRESHOLD</code>.</td><td data-label="On your lane">0.95</td></tr>
+<tr><td><strong>Cosine similarity</strong></td><td data-label="Meaning">How closely two embeddings point the same way: 1 is identical. Firestore returns a distance, and the kit uses 1 minus it.</td><td data-label="On your lane"><code>text-embedding-005</code>, 768 numbers</td></tr>
+<tr><td><strong>Same-fact pair</strong></td><td data-label="Meaning">A golden question asked in other words. A hit is right.</td><td data-label="On your lane">%%N_SAME%% pairs</td></tr>
+<tr><td><strong>Different pair</strong></td><td data-label="Meaning">A question a few words from a golden one, with a different answer. A hit is a wrong answer.</td><td data-label="On your lane">%%N_DIFF%% pairs</td></tr>
+<tr><td><strong>Hit rate</strong></td><td data-label="Meaning">The share of same-fact pairs at or above the threshold.</td><td data-label="On your lane">step 3's middle column</td></tr>
+<tr><td><strong>False-hit rate</strong></td><td data-label="Meaning">The share of different pairs at or above the threshold.</td><td data-label="On your lane">step 3's last column</td></tr>
+<tr><td><strong>The lowest safe threshold</strong></td><td data-label="Meaning"><code>recommend()</code>: the lowest of the nine candidates with no false hit on the set, or none.</td><td data-label="On your lane">step 3's last line but one</td></tr>
+<tr><td><strong>The rule of three</strong></td><td data-label="Meaning">Zero failures in n trials: the true rate is below about 3/n, with 95% confidence.</td><td data-label="On your lane">about %%RULE3%%% for %%N_DIFF%% pairs</td></tr>
+<tr><td><strong>Right hit, false hit, hit from another</strong></td><td data-label="Meaning">The replay's verdicts: the pair's own golden answer served to a same-fact pair, to a different pair, or another stored question's answer served.</td><td data-label="On your lane">step 4</td></tr>
+<tr><td><strong>Avoided call</strong></td><td data-label="Meaning">A row with <code>model_backend</code> <code>cache</code>: no retrieval, reranker or model, and a cost of 0.</td><td data-label="On your lane">step 5 counts them</td></tr>
+<tr><td><strong>p95</strong></td><td data-label="Meaning">The latency 95 answers in 100 beat: the 95th position of the sorted list, as <code>usage_rows.p95()</code> takes it.</td><td data-label="On your lane">one for hits, one for model answers</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the curve measures embeddings, and the replay measures the cache. The curve compares each pair with its own golden question only. The live cache compares a question with every question stored for the tenant, and serves the first alive one at the threshold. Step 4 shows both, side by side.</p>

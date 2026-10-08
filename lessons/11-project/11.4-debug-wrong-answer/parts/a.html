@@ -1,0 +1,112 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 11 &middot; Project &middot; Lesson 11.4</div>
+<h1>Debug a wrong answer through the complete pipeline: <span>read the trail, rule out, name the cause</span></h1>
+<p>An acme employee asks for the E3 notice period and DocuMind says 90 days, where the golden set says 60. Something between the question and the answer made that happen, and guessing where is slow. Every DocuMind answer carries a trail. It says whether the answer cache served it, which store retrieved it and whether a fallback rung stood in, how many chunks the reranker saw and who ordered them, and which version of which document each citation came from. The log's fallback events and the ledger's versions sit beside it. In this lesson you break one answer on purpose, then trace it using only the marks the answer and the lane recorded. You rule out each stage in the order the answer was made, name the cause, and put the lane back.</p>
+<div class="hero-chips"><div class="hero-chip">stages</div><div class="hero-chip">cache_hit</div><div class="hero-chip">vector_chunks</div><div class="hero-chip">the pool</div><div class="hero-chip">the chunk id's version</div><div class="hero-chip">make sources</div><div class="hero-chip">the two probes</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">An answer leaves a trail</a></li>
+<li><a href="#s2">The words: trail, stages, rung, pool, version, ledger, probe</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The trail, as the kit writes it down</a></li>
+<li><a href="#s4">A right answer, and its trail</a></li>
+<li><a href="#s5">Break it: a version reaches the lane</a></li>
+<li><a href="#s6">Trace it, name the cause, put it back</a></li>
+<li><a href="#s7">Why the trail looks like this, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn to read an answer's trail in the order the answer was made. From the marks alone, you will tell a wrong version, a fallback rung and a pool too small apart. Then you will prove it: you make a wrong answer on your own lane, and a cell traces it to its cause without being told what you changed.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>An answer leaves a trail</h3><p>Five stages make an answer, and each leaves a mark you can read afterwards.</p></div></div>
+
+<p><strong>An answer is made in five stages, in order.</strong></p>
+<ol>
+<li><strong>The answer cache.</strong> With <code>SEMANTIC_CACHE=on</code>, a question asked before, under the same corpus, is answered from the stored reply, and nothing else runs.</li>
+<li><strong>The store.</strong> The tenant's pin, or else the deployment's default, names one. When it fails, a fallback rung stands in:
+<ul>
+<li>for the index, Firestore's own vector search;</li>
+<li>for a managed store, the kit's index, when the tenant's data may not leave India.</li>
+</ul></li>
+<li><strong>The pool.</strong> These are the candidates retrieval hands on. There are <code>TOP_K_RETRIEVE</code> of them: 20, unless a revision sets another number.</li>
+<li><strong>The reranker.</strong> The Ranking API puts the pool in order. When it does not answer in time, retrieval's own score orders it.</li>
+<li><strong>The model.</strong> It writes from the chunks that fit the prompt, and cites them.</li>
+</ol>
+<p>Underneath all five is the version: the bytes of the document the chunks were cut from.</p>
+
+<p><strong>Each stage leaves a mark.</strong></p>
+<ul>
+<li><strong>The cache</strong> writes <code>cache_hit</code> on the answer.</li>
+<li><strong>The store and its rungs</strong> write three fields in <code>stages</code>. <code>retrieval_backend</code> says which store was chosen. <code>vector_chunks</code> says how many chunks the index itself returned. <code>policy_fallback</code> is 1 when the tenant's data region overruled the choice. When the index fails, the log records <code>vector_search_fallback</code> with the error.</li>
+<li><strong>The pool</strong> is <code>stages.pool</code>.</li>
+<li><strong>The reranker</strong> writes <code>stages.rerank_fallback</code>, and the log records <code>rerank_fallback</code>.</li>
+<li><strong>The version</strong> is inside every citation's <code>chunk_id</code>, <code>acme:&lt;sha256&gt;#&lt;n&gt;</code>. The ledger says which version is current.</li>
+<li><strong>The model</strong> leaves <code>answerable</code> and the citations. Whether the answer follows them is <code>make judge</code>'s question.</li>
+</ul>
+
+<p><strong>Read the marks in the order the answer was made, and stop at the first one that is off.</strong> A mark after a broken one proves little. If the Firestore rung returned a pool of ten, that explains a missing clause better than anything the reranker did.</p>
+<p>Three causes this course has built each leave their own marks:</p>
+<ul>
+<li><strong>A version.</strong> The answer cites the version the ledger holds, but the ledger holds something other than what you meant.</li>
+<li><strong>A fallback rung.</strong> <code>vector_chunks</code> is 0 under <code>vector</code>, <code>rerank_fallback</code> or <code>policy_fallback</code> is 1, or there is an event in the log.</li>
+<li><strong>A pool too small.</strong> The pool holds fewer than the 20 the ablation decided.</li>
+</ul>
+
+<p><strong>A degraded pipeline often answers right.</strong> That is what the rungs are for. In the panel below, %%N_RIGHT%% of the %%N_CASES%% cases still answer right, and all but the first still move a mark. So read the marks, not only the answer: they show a degraded lane before its answers go wrong.</p>
+
+<div class="analogy"><div class="analogy-icon">&#129514;</div><div>
+<p><strong>A path lab's report.</strong> A doctor does not believe a haemoglobin value on a report. The lab does not repeat the test blind. The report already says:</p>
+<ul>
+<li>which analyser ran the sample, the main one or the backup;</li>
+<li>how much sample there was;</li>
+<li>the reagent lot and its date;</li>
+<li>whether the value was copied from last week's report;</li>
+<li>who signed it.</li>
+</ul>
+<p>The lab reads these in the order the sample moved, and stops at the first one that is wrong. The backup analyser often gives the right value, which is exactly why the report says it was used. Those are DocuMind's fallback rung, pool, version, answer cache and judge.</p></div></div>
+
+<h4>Break one thing, read the trail</h4>
+<p>Choose a break. The panel shows:</p>
+<ul>
+<li>the answer, and whether golden row lk-06 would pass it;</li>
+<li>the trail on the answer, and the log's events;</li>
+<li>the six links, read in order;</li>
+<li>what the trace names as the cause.</li>
+</ul>
+
+<div class="diagram pc" id="tr">
+<div class="dg-title">One question to acme under %%N_CASES%% cases, one with nothing broken: the answer, its trail, and the first link that is off</div>
+<div class="pc-box"><b class="h">The lane</b>
+<div class="pc-in"><label>What is broken<select id="tr-break"></select></label></div>
+<div class="fs-grid" id="tr-out" aria-live="polite"></div></div>
+<p class="dg-cap">The %%N_CASES%% answers come from the kit's own <code>query()</code> in <code>rag-api/main.py</code>, run at build time on a stand-in lane. The lane holds the handbook's two versions, cut by the kit's chunker and labelled as lesson 10.4's relabel leaves them: version 1 <code>policy</code>, revision 2 <code>unknown</code>. The filter case asks for <code>%%FILTER_TYPE%%</code>, which rag-api accepts and no row holds on any tenant. It is not one of the registry's %%N_CLASSES%% classes, because each of those is held on acme. The index, Firestore, the Ranking API and Gemini are stood in; the model is a reader that answers from the packed clause. The six links are step 6's trace cell, run on each answer.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the kit's rules on a stand-in lane that holds one document. On your lane the index, the reranker and the model are real, acme holds many documents, and the numbers differ. For example, the Firestore rung's pool here is %%POOL_ON_RUNG%% of 20, because the handbook's retired version sits beside its current one. On your lane it depends on how many retired rows lie near the question.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: trail, stages, rung, pool, version, ledger, probe</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Trail</strong></td><td data-label="Meaning">The marks an answer leaves: on the answer, in the log, in the ledger.</td><td data-label="On your lane">every answer: <code>stages</code>, <code>cache_hit</code>, each citation's <code>chunk_id</code></td></tr>
+<tr><td><strong><code>stages</code></strong></td><td data-label="Meaning">The answer's record of how it was made: the store, its rungs, the pool, the reranker, the clocks.</td><td data-label="On your lane">%%N_STAGE_KEYS%% keys; the usage row carries all but <code>vector_chunks</code></td></tr>
+<tr><td><strong>Rung</strong></td><td data-label="Meaning">The way down when a store fails: the index to Firestore's vector search, the Ranking API to retrieval's score, a managed store to the kit's index.</td><td data-label="On your lane">logged as <code>vector_search_fallback</code>, <code>rerank_fallback</code>, and others</td></tr>
+<tr><td><strong><code>found_by</code></strong></td><td data-label="Meaning">Which rung put a chunk in the pool.</td><td data-label="On your lane"><code>vector</code> on acme, counted as <code>vector_chunks</code></td></tr>
+<tr><td><strong>Pool</strong></td><td data-label="Meaning">The candidates the reranker sees.</td><td data-label="On your lane"><code>TOP_K_RETRIEVE</code>: 20, which the deploy does not set</td></tr>
+<tr><td><strong>Version</strong></td><td data-label="Meaning">One upload's bytes, named by their SHA-256.</td><td data-label="On your lane">in every chunk id: <code>acme:&lt;sha256&gt;#&lt;n&gt;</code></td></tr>
+<tr><td><strong>Ledger</strong></td><td data-label="Meaning">Which version of each source is current, since when, and what it declares.</td><td data-label="On your lane"><code>make sources</code>, <code>GET /v1/sources</code></td></tr>
+<tr><td><strong>Golden set's version</strong></td><td data-label="Meaning">The bytes the golden rows were written against: the file in <code>evals/corpus/</code>.</td><td data-label="On your lane">the handbook's version 1, <code>%%SHA1%%</code></td></tr>
+<tr><td><strong>Probe</strong></td><td data-label="Meaning">A read-only check you may run during an incident.</td><td data-label="On your lane"><code>verify-vector-index.py</code>, <code>check-firestore-fallback.py</code></td></tr>
+<tr><td><strong>Miss list, groundedness</strong></td><td data-label="Meaning">The instruments for the two links the trail cannot settle. <code>make ablate</code> says where a missing anchor went: "ranked out", or "not retrieved at depth N". <code>make judge</code> scores whether an answer follows its citations.</td><td data-label="On your lane">the pool's and the model's</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a clean trail with a wrong answer points at the corpus, and a degraded trail with a right answer is luck the next question may not have.</p>

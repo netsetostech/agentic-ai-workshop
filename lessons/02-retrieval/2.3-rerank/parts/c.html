@@ -1,0 +1,190 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Usage</span><h3>make usage: where the time went, p95 per stage, and the view behind it</h3><p>The rows read from Cloud Logging while they are hot, grouped the way the warehouse groups them, with a column per stage; then your lane's day, and its rows in the reader.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>evals/usage_rows.py</code> reads the last N hours of usage rows off <code>documind-api</code> through <code>gcloud logging read</code>, at most two thousand of them, and groups them with the same GROUP BY as <code>tenant_daily</code>: by tenant, by model and backend, by brain, by surface, by retrieval backend. Its last table is where the time went: for each tenant, the p95 of the whole beside the p95 of each stage and the average pool the reranker saw. A row from before the stage clocks counts as an answer and in nothing else. Beside the stage columns the view sums <code>rerank_fallback</code> into <code>rerank_fallbacks</code>, the number that pages someone: a day with a number there served degraded orders, and step 5 put at least one on yours.</p>
+
+<h4>The code</h4>
+@@usage_target@@
+@@usage_row_fields@@
+@@usage_p95@@
+@@view_cols@@
+
+<h4>Do it: the selftest, then the lane's last day, then its rows into the reader</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0: the selftest touches nothing, and reading the log is free)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python evals/usage_rows.py --selftest
+make usage PROJECT=$PROJECT HOURS=24</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected, the selftest (the kit's own output, byte for byte)</span><span class="ro">read only</span></div><pre tabindex="0">%%SELFTEST%%</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected, the lane (your counts and milliseconds; the rerank column is the p95 of the rerank_ms clock; four tables come before the last)</span><span class="ro">read only</span></div><pre tabindex="0">NN answers from documind-api in the last 24 h; USD_INR=85
+...
+
+where the time went (p95 per stage, by tenant)
+tenant                 answers  p95 ms  retrieve  rerank  generate   pool
+-------------------------------------------------------------------------
+acme                        NN    4xxx       6xx     3xx      3xxx   20.0</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the rows themselves, one JSON line each, for the reader in step 1)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND (jsonPayload.event="query" OR jsonPayload.event="stream")' \
+  --project "$PROJECT" --freshness 24h --limit 40 --format=json \
+  | python -c "import sys, json; [print(json.dumps(e['jsonPayload'])) for e in json.load(sys.stdin) if 'jsonPayload' in e]" &gt; /tmp/rows53.jsonl
+python -c "import json; rows = [json.loads(l) for l in open('/tmp/rows53.jsonl')]; print(len(rows), 'rows;', sum(int(r.get('rerank_fallback') or 0) for r in rows), 'with rerank_fallback 1;', sum(1 for r in rows if not r.get('pool')), 'with an empty pool')"
+head -c 700 /tmp/rows53.jsonl</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the fallback row is step 5's doing)</span><span class="ro">read only</span></div><pre tabindex="0">NN rows; 1 with rerank_fallback 1; 0 with an empty pool
+{"event": "query", "tenant": "acme", "user": "documind-ui-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com", "tokens_in": xxxx.0, "tokens_out": xxx.0, "cached_tokens": 0.0, "cost_usd": 0.00xxxx, "latency_ms": 2xxx.0, "answerable": true, "retrieve_ms": 6xx.0, "rerank_ms": 3xx.0, "generate_ms": 1xxx.0, "pool": 20.0, "rerank_fallback": 0.0, ...</pre></div>
+
+<p>Paste the file's lines into the reader in step 1 and its table is <code>make usage</code>'s last table for the same rows; under it every row is read, and the one from the candidate carries the flag. A number that comes back as <code>20.0</code> rather than <code>20</code> is Cloud Logging's doing, which stores every number as a double; <code>usage_rows.py</code> and the reader both cast.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The selftest proved the arithmetic on three rows you can check by eye: the dearest tenant first, tokens summed, the 95th latency, one flag making the rate 0.50, the stage p95s never above the whole. Then the same code read your lane's day and put a p95 on each stage, which is the measurement this module asks for: not "the API takes three seconds" but "the ranker takes a third of a second of it, and the model the rest". The rows you saved are the raw material of the tool and the view alike, and the reader shows there is no magic between a row and a column.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Provenance</span><h3>found_by: stamped on every chunk, counted on the answer, absent from the citation</h3><p>Where the stamp is written, how far it travels, the join that puts it on a citation, the kit's own path run in your process, and the smoke that refuses a pool the index did not serve.</p></div></div>
+
+<h4>Definition</h4>
+<p>Every rung of retrieval stamps the chunks it returns: <code>vector</code> on an id that came out of <code>find_neighbors</code>, <code>firestore</code> on a row from Firestore's own vector index, whether chosen by the deployment or a tenant's pin or fallen into when the index would not answer, <code>graph</code> on a chunk the knowledge graph pointed at, and the two managed names on their stores. The stamp lives on the chunk dict in the API's memory, from the retriever to the packer; what reaches the caller is a count, <code>stages.vector_chunks</code>, <code>graph_chunks</code> and <code>managed_chunks</code>, on the answer and the row. The Citation contract has nine fields and <code>found_by</code> is not among them: <code>resolve()</code> copies what a reader can open. To put the stamp on a citation from outside, join the citation's chunk id to a pool where the stamp is: the one you fetched in step 4, whose ids are by construction the ones the API stamps <code>vector</code>, or the kit's own <code>retrieve()</code> run in your process, which is what lesson 2.4's fallback checker does. <code>make smoke</code> reads the count and refuses a deployment on <code>vector</code> whose pool came from beneath.</p>
+
+<h4>The code</h4>
+@@stamps@@
+@@citation_class@@
+@@smoke_tier@@
+
+<h4>Do it: the join, then the kit's own retrieval in your process, then the smoke</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell; Rs 0: two files on disk)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json
+ans, d = json.load(open("/tmp/ans53_5.json")), json.load(open("/tmp/pool53.json"))
+stamp = {c["id"]: c["found_by"] for c in d["pool"]}
+s = ans["stages"]
+print(f"the answer's counts: pool {s['pool']} | vector_chunks {s['vector_chunks']} | graph_chunks {s['graph_chunks']} | managed_chunks {s['managed_chunks']} | retrieval_backend {s['retrieval_backend']}")
+print("a citation's fields:", sorted(ans["citations"][0]))
+for c in ans["citations"]:
+    print(f"   #{c['chunk_id'].rsplit('#', 1)[1]:>3} {c['source_uri'].split('/')[-1][:26]:26} found_by {stamp.get(c['chunk_id'], 'not in the pool you fetched')}   (by the join)")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">the answer's counts: pool 20 | vector_chunks 20 | graph_chunks 0 | managed_chunks 0 | retrieval_backend vector
+a citation's fields: ['chunk_id', 'end', 'kind', 'media_url', 'page', 'quote', 'score', 'source_uri', 'start']
+   #  1 hr_policy_2026.md          found_by vector   (by the join)
+   #  4 hr_policy_2026.md          found_by vector   (by the join)
+   #  2 hr_policy_2026.md          found_by vector   (by the join)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; the kit's retrieve() in this process: one embedding, one index query, one Firestore read)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, warnings, collections
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path[:0] = [".", "services/rag-api"]
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", os.environ["PROJECT"])          # settings.project_id; REGION and the index names are already exported
+for k in ("RETRIEVAL_MODE", "RETRIEVAL_BACKEND", "RETRIEVAL_CURRENT_ONLY", "TOP_K_RETRIEVE", "RERANK_TIMEOUT_S", "SEMANTIC_CACHE"):
+    if os.environ.get(k) == "":
+        del os.environ[k]                                                      # an empty export from an earlier names box means the default
+from retriever import retrieve                                                # the kit's own path: the index, the Firestore fan-out, prefer_current, the stamps
+pool = retrieve("What is the notice period for a confirmed E3?", "acme", 5)
+print(len(pool), "chunks in the pool, found_by:", dict(collections.Counter(c["found_by"] for c in pool)))
+print("first three:", [(c.get("locator", "?"), c["found_by"], round(c["score"], 4)) for c in pool[:3]])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your locators and scores; the count and the stamp are the point)</span><span class="ro">read only</span></div><pre tabindex="0">20 chunks in the pool, found_by: {'vector': 20}
+first three: [('NP-03', 'vector', 0.7xxx), ('...', 'vector', 0.7xxx), ('...', 'vector', 0.7xxx)]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the smoke: one question, the same without a token, a version read; a rupee)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">DOCUMIND_PROJECT=$PROJECT DOCUMIND_API_URL=$API DOCUMIND_TENANT=acme \
+DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$PROJECT.iam.gserviceaccount.com make smoke 2&gt;&amp;1 | grep -E "query|vector tier|no token|PASS|FAIL"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the vector-tier line is this step's; the rest are lesson 3's checks and the optional ones)</span><span class="ro">read only</span></div><pre tabindex="0">  [PASS] health  {"status":"ok"}
+  [PASS] ready  ...
+  [PASS] query  answerable=True citations=3  '...'
+  [PASS] vector tier  20 of 20 chunks came from the index
+  [PASS] no token refused  status=403
+  ...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The answer said twenty of twenty came from the index, and the citation had nine fields and none of them was a stamp. The join gave each citation its stamp from the pool you fetched, legitimately, because the API's pool and yours are the same query to the same index under the same restrict. Then the kit's own retriever ran in your process with the API's environment and returned twenty dicts each carrying <code>found_by: vector</code>, the stamp seen where it lives. And the smoke read the count the way a release day does, and would have failed with a sentence naming the fix had the Firestore rung answered. Lesson 2.4 makes that rung answer on purpose and shows the stamp read <code>firestore</code> with the filters still applied.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What the funnel costs, its knobs, and the packed set the citations come from</h3><p>The rupee line, the four numbers that shape the funnel and the one nothing reads, the two places the reranker never runs, and the last cut before a citation.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The rank call</td><td data-label="Costs">the Ranking API is priced per request at its listed rate, one US dollar per thousand at the time of writing, which is Rs %%RS_REQ%% a request at USD_INR 85; the twenty records ride in one request; check the price page</td><td data-label="On your lane">one per answered question with a pool; four in this lesson's cells</td></tr>
+<tr><td>A wider top_k</td><td data-label="Costs">nothing at the ranker, everything at the model: the packer offers it more chunks and the input tokens grow with them</td><td data-label="On your lane">step 3's second answer, a generate clock about twice the first</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle at <code>MIN_INSTANCES</code> 0; one question at the generator's rate</td><td data-label="On your lane">step 5, a rupee, then removed</td></tr>
+<tr><td>make usage and the reader</td><td data-label="Costs">Cloud Logging reads, free at this volume; the reader runs in the page</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td>The in-process retrieve</td><td data-label="Costs">one embedding in paise; the index query, billed by the hour anyway; twenty Firestore reads</td><td data-label="On your lane">step 7, a few paise</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The knobs, and the one nothing reads</h4>
+<p>Four numbers shape the funnel. <code>TOP_K_RETRIEVE</code>, %%TOPK%% by default, is the pool's width and the number of records the ranker reads; the ablation's dense-50 arm is how a wider pool is judged, and the row's <code>rerank_ms</code> and <code>pool</code> columns are what the move costs. The request's <code>top_k</code>, 5 by default and 20 at most, is what the ranker returns and the packer is offered. <code>RERANK_TIMEOUT_S</code>, %%TIMEOUT%% seconds, is how long the ranker gets before the retriever's order stands in. And <code>max_context_tokens</code>, %%BUDGET_TOTAL%%, is the prompt's whole, of which the chunks get what the fixed parts leave. The fifth number, <code>top_k_rerank</code> in config.py, is read by nothing: the request's <code>top_k</code> is the cut, and a setting no line reads is one a future reader will trust wrongly.</p>
+
+<h4>Where the reranker never runs</h4>
+<p>Two branches of the handler skip it on purpose, and both leave a clock at 0 honestly. An answer served from the answer cache never retrieved a pool, so there is nothing to rank; the row says <code>backend cache</code> and cost 0. An empty pool has nothing to rank and nothing to read, so <code>empty_pool_answer()</code> writes the refusal in the contract's own shape without a model call; the row says <code>backend none</code> and <code>unanswerable_flag 1</code>. The reader in step 1 tells the two apart by the backend, which is the handler's own rule. The ablation's first arm, dense 5 with no reranker, is the third place, and it exists to measure what the other arms gain.</p>
+
+<h4>The packed set: the last cut, and the list a citation resolves against</h4>
+<p>The ranker's list goes to <code>_pack()</code>, which fits the chunks most relevant first into the chunk budget and logs what did not fit as one <code>context_budget_drop</code> line. The budget is <code>max_context_tokens</code> less the fixed prompt, the system rules, the dated rule held in reserve, the scaffolding and the question at four characters a token: for this lesson's question, %%CHUNK_BUDGET%% of %%BUDGET_TOTAL%% tokens, with %%ANSWER_TOKENS%% reserved for the answer on top. Whether twenty chunks fit depends on the chunks. The handbook's sections average %%HB_MEAN%% tokens on the kit's mirror, so a notice-period pool of twenty fits with room; the Acts are cut into page windows of up to %%WIN_TOKENS%% tokens, and twenty full pages need more than the budget holds, so the packer keeps %%FIT_WIN%% and drops %%DROP_WIN%%. Your lane's Document AI pages differ a little, and the log line tells you your count. Then the model numbers the packed chunks, cites by [N], and <code>resolve()</code> maps each N against the packed list, never the pool: a drop between the ranker and the prompt used to shift every later citation by one, silently, and the packed list is the fix.</p>
+@@pack@@
+@@resolve_packed@@
+
+<h4>Do it: the API's packer offline, then a pool of Act pages on the lane</h4>
+<p>The cell runs the kit's packer with the API's own budget over three lists: your ranked pool at <code>top_k</code> 5 and 20, and twenty full pages of the CGST Act's mirror, cut by the kit's own chunker from the file in <code>evals/corpus</code>. Then a golden question whose pool is Act pages goes to the API at <code>top_k</code> 20, and the log says what the packer dropped.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: pure Python over the saved pool and a file in the kit)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import ast, sys, json
+sys.path[:0] = [".", "services/rag-api"]
+from context_budget import pack_chunks, estimate_tokens, TokenBudget, source_header     # pure Python: no cloud calls
+from shared import documind_corpus as dc
+d = json.load(open("/tmp/pool53.json"))
+tree = ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read())
+consts = {n.targets[0].id: ast.literal_eval(n.value) for n in tree.body
+          if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ("SYSTEM", "DATED_RULE")}
+fixed = f"{consts['SYSTEM']}{consts['DATED_RULE']}\n\nContext:\n\n\nQuestion: {d['question']}"     # generator._budget(), line for line
+budget = TokenBudget.fit(8000, fixed, estimate_tokens, answer=2048)
+print(f"the budget: {budget.chunks} tokens for the chunks, {budget.system} for the fixed prompt, {budget.answer} reserved for the answer")
+ranked = [dict(d["pool"][i], source_uri="gs://uploads/acme/" + d["pool"][i]["source"], rerank_score=s) for i, s in d["ranked"]]   # the ranker's order, step 4
+act = open("evals/corpus/acme/cgst_act_2017.md", encoding="utf-8").read()
+pages = dc.chunk_document({"slug": "cgst_act_2017", "doc_type": "policy", "source_uri": "gs://uploads/acme/cgst_act_2017.md", "text": act}, "acme")
+full = sorted(pages, key=lambda c: -len(c["text"]))[:20]                       # twenty full pages, the kit's mirror cut by the kit's chunker
+for name, chunks in (("your ranked pool, top_k 5", ranked[:5]), ("your ranked pool, top_k 20", ranked[:20]), ("twenty full CGST Act pages", full)):
+    context, packed, dropped = pack_chunks(chunks, budget.chunks, estimate_tokens)
+    print(f"{name:28} packed {len(packed):2}, dropped {len(dropped):2}, context {estimate_tokens(context):5} tokens")
+print("the first header the model reads:", source_header(1, ranked[0]))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the first two lines are your pool's; the third is computed from the kit's files and is the same on every lane)</span><span class="ro">read only</span></div><pre tabindex="0">the budget: %%CHUNK_BUDGET%% tokens for the chunks, %%FIXED_TOKENS%% for the fixed prompt, %%ANSWER_TOKENS%% reserved for the answer
+your ranked pool, top_k 5    packed  5, dropped  0, context   7xx tokens
+your ranked pool, top_k 20   packed 20, dropped  0, context  2xxx tokens
+twenty full CGST Act pages   packed %%FIT_WIN%%, dropped  %%DROP_WIN%%, context  %%WIN_CONTEXT%% tokens
+the first header the model reads: [Source 1] hr_policy_2026.md</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one question with twenty Act pages offered to the model, a couple of rupees; one log read)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -s -X POST "$API/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the maximum rate of central tax the CGST Act allows?","tenant_id":"acme","stream":false,"top_k":20}' \
+  | python -c "import sys, json; j = json.load(sys.stdin); s = j['stages']; print('pool', s['pool'], '| citations', len(j['citations']), '| generate_ms', s['generate_ms'], '| tokens_in', j['tokens_in'], '| sources', sorted({c['source_uri'].split('/')[-1][:20] for c in j['citations']}))"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="context_budget_drop"' \
+  --project "$PROJECT" --freshness 1h --limit 3 --format='value(timestamp,jsonPayload.packed,jsonPayload.dropped)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts; a lane whose twenty pages fit prints no drop line, and the budget was simply not reached)</span><span class="ro">read only</span></div><pre tabindex="0">pool 20 | citations 2 | generate_ms 3xxx | tokens_in 8xxx | sources ['cgst_act_2017.pdf']
+2026-09-2xT1x:xx:xx.xxxxxxZ	1x	x</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The kit's packer ran with the API's own budget, and three lists showed the three outcomes: five handbook sections with room to spare, twenty of them still inside the budget, and twenty full Act pages with the last few left in the corridor. The Act question then did the same on the lane, and the log line said how many pages the model was never shown. The dropped ones were the ranker's last, because packing is most relevant first, so a citation to them is impossible by construction, which is the whole reason the citations resolve against the packed list. The header line is what the model actually reads above each chunk, the source's name and its page when there is one, and the number it cites is that header's.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A citation's score is the ranker's, and the pool does not read top_k</td><td data-label="The check">step 3</td><td data-label="Pass looks like">scores falling from 0.9x; <code>pool 20</code> at top_k 5 and 20</td></tr>
+<tr><td>2</td><td data-label="Claim">The API's rank request, sent by hand, gives the API's order</td><td data-label="The check">step 4</td><td data-label="Pass looks like">two <code>True</code> on the last line</td></tr>
+<tr><td>3</td><td data-label="Claim">The fallback is the retriever's order, and every chunk is marked</td><td data-label="The check">step 5, offline</td><td data-label="Pass looks like"><code>rerank_fell_back: True</code>, scores in the 0.7s</td></tr>
+<tr><td>4</td><td data-label="Claim">A silent ranker is a flagged answer, not a 500</td><td data-label="The check">step 5, the candidate</td><td data-label="Pass looks like"><code>rerank_fallback 1</code>, <code>answerable True</code>, a <code>DeadlineExceeded</code> line</td></tr>
+<tr><td>5</td><td data-label="Claim">The variable and the tag are gone</td><td data-label="The check">step 5, the undo</td><td data-label="Pass looks like"><code>live: rerank_fallback 0</code>, one revision at 100</td></tr>
+<tr><td>6</td><td data-label="Claim">make usage groups the rows the way the view does, with a p95 per stage</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>selftest OK</code>; a <code>rerank</code> column for acme</td></tr>
+<tr><td>7</td><td data-label="Claim">found_by is on every chunk of the pool and counted on the answer</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>vector_chunks 20</code> of <code>pool 20</code>; <code>{'vector': 20}</code> in your process</td></tr>
+<tr><td>8</td><td data-label="Claim">A citation has no found_by; the join supplies it</td><td data-label="The check">step 7</td><td data-label="Pass looks like">nine fields listed; <code>found_by vector (by the join)</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The citations resolve against the packed set</td><td data-label="The check">step 8</td><td data-label="Pass looks like">%%FIT_WIN%% packed and %%DROP_WIN%% dropped of twenty Act pages offline; the drop line on the lane, or none because everything fit</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. Step 5 created a revision of the API that took none and removed its tag and its variable again; the live revision never changed. The questions you asked left usage rows in Cloud Logging, one of them with <code>rerank_fallback 1</code>, and lesson 13's view will count it as a day with one degraded answer, which is true. The four files under <code>/tmp</code> are yours to delete. Lesson 2.4 takes the rung beneath the index, makes it answer on purpose, and shows the tenant and the filters holding on the way down.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 2 Retrieval &middot; Lesson 2.3 Rerank and inspect retrieved candidates &middot; v5.0</p><p>Next: Lesson 2.4 Test fallback without losing tenant or metadata filters.</p></div>

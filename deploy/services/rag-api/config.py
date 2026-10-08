@@ -1,0 +1,166 @@
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+RETRIEVAL_BACKENDS = ("vector", "firestore", "rag_engine", "vertex_search")   # rag_engine: 4.3's corpus (P9.4); vertex_search: 4.4's data store (R4) - each as the retrieval stage
+MANAGED_BACKENDS = ("rag_engine", "vertex_search")   # embed and search on their own terms, outside India: a tenant's data_region decides per request
+RETRIEVAL_MODES = ("dense", "hybrid")
+GRAPH_MODES = ("off", "on", "auto")          # 4.6's graph on the lane (13 September 2026, shared/documind_graph.py)
+GRAPH_BACKENDS = ("firestore", "spanner")    # where the graph lives (16 September 2026): Spanner seeds the walk by meaning
+
+
+def check_retrieval_modes(backend: str, mode: str, graph: str = "off", graph_backend: str = "firestore") -> None:
+    """RETRIEVAL_MODE against RETRIEVAL_BACKEND, at startup (12 September 2026, R06). Hybrid is Vector Search's
+    HybridQuery (4.5's hybrid.py); Firestore's vector index takes one dense vector and nothing else, so with the
+    Firestore backend RETRIEVAL_MODE=hybrid ran dense while every usage row and /version said hybrid. A service that cannot do
+    what its environment says must not start: the message names the fix, so it is read on the failed deploy and not
+    found in the rows a week later. An unknown value is refused for the same reason - a typo ran dense too.
+
+    What is NOT judged here since 13 September 2026 (evening): whether a managed backend may serve a tenant. That is
+    the tenant's data_region (tenant_settings/{tenant}, shared/tenancy.py), asked per request in main.py's
+    choose_for - a deployment variable cannot know that one tenant may leave India and another may not."""
+    if backend not in RETRIEVAL_BACKENDS or mode not in RETRIEVAL_MODES:
+        raise ValueError(f"RETRIEVAL_BACKEND={backend!r} RETRIEVAL_MODE={mode!r}: the backend is one of "
+                         f"{'|'.join(RETRIEVAL_BACKENDS)} and the mode one of {'|'.join(RETRIEVAL_MODES)}")
+    if graph not in GRAPH_MODES:
+        raise ValueError(f"RETRIEVAL_GRAPH={graph!r}: one of {'|'.join(GRAPH_MODES)} - off touches nothing, on walks the tenant's "
+                         "graph for every question, auto only for a relational question with a seed entity (4.6's choose_mode)")
+    if graph_backend not in GRAPH_BACKENDS:
+        raise ValueError(f"GRAPH_BACKEND={graph_backend!r}: one of {'|'.join(GRAPH_BACKENDS)} - firestore is 4.6's store beside the "
+                         "chunks; spanner is spanner.tf's Spanner Graph, which seeds by meaning (SPANNER_INSTANCE / SPANNER_DATABASE)")
+    if backend in MANAGED_BACKENDS and mode == "hybrid":
+        raise ValueError(f"RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: {backend} embeds and searches on its own "
+                         "terms (a managed store has no sparse leg to fuse). Set RETRIEVAL_MODE=dense.")
+    if backend == "firestore" and mode == "hybrid":
+        raise ValueError("RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: the Firestore backend is dense-only. "
+                         "Set RETRIEVAL_MODE=dense, or RETRIEVAL_BACKEND=vector with the Vector Search endpoint "
+                         "vector.tf declares and keep hybrid.")
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    project_id: str = Field(alias="GOOGLE_CLOUD_PROJECT")
+    region: str = "us-central1"
+    india_region: str = "asia-south1"
+    # Which store answers the vector query. `vector` is Vector Search with the Firestore
+    # fallback beneath it (the chaos rung). `firestore` - the rung on its own - is
+    # Firestore's own vector index alone: no endpoint to keep warm, the same tenant
+    # pre-filter, the ANN tier left out. Nothing else in the service changes.
+    retrieval_backend: str = Field("vector", alias="RETRIEVAL_BACKEND")   # vector | firestore | rag_engine | vertex_search (P9.4, R4): the DEFAULT
+    # P9.4 (13 September 2026): the corpora's region (serverless RAG Engine: us-central1 only) and 4.3's cosine-distance
+    # threshold on a context. RETRIEVAL_BACKEND is the deployment's default since the evening of that day: the same
+    # tenant_settings/{tenant} document that pins a tenant's model (11.4) may pin its retrieval_backend, and its
+    # data_region decides whether a managed store may serve it at all - a managed backend for an `in` tenant is the
+    # kit's own index with policy_fallback=1 on the row (main.py's choose_for and retrieval_backend_for).
+    rag_location: str = Field("us-central1", alias="RAG_LOCATION")
+    rag_distance_threshold: float = Field(0.5, alias="RAG_DISTANCE_THRESHOLD")
+    # R4 (13 September 2026, evening): 4.4's data stores are global (managed.tf), searched through their default serving
+    # config as the lesson's notebook does; the extractive segments asked per result (a plain data store answers with
+    # snippets, an Enterprise engine with segments - the backend takes whichever came).
+    search_location: str = Field("global", alias="SEARCH_LOCATION")
+    search_segments: int = Field(3, alias="SEARCH_SEGMENTS")
+    # The ledger (12.5, 11 September 2026): `on` retrieves only chunks the ledger marks current - one
+    # version per document. Off until the second vector index is built and the chunks written before
+    # the ledger carry the field (make backfill-current); a switch, judged on a candidate like the others.
+    retrieval_current_only: str = Field("off", alias="RETRIEVAL_CURRENT_ONLY")   # off | on
+    vector_index_endpoint: str = Field("", alias="VECTOR_INDEX_ENDPOINT")
+    vector_deployed_index: str = Field("", alias="VECTOR_DEPLOYED_INDEX_ID")
+    # THE Firestore collection. Gap G2: 2.3 wrote `knowledge_base`, 4.2/4.5/4.6 read
+    # `rag_chunks`, and this service read `chunks` - three names for one corpus, so the
+    # teaching lane and the production lane never saw the same documents. Every notebook
+    # from 2.3 onward now names this one. services/ingest/indexer.py writes to it.
+    chunks_collection: str = "chunks"
+    # ONE declared embedding (12 September 2026): EMBEDDING_MODEL and EMBEDDING_VERSION are variables.tf's
+    # embedding_model / embedding_version, set on this service AND on the ingest worker by make deploy-services,
+    # so the query vector and the document vectors come from one model by construction. The worker stamps the
+    # pair on every chunk row; a bump is a planned migration (make reembed, deploy/INDEXING.md), never a silent
+    # mismatch. /version reports it beside the model and the prompt.
+    embed_model: str = Field("text-embedding-005", alias="EMBEDDING_MODEL")
+    embedding_version: str = Field("1", alias="EMBEDDING_VERSION")
+    # GENERATOR_MODEL in the environment. A model NAME is served on the global endpoint; a tuned model is
+    # an ENDPOINT path (projects/.../locations/us-central1/endpoints/...) and is served on a regional
+    # client - generator.py picks by the value (10.1: tuning is regional). RAG_MODEL_BASE names the base
+    # a tuned endpoint was tuned from, for pricing (cost.py) and for the cache's model check.
+    generator_model: str = "gemini-3.6-flash"
+    rag_model_base: str = Field("", alias="RAG_MODEL_BASE")
+    # Where a tuned endpoint is served from. Empty: read from the endpoint path (its /locations/<x>/ segment -
+    # the first live tuning job put its endpoint in the `us` multi-region, not us-central1, F41). Set it to
+    # force a location (global, us-central1) without a code change - a setting, like the model.
+    generator_location: str = Field("", alias="GENERATOR_LOCATION")
+    # 10.3, behind a flag: ROUTING=on classifies each question (router.py) and lets the budget breaker
+    # (breakers.py) pick the tier; off, the generator model above serves everything. The spend the
+    # breaker reads is the month's counter in Firestore (budget.py) over BUDGET_USD; SPEND_PCT
+    # overrides it for a replay ("what does 85% look like").
+    routing: str = Field("off", alias="ROUTING")
+    budget_usd: float = Field(100.0, alias="BUDGET_USD")
+    spend_pct_override: str = Field("", alias="SPEND_PCT")
+    rerank_model: str = "semantic-ranker-fast-004"
+    # The Ranking API's deadline (12 September 2026): past it, or on any error, rerank() returns the pool by retrieval
+    # score and the row says rerank_fallback=1. Generous beside a 20-record call, which answers well inside a second;
+    # a ranker that takes longer is not ranking, it is down, and a worse order beats a hung request and then a 500.
+    rerank_timeout_s: float = Field(5.0, alias="RERANK_TIMEOUT_S")
+    # The pool the reranker sees - the funnel's width. 20 shipped; evals/ablate.py's "dense 50 -> rerank 5" arm is
+    # the measurement that moves it, and the row's rerank_ms / pool columns are what the move costs. An env var, so
+    # the move is a number in the service's environment, not a code change. top_k (the request, <= 20) is what comes OUT.
+    top_k_retrieve: int = Field(20, alias="TOP_K_RETRIEVE")
+    top_k_rerank: int = 5
+    max_context_tokens: int = 8000
+    # 2048, not 1024: a statute answer with its quotes - and the thinking drawn from the same
+    # budget on the 3.x family - outran 1024 on fourteen rows of the second live eval, and each
+    # cut-off JSON was scored as a refusal. generator.py retries once with three times this.
+    max_answer_tokens: int = 2048
+
+    # Which backend answered, and which prompt did it. Both go on every log
+    # line and every span, because "the answer got worse last Tuesday" is
+    # unanswerable without them (12.6 puts them in BigQuery).
+    # Module 11: THE BACKEND IS A SETTING. vertex = google.genai (the lane); gateway = 11.3's LiteLLM gateway at
+    # LITELLM_URL, where GENERATOR_MODEL names a route (documind-slm is 11.4's self-hosted model). Until Module 11
+    # this field was reported on every usage row and switched nothing.
+    model_backend: str = Field("vertex", alias="MODEL_BACKEND")          # vertex | gateway
+    litellm_url: str = Field("", alias="LITELLM_URL")
+    gateway_timeout_s: float = Field(90.0, alias="GATEWAY_TIMEOUT_S")   # a cold GPU behind the gateway takes a while
+    # 12.6: Model Armor on both sides of the model, behind a switch. Off by default - the lane does not move; a
+    # candidate revision with ARMOR=on is where 12.6 judges it. The template is regional (asia-south1, with the data
+    # it inspects); guard.py reads the location and the template name from the same variables at import.
+    armor: str = Field("off", alias="ARMOR")                              # off | on
+    armor_location: str = Field("asia-south1", alias="ARMOR_LOCATION")
+    armor_template: str = Field("documind-guard", alias="ARMOR_TEMPLATE")
+    # 12.6's answer cache (semantic_cache.py), wired 12 September 2026: off | on. On, a near-enough earlier question
+    # of the same tenant under the same corpus fingerprint is answered from Firestore - no retrieval, no model call.
+    # Off on the lane until the threshold is measured on paraphrase pairs (the RAG plan, W4).
+    semantic_cache: str = Field("off", alias="SEMANTIC_CACHE")
+    prompt_id: str = "documind-rag"
+    prompt_version: str = "v3"
+    retrieval_mode: str = "dense"          # dense | hybrid (4.5's hybrid.py)
+    # 4.6's graph, on the lane (13 September 2026; shared/documind_graph.py): off | on | auto. `on` walks the tenant's
+    # knowledge graph for every question and puts the chunks its nodes point at in front of the dense pool; `auto`
+    # walks it only when the question is relational AND a seed entity is found (4.6's choose_mode, no model call).
+    # The graph is built by make graph TENANT= (services/ingest/graph.py); a tenant with no graph is a dense answer,
+    # never an error. Judged on a candidate first, like every switch: make candidate RETRIEVAL_GRAPH=auto.
+    retrieval_graph: str = Field("off", alias="RETRIEVAL_GRAPH")
+    graph_hops: int = Field(1, alias="GRAPH_HOPS")          # 1 or 2: deeper walks return the whole tenant (4.6)
+    graph_cap: int = Field(20, alias="GRAPH_CAP")           # nodes per walk, the budget 4.5 defends
+    # Where the graph lives (16 September 2026): firestore (graph_nodes / graph_edges beside the chunks, seeded by a
+    # name the question contains) or spanner (spanner.tf's DocuMindGraph, seeded BY MEANING: the question's embedding
+    # against the names' - GRAPH_SEED_K nearest, none farther than GRAPH_SEED_DISTANCE in cosine distance, so a
+    # question about nothing in the graph seeds nothing and `auto` stays dense). make graph GRAPH_BACKEND= builds either.
+    graph_backend: str = Field("firestore", alias="GRAPH_BACKEND")
+    spanner_instance: str = Field("documind-graph", alias="SPANNER_INSTANCE")
+    spanner_database: str = Field("documind", alias="SPANNER_DATABASE")
+    graph_seed_k: int = Field(5, alias="GRAPH_SEED_K")
+    graph_seed_distance: float = Field(0.4, alias="GRAPH_SEED_DISTANCE")   # unverified on the real corpus: judge it on a candidate
+
+    # USD per 1M tokens, gemini-3.6-flash standard. 12.6 moves this to a
+    # BigQuery model_prices table so a rate change is not a redeploy.
+    price_in: float = 1.50
+    price_out: float = 7.50
+
+    @model_validator(mode="after")
+    def _retrieval_modes_agree(self):
+        # Refused here, at import, so a revision with an impossible pair never serves: the deploy fails with the
+        # message above instead of a service that runs dense and reports hybrid. /version reports the mode that
+        # passed this check - the effective one.
+        check_retrieval_modes(self.retrieval_backend, self.retrieval_mode, self.retrieval_graph, self.graph_backend)
+        return self
+
+settings = Settings()

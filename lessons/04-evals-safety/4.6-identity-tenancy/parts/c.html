@@ -1,0 +1,88 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The surfaces</span><h3>The surfaces: who calls the shared verifier, and who still keeps a copy</h3><p>The API's two checks, the UI's two credentials, and the two surfaces that still verify on their own.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>shared/iap.py</code> opens by listing four surfaces that once had four answers to "who is asking". The API, the chat service and the MCP server now call its <code>identity()</code>. The API follows it with <code>enforce_membership()</code>, a point lookup that turns a mismatch into a 403. The UI and the admin console still verify on their own. The UI's image copies only its own folder, so it cannot import <code>shared/</code>. The admin console's image does copy <code>shared/</code>, and its <code>auth.py</code> still carries its own check: the same library and key endpoint, failing closed the same way, then its admin list. Only the change has not been made. The UI's copy verifies the assertion with a different library, and finds the tenant with its own reverse lookup, uncached since 12 September. It also still parses its admin list the way <code>shared/iap.py</code>'s own docstring calls a bug: an unset list holds the empty string. That is harmless after the login gate, because a verified email is never empty, but it is one fix waiting to be made in two places.</p>
+
+<h4>The code</h4>
+@@api_auth@@
+@@ui_forward@@
+@@ui_admin@@
+
+<h4>Do it: which services call the shared verifier</h4>
+%%CELL_WHO%%
+%%OUT_WHO%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three services call one verifier, so a fix to it lands in all three at once. The UI does not call it, and it does not need to for the API's sake: every call the UI makes carries its own token for the door and the person's assertion for the verifier, and the API verifies the assertion itself. What the UI's own copy decides is the UI's own business: the admin page, the tenant in the sidebar, and the tenant folder an upload is written to. So the API's answers stay correct whatever the UI's copy does, and the copy still matters, because it decides where the UI writes.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; End to end</span><h3>One request, end to end: a forged header, and the row that ignores it</h3><p>Two questions to acme, one claiming to be the CEO, and the two usage rows they leave.</p></div></div>
+
+<p>The cell asks the same question twice with <code>run_eval.py</code>'s own <code>ask()</code>, which sets an <code>x-user-email</code> header on every request. The first names the eval account; the second claims to be <code>ceo@acme.example</code>. Both carry your token and no assertion, so the bearer leg names the caller. After twenty seconds for the logs to land, the cell reads the two newest query rows for acme.</p>
+@@usage_row@@
+%%CELL_ASK%%
+%%OUT_ASK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both questions were answered, and both rows name <code>documind-ui-sa</code>, the account whose token the requests carried. The header claiming the CEO is not in either row, because nothing in the API reads it outside the local dev mode. The tenant on each row is the one the request named and the roster allowed. That pair, the verified identity and the tenant, is this lesson's proof. It is also what every per-tenant number in the course is grouped by, from lesson 4.2's rupees to Module 11's reports.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; The person's leg</span><h3>The person's leg: how a signed-in person reaches the API through the UI</h3><p>IAP in front of the UI, the assertion forwarded beside the UI's token, and every caller the API recorded in a day.</p></div></div>
+
+<p>A person never calls the API directly. They sign in at IAP in front of the UI, which admits only accounts granted the sign-in role. IAP hands the UI a signed assertion with every request. When the UI calls the API, it sends two credentials, as its <code>_headers()</code> shows in step 5: its own token, which gets past the door, and the person's assertion, forwarded unchanged. The API's verifier sees the assertion first and takes the person's email from it. The roster check and the usage row are then about the person, which is what lesson 3.8 saw in Chat. The cell counts every caller the API recorded in the last day.</p>
+%%CELL_USERS%%
+%%OUT_USERS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two kinds of caller share the API, and the rows keep them apart. Your shell, the gate, the judge and the smoke tests appear as <code>documind-ui-sa</code>, because no person was forwarded. Questions asked in the UI appear under your own email, because IAP signed you in and the UI forwarded your assertion. If your email is missing, you have not asked in the UI today. A person on no roster would reach the verifier and stop at the roster: they can sign in, and they still cannot read a tenant.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>How identity went wrong before, and what each check costs</h3><p>The kit's own history, from its docstrings, and why each fix is where it is.</p></div></div>
+
+<h4>Six mistakes the kit made, and the check that now stands in each place</h4>
+<ul>
+<li><strong>The API believed headers.</strong> It read <code>x-user-email</code> and <code>x-tenant-id</code>, so anyone who could reach it could claim any tenant. Now the tenant comes from the roster and the identity from the verifier.</li>
+<li><strong>The UI used the Google subject id as the tenant.</strong> Every person became their own tenant, colleagues could never share a document, and the roster was bypassed. Now it looks the person up on the roster.</li>
+<li><strong>The UI cached the tenant for five minutes.</strong> A person taken off a roster kept their tenant, and the upload right with it, on every instance that had answered them. It has been uncached since 12 September.</li>
+<li><strong>The chat service believed the request body.</strong> The caller picked the tenant. It now calls the shared verifier.</li>
+<li><strong>The invoker role was granted project-wide.</strong> Every account could knock on every service, and the outsider could read acme's documents through the A2A peer, which has no roster of its own. Since 12 September the role is bound per service, for the callers that need it.</li>
+<li><strong>A token minted for a candidate's tag URL was refused on every row.</strong> The API verifies bearer tokens against its canonical URL, whichever URL was called. Minting for <code>$API</code> is the fix, and it is why lesson 4.4 used <code>tok "$API"</code> against the candidate.</li>
+</ul>
+
+<h4>Two details that produce a permanent 401</h4>
+<p>An IAP audience is <code>/projects/PROJECT_NUMBER/locations/REGION/services/SERVICE</code>: a leading slash, and the project's number, not its id. Get either wrong and every sign-in fails as if the login were broken. And a service-account token minted without <code>--include-email</code> has no email, which the bearer leg refuses. Both failures happen before any tenant is looked at, which is why they are 401s.</p>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Check</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The door</td><td data-label="Costs">nothing: Cloud Run's IAM, before the container</td><td data-label="On your lane">every request</td></tr>
+<tr><td>The verifier</td><td data-label="Costs">a signature check against keys google-auth fetches and caches</td><td data-label="On your lane">every request</td></tr>
+<tr><td>The API's roster check</td><td data-label="Costs">one Firestore document read</td><td data-label="On your lane">every request</td></tr>
+<tr><td>The UI's tenant lookup</td><td data-label="Costs">one collection-group query</td><td data-label="On your lane">every page load</td></tr>
+<tr><td>This lesson</td><td data-label="Costs">two answered questions, and a few Firestore and log reads</td><td data-label="On your lane">under a rupee</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The API accepts two assertion audiences and one bearer audience</td><td data-label="The check">step 3, the settings</td><td data-label="Pass looks like">documind-ui and documind-chat; its own URL</td></tr>
+<tr><td>2</td><td data-label="Claim">Four accounts may knock</td><td data-label="The check">step 3, the settings</td><td data-label="Pass looks like">ui, chat, mcp and outsider under <code>run.invoker</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A token without an email cannot count</td><td data-label="The check">step 3, the claims</td><td data-label="Pass looks like"><code>email (none)</code> on the second token</td></tr>
+<tr><td>4</td><td data-label="Claim">The rosters match the plan</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the three accounts everywhere, the peer on acme, you on acme, no outsider</td></tr>
+<tr><td>5</td><td data-label="Claim">Three services share one verifier</td><td data-label="The check">step 5</td><td data-label="Pass looks like">chat, mcp, rag-api</td></tr>
+<tr><td>6</td><td data-label="Claim">A forged header changes nothing</td><td data-label="The check">step 6</td><td data-label="Pass looks like">both answered; neither row says <code>ceo@acme.example</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The row names the verified caller and the tenant</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>documind-ui-sa@...</code> and <code>acme</code></td></tr>
+<tr><td>8</td><td data-label="Claim">A person reaches the API as themselves</td><td data-label="The check">step 7</td><td data-label="Pass looks like">your email among the day's callers, once you have asked in the UI</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing but the usage rows of step 6's two questions. No roster was written, no role was granted, no setting changed. The dry run in step 4 printed a plan and wrote nothing. Lesson 4.7 turns these checks into tests: a request with no token, the outsider refused by the roster with a 403 rather than a 401, acme asking for zeta's documents, and each tenant's data-region policy.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.6 Trace authenticated identity into tenant membership &middot; v5.0</p><p>Next: Lesson 4.7 Test valid access, denied access and cross-tenant requests.</p></div>

@@ -1,0 +1,97 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 7 &middot; Graph and multimodal &middot; Lesson 7.6</div>
+<h1>Exercise implemented Studio and voice features: <span>an image, its row, an answer aloud</span></h1>
+<p>The UI has three media features. The Studio turns a prompt into an image through the API, which checks, spends and records it. The chat can read each answer aloud, and it can take a question from the microphone. All three are in the kit already: this lesson exercises them and reads what each one leaves behind.</p>
+<p>In this lesson you generate the Studio's own image twice and find its usage rows and its audit event. You send a video through the API's upload door. Then you have an answer read aloud, and transcribe that audio back, first where the UI transcribes and then where it could.</p>
+<div class="hero-chips"><div class="hero-chip">/v1/media/generate</div><div class="hero-chip">DEMO_MODE</div><div class="hero-chip">event=media</div><div class="hero-chip">media.generate</div><div class="hero-chip">upload-url</div><div class="hero-chip">cached_tts</div><div class="hero-chip">transcribe</div><div class="hero-chip">SPEECH_REGION</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">The Studio and the voice, as the kit builds them</a></li>
+<li><a href="#s2">The words: the Studio, the route, DEMO_MODE, the media bucket, the usage row, the audit event, the door, cached_tts, transcribe, read aloud</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The Studio's and the voice's rules, run</a></li>
+<li><a href="#s4">A generated image, and its usage row</a></li>
+<li><a href="#s5">The upload door</a></li>
+<li><a href="#s6">An answer read aloud, and a question nobody hears</a></li>
+<li><a href="#s7">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the Studio checks before it spends, what it records after, and which of those records reach BigQuery. You will learn how the upload door keeps large files off Cloud Run, how the voice caches what it says, and where the microphone sends its audio. Then you will prove it on your lane: a generated image with its usage row, and an answer read aloud.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>The Studio and the voice, as the kit builds them</h3><p>An image spent once and recorded twice, a door into the bucket, and a voice with a memory.</p></div></div>
+
+<p><strong>The Studio: checked before it spends.</strong> The UI's Studio tab sends a prompt to the API's <code>/v1/media/generate</code>, as the signed-in person. The route checks, in order:</p>
+<ol>
+<li><strong>The roster.</strong> The caller must be on the tenant's roster, the same check every question passes. If not, it answers 403 before anything is spent.</li>
+<li><strong>The audit bucket.</strong> Without <code>AUDIT_BUCKET</code> it answers 503, before the model is called. The first live generation went wrong the other way round: it failed after the spend.</li>
+<li><strong>DEMO_MODE's cache.</strong> The image's name is a hash of the prompt, under the tenant: <code>acme/gen/HASH.png</code>. With DEMO_MODE on, an image that already exists under that name is served again, with no model call. <code>make up</code> deploys the API with <code>DEMO_MODE=1</code>.</li>
+<li><strong>The model.</strong> Otherwise <code>gemini-3.1-flash-image</code> draws it, and a reply with no image part is a 502.</li>
+</ol>
+<p><strong>Recorded twice.</strong> The PNG goes into the media bucket, which deletes after 30 days: a cache, not a record. The record is one <code>media.generate</code> audit event in the audit bucket, which keeps five years. It holds the prompt's hash, never the prompt. There is also one usage row: <code>event=media</code>, <code>modality image</code>, <code>cost_usd 0.039</code>, or 0 when DEMO_MODE served it. The Studio shows the image through a link it signs for 15 minutes as <code>documind-ui-sa</code>.</p>
+
+<p><strong>The upload door.</strong> <code>/v1/media/upload-url</code> signs a PUT into the uploads bucket, under the caller's tenant, for 15 minutes and one content type. The bytes go straight to the bucket, never through Cloud Run. The kit's own comment says a browser must do that past 32 MB. The bucket's notification then hands the object to the worker, like any upload. Only a bare filename and one of seven content types are signed.</p>
+
+<p><strong>The voice, in the UI's <code>voice.py</code>:</strong></p>
+<ul>
+<li><strong><code>cached_tts</code></strong> reads text aloud with Chirp 3 HD, streamed as Ogg Opus. It keeps the audio in the TTS bucket under the SHA-256 of voice, rate, format and text, so the same words in the same voice are synthesised once. The bucket deletes after 30 days. The chat's "Read answers aloud" toggle sends each answer's first 1,500 characters through it, and the Studio's "Read it aloud" offers three voices.</li>
+<li><strong><code>transcribe</code></strong> turns the microphone's recording into the question. It asks Speech-to-Text in <code>SPEECH_REGION</code>, which is <code>asia-south1</code> on the lane, for Hindi and English (India). It tries <code>chirp_3</code>, then <code>chirp_2</code>, then <code>long</code>, and returns an empty string when all three fail.</li>
+</ul>
+
+<div class="analogy"><div class="analogy-icon">&#128247;</div><div>
+<p><strong>A neighbourhood photo studio with a sound booth.</strong> The counter checks your membership card before it takes an order, and will not work at all if the order book is missing. A design ordered before is handed over from the prints it kept, free, and the prints are thrown out after a month. Every order, even a free repeat, gets a line on the day's sales slip. Only new work goes into the bound register kept for years, and the register notes a fingerprint of the order, never its words.</p>
+<p>In the sound booth, an announcer records scripts, and the recordings are filed by the exact script and voice. The same script in the same voice is played from the shelf. The booth's transcriber, though, sits in a branch where nobody speaks the customers' languages. Every dictation comes back blank, and the slip says nothing about it.</p>
+<p>The card is the roster, and the order book is the audit bucket. The kept prints are DEMO_MODE's media bucket, and the sales slip is the usage row. The bound register is the audit events, and the fingerprint is <code>prompt_sha</code>. The shelf is the TTS cache, and the transcriber's branch is <code>SPEECH_REGION</code>.</p></div></div>
+
+<h4>One Studio request, one answer read aloud, one question spoken</h4>
+<p>Set each feature's conditions and see what the kit does. The Studio box shows the reply, the model call, and what is recorded. The voice box shows whether the audio is synthesised or read back. The microphone box shows which models are tried, and whether any hears you.</p>
+
+<div class="diagram pc" id="sv">
+<div class="dg-title">The kit's three media features, under their own rules</div>
+<div class="sv-cols">
+<div class="pc-box"><b class="h">The Studio</b>
+<div class="pc-in"><label>The caller<select id="sv-who"><option value="member">on the roster</option><option value="outsider">not on it</option></select></label>
+<label>AUDIT_BUCKET<select id="sv-audit"><option value="set">set</option><option value="unset">not set</option></select></label>
+<label>DEMO_MODE<select id="sv-demo"><option value="1">1 (the lane's)</option><option value="0">0</option></select></label>
+<label>This prompt drawn before<select id="sv-before"><option value="no">no</option><option value="yes">yes</option></select></label>
+<label>The model returns an image<select id="sv-image"><option value="yes">yes</option><option value="no">no</option></select></label></div>
+<div class="sv-out" id="sv-studio" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">Read it aloud</b>
+<div class="pc-in"><label>The voice<select id="sv-voice"><option value="en-IN-Chirp3-HD-Kore">en-IN-Chirp3-HD-Kore</option><option value="en-IN-Chirp3-HD-Charon">en-IN-Chirp3-HD-Charon</option><option value="hi-IN-Chirp3-HD-Kore">hi-IN-Chirp3-HD-Kore</option></select></label>
+<label>These words, in this voice, played before<select id="sv-played"><option value="no">no</option><option value="yes">yes, this month</option></select></label></div>
+<div class="sv-out" id="sv-speak" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">Speak a question</b>
+<div class="pc-in"><label>SPEECH_REGION<select id="sv-region"><option value="asia-south1">asia-south1 (the lane's)</option><option value="asia-southeast1">asia-southeast1</option><option value="eu">eu</option><option value="us">us</option></select></label></div>
+<div class="sv-out" id="sv-mic" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The rules are the kit's: <code>media.generate</code>'s branches, <code>cached_tts</code>'s cache and <code>transcribe</code>'s order of models, ported and compared with the kit's own functions on all %%N_CHECKED%% combinations. Which location serves which model is Google's: Chirp 3 is GA in the <code>us</code> and <code>eu</code> multi-regions, and the language table lists Hindi and English (India) in <code>asia-southeast1</code> (<code>chirp_2</code>) and <code>eu</code>. Checked on 24 September 2026.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It follows one request of each kind, not a day's traffic. Whether a model is served in a location can change as Google adds regions. The microphone cell in step 6 asks your lane itself.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: the Studio, the route, DEMO_MODE, the media bucket, the usage row, the audit event, the door, cached_tts, transcribe, read aloud</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>The Studio</strong></td><td data-label="Meaning">The UI's tab (<code>studio.py</code>): a prompt to the API for an image, and a text read aloud.</td><td data-label="On your lane">shown to every roster member</td></tr>
+<tr><td><strong><code>/v1/media/generate</code></strong></td><td data-label="Meaning">The route: the roster, the audit bucket, DEMO_MODE, the model, the media bucket, the audit event, the usage row.</td><td data-label="On your lane"><code>gemini-3.1-flash-image</code>, USD 0.039 an image</td></tr>
+<tr><td><strong>DEMO_MODE</strong></td><td data-label="Meaning">A prompt drawn before is served from the media bucket, with no model call.</td><td data-label="On your lane">1, as <code>make up</code> deploys the API</td></tr>
+<tr><td><strong>The media bucket</strong></td><td data-label="Meaning">The generated images, deleted after 30 days: a cache, not a record.</td><td data-label="On your lane"><code>documind-ai-YOUR-ID-media</code></td></tr>
+<tr><td><strong>The usage row</strong></td><td data-label="Meaning"><code>event=media</code>, <code>modality image</code>, <code>cost_usd</code> and <code>cached</code>, logged by the API.</td><td data-label="On your lane">in Cloud Logging</td></tr>
+<tr><td><strong><code>media.generate</code></strong></td><td data-label="Meaning">The audit event: who asked, which image, the model, SynthID, and the prompt's hash, never the prompt.</td><td data-label="On your lane">the audit bucket, kept five years</td></tr>
+<tr><td><strong>The upload door</strong></td><td data-label="Meaning"><code>/v1/media/upload-url</code>: a signed PUT into the uploads bucket, one tenant, one content type, 15 minutes.</td><td data-label="On your lane">seven content types; bare filenames only</td></tr>
+<tr><td><strong><code>cached_tts</code></strong></td><td data-label="Meaning">Chirp 3 HD through streaming synthesis, as Ogg Opus, cached by the SHA-256 of voice, rate, format and text.</td><td data-label="On your lane"><code>documind-ai-YOUR-ID-tts-cache</code>, 30 days</td></tr>
+<tr><td><strong><code>transcribe</code></strong></td><td data-label="Meaning">Speech-to-Text in <code>SPEECH_REGION</code> for <code>hi-IN</code> and <code>en-IN</code>: <code>chirp_3</code>, <code>chirp_2</code>, <code>long</code>; an empty string when all fail.</td><td data-label="On your lane"><code>asia-south1</code></td></tr>
+<tr><td><strong>Read answers aloud</strong></td><td data-label="Meaning">The chat sidebar's toggle: each answer's first 1,500 characters through <code>cached_tts</code>.</td><td data-label="On your lane"><code>en-IN-Chirp3-HD-Kore</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the audit event records that something was made, and the usage row records what a request cost. A DEMO_MODE hit makes nothing, so it leaves a usage row and no audit event. A generation leaves one of each.</p>

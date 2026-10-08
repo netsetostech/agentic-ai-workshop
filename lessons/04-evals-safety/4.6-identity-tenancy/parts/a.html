@@ -1,0 +1,80 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.6</div>
+<h1>Trace authenticated identity into tenant membership: <span>the door, the verifier with two legs, the roster, and the usage row that names who asked</span></h1>
+<p>Every answer the API gives is for someone, about one tenant's documents. This lesson follows a request through the three checks that decide both. Cloud Run's IAM decides who may knock at all. The kit's shared verifier decides who is asking, from a person's forwarded sign-in or the caller's own token, never from a header. The roster in Firestore decides which tenant that identity may read. You will read each check's settings on your lane, list the rosters, send a request with a forged header, and find the usage row that names the verified caller anyway.</p>
+<div class="hero-chips"><div class="hero-chip">run.invoker: %%N_INVOKERS%% accounts</div><div class="hero-chip">the assertion, then the token</div><div class="hero-chip">audience: this service only</div><div class="hero-chip">tenants/{t}/members/{email}</div><div class="hero-chip">401: who; 403: whether</div><div class="hero-chip">"user" on every row</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Who is asking, and which tenant may they read</a></li>
+<li><a href="#s2">The words: ID token, audience, assertion, the two legs, SELF_URL, the door, roster, 401 and 403, the row's user</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The door and the verifier: who may knock, and what makes a token count</a></li>
+<li><a href="#s4">The roster: one document per member, two ways to read it, one writer</a></li>
+<li><a href="#s5">The surfaces: who calls the shared verifier, and who still keeps a copy</a></li>
+<li><a href="#s6">One request, end to end: a forged header, and the row that ignores it</a></li>
+<li><a href="#s7">The person's leg: how a signed-in person reaches the API through the UI</a></li>
+<li><a href="#s8">How identity went wrong before, and what each check costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the difference between proving who is asking and deciding what they may read, and why the kit keeps them in two separate places. You will learn what a token must carry to count, and why a header never counts. Then you will prove it on your lane: the API's audiences and invokers, the claims in your own token, the three rosters, and a usage row that names the verified caller even when the request claims to be someone else.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Who is asking, and which tenant may they read</h3><p>Three checks in a row: the door, the verifier and the roster. Each can refuse, and each refusal means something different.</p></div></div>
+
+<p><strong>Three checks stand between a request and a tenant's documents.</strong> The first is Cloud Run's own IAM, before any kit code runs. It admits a request only when it carries a Google ID token from an account holding <code>roles/run.invoker</code> on the API, and %%N_INVOKERS%% accounts do. The second is <code>shared/iap.py</code>, which decides who is asking. The third is <code>shared/tenancy.py</code>, which decides whether that identity is on the roster of the tenant the request names. Only after all three does retrieval begin.</p>
+
+<p><strong>The verifier has two legs, and it tries them in a fixed order.</strong> A person signs in at IAP in front of the UI, and the UI forwards the person's signed assertion to the API beside its own token. When an assertion is present, it is the only leg tried: it must be signed with IAP's keys, minted for one of the API's accepted audiences, issued by IAP, and carry an email. With no assertion, the caller's own ID token is the identity: it must be minted for the API's own URL, <code>SELF_URL</code>, and carry a verified email. That second leg is how <code>run_eval.py</code>, the smoke tests and an agent in a notebook are known, since nobody signed in for them.</p>
+
+<p><strong>A header is a claim, not a credential.</strong> Anything that can reach the service can set <code>x-user-email</code> or <code>x-tenant-id</code>, and the API once read both. Now it reads neither. The tenant is something you <em>are</em>, on a roster the operator writes, and not something you send. The same rule gives the two refusals their meanings. A 401 says the API does not know who you are. A 403 says it knows, and you may not read that tenant.</p>
+
+<p><strong>The usage row names the verified caller.</strong> Every answer writes one row with the tenant and a <code>user</code> field, taken from the verifier and never from a header. So the bill, the audit and the per-tenant numbers all name the identity the checks accepted: the person, when a surface forwarded one, and the calling account otherwise.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127970;</div><div>
+<p><strong>An office building.</strong> The gate guard lets in only people whose badge names a company in the building. That is the door. At the security desk, a visitor pass printed by reception names the visitor; staff without a visitor present their own card. That is the verifier, and the pass beats the card because it names the person actually walking in. Each floor keeps a list of who may enter, written by the building office. That is the roster. A sticky note saying "I work on the fifth floor" opens nothing.</p></div></div>
+
+<h4>The identity tracer: one request, through the door, the verifier and the roster</h4>
+<p>Choose what the request carries and which tenant it names. The tracer follows it through the three checks, with the kit's own messages, to its HTTP status and its usage row. It uses the API's real settings and the rosters <code>make roster</code> writes.</p>
+
+<div class="diagram it" id="tracer">
+<div class="dg-title">Identity tracer - Cloud Run's invoker list, shared/iap.identity() and the roster, as the API runs them</div>
+<div class="it-in">
+<label>The caller's own token<select id="it-bearer"><option value="self">minted for the API's URL</option><option value="tag">minted for the candidate's tag URL</option><option value="noemail">minted without --include-email</option><option value="none">none at all</option></select></label>
+<label>The token's account<select id="it-acct"><option>documind-ui-sa</option><option>documind-chat-sa</option><option>documind-mcp-sa</option><option>documind-agent-sa</option><option>documind-outsider-sa</option></select></label>
+<label>A forwarded IAP assertion<select id="it-assert"><option value="none">none: no person</option><option value="ui">a person's, from documind-ui</option><option value="other">a person's, for another IAP service</option><option value="forged">a forged one</option></select></label>
+<label>The person, if one is forwarded<select id="it-person"><option value="you">you, on acme's roster</option><option value="colleague">a colleague on no roster</option></select></label>
+<label>An x-user-email header<input id="it-hdr" type="text" value="ceo@acme.example" spellcheck="false"></label>
+<label>The tenant the request names<select id="it-tenant"><option>acme</option><option>zeta</option><option>globex</option></select></label>
+</div>
+<div id="it-out" aria-live="polite"></div>
+<p class="dg-cap">The door is the invoker list in <code>commands/lesson-12.2.sh</code>. The verifier and the roster are <code>shared/iap.identity()</code> and <code>make roster</code>'s plan, ported. For all %%N_CASES%% combinations of the choices above, the build ran the kit's own <code>identity()</code>, with Google's signature check faked and google-auth's real exception classes raised, and the tracer had to agree with every verdict and message.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the tracer is not</div>
+<p>It checks no signature; a real token either verifies or does not, and the tracer takes your word for which. Cloud Run's own refusal of a request without a token is a 401 or a 403 depending on the case, which is why the kit's smoke test accepts either. Your lane's rosters may hold more people than <code>make roster</code>'s plan; step 4 lists them.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: ID token, audience, assertion, the two legs, SELF_URL, the door, roster, 401 and 403, the row's user</h3><p>Eleven rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>ID token</strong></td><td data-label="Meaning">A JWT Google signs for one account and one audience, valid for about an hour. <code>tok</code> mints one for <code>documind-ui-sa</code>.</td><td data-label="On your lane"><code>tok "$API"</code></td></tr>
+<tr><td><strong>Audience</strong></td><td data-label="Meaning">Who a token is for. A verifier that skips it accepts a token minted for any service in the project.</td><td data-label="On your lane">the API's URL; for IAP, <code>/projects/NUMBER/locations/REGION/services/...</code></td></tr>
+<tr><td><strong>IAP assertion</strong></td><td data-label="Meaning"><code>x-goog-iap-jwt-assertion</code>: a person's sign-in, signed by IAP with its own keys, for the service in front of them.</td><td data-label="On your lane">forwarded by documind-ui and documind-chat</td></tr>
+<tr><td><strong>The two legs</strong></td><td data-label="Meaning"><code>via iap</code>: the forwarded assertion names the person. <code>via iam</code>: no assertion, so the caller's own token names the account.</td><td data-label="On your lane">the UI's chat is <code>iap</code>; your shell is <code>iam</code></td></tr>
+<tr><td><strong>IAP_AUDIENCE</strong></td><td data-label="Meaning">The API's list of assertion audiences it accepts, and no others. Empty means refuse everything.</td><td data-label="On your lane">documind-ui and documind-chat</td></tr>
+<tr><td><strong>SELF_URL</strong></td><td data-label="Meaning">The API's own run.app URL: the one audience a caller's token may carry. Empty turns the bearer leg off.</td><td data-label="On your lane"><code>https://documind-api-NUMBER...</code></td></tr>
+<tr><td><strong>The door</strong></td><td data-label="Meaning">Cloud Run's IAM: <code>roles/run.invoker</code> on the service, bound per service since 12 September.</td><td data-label="On your lane">%%N_INVOKERS%% accounts on documind-api</td></tr>
+<tr><td><strong>Roster</strong></td><td data-label="Meaning"><code>tenants/{tenant}/members/{email}</code> in Firestore, with <code>email</code> as a field too. Only the operator writes it.</td><td data-label="On your lane">acme %%N_ACME%%, zeta %%N_ZETA%%, globex %%N_GLOBEX%% by <code>make roster</code>'s plan</td></tr>
+<tr><td><strong>Point and reverse lookup</strong></td><td data-label="Meaning"><code>is_member(email, tenant)</code> reads one document. <code>tenant_for(email)</code> asks which tenant a person is on, with one collection-group query.</td><td data-label="On your lane">the API uses the first; the UI the second</td></tr>
+<tr><td><strong>401 and 403</strong></td><td data-label="Meaning">401: the API does not know who you are. 403: it knows, and you are not on that tenant's roster.</td><td data-label="On your lane"><code>not a member of this tenant</code></td></tr>
+<tr><td><strong>The row's user</strong></td><td data-label="Meaning">The usage row's <code>user</code>: the verified identity, never a header.</td><td data-label="On your lane">your email from the UI; <code>documind-ui-sa</code> from the shell</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: <em>authentication</em> and <em>authorisation</em> live in different files, owned by different people. The verifier proves who is asking, and nobody configures it per person. The roster says what they may read, and the operator writes it. An account can pass the first and fail the second, and the outsider fixture exists to prove exactly that.</p>

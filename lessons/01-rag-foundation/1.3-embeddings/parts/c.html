@@ -1,0 +1,192 @@
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Carry-over</span><h3>Carry-over: re-issue the handbook, embed only what changed</h3><p>How a new version borrows the vectors of every clause that did not change, proved on your lane with a real re-issue and a real undo.</p></div></div>
+
+<h4>Definition</h4>
+<p>A re-issue is the same object name with new bytes: a new <code>doc_key</code>, a fresh set of chunks. Before the worker embeds any of them, <code>held_vectors()</code> reads the source's current rows and keeps, by <code>chunk_hash</code>, the vector of every row that passes the compatibility test. <code>plan_carry_over()</code> then walks the new chunks: a chunk whose hash is held gets the held vector, a chunk whose hash is new is a miss. Only the misses go to <code>embed_all()</code>. The handbook's revision 2 changes one number in NP-03 and adds two lines above the first heading, so its plan is 281 reused and 2 embedded, and the log line, the ledger row and the Versions table all say so.</p>
+
+<h4>The code</h4>
+@@indexer_held@@
+@@indexer_plan@@
+@@main_carry@@
+<p>Two details carry the weight. A held row must be <em>current</em> and <em>compatible</em>, so a version embedded under another stamp lends nothing even when every hash matches. And the match is on the hash of the whitespace-collapsed text from lesson 1.1, so a clause that only gained a line break is still the same clause.</p>
+
+<h4>Plan it locally, Rs 0</h4>
+<p>The worker's planner on the two versions of the handbook, with a stand-in for what <code>held_vectors()</code> would lend: one vector per version-1 hash.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", os.environ["PROJECT"])
+sys.path[:0] = [".", "services/ingest"]
+from shared import documind_corpus as dc
+from indexer import plan_carry_over
+def cut(path):
+    text = open(path, encoding="utf-8").read()
+    return dc.chunk_document({"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://x", "text": text}, "acme")
+v1, v2 = cut("evals/corpus/acme/hr_policy_2026.md"), cut("evals/demo/hr_policy_2026_v2.md")
+held = {c["chunk_hash"]: ["the v1 vector"] for c in v1}          # what held_vectors() would lend: one per v1 hash
+vectors, misses = plan_carry_over(v2, held)
+print(f"v2: {len(v2)} chunks, reused {len(v2) - len(misses)}, to embed {len(misses)}: {[v2[i]['locator'] for i in misses]}")
+for i in misses:
+    old = next(c for c in v1 if c["locator"] == v2[i]["locator"])
+    print(f"  {v2[i]['locator']}: hash {old['chunk_hash'][:12]} -> {v2[i]['chunk_hash'][:12]}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">v2: 283 chunks, reused 281, to embed 2: ['preamble', 'NP-03']
+  preamble: hash 903e2b39ee92 -> b4736d2f3e52
+  NP-03: hash f4512754ae41 -> 876232171dec</pre></div>
+
+<h4>Do it on the lane: revision 2 over the same name</h4>
+<p>The upload must keep the object name, <code>acme/hr_policy_2026.md</code>, or it is a new source and nothing is held. The loop then waits for the worker's <code>ingest_ok</code> line and prints its counts. Cost: two clauses, 453 characters, about a hundredth of a paisa; a Markdown file pays no Document AI.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one re-issue; the worker takes under a minute)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+gcloud storage cp evals/demo/hr_policy_2026_v2.md "gs://$PROJECT-uploads/acme/hr_policy_2026.md"
+for i in $(seq 1 30); do sleep 10
+  LINE="$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event=\"ingest_ok\" AND jsonPayload.tenant=\"acme\" AND timestamp>=\"$SINCE\"" \
+    --project "$PROJECT" --limit 1 --format='value(jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded,jsonPayload.retired,jsonPayload.effective_from)')"
+  [ -n "$LINE" ] &amp;&amp; { echo ">> chunks reused embedded retired effective_from: $LINE"; break; }
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">>> chunks reused embedded retired effective_from: 283	281	2	283	2026-10-01</pre></div>
+
+<h4>See it in the UI, then read it three more ways</h4>
+<p>Refresh <em>Documents</em>. The handbook's row in the Versions table now reads <code>reused 281, embedded 2, retired 283</code>, with an effective date of 1 October 2026 that the revision declares in its first lines. The first call below is the same row from the API; the second reads the rows themselves and checks the thing the counts claim: an unchanged clause's new row carries the <em>same numbers</em> as its retired predecessor, and a changed clause's does not. The third asks the question the revision changed the answer to.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -s "$API/v1/sources?tenant_id=acme" -H "Authorization: Bearer $(tok "$API")" \
+  | python -c "import json,sys; [print(r['name'], 'chunks', r['chunks'], 'reused', r['reused'], 'embedded', r['embedded'], 'retired', r['retired'], 'effective', r['effective_from'], r['embedding']) for r in json.load(sys.stdin)['sources'] if r['name'].endswith('hr_policy_2026.md')]"
+
+python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+rows = [s.to_dict() for s in db.collection("chunks").where("tenant_id", "==", "acme")
+        .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/hr_policy_2026.md").stream()]
+print("rows for the source:", len(rows), "| current:", sum(r["current"] for r in rows), "| retired:", sum(not r["current"] for r in rows))
+for loc in ("LV-01", "NP-03", "preamble"):
+    cur = next(r for r in rows if r["locator"] == loc and r["current"])
+    old = max((r for r in rows if r["locator"] == loc and not r["current"]), key=lambda r: r["indexed_at"])
+    print(f"  {loc:9} hash {old['chunk_hash'][:12]} -> {cur['chunk_hash'][:12]}   same vector: {list(old['embedding']) == list(cur['embedding'])}")
+PY
+
+curl -s -X POST $API/v1/query -H "Authorization: Bearer $(tok $API)" -H "Content-Type: application/json" \
+  -d '{"query":"How many days of notice does a confirmed employee at grade E3 serve?","tenant_id":"acme","stream":false}' \
+  | python -c "import json,sys; j=json.load(sys.stdin); print(j['answer'][:140]); print([(c['chunk_id'].split('#')[1], c['source_uri'].split('/')[-1]) for c in j['citations'][:2]], j['stages']['retrieval_backend'])"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (566 rows if this is the handbook's first re-issue on your lane; your wording differs)</span><span class="ro">read only</span></div><pre tabindex="0">acme/hr_policy_2026.md chunks 283 reused 281 embedded 2 retired 283 effective 2026-10-01 text-embedding-005@1
+rows for the source: 566 | current: 283 | retired: 283
+  LV-01     hash ff463cede286 -> ff463cede286   same vector: True
+  NP-03     hash f4512754ae41 -> 876232171dec   same vector: False
+  preamble  hash 903e2b39ee92 -> b4736d2f3e52   same vector: False
+A confirmed employee at grade E3 or above serves a notice period of 90 days ... [Source 1]
+[('1', 'hr_policy_2026.md'), ('2', 'hr_policy_2026.md')] vector</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The worker cut revision 2 into 283 chunks, found 281 of their hashes on the current rows, copied those rows' vectors number for number, and called the model for two texts: one request instead of four, and every unchanged clause keeps exactly the vector it had, so its rank against any question does not move by a hair. The answer changed to 90 days without anyone touching a cache, because the answer cache is keyed to the corpus fingerprint the ledger refreshed. The retired rows are still there, flagged, with their vectors: that is what makes the next block free.</p></div>
+
+<h4>Undo it: the same bytes again, and nothing is embedded</h4>
+<p>Upload version 1 again under the same name. Its <code>doc_key</code> is the one the lane retired a minute ago, so the worker does not parse, chunk or embed anything: it flips the retired rows back to current, retires revision 2, and logs <code>ingest_reactivated</code> with <code>embedded 0</code>. This is the undo from lesson 1.1, seen from the embedding side: nothing was ever deleted, so nothing has to be made again.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the undo; no model call)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+gcloud storage cp evals/corpus/acme/hr_policy_2026.md "gs://$PROJECT-uploads/acme/hr_policy_2026.md"
+for i in $(seq 1 30); do sleep 10
+  LINE="$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event=\"ingest_reactivated\" AND jsonPayload.tenant=\"acme\" AND timestamp>=\"$SINCE\"" \
+    --project "$PROJECT" --limit 1 --format='value(jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded,jsonPayload.retired)')"
+  [ -n "$LINE" ] &amp;&amp; { echo ">> reactivated: chunks reused embedded retired: $LINE"; break; }
+done
+
+curl -s -X POST $API/v1/query -H "Authorization: Bearer $(tok $API)" -H "Content-Type: application/json" \
+  -d '{"query":"How many days of notice does a confirmed employee at grade E3 serve?","tenant_id":"acme","stream":false}' \
+  | python -c "import json,sys; print(json.load(sys.stdin)['answer'][:120])"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">>> reactivated: chunks reused embedded retired: 283	283	0	283
+A confirmed employee at grade E3 or above serves a notice period of 60 days ... [Source 1]</pre></div>
+
+<div class="box box-amber"><div class="box-title">Why carry-over is not about rupees</div>
+<p>Embedding the whole handbook again would cost about 34 paise. Carry-over earns its place three other ways. Determinism: an unchanged clause keeps its exact numbers, so a re-issue cannot shuffle the ranking of clauses nobody touched. Requests: two texts are one request, not four, and on a corpus of a few lakh chunks that is the difference between minutes and a rate-limit ticket. And the undo: a version that was never deleted costs nothing to bring back, which is only true because the vectors travelled with the rows.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>The sparse twin, the notebook twin, and what embedding bills</h3><p>The second vector every chunk gets, the second copy of the embedding rules, and where the numbers and the rupees go.</p></div></div>
+
+<h4>One sparse space, shared by ingest and query</h4>
+<p>Hybrid retrieval (lesson 2.2) fuses two ranked lists: one by meaning, from the dense vectors, and one by words, from a sparse vector. The sparse vector is made by a function with no model behind it: split the text into lower-case words, hash each word into one of 2<sup>20</sup> dimensions, weight it by how often it appears. It is deterministic, dependency-free and shared, so the datapoint the worker writes and the query the API sends live in the same space. The row records only the encoder's version; the values go to Vector Search with the dense vector and the restricts, and Firestore's fallback rung searches dense only.</p>
+@@sparse@@
+@@indexer_datapoint@@
+@@hybrid_query@@
+
+<h4>Run it on the lane's text, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path.insert(0, ".")
+from google.cloud import firestore
+from shared.sparse_encoder import sparse_encode, SPARSE_ENCODER_VERSION, _tokens
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+row = next(db.collection("chunks").where("tenant_id", "==", "acme")
+             .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/hr_policy_2026.md")
+             .where("current", "==", True).where("locator", "==", "NP-03").stream()).to_dict()
+dv, dd = sparse_encode(row["text"])
+print("row stamp:", row["sparse_encoder_version"], "| encoder here:", SPARSE_ENCODER_VERSION)
+print(f"NP-03: {len(_tokens(row['text']))} words, {len(dd)} distinct -> {len(dd)} sparse dimensions, max weight {max(dv)}")
+q = "How many days of notice does a confirmed employee at grade E3 serve?"
+qv, qd = sparse_encode(q)
+print(f"the question: {len(qd)} dimensions, {len(set(qd) &amp; set(dd))} shared with NP-03:", sorted(set(_tokens(q)) &amp; set(_tokens(row['text']))))
+print("same text twice, same dimensions:", sparse_encode(row["text"]) == (dv, dd))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">row stamp: blake2b-tf-v1 | encoder here: blake2b-tf-v1
+NP-03: 41 words, 33 distinct -> 33 sparse dimensions, max weight 2.5
+the question: 13 dimensions, 9 shared with NP-03: ['a', 'at', 'confirmed', 'days', 'e3', 'employee', 'grade', 'notice', 'of']
+same text twice, same dimensions: True</pre></div>
+
+<h4>Where the numbers go</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Store</th><th>What it holds per chunk</th><th>Who reads it</th></tr></thead>
+<tbody>
+<tr><td><strong>Firestore</strong> <code>chunks</code></td><td data-label="What it holds">the text, the dense vector as a <code>Vector</code> field, the stamp, the hash, the locator, <code>current</code></td><td data-label="Who reads it">the carry-over, the validation, the fallback rung when Vector Search will not answer, and every cell on this page</td></tr>
+<tr><td><strong>Vector Search</strong> index <code>documind-chunks</code></td><td data-label="What it holds">one datapoint per chunk id: the dense vector, the sparse vector, and restricts for tenant, kind, doc type and <code>current</code></td><td data-label="Who reads it">the API's dense and hybrid paths; 768 dimensions, dot-product distance, streaming updates</td></tr>
+<tr><td><strong>BigQuery</strong> chunk table</td><td data-label="What it holds">the text and the PII verdict, no vectors</td><td data-label="Who reads it">the SQL lane in Module 2</td></tr>
+<tr><td><strong>Managed mirrors</strong></td><td data-label="What it holds">the version's text; RAG Engine and Vertex AI Search embed it on their own terms, with their own models</td><td data-label="Who reads it">a tenant pinned to them; their vectors are not these and never mix with them</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+@@vector_tf@@
+
+<h4>The notebook twin</h4>
+<p>The loader the notebook course's Module 4 notebooks use to seed a lane carries the same batching rule (step 5) and the same carry-over by hash, and it stamps the model and the version on every row it writes. It does not stamp the task type; that field is the worker's, and the worker's "already current" check requires it. So a version a notebook seeded is not adopted as-is: the worker treats its rows as an incompatible version, the carry-over lends nothing, and the backfill repairs them. The test <code>test_notebook_adoption_requires_document_stamp</code> pins exactly this.</p>
+@@corpus_by_hash@@
+@@corpus_row@@
+
+<h4>What embedding bills, and what it does not</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Event</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Embedding a document</td><td data-label="Costs">per character: <code>text-embedding-005</code> at USD 0.000025 per 1,000 characters online (the list price as the course reads it; re-verify before quoting), at Rs 85 to the dollar</td><td data-label="On your lane">the handbook's 158,692 characters: about 34 paise; acme's six mirrors, 2.06 million characters: about Rs 4.40, once</td></tr>
+<tr><td>A re-issue</td><td data-label="Costs">only the changed chunks</td><td data-label="On your lane">two clauses, 453 characters: about a hundredth of a paisa</td></tr>
+<tr><td>The undo</td><td data-label="Costs">nothing: no parse, no call</td><td data-label="On your lane"><code>embedded 0</code> on the reactivated line</td></tr>
+<tr><td>The sparse vector</td><td data-label="Costs">nothing: a hash per word</td><td data-label="On your lane">every chunk, every version, and every question</td></tr>
+<tr><td>Storing the vectors</td><td data-label="Costs">Firestore storage for 768 numbers a row, and the Vector Search endpoint's machine by the hour, whether or not anything is embedded</td><td data-label="On your lane">the endpoint is the standing cost of this module, not the calls</td></tr>
+<tr><td>Requests, not rupees</td><td data-label="Costs">47 requests for acme's mirrors; a failed request is retried whole</td><td data-label="On your lane">the first corpus load failed here, not on money</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry to remember when you design a migration: embedding is cheap per character and expensive per mistake. A model or version bump re-embeds every chunk of every tenant once (a few rupees on this corpus), and until the backfill has finished, any row still on the old stamp is a row the validation excludes rather than one it compares wrongly. That is the whole reason the stamp exists.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">Which store answers</td><td data-label="The check"><code>stages.retrieval_backend</code> on any answer</td><td data-label="Pass looks like"><code>vector</code> during this lesson</td></tr>
+<tr><td>1</td><td data-label="Claim">One declared pair, everywhere</td><td data-label="The check">the three reads in step 3</td><td data-label="Pass looks like"><code>text-embedding-005@1</code> from the worker's env, from <code>/version</code>, and on every ledger row</td></tr>
+<tr><td>2</td><td data-label="Claim">The document profile makes the stored numbers</td><td data-label="The check">the paid cell in step 4</td><td data-label="Pass looks like">cosine 1.0 under <code>RETRIEVAL_DOCUMENT</code>, lower under <code>RETRIEVAL_QUERY</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Two ceilings on every request</td><td data-label="The check">the plan in step 5</td><td data-label="Pass looks like">4 requests of 85, 78, 78 and 42 texts, each under 15,000 estimated tokens</td></tr>
+<tr><td>4</td><td data-label="Claim">Every row carries the stamp</td><td data-label="The check">the NP-03 row in step 6</td><td data-label="Pass looks like">model, version <code>'1'</code>, <code>RETRIEVAL_DOCUMENT</code>, <code>blake2b-tf-v1</code>, schema 2, 768 numbers</td></tr>
+<tr><td>5</td><td data-label="Claim">Every current row is compatible</td><td data-label="The check">the tenant cell and the plan in step 6</td><td data-label="Pass looks like"><code>incompatible: 0</code> and <code>needs_document_embedding: 0</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Carry-over reuses by hash</td><td data-label="The check">the re-issue in step 7</td><td data-label="Pass looks like"><code>reused 281, embedded 2</code>; LV-01 <code>same vector: True</code>, NP-03 <code>False</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The undo embeds nothing</td><td data-label="The check">the second upload in step 7</td><td data-label="Pass looks like"><code>ingest_reactivated</code> with <code>283 283 0 283</code>, and 60 days again</td></tr>
+<tr><td>8</td><td data-label="Claim">One sparse space at ingest and at query time</td><td data-label="The check">the cell in step 8</td><td data-label="Pass looks like">the row's <code>blake2b-tf-v1</code> equals the encoder's, and the same text gives the same dimensions</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The handbook went to revision 2 and back: two vectors were made, and they now sit on 283 retired rows that the retention policy removes in 30 days. The ledger row for <code>hr_policy_2026.md</code> reads <code>reused 283, embedded 0</code> until its next re-issue. Two paid calls in step 4 embedded one clause twice and kept nothing. Everything else was read. Lesson 1.4 takes the rows, the datapoints and the ledger you have been reading one at a time and inspects them side by side, as the records one document leaves behind.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.3 Create and validate compatible embeddings &middot; v5.0</p><p>Next: Lesson 1.4 Write, inspect and verify indexed records.</p></div>

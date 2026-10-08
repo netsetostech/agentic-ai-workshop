@@ -1,0 +1,91 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 7 &middot; Graph and multimodal &middot; Lesson 7.4</div>
+<h1>Compare quality and test update/withdrawal freshness: <span>as good, and as current</span></h1>
+<p>Lesson 7.3 put a copy of acme's and zeta's documents into two Google-managed stores and read answers back from them. A copy raises two questions. Is it as good: does the store find the clause the kit's own index finds? Is it current: when the ledger changes, does every store change with it?</p>
+<p>In this lesson you score the six retrieval arms on the golden set, the two stores beside the kit's four. Then you take zeta's handbook through a new version, the undo, a withdrawal and a restore. After each one, <code>make managed-status</code> holds both stores against the ledger, and zeta is asked the same question.</p>
+<div class="hero-chips"><div class="hero-chip">make ablate</div><div class="hero-chip">recall@depth</div><div class="hero-chip">the miss list</div><div class="hero-chip">after_swap()</div><div class="hero-chip">after_undo()</div><div class="hero-chip">make retire</div><div class="hero-chip">make restore</div><div class="hero-chip">make managed-status</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">As good, and as current</a></li>
+<li><a href="#s2">The words: arm, anchor, recall@depth, recall@5 and MRR, the miss list, freshness, the undo, the tombstone, the restore, drift</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The four events through the kit's mirror, run</a></li>
+<li><a href="#s4">Six arms, one golden set: is a store as good?</a></li>
+<li><a href="#s5">A new version, then the undo</a></li>
+<li><a href="#s6">A withdrawal, then the restore</a></li>
+<li><a href="#s7">Why freshness works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how the kit measures a store's quality: recall and MRR on the golden set's anchors, with a miss list for each arm. You will also learn how it keeps a store current: four events, each taking its own path to the stores, and one check after every event. Then you will prove it on your lane. <code>make managed-status</code> reads <code>in sync</code> after a reindex, an undo, a withdrawal and a restore, and zeta's answer changes with each one.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>As good, and as current</h3><p>A measure of quality, four events that change the ledger, and one check after each.</p></div></div>
+
+<p><strong>Is the copy as good?</strong> A store retrieves by its own rules. RAG Engine cuts a version into pieces of 512 tokens and keeps what falls inside a distance threshold. Vertex AI Search returns extractive segments of whole documents. <code>make ablate ABLATE_ARGS="--arms all"</code> runs <code>evals/ablate.py</code>. It takes the golden rows that carry anchors, the phrases a right answer must retrieve, through six arms with one knob changed in each:</p>
+<ul>
+<li><strong>The kit's four arms:</strong> dense 5 with no reranker; dense 20, then the reranker to 5, which is the lane's own path; dense 50, then the reranker; and 4.5's hybrid of dense and BM25, then the reranker.</li>
+<li><strong>The two stores:</strong> a RAG Engine query and a Vertex AI Search query, each asked for 20, then reranked to 5 by the same reranker.</li>
+</ul>
+<p>For each arm it prints recall at the arm's depth, which is the reranker's ceiling, then recall@5 after the reranker, MRR, the rows whose every anchor is in the five, and p95 latency. Under each arm is its miss list: every row that lost a point, and where the anchor went. No model answers anything, so this is retrieval alone.</p>
+
+<p><strong>Is the copy current?</strong> A copy is a second place where a version lives. The ledger changes in four ways, and each way takes its own path to the stores:</p>
+<ol>
+<li><strong>A new version.</strong> The worker ingests the new bytes and swaps the versions, then calls <code>after_swap()</code>. The new text goes into each store, and the replaced version leaves each store as <code>delete:superseded</code>.</li>
+<li><strong>The undo.</strong> The older bytes are uploaded again. The worker reactivates the older version's rows, with nothing parsed or embedded, then calls <code>after_undo()</code>. The text is read off those rows and sent again, and the newer version leaves.</li>
+<li><strong>A withdrawal.</strong> <code>make retire</code> runs <code>reconcile.py</code>. It retires the rows, deletes each store's copy as <code>delete:withdrawn</code>, and turns the ledger row into a tombstone, <code>withdrawn</code>. The object stays in the bucket and the nightly walk leaves it alone. If the same bytes arrive again, the worker acknowledges them without indexing them.</li>
+<li><strong>A restore.</strong> <code>make restore</code> lifts the tombstone to <code>retired</code> and rewrites the object onto itself. The new generation's event reaches the worker, which reactivates the rows and calls <code>after_undo()</code> again.</li>
+</ol>
+<p>After each event, <code>make managed-status</code> holds each store against the ledger's current versions. It reads <code>in sync</code>, or <code>drift</code> with the missing and orphan doc_keys. The drills run on zeta, whose corpus has no pictures. Lesson 7.3 showed why that matters: <code>managed-status</code> counts every indexed version, and acme's three pictures are never copied, so acme never reads <code>in sync</code>.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127970;</div><div>
+<p><strong>A housing society's rule book and the copies at its two gates.</strong> The secretary keeps the master file. The security desks at Gate 1 and Gate 2 each keep a copy of the current rules. When the committee amends a rule, the secretary sends the new page to both gates and takes the old page back. When the amendment is reversed, the old page goes out again from the master file, and nobody retypes it.</p>
+<p>When a rule is withdrawn pending a court case, both gates hand their copies back, and the file marks the rule "withdrawn". The signed original stays in the cupboard. When the court clears it, the rule goes out again the way a reversal does. Every evening the secretary phones both gates and counts their pages against the file. Once a year each desk is asked the same forty-seven questions, to see whether it finds the right page as surely as the office does.</p>
+<p>The master file is the ledger, and the gates are the stores. The evening call is <code>make managed-status</code>, and the forty-seven questions are the golden set. The old page sent from the file is <code>after_undo()</code>. The file's "withdrawn" mark is the tombstone, and the original in the cupboard is the object the bucket keeps.</p></div></div>
+
+<h4>One document's life, and the stores behind it</h4>
+<p>Play events on one document of a tenant whose stores are both on. The first version is uploaded to start. Each button runs one event the way the kit runs it, and the panel shows:</p>
+<ul>
+<li>what the worker or <code>reconcile.py</code> made of the event, and each line the mirror wrote;</li>
+<li>the ledger row, what each store holds, and what <code>make managed-status</code> would read.</li>
+</ul>
+
+<div class="diagram pc" id="lf">
+<div class="dg-title">One document through the worker, reconcile.py and the mirror</div>
+<div class="pc-box"><b class="h">Events</b>
+<div class="lf-btns"><button type="button" id="lf-up1">Upload version 1</button><button type="button" id="lf-up2">Upload version 2</button><button type="button" id="lf-retire">make retire</button><button type="button" id="lf-restore">make restore</button><button type="button" id="lf-walk">The nightly walk</button><button type="button" id="lf-policy">Turn the tenant to in</button><button type="button" id="lf-fail">Fail the next Vertex AI Search copy</button><button type="button" id="lf-reset">Start again</button></div>
+<label class="lf-ck"><input id="lf-pic" type="checkbox">the tenant also holds a picture</label></div>
+<div class="lf-cols">
+<div class="pc-box"><b class="h">What happened</b><ol class="lf-steps" id="lf-steps" aria-live="polite"></ol></div>
+<div class="pc-box"><b class="h">The ledger and the stores</b><div class="fs-grid" id="lf-state" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The lifecycle is the kit's. The worker's claim decides <code>indexed</code>, <code>duplicate</code>, <code>reactivated</code> or <code>withdrawn</code>. Then come <code>reconcile.py</code>'s <code>--retire</code>, <code>--restore</code> and walk, the mirror's calls, and <code>managed.status()</code>. %%N_SEQS%% sequences of these events, %%N_STEPS%% steps in all, were replayed through the kit's own worker and <code>reconcile.py</code> and compared with the panel step by step.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>Here every copy lands at once. A real Vertex AI Search import is a long-running operation, and <code>make managed-status</code> reads <code>drift, missing</code> for that store until the import finishes. Steps 5 and 6 wait for it. A picture has no text, so it is never copied, and it stays missing from both stores for as long as the tenant holds it.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: arm, anchor, recall@depth, recall@5 and MRR, the miss list, freshness, the undo, the tombstone, the restore, drift</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Arm</strong></td><td data-label="Meaning">One way of retrieving, with a single knob changed from the lane's own path.</td><td data-label="On your lane">six with <code>--arms all</code>: dense 5, dense 20 and 50 reranked, hybrid, <code>rag_engine</code>, <code>vertex_search</code></td></tr>
+<tr><td><strong>Anchor</strong></td><td data-label="Meaning">A phrase a golden row says the retrieved chunks must hold: a clause code such as <code>NP-03</code>, or a file's name.</td><td data-label="On your lane">%%N_ROWS%% rows carry anchors: 40 acme, 5 zeta, 2 globex; a chunk matches on its text or its source's path</td></tr>
+<tr><td><strong>recall@depth</strong></td><td data-label="Meaning">The share of anchors anywhere in the arm's candidates: the most any reranker could keep.</td><td data-label="On your lane">depth 5, 20 or 50, the arm's own</td></tr>
+<tr><td><strong>recall@5, MRR</strong></td><td data-label="Meaning">The share of anchors in the five after the reranker, and 1 over the rank of the first chunk that holds one.</td><td data-label="On your lane">the reranker is <code>semantic-ranker-fast-004</code></td></tr>
+<tr><td><strong>The miss list</strong></td><td data-label="Meaning">Each row that cost an arm a point: <code>ranked out</code> (in the candidates, not the five) or <code>not retrieved at depth N</code>.</td><td data-label="On your lane">printed under the arm, as <code>lost:</code></td></tr>
+<tr><td><strong>Freshness</strong></td><td data-label="Meaning">Whether each store holds what the ledger calls current: no more, no less.</td><td data-label="On your lane">tested after four events, on zeta</td></tr>
+<tr><td><strong>The undo</strong></td><td data-label="Meaning">An older version's bytes uploaded again: its rows made current again, with nothing re-embedded, and its text re-sent from those rows.</td><td data-label="On your lane"><code>ingest_reactivated</code>, <code>embedded 0</code></td></tr>
+<tr><td><strong>The tombstone</strong></td><td data-label="Meaning">A ledger row marked <code>withdrawn</code> by <code>make retire</code>. The object stays in the bucket; the walk and the worker leave it alone.</td><td data-label="On your lane"><code>sources/zeta~hr_policy_zeta_2026.md</code></td></tr>
+<tr><td><strong>The restore</strong></td><td data-label="Meaning"><code>make restore</code>: the tombstone lifted to <code>retired</code>, and the object rewritten so that the worker reactivates it.</td><td data-label="On your lane">refused for a source that is not withdrawn</td></tr>
+<tr><td><strong><code>drift</code></strong></td><td data-label="Meaning"><code>make managed-status</code>'s word for a store that is missing a current version, or holds one the ledger no longer calls current (an orphan).</td><td data-label="On your lane">the opposite is <code>in sync</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the ablation measures what a store finds, and <code>make managed-status</code> measures what it holds. The ablation cannot see a stale copy, because a store's context is scored by its source and its text, whichever version it came from. That is why freshness has its own check.</p>

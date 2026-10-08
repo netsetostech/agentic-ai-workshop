@@ -1,0 +1,89 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.8</div>
+<h1>Complete the Streamlit upload-to-answer journey: <span>one person, four identities, a page that holds no model, and a cited answer you can open</span></h1>
+<p>Lessons 3.4 to 3.7 built the answer. This lesson puts a screen in front of it and walks the whole journey once, as a person. You sign in through IAP, and the UI knows who you are from a signed assertion, never from a form. It finds your tenant on the roster. You upload a note on the Documents page, and the UI writes it into your tenant's folder as its own service account. The worker indexes it, and the Versions table shows the version the ledger now holds. You ask about the note in Chat: the answer streams from the API, the sources render as pills before the first word, and each source opens through a link that is signed for %%EXPIRY%% minutes. The API believes the person, not the page: the usage row names you. You will check each hop from the shell as you make it in the browser.</p>
+<div class="hero-chips"><div class="hero-chip">IAP: the person</div><div class="hero-chip">tenant_for: the roster</div><div class="hero-chip">uploads/&lt;tenant&gt;/, as ui-sa</div><div class="hero-chip">Versions: /v1/sources</div><div class="hero-chip">Chat: /v1/stream, brain ui</div><div class="hero-chip">signed for %%EXPIRY%% minutes</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What the page does, what it never does, and who each hop runs as</a></li>
+<li><a href="#s2">The words: IAP, assertion, roster, watched prefix, Versions, stream, pill, signed URL, surface, the row's user</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The front door: IAP, the UI's settings, and who may sign in</a></li>
+<li><a href="#s4">The upload: a note you write, uploaded in the browser, followed to the ledger</a></li>
+<li><a href="#s5">The answer: asked in Chat, streamed, and the row that names you</a></li>
+<li><a href="#s6">Citations: the pills, the sources, and the link signed through IAM</a></li>
+<li><a href="#s7">The UI's account: what it may do, and the checks the page makes first</a></li>
+<li><a href="#s8">What the journey costs, the sidebar's own price table, and what nothing records</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how the Streamlit UI signs a person in, finds their tenant and writes their upload, and why every answer it shows comes from the API rather than a model of its own. You will also learn how the sources are drawn and opened. Then you will prove it on your lane: upload a note in the browser and follow it to the ledger, ask about it in Chat, open its source through a signed link, and read the usage row that names you and not the UI.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What the page does, what it never does, and who each hop runs as</h3><p>A thin client with three jobs: sign a person in, drop their file where the worker watches, and show what the API says.</p></div></div>
+
+<p><strong>The UI is a thin client with three jobs.</strong> It signs a person in, it writes an upload into their tenant's folder, and it shows what the API says. Everything else happens elsewhere. The worker indexes. The API retrieves, reranks, packs, generates, cites and prices. The ledger and the index belong to those two services. The chat page makes no model call, by design, and neither does the Documents page. The Studio tab posts to the API as well. The only Google model the UI calls itself is Speech, for voice input and read-aloud. So a change to the prompt, the model or the retrieval never needs a UI deploy, and a bug in the UI cannot quietly change an answer.</p>
+
+<p><strong>Four identities make the journey, and each hop runs as one of them.</strong> The <em>person</em> signs in with Google at IAP, which sits in front of the UI's run.app URL. IAP passes each request to the container with a signed assertion that names the person, and the page verifies it for its own audience. The <em>UI's service account</em>, documind-ui-sa, writes the upload into the bucket and mints an ID token to call the API. It also signs the source links, through IAM. The <em>worker's account</em> reads the upload and writes the rows, and it is the only indexing writer. The <em>API's account</em> reads the rows. Every call from the page to the API carries two credentials: the UI's token, which gets it past Cloud Run, and the person's assertion, forwarded unchanged. When both arrive, the API believes the assertion. The roster check and the usage row are therefore about the person, and the page is just the road they came in by.</p>
+
+<p><strong>The page is honest about what it knows.</strong> "Upload complete" means the object is in the bucket, not that it is indexed, and the page says so. The Versions table is the ledger, read through the API, so a document shows there only once the worker has written its row. The sources arrive before the first word of the answer, because they are the packed set. Each pill is the number the model cited, and its source opens through a link that expires after %%EXPIRY%% minutes.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127974;</div><div>
+<p><strong>The front desk of a bank.</strong> Security checks your photo ID at the door and gives you a visitor tag with your name on it. That tag is IAP's assertion. The teller at the front desk is the UI. The teller looks up your company's account by your name, drops your deposit into the intake tray under that account, and never opens the vault. The back office processes the tray. That is the worker. The passbook shows only what has cleared. That is the Versions table. When you ask a specialist a question, the teller walks it over with your tag clipped to it, so the answer and the logbook carry your name, not the teller's.</p></div></div>
+
+<h4>The journey: seven hops, the identity on each, and what proves it</h4>
+<div class="diagram jn" id="journey">
+<div class="dg-title">Upload to answer - who runs each hop, and the evidence it leaves</div>
+<ol class="jn-list">
+<li class="jn-row"><span class="jn-who">the person</span><span class="jn-what">signs in with Google at IAP, which fronts the UI's run.app URL and admits only accounts granted the sign-in role</span><span class="jn-proof">an unsigned request gets HTTP 302 to Google's sign-in</span></li>
+<li class="jn-row"><span class="jn-who">documind-ui</span><span class="jn-what">verifies the assertion for <code>IAP_AUDIENCE</code>, then finds the tenant on the roster: <code>tenant_for(email)</code></span><span class="jn-proof">your email and tenant in the sidebar</span></li>
+<li class="jn-row"><span class="jn-who">documind-ui-sa</span><span class="jn-what">writes the upload to <code>gs://PROJECT-uploads/&lt;tenant&gt;/&lt;name&gt;</code>, the watched prefix</span><span class="jn-proof">the object and the generation the page reports</span></li>
+<li class="jn-row"><span class="jn-who">documind-ingest-sa</span><span class="jn-what">the object's event reaches the worker, which parses, chunks, embeds, and writes the rows and the ledger</span><span class="jn-proof"><code>ingest_ok</code> with the file's own hash in the key</span></li>
+<li class="jn-row"><span class="jn-who">ui-sa + the person</span><span class="jn-what">the Versions table: <code>GET /v1/sources</code> with the UI's token and your assertion</span><span class="jn-proof">the new row, <code>indexed</code></span></li>
+<li class="jn-row"><span class="jn-who">ui-sa + the person</span><span class="jn-what">Chat: <code>POST /v1/stream</code> with brain <code>ui</code>; the API checks the roster against you</span><span class="jn-proof">the usage row's <code>user</code> is your email</span></li>
+<li class="jn-row"><span class="jn-who">documind-ui-sa</span><span class="jn-what">the pills from the packed set; Open source is a V4 link signed through IAM's signBlob</span><span class="jn-proof">the link opens, then expires</span></li>
+</ol>
+<p class="dg-cap">Rows 3 and 7 run as the UI's account alone; rows 5 and 6 carry the person's assertion beside it. Step 3 checks row 1, step 4 rows 2 to 5, step 5 row 6, and step 6 row 7.</p>
+</div>
+
+<h4>The citation renderer: the UI's pills and sources, from a transcript you paste</h4>
+<p>The chat page draws the answer with <code>render_with_citations()</code>. Each <code>[N]</code> in the answer becomes a pill: text sources get plain numbers, figures and tables get their kind and page, and video segments get their start time. Hovering a pill shows the start of its source. Under the answer, a Sources list offers each source's link. The renderer below is that function in the page, reading the transcript <code>curl -N</code> prints for <code>/v1/stream</code>, the same events the UI reads. It starts on a sample built from this lesson's own note. The cases show the other shapes, including two that surprise people.</p>
+
+<div class="diagram cr" id="renderer">
+<div class="dg-title">Citation renderer - citations.py's regex, labels and sources list, on a stream transcript</div>
+<div class="cr-controls">
+<label class="cr-l cr-wide">The stream transcript, as curl -N prints it<textarea id="cr-text" rows="8" spellcheck="false"></textarea></label>
+<label class="cr-l">Cases<select id="cr-case"><option value="">choose a case</option><option value="note">this lesson's note: a text answer</option><option value="media">a figure and a table, shaped as Module 7 writes them</option><option value="clip">a video segment's shape</option><option value="range">a number past the sources</option><option value="source">a model that wrote [Source 1]</option><option value="pair">two sources in one mark</option></select></label>
+</div>
+<div class="cr-answer" id="cr-answer" aria-live="polite"></div>
+<div class="cr-sources" id="cr-sources" aria-live="polite"></div>
+<p class="dg-cap">The rules are ported from <code>services/frontend/citations.py</code>: the <code>[N]</code> pattern, the pill labels, and the Sources list with its effective-from line and link labels. The sample's sources are the note's chunks and two handbook sections, cut by the kit's chunker. The bench escapes the answer's text before drawing pills. The UI does not, as step 6 explains.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the renderer is not</div>
+<p>It cannot sign a link, so it names the object a link would open. It maps <code>[N]</code> to the Nth citation event, as the UI does, and that holds only for a stream: a <code>/v1/query</code> answer lists the citations the model used, in its own order. Step 6 gives you a transcript of your own to paste.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: IAP, assertion, roster, watched prefix, Versions, stream, pill, signed URL, surface, the row's user</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>IAP</strong></td><td data-label="Meaning">Identity-Aware Proxy, turned on for the Cloud Run service itself. It signs people in with Google and admits only accounts granted <code>roles/iap.httpsResourceAccessor</code>. Its service agent is the service's only invoker, so nothing reaches the container without passing it.</td><td data-label="On your lane">The accounts in <code>ADMIN_EMAILS</code> when the UI was deployed.</td></tr>
+<tr><td><strong>The assertion</strong></td><td data-label="Meaning"><code>x-goog-iap-jwt-assertion</code>: a JWT signed by IAP with the person's email, verified for <code>IAP_AUDIENCE</code>, <code>/projects/NUMBER/locations/REGION/services/documind-ui</code>. <code>AUTH_MODE=iap</code> makes the page require it.</td><td data-label="On your lane">Forwarded unchanged to the API on every call.</td></tr>
+<tr><td><strong>The roster, tenant_for</strong></td><td data-label="Meaning"><code>tenants/{tenant}/members/{email}</code> in Firestore; the page finds a person's tenant with one collection-group query, uncached, so a removal takes effect at once. Signing in is not membership.</td><td data-label="On your lane">You on acme, since lesson 1.1.</td></tr>
+<tr><td><strong>The watched prefix</strong></td><td data-label="Meaning"><code>gs://PROJECT-uploads/&lt;tenant&gt;/</code>: the folder whose object events reach the worker. The page writes <code>&lt;tenant&gt;/&lt;name&gt;</code> after checking both parts; nothing else is its to write.</td><td data-label="On your lane">Step 4's note under <code>acme/</code>.</td></tr>
+<tr><td><strong>Versions</strong></td><td data-label="Meaning">The Documents page's table: <code>GET /v1/sources</code>, the ledger as the API serves it, with the chunks reused and embedded, the date, and where each version is held.</td><td data-label="On your lane">The same rows lessons 4.x printed from the shell.</td></tr>
+<tr><td><strong>The stream, brain ui</strong></td><td data-label="Meaning">Chat posts <code>/v1/stream</code> with <code>top_k</code> %%UI_TOPK%% and the label <code>brain: ui</code>; the page renders citation events, then tokens, then waits for <code>done</code>. A stream without <code>done</code> is shown as a failure, never as an answer.</td><td data-label="On your lane">Step 5's question.</td></tr>
+<tr><td><strong>Pill</strong></td><td data-label="Meaning">An <code>[N]</code> in the answer drawn as a badge: <code>[3]</code> for text, <code>[Fig 3, p.12]</code>, <code>[Table 3, p.30]</code>, <code>[Clip 3, 03:20]</code>. Hovering shows the source's first %%TIP_CHARS%% characters.</td><td data-label="On your lane"><code>[1]</code> on the note's answer.</td></tr>
+<tr><td><strong>Signed URL</strong></td><td data-label="Meaning">A V4 link that opens one object for %%EXPIRY%% minutes, signed by <code>documind-ui-sa</code> through IAM's signBlob; the account may do that because it holds the token-creator role on itself.</td><td data-label="On your lane">Open source, in step 6.</td></tr>
+<tr><td><strong>Surface</strong></td><td data-label="Meaning">A service that faces a person or an agent and calls the API: the UI, the chat service, the MCP server. Each calls as itself and forwards the person's assertion when there is one.</td><td data-label="On your lane">The UI and the shell, today.</td></tr>
+<tr><td><strong>The row's user</strong></td><td data-label="Meaning">The usage row's <code>user</code>: the verified caller. The person's email when an assertion arrives; the token's account otherwise. The row's <code>brain</code> reads <code>ui</code> for any request that names none, so <code>user</code> is the field that tells the UI from the shell.</td><td data-label="On your lane">Your email from the UI; <code>documind-ui-sa@...</code> from curl.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: <em>signing in</em> and <em>membership</em> are two checks by two systems. IAP decides who may reach the page at all; the roster decides which tenant's documents a person may see. An account can pass the first and fail the second, and the page then says so instead of showing an empty tenant.</p>

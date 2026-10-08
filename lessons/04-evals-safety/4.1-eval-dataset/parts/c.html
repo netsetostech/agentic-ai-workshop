@@ -1,0 +1,98 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; REST</span><h3>Ask the two rows once: the live half's own functions, and the outsider's 403</h3><p>Three requests to <code>/v1/query</code>, scored with <code>run_eval.py</code>'s own code, before lesson 4.2 runs the whole set.</p></div></div>
+
+<h4>Definition</h4>
+<p>The live half, <code>make eval-live</code>, belongs to lesson 4.2. It sends every row to <code>/v1/query</code> with <code>top_k</code> 6, as the UI's service account, which <code>make roster</code> put on all three tenants. It looks for every marker in every reply and scores each answerable row by <code>contains()</code> and by its citations. Isolation is judged a second way. The retriever filters by tenant before anything reaches the model, so a marker can only fire if the model invents another tenant's exact figure, which the kit calls a lottery. The leg that can really leak is identity to tenant. So the gate also asks every isolation row as <code>documind-outsider-sa</code>, an account that may call the service and is on no roster, and requires 403 every time. The cell asks your two rows as a member, then asks iso-11 as the outsider, with the same <code>ask()</code> and <code>contains()</code> the gate uses.</p>
+
+<h4>The code</h4>
+@@contains@@
+@@isolation_gate@@
+
+<h4>Do it</h4>
+%%CELL_LIVE%%
+%%OUT_LIVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both rows passed on your lane. Each answer held its figure, iso-11's held no marker, and each citation named the tenant's own handbook. The outsider got 403 from the roster check, which is what makes iso-11 a release blocker in lesson 4.2. If lk-32 comes back refused, the row has done its job early: it found a question your lane cannot answer yet. Look at what retrieval returned for it before you change the row.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Pairs and candidates</span><h3>Paraphrase pairs and generated candidates: two kinds of row that are not golden</h3><p>Labelled pairs that measure the answer cache, and questions Gemini writes from chunks, which a person has to turn into rows.</p></div></div>
+
+<h4>Paraphrase pairs</h4>
+<p>The answer cache of Module 6 serves an earlier answer when a new question's embedding has a cosine similarity of at least %%CACHE_T%% with an earlier one. That number was chosen, not measured. <code>paraphrases.jsonl</code> is what measures it. Each pair rewords a golden question. A pair marked <code>same</code> asks the same fact in other words, so a cache hit would be right. A pair marked different is a few words away with a different answer: E3 against E2, minimum against maximum, probation against confirmed. A cache hit there is a wrong answer served fast. <code>cache_threshold.py</code> embeds both sides and prints, for each candidate threshold, the hit rate on the same pairs and the false-hit rate on the different ones. The cache stays off until a threshold has no false hit on this set. The labels are yours to get right: the self-test checks that each pair names a real golden row and differs from its question, not that its label is true.</p>
+@@check_pairs@@
+<p>Add two pairs against lk-32. One asks the same fact in other words. The other asks the clause's other fact, the kind of near miss a loose threshold would answer with 45 days.</p>
+%%CELL_PAIRS%%
+%%OUT_PAIRS%%
+<p>The self-test is offline. The curve itself, <code>python evals/cache_threshold.py --project "$PROJECT"</code>, embeds %%N_EMBED%% short questions with <code>text-embedding-005</code> in <code>us-central1</code>. Lesson 6.4 reads it before the cache is switched on.</p>
+
+<h4>Generated candidates</h4>
+<p><code>make make-evalset</code> asks Gemini for one question and answer per chunk of the quality-gated feed. The feed is <code>rag_data.index_feed</code>, joined to the chunks the worker mirrors into BigQuery, so a chunk the quality scan held back never becomes a question. Each pair is scanned by the one PII list, <code>shared/pii.py</code>, and dropped on any finding, never rewritten. What comes out is a candidate: a question with no figure it must contain, and the chunk's id as its only anchor. A golden row is a contract a person writes, and a generated question inherits the blind spots of the model that wrote it. So the file is <code>golden_generated.jsonl</code>, and the gate never reads it.</p>
+@@feed_sql@@
+@@candidate_row@@
+@@make_evalset@@
+<p>What would the gate say if a candidate were merged as it is? The cell builds one for SEC-09 the way <code>make_evalset.py</code> writes it. Its chunk id is the worker's own: the tenant, the hash of the handbook's bytes, and <code>#%%SEC09_I%%</code>, SEC-09's position after the preamble and seven clauses. Then the cell judges the reviewed version.</p>
+%%CELL_CANDIDATE%%
+%%OUT_CANDIDATE%%
+<p>The candidate fails twice. It has no figure, so it would accept any answer. Its anchor names a version by its hash, which no file contains, and which would point at a retired version the day the handbook is re-issued. The reviewed row, with a figure, a code and a slug, is lk-32. That rewrite is what review means: a figure a person checked in the clause, and anchors that survive a new version.</p>
+<p>Last, the generator itself, if your feed has rows. The chunk feature job and the Dataplex quality scan fill the feed, and lesson 11.5 runs them (<code>make features</code>). Before that, the count is zero and the cell stops there.</p>
+%%CELL_FEED%%
+%%OUT_FEED_EMPTY%%
+%%OUT_FEED_FULL%%
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What rows cost, how a golden set rots, and handing the kit back</h3><p>The rupees, the ways the kit's own history says a set decays, and your rows kept as a patch.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The gate and the builder</td><td data-label="Costs">nothing: local Python over local files</td><td data-label="On your lane">every run of steps 3 to 5</td></tr>
+<tr><td>The variants and the candidate check</td><td data-label="Costs">nothing: judged in memory</td><td data-label="On your lane">steps 4 and 7</td></tr>
+<tr><td>Asking the two rows</td><td data-label="Costs">two answers at the model's rate, and one request refused before retrieval</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The pairs' self-test</td><td data-label="Costs">nothing</td><td data-label="On your lane">step 7</td></tr>
+<tr><td>The pairs' curve</td><td data-label="Costs">%%N_EMBED%% embeddings, regional</td><td data-label="On your lane">a small fraction of a rupee</td></tr>
+<tr><td><code>make make-evalset</code></td><td data-label="Costs">one gemini-3.6-flash call per chunk, about 420 tokens in and 100 out at $%%RATE_IN%% and $%%RATE_OUT%% per million, and the DLP scan</td><td data-label="On your lane">about Rs %%EVALSET_10%% for ten rows and Rs %%EVALSET_200%% for the default 200, at %%USD_INR%%; more if the model thinks at length</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>How a golden set rots</h4>
+<p>The kit's docstrings name five ways, and each has a guard.</p>
+<ul>
+<li><strong>A red build made green by hand.</strong> Somebody edits <code>golden.jsonl</code> to loosen a figure. The gate checks the committed file for exactly this reason, and the builder is deterministic, so a loosened figure is a diff with an author and a date.</li>
+<li><strong>The failing rows deleted.</strong> A green build with fewer tests looks like a fix. <code>MIN_ROWS</code> guards each shape, and <code>required.json</code> guards each row that would block a release.</li>
+<li><strong>A document re-issued without its rows.</strong> vr-01 and lk-06 move to the new figure in the same commit as the handbook, or the gate is red before anything deploys.</li>
+<li><strong>Anchors that are sentences.</strong> The overtime rows: the right figure, scored wrong, because the model added one word.</li>
+<li><strong>A bare numeral that a larger number satisfies.</strong> Until 12 September, "60" passed on "160 days". The live check now wants the figure on its own boundaries.</li>
+</ul>
+<p>Blind spots remain, and you have now seen each one. The offline gate cannot tell a right key from a wrong one (step 4). It has nothing to check on a refusal row, so only a live run found rf-07. <code>--source</code> misses a row anchored on clause codes alone (step 3). And a bare figure passes almost for free: <code>60</code> is in %%N_60%% of ACME's %%N_ACME_FILES%% text files, the CGST Act's table of contents among them, while <code>45 days</code> is in %%N_45%%. The check proves the figure can be said, not that the right clause says it, so give a figure its unit.</p>
+
+<h4>Keep your rows, and give the kit its files back</h4>
+<p>Your clone now differs from the kit in four files. Lesson 4.2 runs the kit's own set, %%N_ROWS%% rows and %%N_REQ%% required ids. The setup block's <code>git pull --ff-only</code> also refuses to run over local edits to a file the kit has changed. So keep your rows as a patch and restore the four files. <code>git -C "$DEMO_ROOT" apply "$HOME/lesson71_rows.patch"</code> brings them back whenever you want them.</p>
+%%CELL_PATCH%%
+%%OUT_PATCH%%
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eleven checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The kit's set is sound</td><td data-label="The check">step 3, <code>make eval</code></td><td data-label="Pass looks like">three <code>[PASS]</code> lines over %%N_ROWS%% rows</td></tr>
+<tr><td>2</td><td data-label="Claim">One real clause of the handbook had no row</td><td data-label="The check">step 3, the clause table</td><td data-label="Pass looks like">SEC-09: no golden row asks about it</td></tr>
+<tr><td>3</td><td data-label="Claim">A lookup row is written, built and accepted</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>wrote %%N_ROWS_1%% rows</code>; <code>exit code 0</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The gate refuses a row that cannot fail or cannot be found</td><td data-label="The check">step 4, the variants</td><td data-label="Pass looks like">four <code>REFUSED</code>, each with its sentence</td></tr>
+<tr><td>5</td><td data-label="Claim">The gate cannot see a wrong key</td><td data-label="The check">step 4, the last variant</td><td data-label="Pass looks like"><code>another clause's figure</code> accepted</td></tr>
+<tr><td>6</td><td data-label="Claim">A marker in the row's own tenant is refused</td><td data-label="The check">step 5, the first try</td><td data-label="Pass looks like"><code>is in zeta's OWN corpus</code>; <code>exit code 1</code>; %%N_ROWS_1%% lines</td></tr>
+<tr><td>7</td><td data-label="Claim">An unlisted isolation row is refused</td><td data-label="The check">step 5, the second try</td><td data-label="Pass looks like"><code>[FAIL] coverage</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Listed, the set is sound again</td><td data-label="The check">step 5, <code>make eval</code></td><td data-label="Pass looks like">%%N_ROWS_2%% rows, %%N_REQ_1%% required ids, <code>exit code 0</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Both rows pass on the lane, and the outsider is refused</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>found</code>, <code>absent</code>, <code>HTTP 403</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The pairs are well formed</td><td data-label="The check">step 7, the self-test</td><td data-label="Pass looks like"><code>selftest OK</code> with %%N_PAIRS_2%% pairs</td></tr>
+<tr><td>11</td><td data-label="Claim">The kit has its files back, and your rows are kept</td><td data-label="The check">step 8</td><td data-label="Pass looks like">the four files match the kit; %%N_ROWS%% lines; 7 lines in the patch</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>In the cloud, only the usage rows of step 6's two answers. In your clone, steps 4, 5 and 7 changed <code>build_golden.py</code>, <code>golden.jsonl</code>, <code>required.json</code> and <code>paraphrases.jsonl</code>, and step 8 put all four back; your seven lines are in <code>~/lesson71_rows.patch</code>. Two untracked things may remain: <code>evals/__pycache__</code>, from the cells that import <code>run_eval.py</code>, and <code>evals/golden_generated.jsonl</code> if your feed had rows. Both are safe to delete. Lesson 4.2 runs the set you just studied: the offline half as CI runs it, the live half against a candidate with %%N_THRESHOLDS%% thresholds and %%N_REQ%% required rows, and a judge that scores but never gates.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.1 Build a useful evaluation dataset &middot; v5.0</p><p>Next: Lesson 4.2 Separate offline checks, live scoring and LLM judgment.</p></div>

@@ -1,0 +1,75 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 5 &middot; MCP and agents &middot; Lesson 5.4</div>
+<h1>Implement the main LangGraph workflow: <span>three nodes, one route, a checkpointer, and a refuse node forced to fire</span></h1>
+<p>The LangChain brain hands its loop to a framework. The LangGraph brain draws it: an agent node that calls the model, a route that reads what the model asked for, a tools node, a refuse node, and a checkpointer that keeps each conversation. You list the kit's own graph and force the refuse node with a scripted model. The model on your lane is never offered a blocked tool, so it cannot reach that node any other way. Then you use the graph on your lane: a thread that remembers, a new thread that does not, and a request to delete that meets no tool at all.</p>
+<div class="hero-chips"><div class="hero-chip">3 nodes</div><div class="hero-chip">1 route</div><div class="hero-chip">refused whole</div><div class="hero-chip">%%N_BLOCKED%% blocked names</div><div class="hero-chip">checkpointer at compile</div><div class="hero-chip">tenant:user:session</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A loop you can draw, and a guard that is a node</a></li>
+<li><a href="#s2">The words: StateGraph, node, route, ToolNode, refuse, error result, checkpointer, thread</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The graph, in a venv of its own</a></li>
+<li><a href="#s4">The refuse node, forced to fire</a></li>
+<li><a href="#s5">The graph on your lane: one thread, a new thread, and a request to delete</a></li>
+<li><a href="#s6">What the checkpointer keeps</a></li>
+<li><a href="#s7">Why the graph is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how the LangGraph brain wires a tool-using loop by hand, why its guard is a node in the graph rather than a filter around it, and why a turn that asks for one blocked tool is refused whole. You will also learn what the checkpointer stores and what it deliberately leaves out. Then you will prove it: the refuse node firing on a blocked tool with an answer that says so, and a thread on your lane remembering its first turn.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A loop you can draw, and a guard that is a node</h3><p>Nodes, one conditional edge, and a saver compiled in.</p></div></div>
+
+<p><strong>A loop you can draw.</strong> The graph's state is the conversation, a list of messages. The <code>agent</code> node calls the model with the system prompt in front of the messages and appends its reply. A function called <code>route</code> reads that reply. If the model asked for no tool, the turn ends. If it asked only for allowed tools, the <code>tools</code> node runs them and appends their results. If it asked for any blocked tool, the <code>refuse</code> node answers instead. Both <code>tools</code> and <code>refuse</code> lead back to <code>agent</code>, which reads the new messages and decides again. Nothing is hidden: the whole harness is these nodes and edges, compiled.</p>
+
+<p><strong>The guard is a node, and it refuses the whole turn.</strong> <code>route</code> sends a turn to <code>refuse</code> if any requested name is in <code>BLOCKED</code>: <code>delete_document</code>, <code>send_email</code>, <code>modify_access</code>. Every call in that turn then gets an error result, including an allowed one asked for alongside. A model therefore cannot slip a deletion in beside a search and have the search run. Each error reads "requires manual approval", and the system prompt tells the model to say so plainly and never to claim the action was taken.</p>
+
+<p><strong>You have to force it.</strong> The model is bound to the two real tools only, and Gemini's function calling returns calls to the functions it was given, nothing else. On your lane the model has no way to ask for <code>delete_document</code>. The refuse node is defence in depth: for the day a blocked tool is registered by mistake, or another framework lets a name through. So the proof uses a scripted model: the kit's own graph, with a model that replies exactly as scripted, including a request for a blocked tool.</p>
+
+<p><strong>The checkpointer keeps the conversation, not the instructions.</strong> The graph is compiled with a checkpointer, which saves the thread's messages after each step. The next turn on the same thread starts from them. The thread id is <code>tenant:user:session</code>, built by the server from the verified identity. The system prompt is added on every call and never saved, so a changed prompt reaches old conversations too. On your lane the saver is Postgres on Cloud SQL. Its tables are created once by a job, not by the service at startup.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128194;</div><div>
+<p><strong>A file moving through a government office.</strong> Each officer writes a noting and passes the file on. When a noting asks only for records from the registry, the file goes to the registry and comes back with the papers attached. When any line asks for a record to be destroyed, the whole file goes to the competent authority. It comes back with every request on that noting marked "needs approval", the harmless ones included. Nothing leaves the file: the next officer reads every noting before writing the next one. The office rules are pinned on the wall, not copied into each file.</p></div></div>
+
+<h4>Step through the graph</h4>
+<p>Choose a turn and step it through the kit's graph: which node runs, what the route decides, and the two lists that come back.</p>
+
+<div class="diagram pc" id="graph">
+<div class="dg-title">One turn through LangGraphBrain - agent, route, tools, refuse and END</div>
+<div class="pc-box"><b class="h">The turn</b>
+<div class="pc-in"><label>What the model asks for<select id="gr-s"><option value="blocked">a turn asking for a blocked tool</option><option value="mixed">retrieve and a blocked tool together</option><option value="plain">a policy question</option><option value="cost">a cost question</option><option value="none">a turn that needs no tool</option></select></label></div>
+<div class="gr-nodes"><span class="gr-node" id="gr-__start__">__start__</span><span class="gr-node" id="gr-agent">agent</span><span class="gr-node" id="gr-tools">tools</span><span class="gr-node" id="gr-refuse">refuse</span><span class="gr-node" id="gr-__end__">__end__</span></div>
+<button class="gr-btn" type="button" id="gr-next">Next step</button><button class="gr-btn" type="button" id="gr-all">Run to the end</button>
+<ol class="pc-steps" id="gr-log" aria-live="polite"></ol><span class="pc-out" id="gr-out"></span></div>
+<p class="dg-cap">Every turn here was run at build time through the kit's own <code>LangGraphBrain</code>, with a scripted model and LangGraph. The panel had to produce the same node path, the same <code>tool_calls</code> and <code>refusals</code>, and the same error texts. Step 4's cell runs three of them on your machine.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>The model's replies are scripted; on your lane, the model decides what to ask for. The panel does not show the checkpointer, and the tools node's results are stood in. Step 5 is the real thing.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: StateGraph, node, route, ToolNode, refuse, error result, checkpointer, thread</h3><p>Eleven rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>StateGraph</strong></td><td data-label="Meaning">LangGraph's graph over a state; here <code>MessagesState</code>, the list of messages, with the runtime context as a plain dict.</td><td data-label="On your lane">the LangGraph brain</td></tr>
+<tr><td><strong>agent</strong></td><td data-label="Meaning">The node that calls the model, with the system prompt put in front of the messages on every call.</td><td data-label="On your lane"><code>gemini-3.6-flash</code></td></tr>
+<tr><td><strong>route</strong></td><td data-label="Meaning">The conditional edge out of <code>agent</code>: END with no tool calls, <code>refuse</code> if any call is blocked, <code>tools</code> otherwise.</td><td data-label="On your lane">three possible targets</td></tr>
+<tr><td><strong>tools</strong></td><td data-label="Meaning">LangGraph's <code>ToolNode</code> over the kit's two tools. It runs each call and hands the tool the runtime context.</td><td data-label="On your lane">the tenant arrives here</td></tr>
+<tr><td><strong>refuse</strong></td><td data-label="Meaning">The node that answers a blocked turn: an error result for every call in it.</td><td data-label="On your lane">never reached by the real model</td></tr>
+<tr><td><strong>BLOCKED</strong></td><td data-label="Meaning">The names no model turn may reach, kept beside the tools so an omission shows in review.</td><td data-label="On your lane"><code>delete_document</code>, <code>send_email</code>, <code>modify_access</code></td></tr>
+<tr><td><strong>Error result</strong></td><td data-label="Meaning">A tool message with <code>status</code> <code>error</code> and <code>{"error": "... requires manual approval"}</code>, which the model reads on its next turn.</td><td data-label="On your lane">step 4 prints them</td></tr>
+<tr><td><strong>refusals</strong></td><td data-label="Meaning"><code>_summary()</code>'s list of the tools whose results were errors.</td><td data-label="On your lane"><code>['delete_document']</code> in step 4</td></tr>
+<tr><td><strong>Checkpointer</strong></td><td data-label="Meaning">The saver the graph is compiled with: it stores the thread's messages after every step and reloads them for the next turn.</td><td data-label="On your lane"><code>PostgresSaver</code> on Cloud SQL</td></tr>
+<tr><td><strong>Thread</strong></td><td data-label="Meaning"><code>tenant:user:session</code>, built by the server. The same session continues a conversation; a new one starts fresh.</td><td data-label="On your lane"><code>acme:...:lesson102</code></td></tr>
+<tr><td><strong>Scripted model</strong></td><td data-label="Meaning">LangChain's <code>FakeMessagesListChatModel</code>, returning prepared messages in order: the model's side of a turn, without a model.</td><td data-label="On your lane">steps 3 and 4</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: <code>route</code> decides where a turn goes, and <code>refuse</code> decides what the model hears about it. The first keeps a blocked call from running. The second is the only explanation the model gets.</p>

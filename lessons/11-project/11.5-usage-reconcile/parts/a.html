@@ -1,0 +1,106 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 11 &middot; Project &middot; Lesson 11.5</div>
+<h1>Reconcile usage events, reports and alerts: <span>one row, four readers, and the queue nobody watched</span></h1>
+<p>Every answer DocuMind gives writes one usage row: the tenant, the tokens, the cost priced at the model that answered, and where the time went. Four readers count those rows, each with its own filter and its own window. Cloud Logging keeps them all. A log sink copies some of them into BigQuery, where the <code>tenant_daily</code> view groups them by Indian day. <code>make usage</code> reads them straight from the log. A log-based metric counts them for an alert.</p>
+<p>When two readers disagree, the difference points to a filter or a window. In this lesson you ask four questions and reconcile the view's rupees with <code>make usage</code>'s, group by group, to the paisa. Then you read the lane's alert policies and find that none of them watches the dead-letter queue. You add the one that should, and trip it.</p>
+<div class="hero-chips"><div class="hero-chip">usage_row</div><div class="hero-chip">the log sink</div><div class="hero-chip">tenant_daily</div><div class="hero-chip">make usage</div><div class="hero-chip">log-based metrics</div><div class="hero-chip">alert policies</div><div class="hero-chip">the dead-letter queue</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">One row, four readers</a></li>
+<li><a href="#s2">The words: usage row, sink, view, reconcile, metric, policy, incident</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The readers, as the kit writes them down</a></li>
+<li><a href="#s4">Four questions, four rows</a></li>
+<li><a href="#s5">Reconcile the view with make usage</a></li>
+<li><a href="#s6">The alert the dead-letter queue never had</a></li>
+<li><a href="#s7">Why the readers differ, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn which reader counts which row, and why two honest reports can disagree without either being wrong. Then you will prove two things on your lane:</p>
+<ul>
+<li><code>tenant_daily</code>'s rupees equal <code>make usage</code>'s for the same day, group by group;</li>
+<li>a message in the dead-letter queue opens an incident.</li>
+</ul></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>One row, four readers</h3><p>Each reader has its own filter and its own window, and the differences are where reconciling starts.</p></div></div>
+
+<p><strong>One row per answer.</strong> Each surface writes its own row:</p>
+<ul>
+<li><code>usage_row()</code> in <code>main.py</code> builds the row for <code>/v1/query</code> (event <code>query</code>) and for <code>/v1/stream</code> (event <code>stream</code>).</li>
+<li>Media Studio writes its own row with the same fields (event <code>media</code>).</li>
+<li>The chat service writes a row per turn (event <code>chat</code>) with the brain, the tool calls and the latency, and, since lesson 5.5, the turn's own model calls with their tokens and cost.</li>
+</ul>
+<p>Each row is a line on the service's standard output, which Cloud Run turns into a Cloud Logging entry.</p>
+
+<p><strong>Four readers count the rows.</strong></p>
+<ul>
+<li><strong>Cloud Logging</strong> keeps every entry for thirty days.</li>
+<li><strong>The sink</strong>, <code>documind-api-to-bq</code>, copies entries into BigQuery as they are written. It copies only from <code>documind-api</code> and <code>documind-chat</code>, and only the events <code>query</code>, <code>stream</code> and <code>chat</code>, and the four the Desk added: <code>desk</code>, <code>passages</code>, <code>desk_shadow</code> (never a sensitive one) and <code>desk_gate</code> (from <code>documind-chat</code> only).</li>
+<li><strong><code>tenant_daily</code></strong> groups the sink's table by Indian day and seven dimensions, reading <code>query</code>, <code>stream</code> and <code>media</code>.</li>
+<li><strong><code>make usage</code></strong> reads the log itself. It reads <code>documind-api</code> only, the events <code>query</code>, <code>stream</code> and <code>media</code>, over the last N hours, and at most 2,000 rows.</li>
+<li><strong><code>documind/queries</code></strong>, a log-based metric, counts <code>query</code> and <code>stream</code> rows as they are written. The unanswerable-rate alert divides by it.</li>
+</ul>
+
+<p><strong>Reconcile the additive measures exactly.</strong> Answers, refusals, tokens and rupees add up across rows, so two readers of the same rows must agree to the paisa. Percentiles do not add up, and the two reports compute them differently: the view uses BigQuery's approximate quantiles, and the tool takes the nearest rank. So p95 is compared by eye, not for equality.</p>
+
+<p><strong>Every difference has a cause.</strong> The kit builds in three:</p>
+<ul>
+<li><strong>A window.</strong> The view counts an Indian day, while <code>make usage</code> counts the last N hours, which can cross midnight.</li>
+<li><strong>A filter.</strong> Media rows reach <code>make usage</code> but never BigQuery, because the sink does not copy them.</li>
+<li><strong>A service.</strong> Chat turn rows are copied into BigQuery, then read by neither report.</li>
+</ul>
+
+<p><strong>An alert is a reader too.</strong> A log-based metric turns rows into a count. A policy watches a count and opens an incident when it stays over a line long enough. A channel carries the incident to a person. An alert nobody declared reads nothing.</p>
+<p>The dead-letter queue is where Pub/Sub puts an upload the worker refused twelve times, and it had exactly that problem: <code>quota.tf</code> listed a <code>dlq_depth</code> alert, and no resource declared it.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127974;</div><div>
+<p><strong>A bank reconciliation statement.</strong> Every Indian commerce student has drawn one up. The cash book and the bank passbook record the same transactions, and at month end they disagree. You do not adjust one total until it matches. Instead you list each difference with its cause:</p>
+<ul>
+<li>a cheque issued but not yet presented (a window);</li>
+<li>bank charges the cash book never recorded (a filter on one side);</li>
+<li>a deposit entered twice (an error).</li>
+</ul>
+<p>When the list explains the whole gap, the books are reconciled. The bank's SMS alerts are its alert policies. They fire for the transactions they are set up for, and a kind of transaction with no alert sends no message, however large it is.</p></div></div>
+
+<h4>Which reader counts this row?</h4>
+<p>Tick the rows that happened today. For each reader the panel shows how many rows it counts and their rupees. When <code>tenant_daily</code> and <code>make usage</code> disagree, it lists the rows that make the difference, and why.</p>
+
+<div class="diagram pc" id="rc">
+<div class="dg-title">%%N_ROWS%% usage rows and the four readers of them, at 11:22 IST</div>
+<div class="pc-box"><b class="h">The rows</b>
+<div class="rw-list" id="rc-rows"></div>
+<b class="h">The readers</b>
+<div class="rd-grid" id="rc-grid" aria-live="polite"></div>
+<div class="rd-why" id="rc-why" aria-live="polite"></div></div>
+<p class="dg-cap">The %%N_ROWS%% rows are the kit's own: two from the build's run of rag-api's <code>query()</code>, two more from its <code>usage_row()</code>, one from <code>media.py</code>'s <code>_usage()</code> (Rs %%IMAGE_INR%% for an image), and one in the chat service's own turn-row shape. Each reader's verdict comes from the filters in <code>sink.tf</code>, <code>tenant_daily.sql</code>, <code>usage_rows.py</code> and <code>alerts.tf</code>, parsed at build time.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It applies the kit's filters to eight rows. Your lane's rows, times and rupees are your own, and step 5 reconciles them.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: usage row, sink, view, reconcile, metric, policy, incident</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Usage row</strong></td><td data-label="Meaning">One JSON line per answer, with the same fields for every reader.</td><td data-label="On your lane">event <code>query</code>, <code>stream</code> or <code>media</code>; <code>chat</code> for a chat turn</td></tr>
+<tr><td><strong>Cloud Logging</strong></td><td data-label="Meaning">Where Cloud Run's standard output lands; the rows live here first.</td><td data-label="On your lane">kept thirty days</td></tr>
+<tr><td><strong>Log sink</strong></td><td data-label="Meaning">A filter that copies matching entries somewhere else as they are written.</td><td data-label="On your lane"><code>documind-api-to-bq</code>: <code>query</code>, <code>stream</code>, <code>chat</code> and the Desk's four events, into <code>documind_observability</code></td></tr>
+<tr><td><strong><code>tenant_daily</code></strong></td><td data-label="Meaning">The view over the sink's table: a row per Indian day and seven dimensions.</td><td data-label="On your lane"><code>cost_inr</code> = <code>cost_usd</code> &times; 85</td></tr>
+<tr><td><strong><code>make usage</code></strong></td><td data-label="Meaning"><code>evals/usage_rows.py</code>: the view's GROUP BY over the log, for the last N hours.</td><td data-label="On your lane"><code>documind-api</code> only; at most 2,000 rows</td></tr>
+<tr><td><strong>Reconcile</strong></td><td data-label="Meaning">Explain every difference between two readers by its cause.</td><td data-label="On your lane">answers, refusals, tokens and rupees equal</td></tr>
+<tr><td><strong>Log-based metric</strong></td><td data-label="Meaning">A count of matching log lines, as a time series Monitoring can watch.</td><td data-label="On your lane">%%N_METRICS%% of them, <code>documind/queries</code> among them</td></tr>
+<tr><td><strong>Alert policy</strong></td><td data-label="Meaning">A condition on a time series, held for a duration, and the channels to notify.</td><td data-label="On your lane">%%N_TF_POLICIES%% declared in <code>alerts.tf</code></td></tr>
+<tr><td><strong>Incident</strong></td><td data-label="Meaning">What a policy opens while its condition holds; it closes when the condition stops holding.</td><td data-label="On your lane">Monitoring &gt; Alerting in the console, and an email to the admins</td></tr>
+<tr><td><strong>Dead-letter queue</strong></td><td data-label="Meaning">Where Pub/Sub puts a message its subscriber refused too often.</td><td data-label="On your lane"><code>documind-ingest-dlq</code>, after twelve deliveries; read through <code>ingest-dlq-sub</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a report can be right about what it reads and still leave out what it does not read. Reconciling finds the rows one reader leaves out; it does not make either report wrong.</p>

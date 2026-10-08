@@ -1,0 +1,94 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>API</code> and <code>ME</code> set by the setup above, and lesson 12.1's v2.</p>
+<ul>
+<li><strong>Lesson 12.1's frozen file.</strong> Step 4 reads v2's three files from the datasets bucket, the copy the job will read.</li>
+<li><strong>The clients.</strong> <code>google-genai</code> and <code>google-cloud-dlp</code>, which 12.1's step 5 installed at the ingest image's pins. <code>tune.py</code> uses <code>google-genai</code>'s tunings.</li>
+<li><strong>Room for one job.</strong> Google's quota counts concurrent tuning jobs, at least one a project. If another job is running, yours may have to wait until it ends.</li>
+<li><strong>What the lesson changes.</strong> It runs one tuning job, billed once, about Rs %%TRAIN_RS%%. That leaves a tuned model and its endpoint in the <code>us</code> multi-region, which lesson 12.3 uses. It writes <code>~/tune172.log</code> and <code>~/poll172.log</code>.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The checks that run before the spend</h3><p>The two self-tests, config_for's refusals, and where the generator would call an endpoint. Offline.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell runs <code>make_trainset.py</code>'s and <code>tune.py</code>'s self-tests. Then it calls <code>tune.config_for</code> three times: with the served model, with a rank the SDK cannot spell, and with a rank it can. It prints <code>make tune</code>'s own defaults. Last, it lifts <code>_endpoint_location</code> out of <code>generator.py</code> and asks where an endpoint would be called, with and without <code>GENERATOR_LOCATION</code>.</p>
+
+<h4>The code</h4>
+@@config@@
+@@adapter@@
+@@location@@
+
+<h4>Do it</h4>
+%%CELL_CHECKS%%
+%%OUT_CHECKS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Two refusals, both free.</strong> <code>gemini-3.6-flash</code> is not in <code>TUNABLE</code>, and 3 is not a rank. Both fail before the dataset is read or anything is billed.</li>
+<li><strong>Rank 32 passes.</strong> The SDK can spell it, so <code>config_for</code> accepts it. Google's page lists 1, 2, 4, 8 and 16 for both tunable Gemini 3 bases: the check follows the SDK's list, not Google's.</li>
+<li><strong><code>make tune</code>'s defaults name the model <code>documind-sft-v1</code>.</strong> The display name is a flag with a default, and <code>make tune</code> passes none, so a v2 job would be called v1. Step 5 passes <code>--display-name documind-sft-v2</code>.</li>
+<li><strong>An endpoint is called where its path says,</strong> unless <code>GENERATOR_LOCATION</code> overrides it.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>The frozen file, validated</h3><p>The bytes the job will read, held to the manifest, the four rules, DLP and the tenant's data region.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell reads v2 from the datasets bucket, the copy <code>make tune</code> names, and runs the five checks from step 1, in order. Then it estimates the bill: the kit's own token estimate, characters divided by four, times <code>make tune</code>'s three epochs, at Google's price. The residency check is the kit's own rule:</p>
+@@permits@@
+
+<h4>Do it</h4>
+%%CELL_VALIDATE%%
+%%OUT_VALIDATE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The bytes are the manifest's, and every row is in the shape Vertex AI reads.</strong> The chat file says the same, row by row, and every target parses.</li>
+<li><strong>The golden set drops none, and the scan <code>make trainset</code> ran finds nothing.</strong> Both rules ran when the file was written; this is the file checked again, as the job will read it.</li>
+<li><strong>The chunks carry what <code>make trainset</code> never scanned.</strong> On the stand-in, DLP's email pattern flags the CGST Act's front matter, which prints a public helpdesk address. Each finding names a row and an info type, never the value. Read the chunks it names: a helpdesk address printed in an Act is public, but a person's phone number would call for a new version without that row. The rule is drop, never rewrite.</li>
+<li><strong>acme's <code>data_region</code> is <code>any</code>,</strong> so its rows may be held in <code>us-central1</code>. An <code>in</code> tenant's rows may not, and nothing in the kit asks (step 8).</li>
+<li><strong>The bill: about %%TRAIN_TOKENS%% training tokens, about Rs %%TRAIN_RS%%.</strong> The estimate divides characters by four; Google counts real tokens. The longest row, about %%TOK_MAX%% tokens, is far inside Google's limit.</li>
+</ul></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>The job, submitted</h3><p>make tune with a name that says v2, returning at once with the job's id.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make tune</code> runs <code>tune.py</code> on the frozen file, named by its URI:</p>
+@@recipe@@
+<p>The cell passes three things. <code>VERSION=v2</code>, because the recipe reads v1 otherwise (lesson 12.1). <code>--display-name documind-sft-v2</code>, because the default says v1. And <code>--no-wait</code>, so that <code>tune.py</code> prints the job's name and returns while the job runs on Google's side. <code>launch()</code> builds a client in <code>us-central1</code> and hands the job the file's URI:</p>
+@@launch@@
+<p>The cell keeps the job's name in <code>~/tune172.log</code> and in <code>JOB</code>.</p>
+
+<h4>Do it</h4>
+%%CELL_TUNE%%
+%%OUT_TUNE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>make echoed its recipe with <code>VERSION</code> unexpanded.</strong> The shell read <code>VERSION=v2</code>, and <code>tune.py</code> printed the dataset it submitted: <code>documind_sft_v2.vertex.jsonl</code>.</li>
+<li><strong>The job's name is its id,</strong> <code>projects/NUMBER/locations/us-central1/tuningJobs/...</code>, and it is in <code>~/tune172.log</code>. That is the first proof: the tuning job id.</li>
+<li><strong>This was the billed act.</strong> The job trains, and bills, from here, whatever happens to your shell.</li>
+</ul></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>The endpoint, and where it answers</h3><p>The poll to the end, the endpoint's path with its location, then one call where the path says and two where it does not.</p></div></div>
+
+<h4>Definition</h4>
+<p>The first cell polls the job once a minute until it ends. The poll only reads, so it costs nothing, and after a disconnect it is safe to run again: it takes the job from step 5's log. When the job succeeds, <code>tune.py</code> prints:</p>
+@@done@@
+<p>The cell keeps the endpoint in <code>~/poll172.log</code> and in <code>ENDPOINT</code>.</p>
+%%CELL_POLL%%
+%%OUT_POLL%%
+
+<p>The second cell asks the endpoint one question the way the generator would. It sends <code>SYSTEM</code>, one source under its header and the question, with <code>generator._call</code>'s settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: <code>us-central1</code>, the job's region; <code>global</code>, where the served model answers; and the location the generator would use, from the path.</p>
+%%CELL_SERVE%%
+%%OUT_SERVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The job queued, ran and succeeded.</strong> It named a tuned model and an endpoint in <code>us</code>, not in the region it ran in. That is the second proof: the endpoint's path with its location.</li>
+<li><strong><code>us-central1</code> and <code>global</code> answered 404, and the path's location answered.</strong> The generator reads the same segment of the path, so the API will call the endpoint where it answers.</li>
+<li><strong>The answer is a ModelDraft,</strong> the shape the rows taught. Count its <code>[N]</code> marks: lesson 12.1 found the training targets carry none. The stand-in answers the way the rows are written; your endpoint writes its own answer, and lesson 12.3 compares it with the served model's.</li>
+<li><strong>The price line prints two numbers:</strong> Google's, at 1.5 times flash-lite, and what <code>cost.py</code> would log.</li>
+</ul></div>

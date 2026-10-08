@@ -1,0 +1,95 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.2</div>
+<h1>Turn text into tokens and embeddings: <span>what a model counts, what it costs in rupees, and how two meanings are compared</span></h1>
+<p>Every call the kit makes to Gemini is counted and billed in tokens, and every search it runs compares embeddings. This page builds both from the bottom, on your laptop. You will train a tokenizer small enough to read on two clauses of the kit's handbook, put the kit's two token estimates beside plain character counts, and price a sentence with the kit's own prices the way lesson 3.4 prices an answer. Then you will ask %%MODEL%% for its own count of that sentence, embed three clauses and two questions with %%EMBED_MODEL%% under the task types the kit uses, and compare them by cosine similarity in numpy. Two cells call Vertex AI in your project, for a fraction of a paisa; the rest never leave your machine.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_MERGES%% merges, two clauses</div><div class="hero-chip">len // 4 and len // %%CPT_WORKER%%</div><div class="hero-chip">$%%USD_IN%% in, $%%USD_OUT%% out per 1M</div><div class="hero-chip">Rs %%USD_INR%% to the dollar</div><div class="hero-chip">count_tokens on %%GEN_LOCATION%%</div><div class="hero-chip">%%EMBED_MODEL%% on %%EMBED_LOCATION%%</div><div class="hero-chip">%%DIMS%% numbers</div><div class="hero-chip">cosine similarity</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a token is, and what an embedding is</a></li>
+<li><a href="#s2">The words: token, vocabulary, merge, estimate, count, price, embedding, task type, cosine</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">A tokenizer you can read: byte-pair merges on two handbook clauses</a></li>
+<li><a href="#s4">The kit's two estimates against plain character counts</a></li>
+<li><a href="#s5">The rupee line: tokens priced with the kit's prices</a></li>
+<li><a href="#s6">The model's own count: count_tokens on %%MODEL%%</a></li>
+<li><a href="#s7">Cosine similarity in numpy, on vectors you can read</a></li>
+<li><a href="#s8">Real embeddings: %%EMBED_MODEL%% under the kit's task types</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a token is (a piece of text from a vocabulary a tokenizer learned, the unit a model counts and bills), how the kit estimates tokens before a call and prices them after, and what an embedding is (%%DIMS%% numbers for a whole text) and how cosine similarity compares two. Then you will prove it on your laptop: one sentence's token count with its rupee line, and the cosine similarity of real embeddings.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a token is, and what an embedding is</h3><p>Two readings of the same text: the pieces a model counts and bills, and the numbers retrieval compares.</p></div></div>
+
+<p><strong>A token is the unit a model reads, counts and bills.</strong> A language model does not read letters or words. A tokenizer reads first: it cuts the text into pieces from a fixed vocabulary, learned once from a large amount of text, and hands the model each piece's number. Common words come out as one piece, often with the space in front of them; rarer words come out as two or three; a word the vocabulary never saw falls apart into short pieces and, at worst, single characters or bytes, so no text is ever unreadable. A model's limits and a Gemini call's price are counted in these pieces: the price per million tokens in and out, the budget lesson 3.4 packs evidence into, and the %%EMBED_MAX_TOKENS%% tokens %%EMBED_MODEL%% reads of one text, cutting off the rest by default.</p>
+
+<p><strong>The exact count needs the model, so the kit estimates first.</strong> Counting exactly takes the model's own tokenizer, which means a call to the model's endpoint: Vertex AI does not charge for it, but it is a round trip for every text, and the kit sizes its prompts and its batches without one. So it estimates from the length. The API divides the characters by four to budget a prompt (lesson 3.4), and the ingest worker divides them by %%CPT_WORKER_WORD%% to size its embedding requests (lesson 1.3). Google's pricing page writes the same rule of thumb down: about four characters to a token. It is a guess, and the toy tokenizer below shows why: the same number of characters can be very different numbers of pieces, depending on what the vocabulary has seen. Step 6 puts the model's own count beside the guess.</p>
+
+<p><strong>An embedding is a whole text as one list of numbers.</strong> An embedding model reads a text's tokens and returns a fixed number of numbers for the whole of it: %%DIMS%% for %%EMBED_MODEL%%, whether the text is a question of %%W_USB%% words or a clause of %%W_LONG%%. The numbers mean nothing one at a time. Together they point in a direction, and the model is trained so that texts which mean similar things point in similar directions. Cosine similarity measures how alike two directions are: 1 for the same direction, 0 at right angles, -1 for opposite. Retrieval is that arithmetic: embed the question, and fetch the passages whose vectors point most nearly the same way.</p>
+
+<p><strong>Two readings, on every question.</strong> The kit does both every time someone asks DocuMind something. It estimates the prompt's tokens to pack it, and prices the answer's tokens in rupees afterwards. And it embeds the question with the same model and the same dimension it used for every stored passage, under a task type that tells the model which side of the search the text is on: %%DOC_TASK%% for passages, %%QUERY_TASK%% for questions. Generation runs on the <code>%%GEN_LOCATION%%</code> location and embeddings are served regionally, from <code>%%EMBED_LOCATION%%</code>, so the kit keeps two clients, and so will your cells.</p>
+
+<div class="analogy"><div class="analogy-icon">&#129517;</div><div>
+<p><strong>The rubber-stamp press and the compass.</strong> A small press sets a page with rubber stamps: one stamp for each common word, syllable stamps for the rest, single letters as the last resort, and it charges by the stamp pressed. A familiar sentence takes few stamps; a sentence full of names the tray has no stamp for takes many, and a script the tray was never built for takes a stamp a letter. That is a tokenizer and its bill. An embedding is a different job: a reader who finishes the page and, instead of a summary, writes down a compass bearing in %%DIMS%% directions. Two pages about the same thing get nearly the same bearing, however long each page is, and cosine similarity is how close two bearings are.</p></div></div>
+
+<div class="diagram">
+<div class="dg-title">One sentence, two readings: the count the bill is made of, and the vector retrieval compares</div>
+<div class="cd">
+<div class="lane"><div class="lane-h">The text</div>
+<div class="node"><b>golden row lk-06</b>"%%Q%%"<br>%%Q_CHARS%% characters</div></div>
+<div class="cd-arrow" aria-hidden="true">&rarr;</div>
+<div class="lane"><div class="lane-h">The tokenizer</div>
+<div class="node code"><b>pieces, then their numbers</b>The model's own tokenizer cuts the text into pieces from its vocabulary. Before any call the kit estimates %%Q_EST4%% tokens (the characters divided by four); step 6 asks the model.</div></div>
+<div class="cd-arrow" aria-hidden="true">&rarr;</div>
+<div class="lane"><div class="lane-h">Two readings</div>
+<div class="node hub"><b>%%MODEL%%, on %%GEN_LOCATION%%</b>reads the tokens and bills them: $%%USD_IN%% per million in, $%%USD_OUT%% per million out, at Rs %%USD_INR%% to the dollar</div>
+<div class="node hub"><b>%%EMBED_MODEL%%, on %%EMBED_LOCATION%%</b>reads the tokens and returns %%DIMS%% numbers for the whole text; two such lists are compared by their cosine</div></div>
+</div>
+<p class="dg-cap">The text is the kit's own data: lk-06 is a row of the kit's golden set, the questions its evaluations ask (Module 4). The rest are the kit's numbers: the estimate is <code>estimate_tokens()</code> in rag-api's <code>context_budget.py</code>, the prices are <code>shared/prices.py</code>'s, and the two models and their locations are the ones <code>generator.py</code> and the ingest worker's <code>indexer.py</code> call. Steps 3 to 5 open the middle box; steps 6 to 8, the two on the right.</p>
+</div>
+
+<h4>Try it: the token meter</h4>
+<p>The meter runs the toy tokenizer of step 3, the %%N_MERGES%% merges it learns from two handbook clauses, on a text you pick or type, and puts beside it the two estimates the kit makes before a call and the rupee line at %%MODEL%%'s standard rates. Pick the Hindi question and watch the toy fall back to a piece a character; type a sentence of your own about leave or notice and watch the words the handbook taught it come out whole.</p>
+
+<div class="diagram tm" id="meter">
+<div class="dg-title">Token meter - a toy tokenizer, and the kit's estimates and prices</div>
+<div class="tm-controls">
+<label class="tm-l">Text <select id="tm-sample">%%TM_OPTIONS%%</select></label>
+<label class="tm-l">Or type your own <input type="text" id="tm-own" maxlength="200" placeholder="e.g. Can I encash leave during probation?"></label>
+</div>
+<p class="tm-text" id="tm-text"></p>
+<div class="tm-chips" id="tm-chips" aria-live="polite"></div>
+<p class="tm-sum" id="tm-sum"></p>
+<p class="tm-sum" id="tm-rupee"></p>
+<p class="dg-cap">Each chip is one piece, and a dot stands for the space a piece begins with. The counts are the text's characters, its UTF-8 bytes and its words. The estimates are the kit's two rules, <code>len // 4</code> in the API's <code>estimate_tokens()</code> and <code>len // %%CPT_WORKER%%</code> in the worker's <code>batches()</code>, and the price is <code>shared/prices.py</code>'s for %%MODEL%% at Rs %%USD_INR%%, on the API's estimate. When this page was built, the meter's script and the Python of steps 3 to 5 were run on the same %%N_METER%% texts, and they agreed on every piece and every paisa.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the meter is not</div>
+<p>It is not Gemini's tokenizer. The toy learns %%N_MERGES%% merges from %%TRAIN_CHARS%% characters, so it knows the words those two clauses repeat and little else. Gemini's tokenizer is also learned from text, from vastly more of it, with a far larger vocabulary, so it cuts ordinary English into fewer, longer pieces; this page does not load it, and step 6 asks the model to count instead. The meter's estimates and prices are the kit's real rules, character for character. Only the pieces are a toy.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: token, vocabulary, merge, estimate, count, price, embedding, task type, cosine</h3><p>Ten rows, each with where the word lives on this page and in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>Here and in the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Token</strong></td><td data-label="Meaning">One piece of text from a tokenizer's vocabulary, and the unit of a model's limits and of a Gemini call's price: what a model takes in and writes out, the API's prompt budget, and the %%EMBED_MAX_TOKENS%% that %%EMBED_MODEL%% reads of one text.</td><td data-label="Here and in the kit">Estimated by rag-api's <code>estimate_tokens()</code> before a call; priced by <code>cost.price()</code> after, from the answer's <code>tokens_in</code> and <code>tokens_out</code>.</td></tr>
+<tr><td><strong>Tokenizer, vocabulary</strong></td><td data-label="Meaning">The program that cuts text into tokens, and the list of pieces it can produce, learned once from a corpus and fixed when the model is trained. Any text, in any script, can be cut into some sequence of its pieces.</td><td data-label="Here and in the kit">Inside the models: the kit never tokenizes. It estimates, or asks the model to count.</td></tr>
+<tr><td><strong>Merge</strong> (byte-pair encoding)</td><td data-label="Meaning">One learned rule: this pair of neighbouring pieces becomes one piece. A byte-pair tokenizer learns its merges by joining the commonest pair in its training text again and again, and replays them in the same order on new text.</td><td data-label="Here and in the kit">Step 3's toy learns %%N_MERGES%%; <code>' notice'</code>, with its leading space, is merge %%NOTICE_RANK%%.</td></tr>
+<tr><td><strong>Estimate</strong></td><td data-label="Meaning">A token count guessed from the length alone, with no call: the characters divided by a constant, rounded down, never below 1.</td><td data-label="Here and in the kit"><code>len // 4</code> in rag-api's <code>estimate_tokens()</code>, for the prompt budget (lesson 3.4); <code>len // %%CPT_WORKER%%</code> in the worker's <code>batches()</code>, for the embedding requests (lesson 1.3).</td></tr>
+<tr><td><strong>count_tokens</strong></td><td data-label="Meaning">The model's own count of a text, from its own tokenizer, returned without generating anything. Vertex AI does not charge for it.</td><td data-label="Here and in the kit">The counter <code>context_budget.py</code> can be handed in place of the estimate; step 6 calls it on <code>%%GEN_LOCATION%%</code>.</td></tr>
+<tr><td><strong>Price per 1M tokens</strong></td><td data-label="Meaning">What a model charges per million tokens, one rate for the input sent and another for the output written.</td><td data-label="Here and in the kit"><code>shared/prices.py</code>: %%MODEL%% at $%%USD_IN%% in and $%%USD_OUT%% out, the standard price.</td></tr>
+<tr><td><strong>The rupee line</strong></td><td data-label="Meaning">A count turned into money: tokens times the rate per token in dollars, then rupees at a stated rate, printed with the figure so nobody converts at a rate of their own.</td><td data-label="Here and in the kit"><code>USD_INR = %%USD_INR%%</code>; <code>cost.price()</code> returns both currencies and the rate, as lesson 3.4 reads them.</td></tr>
+<tr><td><strong>Embedding, dimension</strong></td><td data-label="Meaning">One fixed-length list of numbers for a whole text; its length is the dimension. Texts that mean similar things get vectors that point in similar directions.</td><td data-label="Here and in the kit">%%EMBED_MODEL%% at %%DIMS%% dimensions, from a client on <code>%%EMBED_LOCATION%%</code>: the worker's <code>embed_all()</code> and the API's <code>embed_query()</code>.</td></tr>
+<tr><td><strong>Task type</strong></td><td data-label="Meaning">A setting that tells the embedding model what a text is for, so the two sides of a search are shaped to be compared. Given none, the model treats the text as a query.</td><td data-label="Here and in the kit"><code>%%DOC_TASK%%</code> for every stored passage (<code>indexer.py</code>), <code>%%QUERY_TASK%%</code> for every question (<code>retriever.py</code>).</td></tr>
+<tr><td><strong>Cosine similarity</strong>, distance, dot product</td><td data-label="Meaning">The cosine of the angle between two vectors: 1 the same direction, 0 at right angles, -1 opposite, whatever their lengths. Cosine distance is 1 minus it. For vectors of length 1 the dot product is the same number.</td><td data-label="Here and in the kit">Firestore's fallback ranks by cosine distance and turns it back with <code>1.0 - d</code>; the Vector Search index ranks by <code>%%VECTOR_DISTANCE%%</code>; the answer cache wants %%CACHE_THRESHOLD%% or more.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words are the bill (token, price), two are how the kit learns a count (estimate, count_tokens), and the rest are retrieval's. Lesson 1.3 stamps the embedding's model, version and task type on every row the kit stores, and lesson 3.4 packs a prompt by the estimate and prices its tokens. This page is the arithmetic under both, run where you can see every number.</p>
+

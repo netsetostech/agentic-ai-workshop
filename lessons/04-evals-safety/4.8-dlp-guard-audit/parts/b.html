@@ -1,0 +1,73 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>tok</code>. Step 3 uploads one small note to acme, and step 8 withdraws it. Step 5 creates a candidate revision that serves no traffic, and step 6 removes its tag. Everything else only reads.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The PII scan</span><h3>The PII scan: one list, and a note that trips it</h3><p>The list both scanners import, the worker's scan, and one upload that must produce findings.</p></div></div>
+
+<h4>Definition</h4>
+<p>The worker scans a document's chunks in as few DLP requests as their bytes allow: up to 400 KB each, inside DLP's half-megabyte limit. One request per chunk was refused on the first live corpus load for exceeding the requests-per-minute quota. It maps each finding back to its chunk by byte offset and adds the chunk's id. Only then, if there were findings, does it write one record to <code>dlp_findings</code> and a <code>dlp.finding</code> audit event. After that come embedding, indexing and the <code>doc.upload</code> event. The note below carries the four synthetic identifiers from the kit's <code>evals/README.md</code>, which are valid in format so DLP fires on them and invented so nothing real is ever on a screen. It also carries an invented name. Its last line records the time to the second, so each run uploads new bytes. The worker recognises bytes it has already indexed by their hash: it acks them as <code>ingest_already_current</code> without scanning again, or as <code>ingest_withdrawn</code> after step 8. Either way <code>make ingest-one</code> would wait five minutes for a line that never comes.</p>
+
+<h4>The code</h4>
+@@pii_list@@
+@@worker_scan@@
+
+<h4>Do it</h4>
+%%CELL_NOTE%%
+%%OUT_NOTE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The upload fired the worker. The note is text, so it was parsed without Document AI: one page, one chunk. That chunk went to DLP in Mumbai before it was embedded or written to any index. The matches became one record in <code>dlp_findings</code> and one <code>dlp.finding</code> event in the audit bucket. Then the chunk was embedded and indexed, and <code>doc.upload</code> recorded the upload with <code>"pii": true</code> in its meta. <code>&gt;&gt; indexed</code> is the worker's <code>ingest_ok</code>: the note is now searchable in acme, PAN and all. The scan records PII; it does not remove it.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The findings</span><h3>The findings: types and offsets, in Firestore and in the DLP tab</h3><p>The records the scan wrote, then the admin console's tab that draws them.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell reads the newest 50 records of <code>dlp_findings</code>, keeps acme's, and names each document from the ingestion ledger, <code>sources</code>. It filters by tenant in Python, not in the query, because Firestore would need a composite index for the ordering and the filter together. For each record it prints the count and the types, then one finding in full, so you can see exactly what is stored and what is not. The admin console's DLP tab reads the same collection and draws the findings as a histogram by type.</p>
+
+<h4>Do it: the records</h4>
+%%CELL_FINDINGS%%
+%%OUT_FINDINGS%%
+
+<h4>Do it: the DLP tab</h4>
+<p>The console sits behind IAP and admits only the addresses the lane was deployed with as <code>ADMIN_EMAILS</code>. If it answers <code>403 - Admins only</code>, your address is not among them; the cell above has already read the records the tab draws.</p>
+%%CELL_ADMIN%%
+%%OUT_ADMIN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The note's record lists five types, and the invoice already in acme's corpus lists its PAN, GSTIN, mobile and email: that invoice's PAN is the one the course plan asks you to find in the DLP tab. The finding printed in full is the whole of what is kept: a type, a likelihood, a byte offset and a chunk id. The PAN itself is in the chunk it was found in, and nowhere else. In the tab, <code>INDIA_PAN_INDIVIDUAL</code> has its own bar. The metric above the chart says "Chunks with findings", but it counts records, and the worker writes one record per document.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Model Armor</span><h3>Model Armor: the template, the guard, and a candidate with ARMOR=on</h3><p>What the template filters, where the API calls it, and a revision that calls it.</p></div></div>
+
+<h4>Definition</h4>
+<p>Terraform creates one template, <code>documind-guard</code>, in asia-south1, because it reads prompts that India-resident tenants write. Prompt-injection and jailbreak detection runs at <code>MEDIUM_AND_ABOVE</code>. The template's own comment explains why: the polite, code-mixed attempt this market actually sees scores MEDIUM, and a HIGH floor would pass it. Sensitive data runs on the basic configuration, and four responsible-AI filters run at the same floor. The guard blocks when any filter reports <code>MATCH_FOUND</code>. In the API, <code>screen_prompt()</code> runs after the membership check and before retrieval, so an outsider's question never costs a Model Armor call. <code>screen_response()</code> runs on the finished answer. The usage row records its verdict, and a block is raised only after that row is logged, so a refused answer's model cost is still counted. <code>make candidate ARMOR=on</code> deploys a revision with the switch on, tagged <code>candidate</code> and serving no traffic. Every other setting takes the Makefile's default, which is fine here: the test is only what the guard refuses.</p>
+
+<h4>The code</h4>
+@@armor_tf@@
+@@guard@@
+@@screen@@
+
+<h4>Do it</h4>
+%%CELL_CANDIDATE%%
+%%OUT_CANDIDATE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Cloud Run built a new revision of <code>documind-api</code> with <code>ARMOR=on</code> and gave it its own address, <code>candidate---</code>, while every other request still reaches the live revision. The target recorded the revision's name in <code>.candidate-revision</code>, the file <code>make promote</code> reads. Step 6 deletes it, so nothing can promote a guard test by accident. The candidate accepts the same token as the live service, because the API checks every token against its canonical URL.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; The probes</span><h3>Four questions to the candidate: plain, two injections, a PAN</h3><p>Each status beside the first characters of its body, then the candidate's tag removed.</p></div></div>
+
+<p>The cell asks acme four questions as you. The plain question must be answered. The English injection is a textbook attempt, and it must come back 400 <code>prompt_blocked</code>. The Hinglish one asks for the same thing the way people here actually type it, and it is the reason the template's floor is MEDIUM. The last question contains a synthetic PAN, and it tests the template's sensitive-data filter.</p>
+%%CELL_PROBES%%
+%%OUT_PROBES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The plain question went through both screens and was answered. The two injections were refused before retrieval: no chunk was read, no model was called, and the API's log has one <code>guard</code> line for each, with <code>blocked_prompt</code> and no usage row. That 400 is this lesson's second proof. If the Hinglish line comes back 200 on your lane, the classifier scored it below MEDIUM, and that is worth writing down: it is exactly the failure the template's comment warns about. A 500 on the plain question means the guard itself failed, for example a missing <code>roles/modelarmor.user</code>, and the revision's log names the error. On a guarded revision, that means every question fails.</p></div>
+
+<div class="box box-amber"><div class="box-title">The fourth line: what the basic configuration covers</div>
+<p>The template's comment says its sensitive-data filter applies "the same India info types the ingest worker scans with". Google's Model Armor overview lists the basic configuration's types as credit card numbers, US Social Security and taxpayer numbers, financial account numbers, and Google Cloud credentials and API keys: no PAN, Aadhaar or GSTIN. So expect the PAN question to be answered, and read what the answer says. If it names the invoice's PAN, Model Armor let an Indian identifier through on the way out as well as on the way in. Screening Indian identifiers here takes the advanced configuration, which points at a DLP inspect template naming the same %%N_TYPES%% types as <code>shared/pii.py</code>.</p></div>
+
+<h4>Clean up: the candidate's tag</h4>
+%%CELL_UNCANDIDATE%%
+%%OUT_UNCANDIDATE%%
+<p>Removing the tag takes the candidate's address away; the revision itself stays in the service's list, with no traffic. The service's configuration still says <code>ARMOR=on</code> until the next deploy or candidate sets it: <code>make up</code> and <code>make candidate</code> both pass <code>ARMOR</code>, and both default it to <code>off</code>.</p>

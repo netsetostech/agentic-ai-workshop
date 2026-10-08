@@ -1,0 +1,97 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Environment</span><h3>The venv: what the setup block built, and why the kit pins</h3><p>The setup block read one line at a time; the venv asked where it lives; a second venv made, asked and deleted; then the kit's images, its pins and the check that holds them.</p></div></div>
+
+<h4>What the setup block did</h4>
+<p>The block you ran in the setup section is six lines, and each one is a habit of the kit's, scaled down to one laptop.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Line</th><th>What it did</th></tr></thead>
+<tbody>
+<tr><td><code>%%SETUP_1%%</code></td><td data-label="What it did">Names the venv's folder once, <code>~/basics-venv</code>, so every later line uses the same path.</td></tr>
+<tr><td><code>%%SETUP_2%%</code></td><td data-label="What it did">Finds a Python to make the venv from: <code>python3.12</code> if there is one, else <code>python3</code>, else the <code>py</code> launcher on Windows. The venv takes this Python's version, which is why the block looks for 3.12 first: the kit's images run 3.12.</td></tr>
+<tr><td><code>%%SETUP_3%%</code></td><td data-label="What it did">Makes the venv, the first time only: a folder with a <code>pyvenv.cfg</code> that names the base Python, a <code>bin/</code> folder (<code>Scripts\</code> on Windows) with a <code>python</code> in it, and a <code>site-packages</code> folder holding only pip.</td></tr>
+<tr><td><code>%%SETUP_4%%</code></td><td data-label="What it did">Activates it for this shell: the venv's <code>bin/</code> (or <code>Scripts\</code>) goes first on <code>PATH</code>, so <code>python</code> now means the venv's Python, and the prompt shows <code>(basics-venv)</code>. It lasts until the shell closes, which is why the block runs once per session.</td></tr>
+<tr><td><code>%%SETUP_5%%</code></td><td data-label="What it did">Installs two libraries into the venv's <code>site-packages</code>, each pinned to one version. <code>python -m pip</code> is the pip of whichever <code>python</code> runs it, and after the line above that is the venv's.</td></tr>
+<tr><td><code>%%SETUP_6%%</code></td><td data-label="What it did">Proves both libraries import, and prints the three versions.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Where am I? The venv, asked from inside</h4>
+<p>Inside a venv, <code>sys.prefix</code> is the venv's folder and <code>sys.base_prefix</code> is the Python it was made from; outside one, both name the same folder. Python's documentation says that comparing the two is enough to know whether you are in a venv. The cell below asks that, then asks where <code>python</code> and the two libraries come from, and what google-genai brought with it.</p>
+
+%%CELL_VENV%%
+%%OUT_VENV%%
+
+<p>The first five lines are the venv doing its job. The last two are the reason the kit pins. You asked pip for two libraries and pinned both. google-genai %%GENAI_PIN%% brought %%GENAI_NEEDS%% more, and its own metadata pins none of them: each comes with a range of versions it accepts, and %%OPEN_ENDED%% with no limit at all. For <code>google-auth</code> the range is %%GAUTH_MIN%% or newer, but older than %%GAUTH_MAX%%. pip took the newest version inside that range on the day the setup block ran: %%GAUTH_CHOSE%% when this page was built, perhaps a newer one on your laptop. That is fine for a scratch venv. It is not fine for a service, where "the newest on the day" means two builds a week apart can run different code. The kit pins <code>google-auth==%%KIT_GAUTH%%</code> in %%N_GAUTH_SVC%% of its %%N_SERVICES%% services, so each of those images gets exactly that version, whatever is newest.</p>
+
+<h4>A venv is a folder: make one, ask it, delete it</h4>
+<p>The cell below makes a second venv in a temporary folder, without even pip in it, and asks that venv's Python the same questions from the inside. Then it deletes the folder. Neither your system's Python nor <code>~/basics-venv</code> changes, because a venv is only a folder that points at a base Python; Python's documentation calls venvs disposable, meant to be deleted and made again rather than moved or copied.</p>
+
+%%CELL_VENV2%%
+%%OUT_VENV2%%
+
+<p>The new venv ran the same base Python as yours and still could not see numpy, because it had a <code>site-packages</code> of its own with nothing in it. <code>include-system-site-packages = false</code> is the line in <code>pyvenv.cfg</code> that keeps the base Python's own libraries out as well. Deleting the folder removed the venv completely, and nothing else noticed.</p>
+
+<h4>The kit's environment: an image and one file</h4>
+<p>None of the kit's Dockerfiles makes a venv. A service's image is its environment: a fixed Python, one <code>requirements.txt</code> installed into it, and nothing installed afterwards. This is the top of rag-api's Dockerfile:</p>
+
+@@dockerfile_head@@
+
+<p>Two of those lines do your setup block's work. <code>FROM python:3.12-slim</code> fixes the Python, as the second line of the block did. <code>RUN pip install --no-cache-dir -r requirements.txt</code> installs the pins, as the fifth line did, but from a file instead of the command line. Nothing is activated, because the image holds one Python for one service. The other side of that is strict: a library the code imports but the file does not name is simply not there. The chat service learned it the hard way, and kept the note at the top of its file:</p>
+
+@@chat_reqs@@
+
+<h4>Pinned, and pinned the same: two of the dry run's checks</h4>
+<p>The kit holds these files to two rules: every line carries a version, and a library that two files share carries the same version in both. Both rules are checks in <code>validate.py</code>, the kit's offline dry run, which lesson 0.2 runs on your clone with <code>make dryrun</code>. The second check's docstring gives its reason: two services on two versions of google-genai, and a demo that fails with a 400 that gets blamed on the model.</p>
+
+@@validate_checks@@
+%%OUT_VALIDATE%%
+
+<p>The explorer in step 1 runs exactly these two rules, which is how it can show you what one drifted pin would do. Notice the tools the two functions reach for: <code>SERVICES.rglob("requirements.txt")</code> to find every file of that name in a folder tree, <code>read_text(encoding="utf-8").splitlines()</code> to read one, and a regular expression to split <code>name==version</code>. Those are the next step's tools.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You asked your venv where it lives and got four plain answers: it is a venv, its <code>python</code> is the one on <code>PATH</code>, its libraries are in its own <code>site-packages</code>, and the two you pinned are the versions you asked for. You made a venv from nothing and deleted it, which is all a venv is. And you read the two rules the kit adds for services, where "whatever pip picks today" is not good enough: pin every line, and pin a shared library to the same version everywhere.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Files</span><h3>Files and JSON: pathlib, json and a JSONL file</h3><p>A path as an object, JSON's kinds of value and their Python twins, and a JSONL file written and read back the way the kit writes and reads its golden set.</p></div></div>
+
+<p><strong>pathlib</strong> makes a path an object. <code>Path.home()</code> is your home folder on any operating system, and <code>/</code> joins parts, so <code>Path.home() / "basics-b1"</code> needs no slash or backslash typed by hand. The path itself can make the folder, open the file, read it whole and report its size. <strong>JSON</strong> is text with a few kinds of value, and the <code>json</code> module turns each into a Python type and back:</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>JSON</th><th>Python</th><th>In a golden row</th></tr></thead>
+<tbody>
+<tr><td>object <code>{...}</code></td><td data-label="Python"><code>dict</code></td><td data-label="In a golden row">the row itself</td></tr>
+<tr><td>array <code>[...]</code></td><td data-label="Python"><code>list</code></td><td data-label="In a golden row"><code>must_contain</code>, <code>must_retrieve</code></td></tr>
+<tr><td>string <code>"..."</code></td><td data-label="Python"><code>str</code></td><td data-label="In a golden row"><code>id</code>, <code>question</code>, <code>tenant</code>, and a figure such as <code>"40,000"</code>, which is matched against the answer's text</td></tr>
+<tr><td>number</td><td data-label="Python"><code>int</code> or <code>float</code></td><td data-label="In a golden row">none in a row; the eval gate's request carries one, <code>"top_k": 6</code></td></tr>
+<tr><td><code>true</code>, <code>false</code></td><td data-label="Python"><code>True</code>, <code>False</code></td><td data-label="In a golden row"><code>answerable</code></td></tr>
+<tr><td><code>null</code></td><td data-label="Python"><code>None</code></td><td data-label="In a golden row">none: a row leaves a field it does not need out</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>A <strong>JSONL</strong> file, JSON Lines, is one JSON value per line: UTF-8, a newline after each value, no blank lines. The shape suits datasets. Rows are written and read one at a time, a new row is one more line at the end, and each line can be checked on its own. The kit keeps %%N_JSONL%% of its datasets this way, %%JSONL_LINES%% lines in all, the golden set among them.</p>
+
+<h4>Write four golden rows, read them back</h4>
+<p>The cell below takes four rows of the kit's <code>evals/golden.jsonl</code> (a lookup, a join, a refusal and an isolation row), writes them to <code>~/basics-b1/golden_sample.jsonl</code> the way the kit writes the real file, and reads them back the way the eval gate does. Then it deletes one comma from a copy of line 1, to show what <code>json.loads</code> says about a broken line.</p>
+
+%%CELL_JSONL%%
+%%OUT_JSONL%%
+
+<p>Line 1 of your file is byte for byte line 1 of the kit's golden set: the same dict, with its keys in the same order, through the same <code>json.dumps</code>. The JSON <code>true</code> came back as Python's <code>True</code> and the array as a list, as the table promised. And the error says what is wrong and where: line 1, because <code>json.loads</code> was given one line, and column %%JSON_COL%%, where it found <code>"question"</code> when it wanted a comma.</p>
+
+<h4>The kit's writer and reader</h4>
+
+@@golden_writer@@
+@@golden_reader@@
+
+<p>Three details are worth copying. <code>newline="\n"</code> makes the file the same bytes on Windows as on Linux; without it, Python on Windows ends every line with <code>\r\n</code>. <code>ensure_ascii=False</code> writes a &#8377; or a Hindi word as itself, in UTF-8, where the default writes the escape <code>&#92;u20b9</code> in its place; the golden set happens to be plain ASCII, so your file's bytes are the same either way. And the reader's <code>if line.strip()</code> skips a blank line instead of failing on it, so a file that ends with an extra empty line still loads.</p>
+
+<h4>JSON is also the kit's log line</h4>
+<p>The same <code>json.dumps</code> carries the kit's telemetry. rag-api logs bare JSON to standard output, one object per line, and Cloud Run stores each line as a structured entry whose fields can be searched and filtered; the usage row every answer writes is <code>json.dumps(row)</code>:</p>
+
+@@json_log@@
+
+<p>That one line is where the kit's cost reporting starts. A log sink copies every row whose <code>event</code> field is <code>query</code> into BigQuery, where the <code>tenant_daily</code> view adds them up per tenant and per day, in rupees as well as dollars. The <code>event</code> field is there to filter on only because the row was written as JSON.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You wrote a dataset with <code>pathlib</code> and <code>json.dumps</code>, one object per line, and read it back with a list comprehension over the file: the kit's writer and reader, at the scale of four rows. You saw JSON's types land as Python's, and a broken line fail loudly instead of quietly. The same two functions write the kit's request bodies and its log, which is why they carry most of the next two steps.</p></div>
+

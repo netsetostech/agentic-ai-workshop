@@ -1,0 +1,874 @@
+{
+  "schema_version": 4,
+  "lesson": "2.3",
+  "title": "Rerank and inspect retrieved candidates",
+  "source_kind": "main_html",
+  "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+  "source_page": "Netsetos_GCP_Capstone_2.3_Rerank_WIX.html",
+  "source_sha": "8add3ea3d051cb7b8df416e54ddb7e3cb12dc3a9",
+  "shared_setup_windows": [
+    1
+  ],
+  "source_window_count": 46,
+  "persist_variables": [
+    "API",
+    "API_URL",
+    "CAND",
+    "DOCUMIND_IMPERSONATE_SA",
+    "DOCUMIND_PROJECT",
+    "ME",
+    "N",
+    "NUMBER",
+    "PROJECT",
+    "Q",
+    "REGION",
+    "RERANK_TIMEOUT_S",
+    "RETRIEVAL_BACKEND",
+    "RETRIEVAL_CURRENT_ONLY",
+    "RETRIEVAL_MODE",
+    "SEMANTIC_CACHE",
+    "TENANT",
+    "TOP_K_RETRIEVE",
+    "VECTOR_DEPLOYED_INDEX_ID",
+    "VECTOR_INDEX_ENDPOINT",
+    "v"
+  ],
+  "headings": [
+    {
+      "level": 1,
+      "heading": "Rerank and inspect retrieved candidates: one model reads the pool against the question, a clock on every stage, and a fallback that says so on the row"
+    },
+    {
+      "level": 3,
+      "heading": "What the reranker does, and what a clock on every stage is for"
+    },
+    {
+      "level": 4,
+      "heading": "The funnel: four cuts between the corpus and a citation"
+    },
+    {
+      "level": 4,
+      "heading": "The usage reader: paste rows, read them the way make usage does"
+    },
+    {
+      "level": 3,
+      "heading": "The words: pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95"
+    },
+    {
+      "level": 3,
+      "heading": "Before you run anything: set up the shell"
+    },
+    {
+      "level": 4,
+      "heading": "Three kinds of code window on this page"
+    },
+    {
+      "level": 4,
+      "heading": "make, or the command it runs"
+    },
+    {
+      "level": 4,
+      "heading": "Which store answers acme? Pin it to the kit's own index for this lesson"
+    },
+    {
+      "level": 3,
+      "heading": "One answer, read end to end: the citations, their scores, the stages"
+    },
+    {
+      "level": 4,
+      "heading": "Definition"
+    },
+    {
+      "level": 4,
+      "heading": "The code"
+    },
+    {
+      "level": 4,
+      "heading": "Do it: the same question at top_k 5 and top_k 20"
+    },
+    {
+      "level": 3,
+      "heading": "The Ranking API by hand: the API's pool, the API's request, the API's order"
+    },
+    {
+      "level": 4,
+      "heading": "Definition"
+    },
+    {
+      "level": 4,
+      "heading": "The code"
+    },
+    {
+      "level": 4,
+      "heading": "Do it: embed, pool, rank, compare"
+    },
+    {
+      "level": 3,
+      "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate"
+    },
+    {
+      "level": 4,
+      "heading": "Definition"
+    },
+    {
+      "level": 4,
+      "heading": "The code"
+    },
+    {
+      "level": 4,
+      "heading": "Do it, offline: the kit's fallback on the pool you saved"
+    },
+    {
+      "level": 4,
+      "heading": "Do it, on a candidate: a deadline no call can meet"
+    },
+    {
+      "level": 3,
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it"
+    },
+    {
+      "level": 4,
+      "heading": "Definition"
+    },
+    {
+      "level": 4,
+      "heading": "The code"
+    },
+    {
+      "level": 4,
+      "heading": "Do it: the selftest, then the lane's last day, then its rows into the reader"
+    },
+    {
+      "level": 3,
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation"
+    },
+    {
+      "level": 4,
+      "heading": "Definition"
+    },
+    {
+      "level": 4,
+      "heading": "The code"
+    },
+    {
+      "level": 4,
+      "heading": "Do it: the join, then the kit's own retrieval in your process, then the smoke"
+    },
+    {
+      "level": 3,
+      "heading": "What the funnel costs, its knobs, and the packed set the citations come from"
+    },
+    {
+      "level": 4,
+      "heading": "What it costs"
+    },
+    {
+      "level": 4,
+      "heading": "The knobs, and the one nothing reads"
+    },
+    {
+      "level": 4,
+      "heading": "Where the reranker never runs"
+    },
+    {
+      "level": 4,
+      "heading": "The packed set: the last cut, and the list a citation resolves against"
+    },
+    {
+      "level": 4,
+      "heading": "Do it: the API's packer offline, then a pool of Act pages on the lane"
+    },
+    {
+      "level": 3,
+      "heading": "Verify it yourself: the checklist"
+    }
+  ],
+  "demos": [
+    {
+      "id": "setup_prepare",
+      "lesson": "2.3",
+      "file": "setup/prepare.py",
+      "category": "required",
+      "requires": [],
+      "heading": "Before you run anything: set up the shell",
+      "purpose": "DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. make up pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like acme:acme_497809ff...#rag-532341da71fe, a page of null even for a PDF, and stages.retrieval_backend: rag_engine. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors. Calls from the shell impersonate documind-ui-sa, the UI's own account, which make roster put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. otok mints a token for documind-outsider-sa, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible. The index endpoint and the deployed index are for step 4's pool; the reranker's settings say what the API is running with, and an empty value means the setting's default. Step 4's rank call and the in-process calls in steps 5 and 7 need the API's Ranking client in the venv at the API's own pin; the pip line is harmless if it is already there. A name the service does not set is unset here rather than exported empty, because the kit's settings class reads an empty variable as a value, not as an absence, and a cell that imports the kit would refuse it.",
+      "anchor": "setup",
+      "anchors": [
+        "setup"
+      ],
+      "section_number": null,
+      "windows": [
+        3,
+        6
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        392,
+        408
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "native_python",
+      "steps": [
+        {
+          "heading": "Before you run anything: set up the shell",
+          "subheading": "Which store answers acme? Pin it to the kit's own index for this lesson",
+          "purpose": "DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. make up pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like acme:acme_497809ff...#rag-532341da71fe, a page of null even for a PDF, and stages.retrieval_backend: rag_engine. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.",
+          "label": "bash — run in the operator shell now, before the lesson's first step",
+          "expected": "acme: retrieval_backend=vector",
+          "adaptations": [
+            "Save the actual previous pin before selecting vector; cleanup restores it instead of assuming rag_engine.",
+            "Temporarily disable an enabled answer cache for this retrieval/generation experiment and save its prior value. This changes the shared API; finish restores it. Cache lessons in Module 6 are unaffected."
+          ],
+          "id": "source_3",
+          "function": "step_01_which_store_answers_acme_pin_it_to_the_kit",
+          "window": 3,
+          "source_line": 392,
+          "manual_checkpoint": null
+        },
+        {
+          "heading": "Before you run anything: set up the shell",
+          "subheading": "Which store answers acme? Pin it to the kit's own index for this lesson",
+          "purpose": "Calls from the shell impersonate documind-ui-sa, the UI's own account, which make roster put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. otok mints a token for documind-outsider-sa, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible. The index endpoint and the deployed index are for step 4's pool; the reranker's settings say what the API is running with, and an empty value means the setting's default. Step 4's rank call and the in-process calls in steps 5 and 7 need the API's Ranking client in the venv at the API's own pin; the pip line is harmless if it is already there. A name the service does not set is unset here rather than exported empty, because the kit's settings class reads an empty variable as a value, not as an absence, and a cell that imports the kit would refuse it.",
+          "label": "bash — run in the operator shell, once per shell",
+          "expected": "endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321  deployed: documind_chunks_v1\nbackend: vector  mode: dense (default)  top_k_retrieve: 20 (default)\nrerank timeout: 5.0 (default)  answer cache: off (default)",
+          "adaptations": [
+            "Read literal environment values as JSON from the serving revision; absent keys are unset. Repeated text parsing is removed."
+          ],
+          "id": "source_6",
+          "function": "step_02_which_store_answers_acme_pin_it_to_the_kit",
+          "window": 6,
+          "source_line": 408,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "demo_03_one_answer_read_end_to_end_the_citations_their_scores_the_stages.py"
+    },
+    {
+      "id": "demo_03_one_answer_read_end_to_end_the_citations_their_scores_the_stages",
+      "lesson": "2.3",
+      "file": "demo_03_one_answer_read_end_to_end_the_citations_their_scores_the_stages.py",
+      "category": "required",
+      "requires": [
+        "setup_prepare"
+      ],
+      "heading": "One answer, read end to end: the citations, their scores, the stages",
+      "purpose": "The cell asks the notice-period question twice and prints, for each answer, the stages block on one line and every citation with its score, its chunk position, its source and the start of its quote. The second answer offers the model twenty chunks instead of five.",
+      "anchor": "s3",
+      "anchors": [
+        "s3"
+      ],
+      "section_number": 3,
+      "windows": [
+        10
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        462
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "native_python",
+      "steps": [
+        {
+          "heading": "One answer, read end to end: the citations, their scores, the stages",
+          "subheading": "Do it: the same question at top_k 5 and top_k 20",
+          "purpose": "The cell asks the notice-period question twice and prints, for each answer, the stages block on one line and every citation with its score, its chunk position, its source and the start of its quote. The second answer offers the model twenty chunks instead of five.",
+          "label": "bash — run in the operator shell (a Python cell; two questions, the second with twenty chunks: a few rupees)",
+          "expected": "top_k 5: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 17xx ms of 28xx | rerank_fallback 0 | cache_hit none\n   3 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position\n   [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'NP-03 ...'\n   [2] score 0.8xxx  #  4  hr_policy_2026.md          p.-  '...'\n   [3] score 0.6xxx  #  2  hr_policy_2026.md          p.-  '...'\n   sorted by score, the ranker's order among them: ['#1', '#4', '#2']\n\ntop_k 20: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 3xxx ms of 4xxx | rerank_fallback 0 | cache_hit none\n   4 citations: ...\n   sorted by score, the ranker's order among them: ['#1', '#4', '#2', '#7']\n\nsaved /tmp/ans53_5.json and /tmp/ans53_20.json for steps 4, 7 and 8",
+          "adaptations": [
+            "Reject semantic-cache hits or a fallback-only pool before comparing top_k/reranker behavior."
+          ],
+          "id": "source_10",
+          "function": "step_01_the_same_question_at_top_k_5_and_top_k_20",
+          "window": 10,
+          "source_line": 462,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "demo_04_the_ranking_api_by_hand_the_api_s_pool_the_api_s_request_the_api_s_order.py"
+    },
+    {
+      "id": "demo_04_the_ranking_api_by_hand_the_api_s_pool_the_api_s_request_the_api_s_order",
+      "lesson": "2.3",
+      "file": "demo_04_the_ranking_api_by_hand_the_api_s_pool_the_api_s_request_the_api_s_order.py",
+      "category": "required",
+      "requires": [
+        "demo_03_one_answer_read_end_to_end_the_citations_their_scores_the_stages"
+      ],
+      "heading": "The Ranking API by hand: the API's pool, the API's request, the API's order",
+      "purpose": "Do it: embed, pool, rank, compare",
+      "anchor": "s4",
+      "anchors": [
+        "s4"
+      ],
+      "section_number": 4,
+      "windows": [
+        13
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        538
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "native_python",
+      "steps": [
+        {
+          "heading": "The Ranking API by hand: the API's pool, the API's request, the API's order",
+          "subheading": "Do it: embed, pool, rank, compare",
+          "purpose": "Do it: embed, pool, rank, compare",
+          "label": "bash — run in the operator shell, in $DEMO_ROOT (a Python cell; one paid embedding and one rank request, well under a rupee)",
+          "expected": "pool: 20 current ids from the index in 9xx ms, every one found_by vector\nranker: 20 of 20 back in 2xx ms, 20 records sent, model semantic-ranker-fast-004\n   rank 1  score 0.9xxx  pool # 1  NP-03     hr_policy_2026.md\n   rank 2  score 0.xxxx  pool # x  ...       hr_policy_2026.md\n   ...\nthe API's cited ids, by score: ['#1', '#4', '#2'] | by hand, first 5: ['#1', '#4', '#2', '#7', '#3']\nevery citation is in the by-hand top 5: True | in the same relative order: True\nsaved /tmp/pool53.json for steps 5, 7 and 8",
+          "adaptations": [],
+          "id": "source_13",
+          "function": "step_01_embed_pool_rank_compare",
+          "window": 13,
+          "source_line": 538,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "demo_05_the_fallback_the_pool_by_retrieval_score_flagged_on_the_row_forced_on_a_candidat.py"
+    },
+    {
+      "id": "demo_05_the_fallback_the_pool_by_retrieval_score_flagged_on_the_row_forced_on_a_candidat",
+      "lesson": "2.3",
+      "file": "demo_05_the_fallback_the_pool_by_retrieval_score_flagged_on_the_row_forced_on_a_candidat.py",
+      "category": "required",
+      "requires": [
+        "demo_04_the_ranking_api_by_hand_the_api_s_pool_the_api_s_request_the_api_s_order"
+      ],
+      "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+      "purpose": "Do it, offline: the kit's fallback on the pool you saved Do it, on a candidate: a deadline no call can meet",
+      "anchor": "s5",
+      "anchors": [
+        "s5"
+      ],
+      "section_number": 5,
+      "windows": [
+        17,
+        19,
+        21
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        633,
+        663,
+        678
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "mixed_python_and_kit_cli",
+      "steps": [
+        {
+          "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+          "subheading": "Do it, offline: the kit's fallback on the pool you saved",
+          "purpose": "Do it, offline: the kit's fallback on the pool you saved",
+          "label": "bash — run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: nothing leaves the machine)",
+          "expected": "rerank_fell_back: True | every chunk marked: True\nthe pool by retrieval score, what the caller gets while the ranker is down:\n   score 0.7xxx  pool # 1  NP-03     hr_policy_2026.md\n   score 0.7xxx  pool # 2  ...       hr_policy_2026.md\n   ...\nthe ranker's five (step 4): ['NP-03', '...', '...', '...', '...']\nkept by the fallback: x of 5 | first is the same: True",
+          "adaptations": [],
+          "id": "source_17",
+          "function": "step_01_offline_the_kit_s_fallback_on_the_pool_you",
+          "window": 17,
+          "source_line": 633,
+          "manual_checkpoint": null
+        },
+        {
+          "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+          "subheading": "Do it, on a candidate: a deadline no call can meet",
+          "purpose": "Do it, on a candidate: a deadline no call can meet",
+          "label": "bash — run in the operator shell (one new revision, no traffic; one question to it; one log read)",
+          "expected": "candidate: rerank_fallback 1 | rerank_ms 1x | pool 20 | answerable True\n   score 0.7xxx  #1  hr_policy_2026.md\n   score 0.7xxx  #4  hr_policy_2026.md\n   score 0.6xxx  #2  hr_policy_2026.md\n2026-09-2xT1x:xx:xx.xxxxxxZ\tacme\tDeadlineExceeded",
+          "adaptations": [],
+          "id": "source_19",
+          "function": "step_02_on_a_candidate_a_deadline_no_call_can_meet",
+          "window": 19,
+          "source_line": 663,
+          "manual_checkpoint": null
+        },
+        {
+          "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+          "subheading": "Do it, on a candidate: a deadline no call can meet",
+          "purpose": "Do it, on a candidate: a deadline no call can meet",
+          "label": "bash — run in the operator shell (the undo: the variable removed, the tag dropped, the live service asked once)",
+          "expected": "live: rerank_fallback 0 | rerank_ms 3xx | first score 0.9xxx\n100;documind-api-00044-xyz",
+          "adaptations": [],
+          "id": "source_21",
+          "function": "step_03_on_a_candidate_a_deadline_no_call_can_meet",
+          "window": 21,
+          "source_line": 678,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "demo_06_make_usage_where_the_time_went_p95_per_stage_and_the_view_behind_it.py"
+    },
+    {
+      "id": "demo_06_make_usage_where_the_time_went_p95_per_stage_and_the_view_behind_it",
+      "lesson": "2.3",
+      "file": "demo_06_make_usage_where_the_time_went_p95_per_stage_and_the_view_behind_it.py",
+      "category": "required",
+      "requires": [
+        "demo_05_the_fallback_the_pool_by_retrieval_score_flagged_on_the_row_forced_on_a_candidat"
+      ],
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "purpose": "Do it: the selftest, then the lane's last day, then its rows into the reader",
+      "anchor": "s6",
+      "anchors": [
+        "s6"
+      ],
+      "section_number": 6,
+      "windows": [
+        27,
+        30
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        725,
+        750
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "mixed_python_and_kit_cli",
+      "steps": [
+        {
+          "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+          "subheading": "Do it: the selftest, then the lane's last day, then its rows into the reader",
+          "purpose": "Do it: the selftest, then the lane's last day, then its rows into the reader",
+          "label": "bash — run in the operator shell, in $DEMO_ROOT (Rs 0: the selftest touches nothing, and reading the log is free)",
+          "expected": "selftest: by tenant\ntenant                 answers    tok_in  tok_out       USD       INR  p95 ms  unans\n------------------------------------------------------------------------------------\nzeta                         1      1500      120    0.0332      2.82    5200   0.00\nacme                         2      3800      450    0.0091      0.77    1400   0.50\n\nselftest: where the time went (p95 per stage, by tenant)\ntenant                 answers  p95 ms  retrieve  rerank  generate   pool\n-------------------------------------------------------------------------\nzeta                         1    5200       200     120      4800   20.0\nacme                         2    1400       220     130       990   20.0\n\nselftest OK - grouped like tenant_daily: dearest tenant first, tokens summed, p95 the 95th latency, unanswerable a rate, p95 per stage and the pool beside it",
+          "adaptations": [],
+          "id": "source_27",
+          "function": "step_01_the_selftest_then_the_lane_s_last_day_then",
+          "window": 27,
+          "source_line": 725,
+          "manual_checkpoint": null
+        },
+        {
+          "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+          "subheading": "Do it: the selftest, then the lane's last day, then its rows into the reader",
+          "purpose": "Do it: the selftest, then the lane's last day, then its rows into the reader",
+          "label": "bash — run in the operator shell (the rows themselves, one JSON line each, for the reader in step 1)",
+          "expected": "NN rows; 1 with rerank_fallback 1; 0 with an empty pool\n{\"event\": \"query\", \"tenant\": \"acme\", \"user\": \"documind-ui-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com\", \"tokens_in\": xxxx.0, \"tokens_out\": xxx.0, \"cached_tokens\": 0.0, \"cost_usd\": 0.00xxxx, \"latency_ms\": 2xxx.0, \"answerable\": true, \"retrieve_ms\": 6xx.0, \"rerank_ms\": 3xx.0, \"generate_ms\": 1xxx.0, \"pool\": 20.0, \"rerank_fallback\": 0.0, ...",
+          "adaptations": [],
+          "id": "source_30",
+          "function": "step_02_the_selftest_then_the_lane_s_last_day_then",
+          "window": 30,
+          "source_line": 750,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "demo_07_found_by_stamped_on_every_chunk_counted_on_the_answer_absent_from_the_citation.py"
+    },
+    {
+      "id": "demo_07_found_by_stamped_on_every_chunk_counted_on_the_answer_absent_from_the_citation",
+      "lesson": "2.3",
+      "file": "demo_07_found_by_stamped_on_every_chunk_counted_on_the_answer_absent_from_the_citation.py",
+      "category": "required",
+      "requires": [
+        "demo_06_make_usage_where_the_time_went_p95_per_stage_and_the_view_behind_it"
+      ],
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+      "purpose": "Do it: the join, then the kit's own retrieval in your process, then the smoke",
+      "anchor": "s7",
+      "anchors": [
+        "s7"
+      ],
+      "section_number": 7,
+      "windows": [
+        35,
+        37,
+        39
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        806,
+        823,
+        840
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "mixed_python_and_kit_cli",
+      "steps": [
+        {
+          "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+          "subheading": "Do it: the join, then the kit's own retrieval in your process, then the smoke",
+          "purpose": "Do it: the join, then the kit's own retrieval in your process, then the smoke",
+          "label": "bash — run in the operator shell (a Python cell; Rs 0: two files on disk)",
+          "expected": "the answer's counts: pool 20 | vector_chunks 20 | graph_chunks 0 | managed_chunks 0 | retrieval_backend vector\na citation's fields: ['chunk_id', 'end', 'kind', 'media_url', 'page', 'quote', 'score', 'source_uri', 'start']\n   #  1 hr_policy_2026.md          found_by vector   (by the join)\n   #  4 hr_policy_2026.md          found_by vector   (by the join)\n   #  2 hr_policy_2026.md          found_by vector   (by the join)",
+          "adaptations": [],
+          "id": "source_35",
+          "function": "step_01_the_join_then_the_kit_s_own_retrieval_in_y",
+          "window": 35,
+          "source_line": 806,
+          "manual_checkpoint": null
+        },
+        {
+          "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+          "subheading": "Do it: the join, then the kit's own retrieval in your process, then the smoke",
+          "purpose": "Do it: the join, then the kit's own retrieval in your process, then the smoke",
+          "label": "bash — run in the operator shell, in $DEMO_ROOT (a Python cell; the kit's retrieve() in this process: one embedding, one index query, one Firestore read)",
+          "expected": "20 chunks in the pool, found_by: {'vector': 20}\nfirst three: [('NP-03', 'vector', 0.7xxx), ('...', 'vector', 0.7xxx), ('...', 'vector', 0.7xxx)]",
+          "adaptations": [],
+          "id": "source_37",
+          "function": "step_02_the_join_then_the_kit_s_own_retrieval_in_y",
+          "window": 37,
+          "source_line": 823,
+          "manual_checkpoint": null
+        },
+        {
+          "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+          "subheading": "Do it: the join, then the kit's own retrieval in your process, then the smoke",
+          "purpose": "Do it: the join, then the kit's own retrieval in your process, then the smoke",
+          "label": "bash — run in the operator shell, in $DEMO_ROOT (the smoke: one question, the same without a token, a version read; a rupee)",
+          "expected": "[PASS] health  {\"status\":\"ok\"}\n  [PASS] ready  ...\n  [PASS] query  answerable=True citations=3  '...'\n  [PASS] vector tier  20 of 20 chunks came from the index\n  [PASS] no token refused  status=403\n  ...",
+          "adaptations": [
+            "Run with the page's pipeline status (no pipefail). The cell filters make smoke for the lines this lesson reads; a check failing elsewhere in the smoke shows in those lines instead of stopping the cell before its later lines."
+          ],
+          "id": "source_39",
+          "function": "step_03_the_join_then_the_kit_s_own_retrieval_in_y",
+          "window": 39,
+          "source_line": 840,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "demo_08_what_the_funnel_costs_its_knobs_and_the_packed_set_the_citations_come_from.py"
+    },
+    {
+      "id": "demo_08_what_the_funnel_costs_its_knobs_and_the_packed_set_the_citations_come_from",
+      "lesson": "2.3",
+      "file": "demo_08_what_the_funnel_costs_its_knobs_and_the_packed_set_the_citations_come_from.py",
+      "category": "required",
+      "requires": [
+        "demo_07_found_by_stamped_on_every_chunk_counted_on_the_answer_absent_from_the_citation"
+      ],
+      "heading": "What the funnel costs, its knobs, and the packed set the citations come from",
+      "purpose": "The cell runs the kit's packer with the API's own budget over three lists: your ranked pool at top_k 5 and 20, and twenty full pages of the CGST Act's mirror, cut by the kit's own chunker from the file in evals/corpus. Then a golden question whose pool is Act pages goes to the API at top_k 20, and the log says what the packer dropped.",
+      "anchor": "s8",
+      "anchors": [
+        "s8"
+      ],
+      "section_number": 8,
+      "windows": [
+        43,
+        45
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        896,
+        924
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "mixed_python_and_kit_cli",
+      "steps": [
+        {
+          "heading": "What the funnel costs, its knobs, and the packed set the citations come from",
+          "subheading": "Do it: the API's packer offline, then a pool of Act pages on the lane",
+          "purpose": "The cell runs the kit's packer with the API's own budget over three lists: your ranked pool at top_k 5 and 20, and twenty full pages of the CGST Act's mirror, cut by the kit's own chunker from the file in evals/corpus. Then a golden question whose pool is Act pages goes to the API at top_k 20, and the log says what the packer dropped.",
+          "label": "bash — run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: pure Python over the saved pool and a file in the kit)",
+          "expected": "the budget: 7,832 tokens for the chunks, 168 for the fixed prompt, 2,048 reserved for the answer\nyour ranked pool, top_k 5    packed  5, dropped  0, context   7xx tokens\nyour ranked pool, top_k 20   packed 20, dropped  0, context  2xxx tokens\ntwenty full CGST Act pages   packed 15, dropped  5, context  7633 tokens\nthe first header the model reads: [Source 1] hr_policy_2026.md",
+          "adaptations": [],
+          "id": "source_43",
+          "function": "step_01_the_api_s_packer_offline_then_a_pool_of_ac",
+          "window": 43,
+          "source_line": 896,
+          "manual_checkpoint": null
+        },
+        {
+          "heading": "What the funnel costs, its knobs, and the packed set the citations come from",
+          "subheading": "Do it: the API's packer offline, then a pool of Act pages on the lane",
+          "purpose": "The cell runs the kit's packer with the API's own budget over three lists: your ranked pool at top_k 5 and 20, and twenty full pages of the CGST Act's mirror, cut by the kit's own chunker from the file in evals/corpus. Then a golden question whose pool is Act pages goes to the API at top_k 20, and the log says what the packer dropped.",
+          "label": "bash — run in the operator shell (one question with twenty Act pages offered to the model, a couple of rupees; one log read)",
+          "expected": "pool 20 | citations 2 | generate_ms 3xxx | tokens_in 8xxx | sources ['cgst_act_2017.pdf']\n2026-09-2xT1x:xx:xx.xxxxxxZ\t1x\tx",
+          "adaptations": [],
+          "id": "source_45",
+          "function": "step_02_the_api_s_packer_offline_then_a_pool_of_ac",
+          "window": 45,
+          "source_line": 924,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "See README: optional choices, then setup/finish.py if listed."
+    },
+    {
+      "id": "setup_restore_settings",
+      "lesson": "2.3",
+      "file": "setup/restore_settings.py",
+      "category": "cleanup",
+      "requires": [],
+      "heading": "Before you run anything: set up the shell",
+      "purpose": "At lesson end: DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. make up pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like acme:acme_497809ff...#rag-532341da71fe, a page of null even for a PDF, and stages.retrieval_backend: rag_engine. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors. The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.",
+      "anchor": "setup",
+      "anchors": [
+        "setup"
+      ],
+      "section_number": null,
+      "windows": [
+        5
+      ],
+      "source": "https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/GUIDE.md",
+      "source_lines": [
+        398
+      ],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "native_python",
+      "steps": [
+        {
+          "heading": "Before you run anything: set up the shell",
+          "subheading": "Which store answers acme? Pin it to the kit's own index for this lesson",
+          "purpose": "DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. make up pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like acme:acme_497809ff...#rag-532341da71fe, a page of null even for a PDF, and stages.retrieval_backend: rag_engine. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors. The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.",
+          "label": "bash — run in the operator shell when you finish the lesson, not now",
+          "expected": "",
+          "adaptations": [
+            "Run at lesson end despite its early HTML position, as the source label explicitly instructs.",
+            "Restore the saved answer-cache value and tenant backend, including after a failed experiment."
+          ],
+          "id": "source_5",
+          "function": "step_01_which_store_answers_acme_pin_it_to_the_kit",
+          "window": 5,
+          "source_line": 398,
+          "manual_checkpoint": null
+        }
+      ],
+      "next": "See README: optional choices, then setup/finish.py if listed."
+    },
+    {
+      "id": "setup_finish",
+      "lesson": "2.3",
+      "file": "setup/finish.py",
+      "category": "cleanup",
+      "orchestrator": true,
+      "requires": [],
+      "anchor": "finish",
+      "anchors": [],
+      "section_number": null,
+      "heading": "Finish and restore all lesson settings",
+      "purpose": "Run the listed cleanup sections in order, even after a failure; retain evidence and restore saved settings.",
+      "windows": [],
+      "source_lines": [],
+      "steps": [],
+      "offline": false,
+      "live_verified": false,
+      "implementation": "native_python",
+      "next": "Lesson finished; use start_new_session.py for a deliberate replay."
+    }
+  ],
+  "read_only_windows": [
+    {
+      "window": 2,
+      "label": "expected",
+      "heading": "Before you run anything: set up the shell",
+      "anchor": "setup",
+      "line": 362
+    },
+    {
+      "window": 4,
+      "label": "expected",
+      "heading": "Before you run anything: set up the shell",
+      "anchor": "setup",
+      "line": 394
+    },
+    {
+      "window": 7,
+      "label": "expected (your ids differ; a lane deployed by make up sets the backend and leaves the rest at their defaults)",
+      "heading": "Before you run anything: set up the shell",
+      "anchor": "setup",
+      "line": 416
+    },
+    {
+      "window": 8,
+      "label": "services/rag-api/main.py - _ms() and stage(): one clock and one span per stage",
+      "heading": "One answer, read end to end: the citations, their scores, the stages",
+      "anchor": "s3",
+      "line": 427
+    },
+    {
+      "window": 9,
+      "label": "services/rag-api/main.py - /v1/query, after retrieval: the pool counted, then a cache hit, an empty pool, or the rerank stage and its flag",
+      "heading": "One answer, read end to end: the citations, their scores, the stages",
+      "anchor": "s3",
+      "line": 444
+    },
+    {
+      "window": 11,
+      "label": "expected (your milliseconds, positions and quotes differ; the scores falling and the pool staying 20 are the point)",
+      "heading": "One answer, read end to end: the citations, their scores, the stages",
+      "anchor": "s3",
+      "line": 485
+    },
+    {
+      "window": 12,
+      "label": "services/rag-api/retriever.py - rerank(): the request, the deadline, the fallback, the scores written back",
+      "heading": "The Ranking API by hand: the API's pool, the API's request, the API's order",
+      "anchor": "s4",
+      "line": 508
+    },
+    {
+      "window": 14,
+      "label": "expected (your ids, scores and milliseconds differ; the two True lines are the point)",
+      "heading": "The Ranking API by hand: the API's pool, the API's request, the API's order",
+      "anchor": "s4",
+      "line": 586
+    },
+    {
+      "window": 15,
+      "label": "services/rag-api/retriever.py - _by_retrieval_score() and rerank_fell_back(): the stand-in and the mark",
+      "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+      "anchor": "s5",
+      "line": 605
+    },
+    {
+      "window": 16,
+      "label": "services/rag-api/config.py - the reranker's settings: the model, the deadline, the pool's width, and one that nothing reads",
+      "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+      "anchor": "s5",
+      "line": 620
+    },
+    {
+      "window": 18,
+      "label": "expected (your counts are yours; the two True and the scores being the pool's are the point)",
+      "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+      "anchor": "s5",
+      "line": 654
+    },
+    {
+      "window": 20,
+      "label": "expected (your scores are the pool's; a RetryError names the same deadline through a retry)",
+      "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+      "anchor": "s5",
+      "line": 672
+    },
+    {
+      "window": 22,
+      "label": "expected",
+      "heading": "The fallback: the pool by retrieval score, flagged on the row, forced on a candidate",
+      "anchor": "s5",
+      "line": 686
+    },
+    {
+      "window": 23,
+      "label": "Makefile - the usage target",
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "anchor": "s6",
+      "line": 699
+    },
+    {
+      "window": 24,
+      "label": "services/rag-api/main.py - usage_row(): the three clocks, the pool and the fallback flag on every row",
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "anchor": "s6",
+      "line": 704
+    },
+    {
+      "window": 25,
+      "label": "evals/usage_rows.py - p95(): the 95th position of the sorted list",
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "anchor": "s6",
+      "line": 710
+    },
+    {
+      "window": 26,
+      "label": "terraform/sql/tenant_daily.sql - the stage columns and the fallback count in the warehouse view",
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "anchor": "s6",
+      "line": 716
+    },
+    {
+      "window": 28,
+      "label": "expected, the selftest (the kit's own output, byte for byte)",
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "anchor": "s6",
+      "line": 728
+    },
+    {
+      "window": 29,
+      "label": "expected, the lane (your counts and milliseconds; the rerank column is the p95 of the rerank_ms clock; four tables come before the last)",
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "anchor": "s6",
+      "line": 742
+    },
+    {
+      "window": 31,
+      "label": "expected (the fallback row is step 5's doing)",
+      "heading": "make usage: where the time went, p95 per stage, and the view behind it",
+      "anchor": "s6",
+      "line": 756
+    },
+    {
+      "window": 32,
+      "label": "services/rag-api/retriever.py - the three stamps: firestore on the fallback rung, vector on the index's ids, graph on a walk",
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+      "anchor": "s7",
+      "line": 771
+    },
+    {
+      "window": 33,
+      "label": "shared/documind_schemas.py - Citation: the fields a caller receives",
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+      "anchor": "s7",
+      "line": 780
+    },
+    {
+      "window": 34,
+      "label": "smoke/smoke.py - check 3a: the index's share of the pool, asserted only when this request ran on vector",
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+      "anchor": "s7",
+      "line": 795
+    },
+    {
+      "window": 36,
+      "label": "expected",
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+      "anchor": "s7",
+      "line": 817
+    },
+    {
+      "window": 38,
+      "label": "expected (your locators and scores; the count and the stamp are the point)",
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+      "anchor": "s7",
+      "line": 837
+    },
+    {
+      "window": 40,
+      "label": "expected (the vector-tier line is this step's; the rest are lesson 3's checks and the optional ones)",
+      "heading": "found_by: stamped on every chunk, counted on the answer, absent from the citation",
+      "anchor": "s7",
+      "line": 843
+    },
+    {
+      "window": 41,
+      "label": "services/rag-api/generator.py - _pack(): the packed set, and a drop is a log line",
+      "heading": "What the funnel costs, its knobs, and the packed set the citations come from",
+      "anchor": "s8",
+      "line": 875
+    },
+    {
+      "window": 42,
+      "label": "services/rag-api/generator.py - generate(): resolve against the packed list, never the pool",
+      "heading": "What the funnel costs, its knobs, and the packed set the citations come from",
+      "anchor": "s8",
+      "line": 888
+    },
+    {
+      "window": 44,
+      "label": "expected (the first two lines are your pool's; the third is computed from the kit's files and is the same on every lane)",
+      "heading": "What the funnel costs, its knobs, and the packed set the citations come from",
+      "anchor": "s8",
+      "line": 918
+    },
+    {
+      "window": 46,
+      "label": "expected (your counts; a lane whose twenty pages fit prints no drop line, and the budget was simply not reached)",
+      "heading": "What the funnel costs, its knobs, and the packed set the citations come from",
+      "anchor": "s8",
+      "line": 930
+    }
+  ],
+  "live_verification": "Not run by the generator; validate on the intended workstation/lane.",
+  "layout_version": 3,
+  "curated": true,
+  "prerequisites": "The loaded HR/PDF corpus and Ranking API access. Saved answer/pool files are produced in this lesson.",
+  "source_line_basis": "Teaching HTML before generated IDE-DEMO-LINKS blocks; use the section anchor in the rendered page."
+}

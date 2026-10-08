@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 3.4 The ledger - claim, swap, retire, undo | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+</style>
+</head>
+<body>
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Ingest &middot; Lesson 3.4</div>
+<h1>The ledger: <span>claim, swap, retire, undo</span></h1>
+<p>Lesson 3.3 turned bytes into rows. This lesson reads the code that decides which rows are the truth: the 375 lines of <code>idempotency.py</code>, the two entry points in <code>main.py</code> that call them, and the two side lanes, <code>batch.py</code> and <code>reconcile.py</code>. Every window is the kit's own code, quoted line for line. By the end you can open any function in the ledger, name the row it touches, and say what breaks without it.</p>
+<div class="hero-chips"><div class="hero-chip">idempotency.py</div><div class="hero-chip">main.py</div><div class="hero-chip">batch.py</div><div class="hero-chip">reconcile.py</div><div class="hero-chip">Firestore transactions</div><div class="hero-chip">TTL policy</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Reading order: the map at the top of idempotency.py</a></li>
+<li><a href="#s2">The claim: one worker per version, in a transaction</a></li>
+<li><a href="#s3">The guard: an older generation is a late redelivery</a></li>
+<li><a href="#s4">current_chunks: the version the other lane already wrote</a></li>
+<li><a href="#s5">The swap: new rows first, old rows retired, never deleted</a></li>
+<li><a href="#s6">The undo: counted, dated, then flipped - and the ledger row</a></li>
+<li><a href="#s7">main.py - push(): from the envelope to a claim, and the HTTP codes</a></li>
+<li><a href="#s8">main.py - index_document(), then batch.py and reconcile.py</a></li>
+<li><a href="#s9">A worked trace: version 1, version 2, version 1 again</a></li>
+<li><a href="#quiz">Check yourself</a></li>
+<li><a href="#exercises">Exercises</a></li>
+</ol></div>
+
+<p>The second half of the How beat. Lesson 3.1 said <em>why</em> the ledger exists - one current version per source, retire never delete, an undo that costs nothing - and named the functions. Lesson 3.2 drew where each one sits. Lesson 3.3 read the code from bytes to rows. This page reads the rest: how a version is claimed, made visible, retired and brought back, and how the two jobs beside the worker reuse the same functions. Lesson 3.5 runs it all with <code>make</code>.</p>
+
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Step 1 of 9</span><h3>Reading order: the map at the top of idempotency.py</h3><p>Four files, the order to read them in, and the comment block that is the ledger's own design note.</p></div></div>
+
+<p>Read <code>idempotency.py</code> top to bottom first. It imports only <code>hashlib</code>, <code>os</code>, <code>datetime</code> and the Firestore client, so every function reads on its own and, as the practice lab shows, runs against a fake database. Then <code>main.py</code>'s two entry points: <code>push()</code>, an envelope to a claim, and <code>index_document()</code>, a claim to rows and a record. Last, the two side lanes that call the same functions from a Cloud Run job.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>File</th><th>Lines</th><th>What it holds</th><th>Run by</th></tr></thead>
+<tbody>
+<tr><td><code>idempotency.py</code></td><td data-label="Lines">375</td><td data-label="What it holds">The claim, the guard, <code>current_chunks</code>, the swap, the undo, the record: every function this page reads.</td><td data-label="Run by">The three files below.</td></tr>
+<tr><td><code>main.py</code></td><td data-label="Lines">559</td><td data-label="What it holds"><code>push()</code> 309-419; <code>index_document()</code> 422-558; <code>_enqueue_batch()</code>, <code>_run_batch_job()</code> 266-306.</td><td data-label="Run by">The push subscription (<code>eventarc.tf</code>); imported by <code>batch.py</code>.</td></tr>
+<tr><td><code>batch.py</code></td><td data-label="Lines">118</td><td data-label="What it holds"><code>queued()</code>, <code>run_one()</code>, <code>main()</code>: drain <code>ingest_batch/</code> through the worker's pipeline.</td><td data-label="Run by"><code>documind-ingest-batch</code> (<code>batch.tf</code>); <code>make batch</code>, <code>make queued</code>.</td></tr>
+<tr><td><code>reconcile.py</code></td><td data-label="Lines">473</td><td data-label="What it holds"><code>plan()</code>, <code>decide_bytes()</code>, <code>drift_of()</code>, <code>expired()</code>; <code>--retire</code>, <code>--restore</code>, <code>--backfill</code>, <code>--report</code>, <code>--purge</code>; <code>selftest()</code>.</td><td data-label="Run by"><code>documind-reconcile</code> at 23:30 IST (<code>reconcile.tf</code>); <code>make reconcile</code>, <code>retire</code>, <code>restore</code>, <code>sources</code>, <code>purge</code>, <code>backfill-current</code>.</td></tr>
+<tr><td><code>firestore_indexes.tf</code></td><td data-label="Lines">166-173</td><td data-label="What it holds"><code>google_firestore_field.chunks_expire_at</code>, <code>ttl_config {}</code>: the only deleter on the lane.</td><td data-label="Run by">The platform. Nobody calls it.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two numbers are fixed at import. <code>BATCH = 400</code>: a Firestore batch holds 500 writes and the code commits early. <code>RETENTION_DAYS</code> is read from the environment the way the worker reads it - <code>variables.tf</code>'s <code>retention_days</code>, default 30, passed by <code>make deploy-services</code> - so the stamp and the undo's check can never be two numbers. Then a comment block that is this lesson's design note; every step below expands one sentence of it.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - the ledger, lines 79-86</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># ------------------------------------------------------------------------------ the ledger (11 September 2026)</span>
+<span class="cm"># A document has an IDENTITY - its object path - and VERSIONS - the content hashes. `documents/{doc_key}` above is</span>
+<span class="cm"># the per-version claim; `sources/{source_id}` is the per-document ledger: which version is current, its generation,</span>
+<span class="cm"># when it was indexed, the date it declares. It is what every production indexer keeps (a record manager keyed on the</span>
+<span class="cm"># source), and it is what lets a re-issued document RETIRE its predecessor's chunks instead of standing beside them.</span>
+<span class="cm"># Retiring is a flag, never a delete: the audit story survives, the ANN tier's and the managed stores' mirrors keep their history, and a</span>
+<span class="cm"># bad re-index is undone by uploading the previous bytes again (reactivate) - nothing is re-embedded.</span>
+<span class="cm">#</span></pre></div>
+
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Step 2 of 9</span><h3>The claim: one worker per version, in a transaction</h3><p>claim(), the retake rule, finish() and release(), and the failure release() fixed.</p></div></div>
+
+<p>A claim is a row in <code>documents/</code> whose id is the version's <code>doc_key</code>, <code>acme_&lt;sha256&gt;</code>. Whoever writes it first owns the version. The function is one transaction, and its docstring says why: read-then-write without one is a race with a window of milliseconds, and Pub/Sub delivers duplicates concurrently, so it is a window that gets hit.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - claim(), docstring cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">claim</span>(db: firestore.Client, doc_key: str, gcs_uri: str, tenant_id: str, retake: bool = <span class="kw">False</span>) -&gt; bool:
+    <span class="cm"># ...</span>
+    ref = db.collection(<span class="st">"documents"</span>).document(doc_key)
+    retakes = (<span class="st">"failed"</span>, <span class="st">"superseded"</span>) <span class="kw">if</span> retake <span class="kw">else</span> (<span class="st">"failed"</span>,)
+
+    @firestore.transactional
+    <span class="kw">def</span> <span class="fn">_claim</span>(tx: firestore.Transaction) -&gt; bool:
+        snap = ref.get(transaction=tx)
+        <span class="cm"># A claim that ended in `failed` is not a claim, it is a record of one. release()</span>
+        <span class="cm"># writes it so the error is readable; the NEXT delivery must be allowed to try</span>
+        <span class="cm"># again, or "give the claim back" gave nothing back: on the first live load every</span>
+        <span class="cm"># retry of a failed document was acked as a duplicate and the document stayed failed.</span>
+        <span class="kw">if</span> snap.exists <span class="kw">and</span> snap.get(<span class="st">"status"</span>) <span class="kw">not</span> <span class="kw">in</span> retakes:
+            <span class="kw">return</span> <span class="kw">False</span>
+        tx.set(ref, {<span class="st">"gcs_uri"</span>: gcs_uri,
+                     <span class="st">"tenant_id"</span>: tenant_id,
+                     <span class="st">"status"</span>: <span class="st">"processing"</span>,
+                     <span class="st">"claimed_at"</span>: firestore.SERVER_TIMESTAMP})
+        <span class="kw">return</span> <span class="kw">True</span>
+
+    won = _claim(db.transaction())
+    <span class="kw">if</span> <span class="kw">not</span> won:
+        log.info(<span class="st">'{"event":"ingest_duplicate","doc_key":"%s"}'</span>, doc_key)
+    <span class="kw">return</span> won</pre></div>
+
+<p>Three details carry weight. The row stores <code>tenant_id</code> as a field, because the MCP server's <code>list_documents</code> filters on the field, never on the id's prefix - <code>acme</code> must not list <code>acme_eu_*</code>. The retake rule: <code>failed</code> may always be retaken, <code>superseded</code> only with <code>retake=True</code> (step 6 shows who passes it), <code>queued</code> never. And a refused claim logs <code>ingest_duplicate</code> here, before <code>push()</code> knows whether it is a duplicate, an undo or a queued document - that line comes first in step 9.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128647;</div><div>
+<p><strong>The railway reservation counter.</strong> Two clerks at two stations both see berth 42 free. If each sells it from what they saw a second ago, two passengers hold one berth. The reservation system makes the read and the write one booking, so the second booking fails with the berth taken. <code>claim()</code> is that booking: the version is the berth, and the transaction is what makes the second worker lose instead of both winning.</p></div></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - finish(), release(), docstrings cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">finish</span>(db: firestore.Client, doc_key: str, chunks: int, counts: dict | <span class="kw">None</span> = <span class="kw">None</span>,
+           generation: str | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; <span class="kw">None</span>:
+    <span class="cm"># ...</span>
+    row = {<span class="st">"status"</span>: <span class="st">"indexed"</span>, <span class="st">"chunks"</span>: chunks, <span class="st">"indexed_at"</span>: firestore.SERVER_TIMESTAMP}
+    <span class="kw">if</span> counts:
+        row[<span class="st">"reused"</span>], row[<span class="st">"embedded"</span>] = int(counts.get(<span class="st">"reused"</span>, <span class="nu">0</span>)), int(counts.get(<span class="st">"embedded"</span>, <span class="nu">0</span>))
+    <span class="kw">if</span> generation <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+        row[<span class="st">"generation"</span>] = str(generation)
+    db.collection(<span class="st">"documents"</span>).document(doc_key).set(row, merge=<span class="kw">True</span>)
+<span class="cm"># ...</span>
+<span class="kw">def</span> <span class="fn">release</span>(db: firestore.Client, doc_key: str, error: str) -&gt; <span class="kw">None</span>:
+    <span class="cm"># ...</span>
+    db.collection(<span class="st">"documents"</span>).document(doc_key).set(
+        {<span class="st">"status"</span>: <span class="st">"failed"</span>, <span class="st">"error"</span>: error[:<span class="nu">400</span>],
+         <span class="st">"failed_at"</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)</pre></div>
+
+<p><code>finish()</code> turns the claim into the record every later line reads: <code>indexed</code>, the chunk count, <code>reused</code> and <code>embedded</code>, the generation. <code>release()</code> is the other exit, and its docstring records the failure it fixed: a crash between the claim and <code>finish()</code> left the row at <code>processing</code> for ever, every redelivery lost the claim and was acknowledged, and the document was missing with nothing alerting. The comment inside <code>claim()</code> tells the second half: an early version treated <code>failed</code> like any other claim, so every retry of a failed document was acked as a duplicate. The fix is one line - a claim that ended in <code>failed</code> is not a claim, it is a record of one.</p>
+
+<p><code>take_batch()</code> (139-159) is the batch job's claim: <code>queued</code> to <code>processing</code> in a transaction, so two runs of the job never index one document twice; it keeps the row's fields and stamps <code>lane: "batch"</code>, and refuses anything not <code>queued</code> any more. <code>status_of()</code> (335) reads the status; it is what <code>push()</code> asks after a refused claim.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>documents/{doc_key}.status</th><th>claim()</th><th>claim(retake=True)</th><th>take_batch()</th></tr></thead>
+<tbody>
+<tr><td>absent</td><td data-label="claim()">wins</td><td data-label="claim(retake=True)">wins</td><td data-label="take_batch()">refused</td></tr>
+<tr><td><code>processing</code> (<code>claim</code>, <code>take_batch</code>)</td><td data-label="claim()">refused: duplicate</td><td data-label="claim(retake=True)">refused</td><td data-label="take_batch()">refused</td></tr>
+<tr><td><code>indexed</code> (<code>finish</code>, <code>reactivate</code>)</td><td data-label="claim()">refused: duplicate</td><td data-label="claim(retake=True)">refused</td><td data-label="take_batch()">refused</td></tr>
+<tr><td><code>superseded</code> (the swap, <code>retire_previous</code>)</td><td data-label="claim()">refused: <code>push()</code> tries the undo</td><td data-label="claim(retake=True)">wins, after a refused undo</td><td data-label="take_batch()">refused</td></tr>
+<tr><td><code>queued</code> (<code>_enqueue_batch</code>)</td><td data-label="claim()">refused: acked <code>queued_batch</code></td><td data-label="claim(retake=True)">refused</td><td data-label="take_batch()">wins</td></tr>
+<tr><td><code>failed</code> (<code>release</code>)</td><td data-label="claim()">wins</td><td data-label="claim(retake=True)">wins</td><td data-label="take_batch()">refused</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Step 3 of 9</span><h3>The guard: an older generation is a late redelivery</h3><p>stale_generation() against the ledger row, the pure rule in contracts.py, the download by generation.</p></div></div>
+
+<p>Cloud Storage numbers every version of an object; the number is its <em>generation</em>, and it only grows. The ledger row for a path records the generation it indexed. Push delivery is at-least-once and not in order, so the event for an older generation can arrive after a newer one has been indexed, and acting on it would make the old version current again. The guard reads the ledger row before anything is downloaded.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - stale_generation(), docstring cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">stale_generation</span>(db: firestore.Client, tenant_id: str, name: str, generation) -&gt; str | <span class="kw">None</span>:
+    <span class="cm"># ...</span>
+    snap = db.collection(<span class="st">"sources"</span>).document(source_id_for(tenant_id, name)).get()
+    row = (snap.to_dict() <span class="kw">or</span> {}) <span class="kw">if</span> snap.exists <span class="kw">else</span> {}
+    have = row.get(<span class="st">"generation"</span>)
+    <span class="kw">try</span>:
+        <span class="kw">if</span> have <span class="kw">and</span> int(str(generation)) &lt; int(str(have)):
+            <span class="kw">return</span> str(have)
+    <span class="kw">except</span> (TypeError, ValueError):
+        <span class="kw">return</span> <span class="kw">None</span>
+    <span class="kw">return</span> <span class="kw">None</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/contracts.py - is_stale(), docstring cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">is_stale</span>(event_generation, ledger_generation) -&gt; bool:
+        <span class="cm"># ...</span>
+        <span class="kw">return</span> int(str(event_generation)) &lt; int(str(ledger_generation))
+    <span class="kw">except</span> (TypeError, ValueError):
+        <span class="kw">return</span> <span class="kw">False</span></pre></div>
+
+<p>No row, no generation, or a generation that is not a number all answer "not stale": nothing is stale until the ledger has seen something newer, and the comparison is on integers, never strings. <code>INDEXING.md</code> (principle P2) presents <code>is_stale()</code> as the rule behind the guard; in the code the comparison lives twice - <code>stale_generation()</code> repeats it inline, and <code>reconcile.py</code>'s <code>selftest()</code> pins <code>is_stale()</code> to the cases below. They agree today; change one, change both.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - push(), the guard and the download</span><button class="cp" type="button">copy</button></div><pre tabindex="0">    older = stale_generation(_db, msg.tenant_id, msg.name, msg.generation)
+    <span class="kw">if</span> older:
+        log.info(json.dumps({<span class="st">"event"</span>: <span class="st">"ingest_stale_event"</span>, <span class="st">"tenant"</span>: msg.tenant_id, <span class="st">"name"</span>: msg.name,
+                             <span class="st">"generation"</span>: msg.generation, <span class="st">"ledger_generation"</span>: older, <span class="st">"reason"</span>: <span class="st">"older than the ledger"</span>}))
+        <span class="kw">return</span> {<span class="st">"status"</span>: <span class="st">"stale"</span>, <span class="st">"generation"</span>: msg.generation, <span class="st">"ledger_generation"</span>: older}
+    blob = _gcs.bucket(msg.bucket).blob(msg.name, generation=int(msg.generation))</pre></div>
+
+<p>The download names the generation: an event and its bytes are one version. Reading "whatever the object holds now" would let a late event for generation 2 download generation 3's bytes and record them under 2. A generation that no longer exists is the same case - its successor's own event indexes what is there now - and is acked with a second <code>ingest_stale_event</code> reason (334-339).</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Event</th><th>Ledger</th><th>is_stale()</th><th>push()</th></tr></thead>
+<tbody>
+<tr><td>5</td><td data-label="Ledger">7</td><td data-label="is_stale()">True</td><td data-label="push()">Acks <code>ingest_stale_event</code>. Nothing downloaded.</td></tr>
+<tr><td>7</td><td data-label="Ledger">7</td><td data-label="is_stale()">False</td><td data-label="push()">Proceeds; the claim refuses it as a duplicate.</td></tr>
+<tr><td>9</td><td data-label="Ledger">7</td><td data-label="is_stale()">False</td><td data-label="push()">Proceeds: a newer version, downloads generation 9.</td></tr>
+<tr><td>x, or 5 with no row</td><td data-label="Ledger">7, or none</td><td data-label="is_stale()">False</td><td data-label="push()">Proceeds: not a number, or no ledger row yet, is never stale.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Step 4 of 9</span><h3>current_chunks: the version the other lane already wrote</h3><p>Why a won claim is not yet a reason to parse, and what a row must carry to count.</p></div></div>
+
+<p>The worker is not the only writer of <code>chunks/</code>. The Module 4 notebooks seed the same collection through <code>shared/documind_corpus.seed()</code>: the same <code>doc_key</code> for the same bytes - a real Act's is the sha of its PDF, never of its Markdown mirror - and the same ledger row, but never the claim. So when that PDF is uploaded to the bucket, the worker wins <code>claim()</code> for a version whose rows are already current. <code>current_chunks()</code> is the question <code>push()</code> asks before it parses anything.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - current_chunks(), docstring cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">current_chunks</span>(db: firestore.Client, tenant_id: str, gcs_uri: str, doc_key: str,
+                   embedding_model: str | <span class="kw">None</span> = <span class="kw">None</span>, embedding_version: str | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; int:
+    <span class="cm"># ...</span>
+    n = <span class="nu">0</span>
+    query = (db.collection(<span class="st">"chunks"</span>).where(<span class="st">"tenant_id"</span>, <span class="st">"=="</span>, tenant_id)
+             .where(<span class="st">"source_uri"</span>, <span class="st">"=="</span>, gcs_uri).where(<span class="st">"current"</span>, <span class="st">"=="</span>, <span class="kw">True</span>))
+    <span class="kw">for</span> snap <span class="kw">in</span> query.stream():
+        <span class="kw">if</span> _doc_key_of(snap) != doc_key:
+            <span class="kw">continue</span>
+        d = snap.to_dict() <span class="kw">or</span> {}
+        <span class="kw">if</span> embedding_model <span class="kw">and</span> (d.get(<span class="st">"embedding_model"</span>) != embedding_model
+                                <span class="kw">or</span> str(d.get(<span class="st">"embedding_version"</span>)) != str(embedding_version)
+                                <span class="kw">or</span> d.get(<span class="st">"embedding_task_type"</span>) != <span class="st">"RETRIEVAL_DOCUMENT"</span>):
+            <span class="kw">continue</span>
+        n += <span class="nu">1</span>
+    <span class="kw">return</span> n</pre></div>
+
+<p>The count is strict on purpose. A row counts only when it is current, belongs to this <code>doc_key</code> (<code>_doc_key_of</code>, line 108, turns a pre-ledger id <code>tenant:sha256#i</code> into the key), and carries the same <code>embedding_model</code>, <code>embedding_version</code> and the task type <code>RETRIEVAL_DOCUMENT</code>. A row without the stamp could not serve this worker's queries, so it does not count, and the ingest proceeds as a fresh version whose carry-over reuses nothing from it.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>With a non-zero count (<code>main.py</code> 401-414) nothing is parsed or embedded. The claim becomes its record with the rows it already holds, the ledger learns this generation so the walk stops planning a re-ingest, the fingerprint is refreshed, and <code>ingest_already_current</code> says what was found: <code>reused</code> equal to the count, <code>embedded: 0</code>, <code>seeded_by</code> the generation the ledger held before. The other order needs nothing - <code>seed()</code> skips a version the lane already holds current.</p></div>
+
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Step 5 of 9</span><h3>The swap: new rows first, old rows retired, never deleted</h3><p>swap_versions() and _retire(), the two-commit window, and retire_previous() with no version to keep.</p></div></div>
+
+<p>Lesson 3.3 read <code>mirror_to_firestore()</code>, which writes a new version's rows with <code>current: False</code>, <code>staged: True</code> and a one-day <code>expire_at</code> (<code>STAGE_HOURS = 24</code> in <code>main.py</code>), so a stage nothing ever swaps leaves by the same policy that removes a retired row. No reader can see a staged row. The swap is the one pass that makes the version visible, and its order is the whole design.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - _retire(), swap_versions(), docstring cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_retire</span>(batch_state: list, snap, keep_doc_key, expire_at, effective_to) -&gt; <span class="kw">None</span>:
+    fields = {<span class="st">"current"</span>: <span class="kw">False</span>, <span class="st">"superseded_by"</span>: keep_doc_key, <span class="st">"superseded_at"</span>: firestore.SERVER_TIMESTAMP}
+    <span class="kw">if</span> expire_at <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+        fields[<span class="st">"expire_at"</span>] = expire_at            <span class="cm"># the TTL policy's field: the platform deletes the row after it</span>
+    <span class="kw">if</span> effective_to:
+        fields[<span class="st">"effective_to"</span>] = effective_to      <span class="cm"># the successor's effective date closes this version's window</span>
+    batch_state[<span class="nu">0</span>].update(snap.reference, fields)
+<span class="cm"># ...</span>
+<span class="kw">def</span> <span class="fn">swap_versions</span>(db: firestore.Client, tenant_id: str, gcs_uri: str, new_doc_key: str, expire_at=<span class="kw">None</span>,
+                  effective_to: str | <span class="kw">None</span> = <span class="kw">None</span>, chunks_collection: str = <span class="st">"chunks"</span>) -&gt; dict:
+    <span class="cm"># ...</span>
+    activated, retired_keys, retired_ids = <span class="nu">0</span>, set(), []
+    state, pending = [db.batch()], <span class="nu">0</span>
+    query = (db.collection(chunks_collection).where(<span class="st">"tenant_id"</span>, <span class="st">"=="</span>, tenant_id)
+             .where(<span class="st">"source_uri"</span>, <span class="st">"=="</span>, gcs_uri))
+    rows = list(query.stream())
+    <span class="kw">for</span> snap <span class="kw">in</span> rows:                                       <span class="cm"># the new version first: a reader never finds no version</span>
+        d = snap.to_dict() <span class="kw">or</span> {}
+        <span class="kw">if</span> _doc_key_of(snap) == new_doc_key <span class="kw">and</span> d.get(<span class="st">"current"</span>) <span class="kw">is</span> <span class="kw">not</span> <span class="kw">True</span>:
+            state[<span class="nu">0</span>].update(snap.reference, {<span class="st">"current"</span>: <span class="kw">True</span>, <span class="st">"staged"</span>: firestore.DELETE_FIELD,
+                                             <span class="st">"expire_at"</span>: firestore.DELETE_FIELD,
+                                             <span class="st">"superseded_by"</span>: firestore.DELETE_FIELD,
+                                             <span class="st">"superseded_at"</span>: firestore.DELETE_FIELD,
+                                             <span class="st">"effective_to"</span>: firestore.DELETE_FIELD})
+            activated += <span class="nu">1</span>
+            pending += <span class="nu">1</span>
+            <span class="kw">if</span> pending == BATCH:
+                state[<span class="nu">0</span>].commit()
+                state, pending = [db.batch()], <span class="nu">0</span>
+    <span class="kw">for</span> snap <span class="kw">in</span> rows:                                       <span class="cm"># then the old: a flag, never a delete</span>
+        d = snap.to_dict() <span class="kw">or</span> {}
+        key = _doc_key_of(snap)
+        <span class="kw">if</span> key == new_doc_key <span class="kw">or</span> d.get(<span class="st">"current"</span>) <span class="kw">is</span> <span class="kw">False</span>:
+            <span class="kw">continue</span>
+        _retire(state, snap, new_doc_key, expire_at, effective_to)
+        retired_keys.add(key)
+        retired_ids.append(snap.id)
+        pending += <span class="nu">1</span>
+        <span class="kw">if</span> pending == BATCH:
+            state[<span class="nu">0</span>].commit()
+            state, pending = [db.batch()], <span class="nu">0</span>
+    <span class="kw">if</span> pending:
+        state[<span class="nu">0</span>].commit()
+    <span class="kw">for</span> key <span class="kw">in</span> retired_keys:
+        db.collection(<span class="st">"documents"</span>).document(key).set(
+            {<span class="st">"status"</span>: <span class="st">"superseded"</span>, <span class="st">"superseded_by"</span>: new_doc_key,
+             <span class="st">"superseded_at"</span>: firestore.SERVER_TIMESTAMP,
+             <span class="st">"retired_at"</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)     <span class="cm"># the undo window's clock (reactivate)</span>
+    <span class="kw">return</span> {<span class="st">"activated"</span>: activated, <span class="st">"retired_doc_keys"</span>: sorted(retired_keys), <span class="st">"retired_ids"</span>: retired_ids,
+            <span class="st">"retired_chunks"</span>: len(retired_ids)}</pre></div>
+
+<p>Two loops, two halves of a promise. The first flips the new version's rows to <code>current: True</code> and deletes the stage marks and any leftover retirement fields. The second calls <code>_retire()</code> on every other current row of the source: <code>current: False</code>, <code>superseded_by</code> the new key, <code>superseded_at</code>, <code>expire_at</code> when the caller passed a retention (the worker passes now plus <code>RETENTION_DAYS</code>), <code>effective_to</code> when the successor declares a date. Both loops share one batch, committed every 400 writes. Then every retired version's claim is stamped <code>superseded</code> with <code>retired_at</code> - the clock the undo reads.</p>
+
+<div class="box box-teal"><div class="box-title">The window between two commits, and who hides it</div>
+<p>Both loops count into one batch of 400, so a re-issue whose two versions total 400 rows or fewer flips in one commit (the docstring says "up to ~250 chunks"; counting the retired rows too, 200 is the safe figure). A longer document flips in two commits, and between them both versions are current. The reader closes that window: <code>services/rag-api/retriever.py</code>'s <code>prefer_current()</code> drops every row with <code>current: False</code>, then <code>newest_per_source()</code> keeps one version per <code>source_uri</code> - the <code>doc_key</code> whose rows landed last by <code>indexed_at</code> or <code>reactivated_at</code>. Because the new rows were flipped first, a reader in the window gets the new version only.</p></div>
+
+<p><code>retire_previous()</code> (185-216) is the same retirement with nothing to keep: the same query, <code>_retire()</code>, batches and claim stamp. The difference is <code>keep_doc_key</code>. The worker's undo passes the reactivated key, so the newer version is retired and the reactivated one kept; the reconcile passes <code>None</code> - the object left the bucket, or a person withdrew it - and the whole source is retired. Two equality filters need no composite index, which is why neither function filters on <code>current</code> in the query.</p>
+
+
+<div class="cw"><div class="ch-bar"><span>terraform/firestore_indexes.tf - the only deleter</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># TTL for superseded/staged chunk rows.</span>
+resource <span class="st">"google_firestore_field"</span> <span class="st">"chunks_expire_at"</span> {
+  project    = var.project_id
+  database   = google_firestore_database.main.name
+  collection = <span class="st">"chunks"</span>
+  field      = <span class="st">"expire_at"</span>
+
+  ttl_config {}
+}</pre></div>
+
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Step 6 of 9</span><h3>The undo: counted, dated, then flipped - and the ledger row</h3><p>withdrawn() and reactivate(), the worker's undo branch, then record_source() and the fingerprint.</p></div></div>
+
+<p>The undo is the same bytes uploaded again after a newer version retired them. Their rows are still in <code>chunks/</code>, flagged, so flipping the flag back is a re-index that costs nothing - because nothing was deleted. Two checks stand in front of the flip. The first is the tombstone, <code>withdrawn()</code> (273-277): a source a person took down with <code>make retire</code> is <code>withdrawn</code> in <code>sources/</code>, and only <code>make restore</code> brings it back. The worker asks before the undo; <code>reactivate()</code> asks again, so no caller can skip it.</p>
+
+<p>The second check is the count and the clock, and the docstring records the failure behind them: the first undo flipped whatever rows remained and retired the newer version on the strength of it; after <code>RETENTION_DAYS</code> the TTL policy had taken the rows, zero were flipped, and the source was left with no current version at all.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - reactivate(), docstring and log text cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">reactivate</span>(db: firestore.Client, tenant_id: str, gcs_uri: str, doc_key: str,
+               chunks_collection: str = <span class="st">"chunks"</span>, retention_days: int | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; int | <span class="kw">None</span>:
+    <span class="cm"># ...</span>
+    <span class="kw">if</span> withdrawn(db, tenant_id, gcs_uri):
+        log.info(<span class="st">'{"event":"reactivate_withdrawn","doc_key":"%s","gcs_uri":"%s","hint":"make restore SOURCE="}'</span>,
+                 doc_key, gcs_uri)
+        <span class="kw">return</span> <span class="kw">None</span>
+    query = (db.collection(chunks_collection).where(<span class="st">"tenant_id"</span>, <span class="st">"=="</span>, tenant_id)
+             .where(<span class="st">"source_uri"</span>, <span class="st">"=="</span>, gcs_uri))
+    rows = [snap <span class="kw">for</span> snap <span class="kw">in</span> query.stream()
+            <span class="kw">if</span> _doc_key_of(snap) == doc_key <span class="kw">and</span> (snap.to_dict() <span class="kw">or</span> {}).get(<span class="st">"current"</span>) <span class="kw">is</span> <span class="kw">False</span>]
+    claim_snap = db.collection(<span class="st">"documents"</span>).document(doc_key).get()
+    record = (claim_snap.to_dict() <span class="kw">or</span> {}) <span class="kw">if</span> claim_snap.exists <span class="kw">else</span> {}
+    expected, stamp = record.get(<span class="st">"chunks"</span>), record.get(<span class="st">"retired_at"</span>)
+    window = RETENTION_DAYS <span class="kw">if</span> retention_days <span class="kw">is</span> <span class="kw">None</span> <span class="kw">else</span> int(retention_days)
+    age = <span class="kw">None</span>
+    <span class="kw">if</span> isinstance(stamp, datetime):                     <span class="cm"># a claim from before the stamp has no clock: the count decides</span>
+        age = (datetime.now(timezone.utc) - (stamp <span class="kw">if</span> stamp.tzinfo <span class="kw">else</span> stamp.replace(tzinfo=timezone.utc))).days
+    short = expected <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> len(rows) &lt; int(expected)
+    <span class="kw">if</span> short <span class="kw">or</span> (age <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> age &gt; window):
+        <span class="cm"># ...</span>
+        <span class="kw">return</span> <span class="kw">None</span>
+    n, batch, pending = <span class="nu">0</span>, db.batch(), <span class="nu">0</span>
+    <span class="kw">for</span> snap <span class="kw">in</span> rows:
+        batch.update(snap.reference, {<span class="st">"current"</span>: <span class="kw">True</span>, <span class="st">"superseded_by"</span>: firestore.DELETE_FIELD,
+                                      <span class="st">"superseded_at"</span>: firestore.DELETE_FIELD,
+                                      <span class="st">"expire_at"</span>: firestore.DELETE_FIELD,
+                                      <span class="st">"effective_to"</span>: firestore.DELETE_FIELD,
+                                      <span class="st">"reactivated_at"</span>: firestore.SERVER_TIMESTAMP})
+        n += <span class="nu">1</span>
+        pending += <span class="nu">1</span>
+        <span class="kw">if</span> pending == BATCH:
+            batch.commit()
+            batch, pending = db.batch(), <span class="nu">0</span>
+    <span class="kw">if</span> pending:
+        batch.commit()
+    db.collection(<span class="st">"documents"</span>).document(doc_key).set(
+        {<span class="st">"status"</span>: <span class="st">"indexed"</span>, <span class="st">"superseded_by"</span>: firestore.DELETE_FIELD, <span class="st">"retired_at"</span>: firestore.DELETE_FIELD,
+         <span class="st">"reactivated_at"</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)
+    <span class="kw">return</span> n</pre></div>
+
+<p>The retired rows still here are counted against the claim's <code>chunks</code>, and the claim's <code>retired_at</code> against the window. A shortfall or a closed window is <code>reactivate_incomplete</code> with both numbers on the line (310-313), <code>None</code> comes back, and nothing has changed. A claim from before the stamp has no clock, and the count alone decides. When both checks pass, every row is flipped with its retirement fields deleted and <code>reactivated_at</code> stamped, the claim returns to <code>indexed</code> with <code>retired_at</code> cleared, and the count comes back.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128214;</div><div>
+<p><strong>The bank passbook.</strong> A wrong entry is never erased. The bank adds a reversing entry, and the original line stays on the page with a note beside it: the balance is right, and an auditor sees both lines and the date of each. A retired chunk row is the original line, <code>superseded_by</code> and <code>superseded_at</code> are the note, and <code>reactivate()</code> is the reversing entry - written only after the teller has counted that every line of the original entry is still on the page.</p></div></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - push(), the refused claim, comments cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0">    <span class="kw">if</span> <span class="kw">not</span> claim(_db, doc.doc_key, doc.gcs_uri, doc.tenant_id):
+        <span class="kw">if</span> status_of(_db, doc.doc_key) == <span class="st">"superseded"</span>:
+            <span class="cm"># ...</span>
+            <span class="kw">if</span> withdrawn(_db, doc.tenant_id, doc.gcs_uri):
+                log.info(json.dumps({<span class="st">"event"</span>: <span class="st">"ingest_withdrawn"</span>, <span class="st">"tenant"</span>: doc.tenant_id, <span class="st">"doc_key"</span>: doc.doc_key,
+                <span class="cm"># ...</span>
+                <span class="kw">return</span> {<span class="st">"status"</span>: <span class="st">"withdrawn"</span>, <span class="st">"doc_key"</span>: doc.doc_key}
+            back = reactivate(_db, doc.tenant_id, doc.gcs_uri, doc.doc_key)
+            <span class="kw">if</span> back <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+                <span class="cm"># ...</span>
+                <span class="kw">if</span> INDEX_NAME:
+                    reupsert(INDEX_NAME, _db, doc.tenant_id, doc.gcs_uri, doc.doc_key)
+                gone = retire_previous(_db, doc.tenant_id, doc.gcs_uri, doc.doc_key, expire_at=_expire_at(RETENTION_DAYS))
+            <span class="cm"># ...</span>
+            <span class="kw">if</span> <span class="kw">not</span> claim(_db, doc.doc_key, doc.gcs_uri, doc.tenant_id, retake=<span class="kw">True</span>):
+                <span class="kw">return</span> {<span class="st">"status"</span>: <span class="st">"duplicate"</span>, <span class="st">"doc_key"</span>: doc.doc_key}</pre></div>
+
+<p>The order inside the branch matters as much as the order inside the swap. After a successful <code>reactivate()</code>, the ANN tier is repaired first: <code>reupsert()</code> (<code>indexer.py</code>, read in 3.3) puts the reactivated ids back into Vector Search from the rows' own vectors <em>before</em> <code>retire_previous()</code> retires the newer version and <code>remove_datapoints()</code> takes its ids out, so a reader of the tier never finds none. Then the managed mirror follows (<code>after_undo</code>, 365), <code>record_source()</code> rewrites the ledger row with <code>reused</code> equal to the count and <code>embedded: 0</code> (367-370), the fingerprint moves, and the line is <code>ingest_reactivated</code>. One honest footnote: <code>embedded: 0</code> is the carry-over's number; <code>reupsert()</code> re-embeds a row only when its stamp no longer matches (<code>_repair_snapshots</code>), and that repair is not on this line. When <code>reactivate()</code> refuses, the worker takes the claim back with <code>claim(retake=True)</code> and falls through to <code>index_document()</code>: the carry-over reuses every vector the newer version still holds by <code>chunk_hash</code>, and the swap retires it only once the new rows are whole.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - record_source(), docstring cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">record_source</span>(db: firestore.Client, tenant_id: str, name: str, gcs_uri: str, doc_key: str,
+                  generation: str, sha256: str, chunks: int, effective_from: str | <span class="kw">None</span> = <span class="kw">None</span>,
+                  status: str = <span class="st">"indexed"</span>, reused: int = <span class="nu">0</span>, embedded: int = <span class="nu">0</span>, retired: int = <span class="nu">0</span>,
+                  embedding_model: str | <span class="kw">None</span> = <span class="kw">None</span>, embedding_version: str | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; <span class="kw">None</span>:
+    <span class="cm"># ...</span>
+    row = {<span class="st">"tenant_id"</span>: tenant_id, <span class="st">"name"</span>: name, <span class="st">"gcs_uri"</span>: gcs_uri, <span class="st">"doc_key"</span>: doc_key,
+           <span class="st">"generation"</span>: str(generation), <span class="st">"sha256"</span>: sha256, <span class="st">"chunks"</span>: chunks,
+           <span class="st">"effective_from"</span>: effective_from, <span class="st">"status"</span>: status,
+           <span class="st">"reused"</span>: int(reused), <span class="st">"embedded"</span>: int(embedded), <span class="st">"retired"</span>: int(retired),
+           <span class="st">"indexed_at"</span>: firestore.SERVER_TIMESTAMP}
+    <span class="kw">if</span> embedding_model:
+        row[<span class="st">"embedding_model"</span>], row[<span class="st">"embedding_version"</span>] = embedding_model, str(embedding_version <span class="kw">or</span> <span class="st">""</span>)
+    db.collection(<span class="st">"sources"</span>).document(source_id_for(tenant_id, name)).set(row, merge=<span class="kw">True</span>)</pre></div>
+
+<p>The ledger row is keyed by the object path with the slash swapped for a tilde (<code>source_id_for</code>: <code>acme~hr_policy_2026.md</code>), because a Firestore id cannot hold a slash. It says what is current for that path - <code>doc_key</code>, generation, sha - since when, what the last reindex cost (<code>reused</code>, <code>embedded</code>, <code>retired</code>), the date the document declares, and the embedding the version was made with; <code>GET /v1/sources</code>, the UI's Documents page and <code>make sources</code> read it. The fingerprint is the sha256 of the tenant's sorted current <code>doc_key</code>s, cut to sixteen characters: it changes on every reindex, retirement and reactivation and on nothing else. <code>refresh_fingerprint()</code> (365-375) writes it to <code>ledger/{tenant}</code> with the event that moved it; the API's cache manager compares it with its cache record and answers uncached on a mismatch (<code>cache_stale</code>). The record is never deleted here - the demo README's older wording, "drops ACME's cache record", describes what the API does with the mismatch, not what this function writes.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The undo is verified before it is trusted, ordered so the ANN tier never goes empty, and recorded on the same three rows as any other ingest: the claim, the ledger row, the fingerprint. The one thing it does not do is call the embedding model. That is the sentence the module gate asks you to say out loud: the undo embedded nothing because the rows were flagged, not deleted, and the flag was flipped back only after the count and the clock agreed.</p></div>
+
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Step 7 of 9</span><h3>main.py - push(): from the envelope to a claim, and the HTTP codes</h3><p>What the module sets up, the handler's branches, the batch hand-off, and what each HTTP status makes Pub/Sub do.</p></div></div>
+
+<p>Before <code>push()</code> can run, the module has built its clients and read its settings. <code>_db</code> and <code>_gcs</code>: one Firestore and one Storage client per process (concurrency is 1, so a process holds one claim at a time). <code>tenant_policy()</code> reads <code>tenant_settings/{tenant}.data_region</code>, cached 60 seconds, for <code>_mirror = Mirror.from_env(_db, policy_for=tenant_policy)</code> - the managed mirror of <code>managed.py</code>, which copies a version to a store outside India only when the policy says <code>any</code>. <code>RETENTION_DAYS</code> (env, default 30) and <code>STAGE_HOURS = 24</code> both feed <code>expire_at</code>; <code>MAX_INLINE_PAGES = 250</code> is the batch ceiling; <code>BATCH_JOB</code> is the job's name once <code>make batch-job</code> has declared it. The module refuses to start without <code>AUDIT_BUCKET</code> (91-94): a configuration mistake must fail at startup, not as a 500 halfway through an ingest.</p>
+
+<p>The handler you have now read in pieces. A message it cannot parse is answered 400 with one <code>ingest_poison</code> line (309-320). Then the guard, the download by generation, the <code>DocumentContract</code> whose <code>doc_key</code> is the sha of the bytes, and the claim. A refused claim goes to <code>status_of()</code>: <code>superseded</code> is the undo of step 6, <code>queued</code> is acked as <code>queued_batch</code> so the wait is a fact in the log and not a "duplicate" that hides it, anything else is a duplicate, acked. A won claim goes through <code>current_chunks()</code> into <code>index_document()</code>; an <code>IngestFailed</code> from there is a 500.</p>
+
+<p>The batch hand-off, <code>_enqueue_batch()</code> (279-306), is a Firestore document, not a second topic: <code>ingest_batch/{doc_key}</code> with everything the consumer needs to fetch the same bytes - bucket, name, content type, size, pages, generation - and the claim set to <code>queued</code>, not <code>processing</code>. That one word keeps a redelivery from being acked as a duplicate and the walk from rewriting the object onto itself: the worker answers <code>queued_batch</code>, and <code>reconcile.plan()</code> reports the generation as <code>queued</code>, apart from the drift. When <code>BATCH_JOB</code> names the job, <code>_run_batch_job()</code> (266-276) starts it through the Cloud Run Jobs API as the worker's own identity (<code>batch.tf</code> grants <code>run.invoker</code>), and <code>ingest_queued_batch</code> says which consumer will take it. A failure to start is logged and swallowed: a queued document is not a failed ingest.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>push() answers</th><th>Body status</th><th>What Pub/Sub does</th><th>What the ledger holds</th></tr></thead>
+<tbody>
+<tr><td>200</td><td data-label="Body status"><code>indexed</code>, <code>stale</code>, <code>duplicate</code>, <code>queued_batch</code>, <code>withdrawn</code>, <code>reactivated</code>, <code>already_current</code></td><td data-label="What Pub/Sub does">Acknowledges; the message is gone.</td><td data-label="What the ledger holds">Whatever the branch wrote; for <code>stale</code>, <code>duplicate</code>, <code>queued_batch</code> and <code>withdrawn</code>, nothing new. All are successes - a retry would achieve nothing.</td></tr>
+<tr><td>400</td><td data-label="Body status">poison</td><td data-label="What Pub/Sub does">A non-2xx is a negative acknowledgement: retried with backoff until <code>max_delivery_attempts</code>, then parked in the dead-letter topic, where <code>make dlq</code> reads it. The comment in <code>push()</code> and the Makefile say "five" attempts; <code>eventarc.tf</code> allows 12.</td><td data-label="What the ledger holds">Nothing: no download, no claim. Each retry costs one log line.</td></tr>
+<tr><td>500</td><td data-label="Body status"><code>ingest failed</code></td><td data-label="What Pub/Sub does">Retried the same way, then the DLQ; the <em>Ingest failed</em> policy in <code>alerts.tf</code> pages within ten minutes.</td><td data-label="What the ledger holds">The claim is <code>failed</code> with the error text, so the retry can take it. Rows are staged at most, and a stage nobody swaps expires in a day.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Step 8 of 9</span><h3>main.py - index_document(), then batch.py and reconcile.py</h3><p>The pipeline from a claimed version to its line, and the two jobs that reuse it.</p></div></div>
+
+<p><code>index_document()</code> is shared by the two lanes: the push handler, inside a request's 600 seconds, and <code>batch.py</code>, a job with no push deadline, which passes <code>lane="batch"</code> so the page ceiling that queued the document is not asked again. Lesson 3.3 read the parse, the scan, the chunker and the carry-over inside it. The batch decision (451-455) comes first: a PDF's page count is read off its page tree by pypdf before any OCR is paid for, and over <code>MAX_INLINE_PAGES</code> the push lane calls <code>_enqueue_batch()</code> and returns <code>queued_batch</code> - the first version parsed the whole file and then looked at the count. Then everything from the carry-over to the line.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - index_document(), from the carry-over to the line, comments cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0">        vectors, counts = embed_with_carry_over(_db, doc, chunks)
+        <span class="cm"># ...</span>
+        mirror_to_firestore(_db, doc, chunks, vectors, staged=<span class="kw">True</span>, stage_expire_at=_expire_at(STAGE_HOURS / <span class="nu">24</span>))
+        gone = swap_versions(_db, doc.tenant_id, doc.gcs_uri, doc.doc_key,
+                             expire_at=_expire_at(RETENTION_DAYS), effective_to=doc.effective_from)
+        <span class="kw">if</span> INDEX_NAME:                       <span class="cm"># the Vector Search index (vector.tf); a deployment without one skips the tier</span>
+            upsert(INDEX_NAME, to_datapoints(doc, chunks, vectors))
+            <span class="kw">if</span> gone[<span class="st">"retired_ids"</span>]:
+                remove_datapoints(INDEX_NAME, gone[<span class="st">"retired_ids"</span>])
+        <span class="cm"># ...</span>
+        finish(_db, doc.doc_key, len(chunks), counts, msg.generation)
+        record_source(_db, doc.tenant_id, msg.name, doc.gcs_uri, doc.doc_key, msg.generation,
+                      doc.sha256, len(chunks), doc.effective_from,
+                      reused=counts[<span class="st">"reused"</span>], embedded=counts[<span class="st">"embedded"</span>], retired=gone[<span class="st">"retired_chunks"</span>],
+                      embedding_model=EMBEDDING_MODEL, embedding_version=EMBEDDING_VERSION)
+        <span class="cm"># ...</span>
+        fingerprint = refresh_fingerprint(_db, doc.tenant_id, <span class="st">"ingest_ok"</span>)
+    <span class="cm"># ...</span>
+    <span class="kw">except</span> Exception <span class="kw">as</span> e:
+        <span class="cm"># ...</span>
+        release(_db, doc.doc_key, <span class="st">f"{type(e).__name__}: {e}"</span>)
+        log.error(json.dumps({<span class="st">"event"</span>: <span class="st">"ingest_failed"</span>, <span class="st">"tenant"</span>: doc.tenant_id, <span class="st">"lane"</span>: lane,
+                              <span class="st">"doc_key"</span>: doc.doc_key, <span class="st">"gcs_uri"</span>: doc.gcs_uri,
+                              <span class="st">"error"</span>: <span class="st">f"{type(e).__name__}: {e}"</span>[:<span class="nu">600</span>]}))
+    <span class="cm"># ...</span>
+    log.info(json.dumps({<span class="st">"event"</span>: <span class="st">"ingest_ok"</span>, <span class="st">"tenant"</span>: doc.tenant_id, <span class="st">"lane"</span>: lane,
+    <span class="cm"># ...</span>
+    <span class="kw">return</span> {<span class="st">"status"</span>: <span class="st">"indexed"</span>, <span class="st">"chunks"</span>: len(chunks), <span class="st">"reused"</span>: counts[<span class="st">"reused"</span>], <span class="st">"embedded"</span>: counts[<span class="st">"embedded"</span>]}</pre></div>
+
+<p>Count the calls in order, because the order is the design: <code>embed_with_carry_over</code> (pay for what changed), <code>mirror_to_firestore(staged=True)</code> (invisible), <code>swap_versions</code> (visible in one pass, the old version retired with <code>expire_at</code> and <code>effective_to</code>), <code>upsert</code> and <code>remove_datapoints</code> (the ANN tier follows), <code>_mirror.after_swap</code> at 508-509 (the managed stores follow, never able to fail the ingest), <code>mirror_to_bigquery</code> (when <code>BQ_CHUNK_TABLE</code> is set), <code>finish</code>, <code>record_source</code>, <code>refresh_fingerprint</code>, <code>ingest_superseded</code> when something was retired (523-528), the <code>doc.upload</code> audit event, and <code>ingest_ok</code> with the fields every operator reads: <code>tenant</code>, <code>lane</code>, <code>doc_key</code>, <code>chunks</code>, <code>pages</code>, <code>kinds</code>, <code>reused</code>, <code>embedded</code>, <code>retired</code>, <code>generation</code>, <code>effective_from</code>, <code>fingerprint</code>. The <code>except</code> releases the claim and logs <code>ingest_failed</code> with the error on the line an operator reads first.</p>
+
+<h4>batch.py: the consumer</h4>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/batch.py - run_one(), trimmed</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">run_one</span>(db, gcs, rec: dict, worker) -&gt; str:
+    <span class="cm"># ...</span>
+    doc_key = rec[<span class="st">"doc_key"</span>]
+    <span class="kw">if</span> <span class="kw">not</span> take_batch(db, doc_key):
+        log.info(json.dumps({<span class="st">"event"</span>: <span class="st">"batch_skipped"</span>, <span class="st">"doc_key"</span>: doc_key, <span class="st">"reason"</span>: <span class="st">"the claim is not queued any more"</span>}))
+        <span class="kw">return</span> <span class="st">"skipped"</span>
+        <span class="cm"># ...</span>
+        content = gcs.bucket(bucket).blob(name, generation=int(rec[<span class="st">"generation"</span>])).download_as_bytes()
+    <span class="cm"># ...</span>
+    doc = DocumentContract(tenant_id=rec[<span class="st">"tenant_id"</span>], sha256=sha256_of(content), gcs_uri=rec[<span class="st">"gcs_uri"</span>],
+                           pages=int(rec.get(<span class="st">"pages"</span>) <span class="kw">or</span> <span class="nu">0</span>))
+    <span class="cm"># ...</span>
+    <span class="kw">try</span>:
+        out = worker.index_document(doc, msg, content, lane=<span class="st">"batch"</span>)
+    <span class="kw">except</span> worker.IngestFailed <span class="kw">as</span> e:                   <span class="cm"># the claim is released and ingest_failed logged already</span>
+        record.set({<span class="st">"status"</span>: <span class="st">"failed"</span>, <span class="st">"error"</span>: str(e)[:<span class="nu">300</span>]}, merge=<span class="kw">True</span>)
+        <span class="kw">return</span> <span class="st">"failed"</span>
+    record.set({<span class="st">"status"</span>: <span class="st">"indexed"</span>, <span class="st">"chunks"</span>: int(out.get(<span class="st">"chunks"</span>, <span class="nu">0</span>)),
+                <span class="st">"reused"</span>: int(out.get(<span class="st">"reused"</span>, <span class="nu">0</span>)), <span class="st">"embedded"</span>: int(out.get(<span class="st">"embedded"</span>, <span class="nu">0</span>))}, merge=<span class="kw">True</span>)
+    <span class="kw">return</span> <span class="st">"indexed"</span></pre></div>
+
+<p><code>queued()</code> (line 30) reads the queue oldest first. Each record is taken with <code>take_batch()</code> and the bytes downloaded by the generation the record carries. Two guards follow: a generation gone from the bucket is recorded as <code>gone</code> and the claim released (62-67); bytes whose sha does not match the claim's <code>doc_key</code> are refused - the claim names a version. Then the worker's own <code>index_document()</code> runs with <code>lane="batch"</code>. A failure leaves the claim <code>failed</code> with its reason and the next run does not retake it; <code>make reindex</code>, or the same bytes again, is the way back. The job (<code>batch.tf</code>) runs on the ingest image with the worker's environment, <code>max_retries = 0</code> because the claim carries the retry, and a task <code>timeout</code> of 7200 seconds - what <code>INDEXING.md</code> means by "no request deadline": no push request's 600 seconds, but not unbounded. Cloud Scheduler fires it at a quarter past every hour, Asia/Kolkata.</p>
+
+<h4>reconcile.py: the nightly walk</h4>
+
+<p>The worker handles the incremental case on every event. The walk is the other half every production indexer has: the bucket's current generations against <code>sources/</code>, once a night at 23:30 IST (<code>reconcile.tf</code> runs <code>reconcile.py --apply</code>), ending in one number. <code>plan()</code> is pure - it takes the objects, the ledger and the claims as dicts and returns actions - which is why <code>selftest()</code> runs it on a machine with no cloud clients.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/reconcile.py - plan(), the ledger's side</span><button class="cp" type="button">copy</button></div><pre tabindex="0">    <span class="kw">for</span> sid, row <span class="kw">in</span> ledger.items():
+        <span class="kw">if</span> sid <span class="kw">in</span> seen <span class="kw">or</span> row.get(<span class="st">"status"</span>) == <span class="st">"retired"</span>:
+            <span class="kw">continue</span>
+        <span class="kw">if</span> row.get(<span class="st">"status"</span>) == <span class="st">"withdrawn"</span>:
+            <span class="cm"># Its rows were retired when it was withdrawn; the object leaving changes nothing but the way back.</span>
+            actions.append({<span class="st">"action"</span>: <span class="st">"withdrawn"</span>, <span class="st">"name"</span>: row.get(<span class="st">"name"</span>) <span class="kw">or</span> sid.replace(<span class="st">"~"</span>, <span class="st">"/"</span>),
+                            <span class="st">"tenant_id"</span>: row.get(<span class="st">"tenant_id"</span>), <span class="st">"gcs_uri"</span>: row.get(<span class="st">"gcs_uri"</span>),
+                            <span class="st">"why"</span>: <span class="st">"withdrawn, object gone: make restore needs the bytes uploaded again"</span>})
+            <span class="kw">continue</span>
+        actions.append({<span class="st">"action"</span>: <span class="st">"retire"</span>, <span class="st">"name"</span>: row.get(<span class="st">"name"</span>) <span class="kw">or</span> sid.replace(<span class="st">"~"</span>, <span class="st">"/"</span>),
+                        <span class="st">"tenant_id"</span>: row.get(<span class="st">"tenant_id"</span>), <span class="st">"gcs_uri"</span>: row.get(<span class="st">"gcs_uri"</span>),
+                        <span class="st">"why"</span>: <span class="st">"gone from the bucket"</span>})
+    <span class="kw">return</span> actions</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/reconcile.py - decide_bytes(), drift_of(), docstrings cut</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">decide_bytes</span>(sha: str, tenant_id: str, ledger_row: dict | <span class="kw">None</span>, documents: dict[str, dict]) -&gt; str:
+    <span class="cm"># ...</span>
+    key = <span class="st">f"{tenant_id}_{sha}"</span>
+    <span class="kw">if</span> ledger_row <span class="kw">and</span> ledger_row.get(<span class="st">"sha256"</span>) == sha:
+        <span class="kw">return</span> <span class="st">"touch"</span>          <span class="cm"># the bytes did not change: record the new generation, nothing to index</span>
+    status = documents.get(key, {}).get(<span class="st">"status"</span>)
+    <span class="kw">if</span> status <span class="kw">in</span> (<span class="st">"indexed"</span>, <span class="st">"superseded"</span>):
+        <span class="kw">return</span> <span class="st">"backfill"</span>       <span class="cm"># the version exists; the ledger just never heard of it</span>
+    <span class="kw">if</span> status == <span class="st">"queued"</span>:
+        <span class="kw">return</span> <span class="st">"queued"</span>         <span class="cm"># the worker handed these bytes to the batch lane; a rewrite would only re-queue them</span>
+    <span class="kw">return</span> <span class="st">"reingest"</span>
+<span class="cm"># ...</span>
+<span class="kw">def</span> <span class="fn">drift_of</span>(summary: dict) -&gt; int:
+    <span class="cm"># ...</span>
+    <span class="kw">return</span> int(summary.get(<span class="st">"retire"</span>, <span class="nu">0</span>)) + int(summary.get(<span class="st">"reingest"</span>, <span class="nu">0</span>)) + int(summary.get(<span class="st">"backfill"</span>, <span class="nu">0</span>))</pre></div>
+
+<p>Three pure rules. <code>decide_bytes()</code> runs after an object has been hashed: the ledger's own sha is a <code>touch</code> (record the generation, index nothing); a sha the claims hold as <code>indexed</code> or <code>superseded</code> is a <code>backfill</code>; a <code>queued</code> claim is left to the batch job; anything else is a <code>reingest</code>, done by rewriting the object onto itself so the worker's one path handles it. <code>drift_of()</code> is the night's number - retire plus reingest plus backfill - and <code>alerts.tf</code> turns the <code>reconcile_done</code> line into <code>documind/reconcile_drift</code>, which pages when it stays above zero for two nights; a withdrawn source and a queued document are decisions, not drift. <code>expired()</code> is the manual twin of the TTL policy, what <code>make purge</code> prints and, with <code>APPLY=1</code>, deletes on a lane without the policy. The other flags map to targets one to one: <code>--backfill --apply</code> is <code>make backfill-current</code>, <code>--report</code> is <code>make sources</code>, <code>--selftest</code> runs the rules offline.</p>
+
+<p><code>--retire</code> (<code>make retire SOURCE=</code>) is <code>retire_previous()</code> with <code>keep_doc_key=None</code>, then the ledger row set to <code>withdrawn</code> - not <code>retired</code>, because <code>retired</code> means the object left the bucket and an object that is back is re-ingested; the first version of the walk resurrected what a person had just taken down. <code>--restore</code> (<code>make restore SOURCE=</code>) moves the tombstone to <code>retired</code> first, the state a lost event recovers from, then rewrites the object onto itself: a new generation, the same event, the worker's one path - <code>ingest_reactivated</code> inside the undo window, <code>ingest_ok</code> as a fresh version after it.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/reconcile.py - the --retire and --restore writes</span><button class="cp" type="button">copy</button></div><pre tabindex="0">        gone = retire_previous(db, tenant, uri, <span class="kw">None</span>, expire_at=expire_at)
+        mirror.retired(tenant, gone.get(<span class="st">"retired_doc_keys"</span>, []), <span class="st">"withdrawn"</span>)
+        db.collection(<span class="st">"sources"</span>).document(source_id_for(tenant, name)).set(
+            {<span class="st">"status"</span>: <span class="st">"withdrawn"</span>, <span class="st">"withdrawn_at"</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)
+        <span class="cm"># ...</span>
+        ref.set({<span class="st">"status"</span>: <span class="st">"retired"</span>, <span class="st">"restored_at"</span>: firestore.SERVER_TIMESTAMP,
+                 <span class="st">"withdrawn_at"</span>: firestore.DELETE_FIELD}, merge=<span class="kw">True</span>)
+        blob.rewrite(blob)
+        print(json.dumps({<span class="st">"event"</span>: <span class="st">"reconcile_restored"</span>, <span class="st">"gcs_uri"</span>: uri, <span class="st">"generation"</span>: str(blob.generation),</pre></div>
+
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Step 9 of 9</span><h3>A worked trace: version 1, version 2, version 1 again</h3><p>The smoke fixture through every function on this page, one table per collection.</p></div></div>
+
+<p>The fixture is the one <code>make smoke-reindex</code> uses: <code>evals/demo/smoke_note_v1.md</code> and <code>smoke_note_v2.md</code>, uploaded under one name, <code>acme/smoke_note.md</code>. Version 1 has a preamble and two clauses, <code>SM-01</code> (the smoke lantern is in bay 4) and <code>SM-02</code> (the ladder). Version 2 changes the preamble - it declares <code>Effective from: 2026-10-01</code> - and moves the lantern to bay 7; <code>SM-02</code> is untouched. Both chunk into <code>preamble</code>, <code>SM-01</code>, <code>SM-02</code>. Call the versions' keys <code>K1</code> and <code>K2</code> (<code>acme_</code> plus each file's sha256), the uploads' generations <code>g1 &lt; g2 &lt; g3</code>, the fingerprints <code>f1</code> and <code>f2</code>.</p>
+
+<div class="diagram"><div class="dg-title">Three uploads, one object name</div>
+<div class="spine">
+  <div class="fs"><div class="fs-main"><div class="fs-n">A</div><div><strong>Version 1 in</strong> (<code>g1</code>). No ledger row, the guard passes. <code>claim(K1)</code> won; <code>current_chunks</code> is 0. Three rows staged, the swap flips them current, nothing to retire. <code>finish</code>, <code>record_source</code>, fingerprint <code>f1</code>.</div></div><div class="fs-branch"><b>Lines:</b> <code>ledger_fingerprint</code>, then <code>ingest_ok</code>: <code>chunks 3, pages 1, reused 0, embedded 3, retired 0, lane push</code>.</div></div>
+  <div class="fs"><div class="fs-main"><div class="fs-n">B</div><div><strong>Version 2 in</strong> (<code>g2</code>). <code>claim(K2)</code> won. Carry-over: <code>SM-02</code>'s hash matches, two chunks embedded. Three rows staged; the swap flips them and retires <code>K1</code>'s three with <code>expire_at</code> = now + 30 days and <code>effective_to 2026-10-01</code>. Vector Search: three ids up, three out. Fingerprint <code>f2</code>.</div></div><div class="fs-branch"><b>Lines:</b> <code>ingest_superseded</code> (<code>retired_doc_keys [K1], retired_chunks 3, expire_days 30</code>), then <code>ingest_ok</code>: <code>reused 1, embedded 2, retired 3, effective_from 2026-10-01</code>.</div></div>
+  <div class="fs"><div class="fs-main"><div class="fs-n">C</div><div><strong>Version 1 again</strong> (<code>g3</code>). The sha is version 1's, so the key is <code>K1</code>: <code>claim(K1)</code> refused, <code>status_of</code> is <code>superseded</code>, not withdrawn. <code>reactivate</code>: three rows against a claim of three, retired minutes ago - flipped. <code>reupsert</code> puts <code>K1</code>'s ids back, then <code>retire_previous(keep K1)</code> retires <code>K2</code>'s three rows and their ids come out. <code>record_source</code> for <code>K1</code>; the fingerprint is <code>f1</code> again.</div></div><div class="fs-branch"><b>Lines:</b> <code>ingest_duplicate</code> (from <code>claim()</code>, before the branch decides), then <code>ingest_reactivated</code>: <code>chunks 3, reused 3, embedded 0, retired 3, retired_doc_keys [K2], fingerprint f1</code>.</div></div>
+</div>
+<div class="legend"><span class="l-branch">The log lines to look for</span></div>
+<p class="dg-cap">Five embedding calls across three uploads: three for version 1, two for version 2, none for the undo. Nothing deleted: six rows in <code>chunks/</code> at the end, three current and three retired with a stamp the TTL policy acts on in 30 days.</p>
+</div>
+
+<h4>documents/</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Row</th><th>After A</th><th>After B</th><th>After C</th></tr></thead>
+<tbody>
+<tr><td><code>documents/K1</code></td><td data-label="After A"><code>processing</code>, then <code>indexed</code>; <code>chunks 3, reused 0, embedded 3, generation g1</code></td><td data-label="After B"><code>superseded</code>; <code>superseded_by K2</code>, <code>superseded_at</code>, <code>retired_at</code> = time of B</td><td data-label="After C"><code>indexed</code>; <code>superseded_by</code>, <code>retired_at</code> deleted; <code>reactivated_at</code> = time of C</td></tr>
+<tr><td><code>documents/K2</code></td><td data-label="After A">-</td><td data-label="After B"><code>processing</code>, then <code>indexed</code>; <code>chunks 3, reused 1, embedded 2, generation g2</code></td><td data-label="After C"><code>superseded</code>; <code>superseded_by K1</code>, <code>retired_at</code> = time of C</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>chunks/</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Rows</th><th>After A</th><th>After B</th><th>After C</th></tr></thead>
+<tbody>
+<tr><td><code>acme:sha1#0</code> to <code>#2</code> (K1)</td><td data-label="After A">Staged, then swapped: <code>current true</code>, no <code>staged</code>, no <code>expire_at</code></td><td data-label="After B"><code>current false</code>, <code>superseded_by K2</code>, <code>superseded_at</code>, <code>expire_at</code> = B + 30 days, <code>effective_to 2026-10-01</code></td><td data-label="After C"><code>current true</code>; the four retirement fields deleted; <code>reactivated_at</code> = time of C</td></tr>
+<tr><td><code>acme:sha2#0</code> to <code>#2</code> (K2)</td><td data-label="After A">-</td><td data-label="After B">Staged with <code>effective_from 2026-10-01</code>, then swapped: <code>current true</code></td><td data-label="After C"><code>current false</code>, <code>superseded_by K1</code>, <code>superseded_at</code>, <code>expire_at</code> = C + 30 days; no <code>effective_to</code> - the undo passes none</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>sources/acme~smoke_note.md and ledger/acme</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Field</th><th>After A</th><th>After B</th><th>After C</th></tr></thead>
+<tbody>
+<tr><td><code>doc_key</code> / <code>sha256</code></td><td data-label="After A"><code>K1</code> / sha1</td><td data-label="After B"><code>K2</code> / sha2</td><td data-label="After C"><code>K1</code> / sha1</td></tr>
+<tr><td><code>generation</code></td><td data-label="After A"><code>g1</code></td><td data-label="After B"><code>g2</code></td><td data-label="After C"><code>g3</code> - new, though the bytes are version 1's</td></tr>
+<tr><td><code>chunks</code>; <code>reused</code> / <code>embedded</code> / <code>retired</code></td><td data-label="After A">3; 0 / 3 / 0</td><td data-label="After B">3; 1 / 2 / 3</td><td data-label="After C">3; 3 / 0 / 3</td></tr>
+<tr><td><code>effective_from</code>; <code>status</code></td><td data-label="After A"><code>null</code>; <code>indexed</code></td><td data-label="After B"><code>2026-10-01</code>; <code>indexed</code></td><td data-label="After C"><code>null</code> (the undo reads the object name only); <code>indexed</code></td></tr>
+<tr><td><code>ledger/acme</code>: <code>fingerprint</code>, <code>last_event</code></td><td data-label="After A"><code>f1</code>, <code>ingest_ok</code></td><td data-label="After B"><code>f2</code>, <code>ingest_ok</code></td><td data-label="After C"><code>f1</code>, <code>ingest_reactivated</code> - the same current keys as after A, so the same hash</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three uploads of one object name produced two versions, six rows, three ledger states and one fingerprint that returned to where it started. The model was called five times, and the third upload - the undo - did not call it at all. Every function on this page appears in the trace once, except <code>claim()</code>, which appears three times and wins twice. Lesson 3.5 runs this sequence with <code>make smoke-reindex</code> and asks the API the lantern's bay after each step: 4, then 7, then 4.</p></div>
+
+<h2 id="quiz">Check yourself</h2>
+
+<div class="quiz"><div class="quiz-q">1. claim() reads the row and writes it inside one Firestore transaction. A colleague proposes a plain get() followed by set(). What breaks?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="A duplicate does share the doc_key; the question is whether two callers can both write it, and without the transaction they can.">Nothing: the doc_key is a content hash, so duplicates already share a key.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="Pub/Sub delivers duplicates concurrently. Two workers both get() an absent row, both set() it, both proceed. The transaction makes the read and the write one unit, so the second set() fails and claim() returns False.">Two concurrent deliveries can both read "absent" and both write the claim, so one version is indexed twice.</button>
+<button class="quiz-opt" type="button" data-fb="The guard runs before the claim and asks a different question: is this event older than the ledger.">The generation guard stops working, because it depends on the transaction.</button>
+<button class="quiz-opt" type="button" data-fb="release() writes a failed status either way; the transaction protects the claim, not the release.">release() can no longer give the claim back.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">2. swap_versions() flips the new version's rows current before it retires the old ones, and a long document takes two commits. Why that order, and what does a reader between the commits see?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="The order is not about size; both loops share one batch of 400 writes either way.">New first because there are fewer new rows, so the first commit is smaller.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="Old first would leave a reader between the commits with no current version. New first means the worst case is both current for a moment, and newest_per_source() keeps the one whose rows landed last.">New first so a reader never finds no version; between the commits both are current and the reader's newest-per-source guard keeps the new one.</button>
+<button class="quiz-opt" type="button" data-fb="There is no lock in swap_versions(); a reader between the commits is served, and the retriever's guard decides what it sees.">New first because Firestore locks the collection until the second commit.</button>
+<button class="quiz-opt" type="button" data-fb="Retired rows are flagged, never deleted, and the stage marks are removed in the first loop.">Old first would delete the retired rows before the new ones exist.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">3. The handbook was re-issued 40 days ago and RETENTION_DAYS is 30. Someone uploads the original bytes again under the same name. What does the worker do?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="That was the first undo, and it left a source with no current version once the TTL had taken the rows. reactivate() now counts and checks the clock first.">Flips whatever retired rows remain and retires the newer version.</button>
+<button class="quiz-opt" type="button" data-fb="A superseded claim is never acked as a plain duplicate; push() tries the undo and, after a refusal, retakes the claim.">Acks it as a duplicate, because the doc_key already exists.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="The retire stamp is past the window, so reactivate() logs reactivate_incomplete and returns None. push() calls claim(retake=True) and runs index_document(): a fresh version, the carry-over reusing every vector the newer version still holds by chunk_hash.">Logs reactivate_incomplete, retakes the superseded claim, and ingests the bytes as a fresh version with the carry-over paying only for what changed.</button>
+<button class="quiz-opt" type="button" data-fb="A withdrawn source is one a person took down with make retire; a re-issue leaves the ledger row indexed.">Refuses it with ingest_withdrawn, because the old version is a tombstone.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">4. The DLP call inside index_document() throws on the fourth chunk. What does the claim row say, what does the handler answer, and what happens to the message?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="Nothing was written to chunks/ yet - the scan runs before the staged write - and the claim is not left at processing.">The claim stays processing, the rows are half written, and the handler answers 200.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="release() sets failed with the error text, ingest_failed is logged, IngestFailed becomes a 500. Pub/Sub retries, and the next delivery's claim() wins because failed is retakeable. The Ingest failed alert pages within ten minutes.">The claim becomes failed with the error text, the handler answers 500, Pub/Sub retries, and the retry can take the claim because failed is retakeable.</button>
+<button class="quiz-opt" type="button" data-fb="400 is for a message the worker can never parse; a DLP failure is transient and is answered 500 so it is retried.">The handler answers 400 and the message goes straight to the DLQ as poison.</button>
+<button class="quiz-opt" type="button" data-fb="The scan runs before indexing precisely so that an unscanned document never reaches the index.">The scan is skipped for the remaining chunks and the document is indexed with a warning.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<div class="quiz"><div class="quiz-q">5. Two ways to take a document out of the index: delete the object from the bucket, or run make retire SOURCE=. Both leave the rows flagged. Why does the ledger need two different statuses?</div>
+<div class="quiz-opts">
+<button class="quiz-opt" type="button" data-fb="The rows carry expire_at in both cases and the TTL policy treats them alike; the difference is what the walk and the undo do next.">Because the TTL policy deletes a withdrawn source's rows sooner.</button>
+<button class="quiz-opt" type="button" data-fb="Retiring is a flag in both cases; make retire never calls delete either.">Because make retire deletes the rows while the walk only flags them.</button>
+<button class="quiz-opt" type="button" data-ok="1" data-fb="retired is storage absence: the night the object is back, the walk plans a reingest. withdrawn is a decision: the object stays, the walk leaves it, the same bytes are acked ingest_withdrawn, reactivate() refuses, and only make restore ends it.">Because retired is repaired by the next walk the moment the object is back, and a person's decision must not be repaired by a job.</button>
+<button class="quiz-opt" type="button" data-fb="The claims go to superseded in both cases, through the same retire_previous().">Because the documents/ claim is deleted for a withdrawn source and kept for a retired one.</button>
+</div><div class="quiz-fb" role="status" aria-live="polite"></div></div>
+
+<h2 id="exercises">Exercises</h2>
+<div class="exercise-grid">
+<div class="exercise-card"><span class="exercise-diff d-easy">Easy</span><h4>The retake rule, on paper</h4><p>From <code>claim()</code> and <code>take_batch()</code> alone, fill a table with one row per status (absent, processing, indexed, superseded, queued, failed) and three columns: does <code>claim()</code> win, does <code>claim(retake=True)</code> win, does <code>take_batch()</code> win. Done when it matches the table in step 2 and you can say, for each refusal, which line <code>push()</code> logs.</p></div>
+<div class="exercise-card"><span class="exercise-diff d-med">Medium</span><h4>Fill the trace with real keys</h4><p>On a deployed lane, run <code>make smoke-reindex</code>, then open <code>documents/</code>, the six <code>chunks/</code> rows and <code>sources/acme~smoke_note.md</code> in the Firestore console and rewrite the three tables of step 9 with the real keys, generations and timestamps. Done when every cell holds a value you read from a row and <code>ledger/acme</code>'s fingerprint matches the <code>ingest_reactivated</code> line.</p></div>
+<div class="exercise-card"><span class="exercise-diff d-hard">Challenge</span><h4>Predict the walk</h4><p>From <code>make sources</code> and <code>gcloud storage ls -L gs://$PROJECT-uploads/acme/</code>, write what <code>make reconcile</code> will print for every object and every ledger row - <code>ok</code>, <code>check_bytes</code> then <code>touch</code> / <code>backfill</code> / <code>reingest</code>, <code>retire</code>, <code>withdrawn</code>, <code>queued</code> - and the final <code>drift</code>. Then run the plan (no <code>APPLY=1</code>) and diff. Done when there are zero surprises, or one line from <code>plan()</code> or <code>decide_bytes()</code> explaining each one.</p></div>
+</div>
+
+<div class="box box-red"><div class="box-title">The one rule to remember</div>
+<p>Every function on this page writes a flag, a stamp or a count. None writes a delete. A version is claimed in a transaction, made visible in a swap, retired with a date, and brought back only after the rows and the clock have been counted. Keep that shape and an update costs what changed, is invisible until it is whole, and can be undone for free.</p></div>
+
+</div>
+
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Ingest &middot; Lesson 3.4 The ledger &middot; v4.0</p><p>Next: Lesson 3.5 Ingest, re-issue, undo, poison - the lifecycle, proved with make.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+</body>
+</html>

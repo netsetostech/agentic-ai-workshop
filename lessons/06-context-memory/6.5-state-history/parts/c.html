@@ -1,0 +1,52 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why memory is split this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The thread id is the tenancy boundary.</strong> The tenant comes first, so nothing after it can name another tenant, and <code>:</code> is banned in every part, so two people cannot land on one thread. A session id from the request names a conversation, never a tenant.</li>
+<li><strong>Instructions are not history.</strong> The system prompt is sent with every call and never stored, so a prompt change applies to old threads too.</li>
+<li><strong>A conversation survives a restart.</strong> The checkpointer is opened once, when the service starts, and shared by every request. On Cloud SQL, every instance reads the same threads.</li>
+<li><strong>Knowledge is looked up, never remembered.</strong> The tenant comes from the roster, and <code>retrieve()</code> asks rag-api every time. So a retired document stops being found, though an old thread may still quote it.</li>
+<li><strong>ADK keeps its own sessions.</strong> <code>brains.py</code> names this as one of its two honest limits: the ADK brain's conversation lives in ADK's session service, not the LangGraph checkpointer.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>One turn, taken apart</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The memory checkpointer</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>One conversation</td><td data-label="Costs">six turns: five agent loops, and rag-api's answer at least twice</td><td data-label="On your lane">about three rupees</td></tr>
+<tr><td>Your lane's checkpointer</td><td data-label="Costs">one describe, one log read</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>Nothing deletes a conversation.</strong> No route, job or expiry removes a thread. Every turn adds %%N_CK%% checkpoints or more, and they stay.</li>
+<li><strong>History keeps knowledge the corpus has replaced.</strong> A tool result is stored in the thread as it was fetched. <code>make retire</code> and a reindex change the index and never touch a thread, so an old conversation can still quote a superseded clause.</li>
+<li><strong>Switching brains splits the history.</strong> LangChain and LangGraph share a thread, ADK keeps its own, and direct keeps none. The UI's brain radio keeps one session id for all four.</li>
+<li><strong>Only the wrong checkpointer announces itself.</strong> <code>build_checkpointer()</code> logs one line, the memory warning. <code>PostgresSaver</code> and <code>SqliteSaver</code> open silently, so the checkpointer in use shows only in the service's configuration.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">One turn keeps four messages and no system prompt</td><td data-label="The check">step 3, part 1</td><td data-label="Pass looks like">four <code>kept</code> lines, and <code>the system prompt among them: False</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A turn writes a checkpoint per step</td><td data-label="The check">step 3, part 1</td><td data-label="Pass looks like"><code>checkpoints written: %%N_CK%%</code></td></tr>
+<tr><td>3</td><td data-label="Claim">History keeps the quote the corpus replaced</td><td data-label="The check">step 3, part 2</td><td data-label="Pass looks like"><code>60 days</code> in the history, <code>90 days</code> in the corpus</td></tr>
+<tr><td>4</td><td data-label="Claim">A new session starts empty</td><td data-label="The check">step 3, part 3</td><td data-label="Pass looks like"><code>0 messages</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The memory checkpointer announces itself</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>WARNING documind.chat.agent: %%WARN%%</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A restart forgets memory, not a file</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>after a restart: 0 messages</code>, then <code>2 messages</code></td></tr>
+<tr><td>7</td><td data-label="Claim">History follows the store, knowledge the tenant</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>tamarind</code> yes, yes, no, no, no, and the gratuity answer with <code>retrieve</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Your lane runs the durable checkpointer</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>from the secret documind-checkpoint-dsn</code>, and <code>none</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing is configured. Your chat service holds two more threads for <code>documind-ui-sa</code>, sessions A and B, and one instance holds ADK's session for A, in memory. rag-api's log has at least two more rows: the direct brain's search and the gratuity answer. <code>~/graph-venv</code> has FastAPI and the SQLite checkpointer. Lesson 6.6 opens the tables those threads live in.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.5 Distinguish agent state, conversation history and knowledge &middot; v5.0</p><p>Next: Lesson 6.6 Configure and inspect durable conversation storage.</p></div>

@@ -1,0 +1,100 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The answer cache</span><h3>The answer cache: a candidate that remembers answers</h3><p>The lookup, the store rule, and a revision with the switch on.</p></div></div>
+
+<h4>Definition</h4>
+<p>With <code>SEMANTIC_CACHE=on</code>, <code>/v1/query</code> embeds the question once, as it does anyway for retrieval, and asks <code>lookup()</code> before any retrieval happens. The exact rung compares <code>qhash</code>es; the near rung asks Firestore's vector index for the tenant's five nearest earlier questions. An entry counts only if <code>_alive()</code> agrees: the same fingerprint, the same scope, not expired. A hit becomes a response carrying the stored answer and its original citations, with <code>backend</code> <code>cache</code> and a cost of 0. On a miss the question runs as usual. Afterwards <code>_semantic_store()</code> keeps the answer, but only if it is answerable and cited, and never if Model Armor blocked it. The switch belongs to one revision, so the candidate gets it and the live revision keeps it off. Both revisions share the same Firestore, and acme's context cache from step 3 is still alive, so the candidate's model calls carry it too.</p>
+
+<h4>The code</h4>
+@@alive@@
+@@lookup@@
+@@hit@@
+@@store@@
+
+<h4>Do it</h4>
+%%CELL_CANDIDATE%%
+%%OUT_CANDIDATE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Cloud Run built a revision with <code>SEMANTIC_CACHE=on</code> and gave it the <code>candidate---</code> address. Every other request still reaches the live revision, whose switch stays off. The target recorded the revision's name in <code>.candidate-revision</code>, and step 7 deletes that file. The candidate accepts the same token as the live service, because the API checks every token against its canonical URL.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; Four asks</span><h3>Four asks: a miss, two hits and a paraphrase</h3><p>One question four ways, then the rows.</p></div></div>
+
+<p>The first ask is a miss: the candidate has never seen the question, so it retrieves, calls the model and stores the answer. The second is the same words, for the exact rung. The third is the same words in lower case without the question mark, which <code>qhash</code> treats as identical. The fourth says the same thing in other words. It is a hit only if its embedding lands within 0.95 of the first question's; otherwise it is a miss, and its own answer is stored beside the first.</p>
+%%CELL_ASKS%%
+%%OUT_ASKS%%
+%%CELL_ROWS2%%
+%%OUT_ROWS2%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The second and third asks came back from the answer cache. Their rows read <code>cache</code> with zero tokens and Rs 0, and that is this lesson's second proof. They were not free in every sense: their latency is the embedding plus a few Firestore reads. That is far shorter than a model call, but not zero, and neither cost appears on the row. The first ask shows both caches in one row: the answer cache missed, the model ran, and the context cache made <code>cached_tokens</code> non-zero. The fourth row tells you where your paraphrase landed. Lesson 6.4 measures that line on labelled pairs before anyone relies on the near rung.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; The holdings</span><h3>What each cache is holding, and the clean-up</h3><p>The record behind the context cache, the entry behind the hit, and both caches put away.</p></div></div>
+
+<p>The cell prints <code>tenant_caches/acme</code>, then the answer-cache entry for the question's words. It uses the kit's own <code>qhash</code>, imported from <code>services/rag-api</code>, so the key is computed exactly as the API computes it.</p>
+%%CELL_HOLD%%
+%%OUT_HOLD%%
+
+<p>The two records show where each cache keeps its weight. For the context cache, Firestore holds only a pointer and a few facts, and the pack's forty-odd thousand tokens sit on Google's side, billed by the hour until they expire or are deleted. For the answer cache, Firestore holds everything: the answer, its citations and the question's 768-number embedding. That costs Firestore storage and reads, for 24 hours. The clean-up removes the candidate's tag and recorded name, and deletes the context cache. The next acme question to the live API finds no record and runs uncached at once.</p>
+%%CELL_CLEAN%%
+%%OUT_CLEAN%%
+<p>The answer-cache entries stay until their <code>expire_at</code>, and Firestore's TTL policy deletes them some time after that. Nothing reads them in the meantime, because the live revision's switch is off. The candidate revision stays in the service's list with no traffic. The service's configuration says <code>SEMANTIC_CACHE=on</code> until the next deploy or candidate sets it: <code>make up</code> and <code>make candidate</code> both pass it, and both default it to <code>off</code>.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the caches are shaped this way, what they cost, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Per tenant, always.</strong> An answer cache keyed on the question alone would serve one customer's answer to another. It would look like a performance win right up until someone noticed.</li>
+<li><strong>Per fingerprint, and five candidates.</strong> Every entry carries the fingerprint it was answered under, so a reindex makes every earlier answer a miss without scanning anything. The near rung reads five neighbours, not one, so a stale twin of the question cannot hide the current entry.</li>
+<li><strong>0.95, not 0.92.</strong> A looser threshold answers "what is the probation period" with the notice period's answer: a wrong answer, served fast. The kit starts tight and leaves the switch off until 6.4 measures the line.</li>
+<li><strong>Only the contract, and only a good one.</strong> An entry stores the answer, citations, confidence and answerable flag, never the envelope of tokens and cost. A refusal is not worth keeping for a day, and a blocked answer is not worth keeping at all.</li>
+<li><strong>A failing cache is a miss, never an error.</strong> A context-cache problem returns no keyword and the answer runs uncached. An answer-cache failure logs <code>semantic_cache_failed</code> and the question runs as usual. Either way the answer is still one retrieval away.</li>
+<li><strong>A context cache is one model's.</strong> A routed tier or a tuned endpoint is never handed another model's cache, which the API would refuse.</li>
+<li><strong>The exact rung still pays for one embedding.</strong> The API embeds the question before the lookup, because on a miss retrieval needs the same vector. The hit saves the reranker and the model, not the embedding.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The two live questions</td><td data-label="Costs">one answer without the cache, one with it</td><td data-label="On your lane">about Rs %%PLAIN_RS%% and Rs %%CTX_RS%% at flash rates</td></tr>
+<tr><td>The context cache</td><td data-label="Costs">one create call that reads the pack, then storage by the hour at your model's rate, until step 7 deletes it</td><td data-label="On your lane">minutes of storage</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">a revision with no traffic; at the kit's default of zero minimum instances, it runs only while it is asked</td><td data-label="On your lane">free</td></tr>
+<tr><td>The four asks</td><td data-label="Costs">one or two answered questions, and two hits at Rs 0 on the row</td><td data-label="On your lane">about a rupee or two</td></tr>
+<tr><td>Firestore</td><td data-label="Costs">two reads per answer for the context cache's record and the ledger; a query or two per ask for the answer cache; one write per stored answer</td><td data-label="On your lane">free at this size</td></tr>
+<tr><td>The answer entries</td><td data-label="Costs">a few kilobytes each, for a day</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The context cache is added to the prompt, not substituted for anything.</strong> <code>cache_admin.py</code> says that without a cache "every answer paid full price for its context". With the cache, every answer still pays full price for the retrieved context, plus a tenth of the pack's price. Step 4 measured it.</li>
+<li><strong>The pack is the kit's copy of the documents, not the tenant's corpus.</strong> <code>pack_for()</code> reads <code>evals/corpus/acme/</code>. After a reindex with a new version, such as lesson 1.6's handbook, <code>make cache</code> packs the old text again, and the fingerprint calls it current. The cache can then contradict the index it sits beside.</li>
+<li><strong>Nothing refreshes a cache.</strong> <code>cache_manager.py</code>'s docstring names a Cloud Scheduler job that calls <code>refresh()</code> while a tenant is active. <code>terraform/</code> defines %%N_SCHED%% scheduler jobs, and none of them touches caches. A cache simply expires after its hour, unless <code>make cache CACHE_OP=refresh</code> extends it.</li>
+</ul></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The question runs uncached first</td><td data-label="The check">step 3, the first cell</td><td data-label="Pass looks like"><code>cached_tokens      0</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The cache lands where generation runs</td><td data-label="The check">step 3, <code>make cache</code></td><td data-label="Pass looks like"><code>location global</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The next acme answer carries the cache</td><td data-label="The check">step 3, the third cell</td><td data-label="Pass looks like"><code>cached_tokens</code> equal to <code>make cache</code>'s <code>tokens</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The usage row records it</td><td data-label="The check">step 4, the second row</td><td data-label="Pass looks like"><code>cached</code> non-zero, <code>in</code> larger by the same number</td></tr>
+<tr><td>5</td><td data-label="Claim">The cache made the answer dearer</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the second row's rupees above the first by about a tenth of the pack's price</td></tr>
+<tr><td>6</td><td data-label="Claim">The candidate's first ask is a miss</td><td data-label="The check">step 6, the first line</td><td data-label="Pass looks like"><code>backend vertex</code> <code>cache_hit none</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The same words are a hit at no cost</td><td data-label="The check">step 6, the second ask and its row</td><td data-label="Pass looks like"><code>cache</code> <code>in 0</code> <code>Rs 0.0000</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Case and punctuation do not matter</td><td data-label="The check">step 6, the third ask</td><td data-label="Pass looks like"><code>cache_hit semantic</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The entry holds the answer and its citations</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>citations: 1</code> or more, <code>embedding: 768 numbers</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The context cache is gone</td><td data-label="The check">step 7, the clean-up</td><td data-label="Pass looks like"><code>deleted acme's cache</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>acme's context cache lived from step 3 to step 7 and is deleted. <code>tenant_caches/acme</code> is gone, and the live API answers acme uncached again. <code>documind-api</code> has one more revision, which serves no traffic and has no tag. The service's configuration says <code>SEMANTIC_CACHE=on</code> until the next deploy sets it back, and <code>.candidate-revision</code> is gone. <code>answer_cache</code> holds this lesson's one or two acme answers until they expire in 24 hours. The usage rows of three or four answered questions and two or three hits. Lesson 6.3 tests what makes each cache miss (a reindex, a changed filter or prompt version, the clock) and gets a hit again after <code>make cache</code>.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.2 Compare context caching and answer caching &middot; v5.0</p><p>Next: Lesson 6.3 Test cache scope, configuration changes and freshness.</p></div>

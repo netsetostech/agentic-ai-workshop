@@ -1,0 +1,72 @@
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; States</span><h3>The three states side by side</h3><p>One table of the ledger, one excerpt of the walk that reads it, and the difference between a lost object and a withdrawn one.</p></div></div>
+
+<h4>Definition</h4>
+<p>The ledger row's <code>status</code> is what the nightly walk reads first when it compares the bucket with the ledger. <code>indexed</code> with the same generation is nothing to do. <code>withdrawn</code> is "object kept": the walk reports it and leaves both the object and the rows alone. <code>retired</code> is the state the walk itself sets when an object is gone, and an object that is back in the bucket under a retired row is re-ingested. The distinction is the lesson's whole reason for three words instead of one: before <code>withdrawn</code> existed, a hand retirement wrote <code>retired</code>, the object was still there, and the next night's walk read "retired but back in the bucket" and resurrected what a person had just taken down.</p>
+
+<h4>The code</h4>
+@@walk_states@@
+
+<h4>Read the ledger as the operator does, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make sources PROJECT=$PROJECT TENANT_ONLY=acme</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (trimmed; every row of acme is indexed again after step 6)</span><span class="ro">read only</span></div><pre tabindex="0">source                                       status            gen chunks reused embed retired effective  embedding              indexed_at
+acme/code_on_wages_2019.pdf                  indexed    ...2671234567     67      0    67       0 -          text-embedding-005@1   2026-09-20T09:14:02
+acme/hr_policy_2026.md                       indexed    ...4107123456    283    283     0     283 -          text-embedding-005@1   2026-09-22T13:41:55
+acme/smoke_note_v1.md                        indexed    ...5302345678      3      3     0       0 -          text-embedding-005@1   2026-09-22T15:21:40
+...
+{"ledger": "acme", "fingerprint": "3a9f0c17e5d2b846", "versions": 9, "last_event": "ingest_reactivated"}</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The same rows the Versions table renders, from the shell, with the status column that step 6 moved twice: <code>withdrawn</code> after the retirement, <code>retired</code> for the seconds between the restore and the worker's reactivation, <code>indexed</code> now. The last line is the tenant's ledger document: the fingerprint that every change on this page moved, the number of indexed versions, and the last event that moved it. Lesson 1.8 runs the walk that reads this table every night.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>The swap window, effective dates, and what a version costs</h3><p>Where the reader's guard earns its keep, the date a retired version's window closes on, how the index and the cache follow the flag, and the rupee line.</p></div></div>
+
+<h4>The two-commit window</h4>
+<p>A Firestore batch holds 500 writes and the swap commits every 400, so a document of more than 400 chunks flips in two commits, and for the milliseconds between them both versions are current. The reader does not rely on luck: <code>newest_per_source()</code> groups a candidate set by source and keeps the version whose rows landed last, by <code>indexed_at</code> or, for a reactivation, <code>reactivated_at</code>. On your lane no document is that long, so the guard has never fired; it is there for the 236-page Act and for the day a corpus load lands a thousand-chunk contract.</p>
+
+<h4>Effective dates, and the gap the ledger leaves open</h4>
+<p>A version may declare when it applies (<code>effective_from</code>, from its name or its first lines), and the swap closes the retired version's window with <code>effective_to</code> at the successor's date. The rows therefore carry a timeline: version 1 until 1 November, revision 3 from it. What the reader does with that timeline today is nothing: retrieval answers from the current version only, and a question about last month's policy gets this month's clause. The kit's README lists the as-of filter as the strategy's next phase; the fields are already on the rows so that the filter, when it comes, needs no re-index.</p>
+
+<h4>The index and the cache follow the flag</h4>
+<p>Two other stores must agree with <code>current</code>. The search index carries it as a restrict on every datapoint, and the worker removes a retired version's ids from the index after the swap and re-upserts them from the rows' own vectors on a reactivation, so the ANN rung and the Firestore rung answer the same version. The answer cache is keyed to the tenant's corpus fingerprint, which every swap, retirement, withdrawal and restore refreshes; a cached answer packed from the old corpus is simply not used until the cache is packed again. That is why the answer in step 6 changed twice without anyone touching a cache.</p>
+@@fingerprint_fn@@
+
+<h4>What a version costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Event</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A swap</td><td data-label="Costs">Firestore writes: two per row of the new version and one per row retired; the index upserts and removals</td><td data-label="On your lane">paise for 283 rows</td></tr>
+<tr><td>A replayed event</td><td data-label="Costs">one push request answered in milliseconds; for a duplicate, one download of the object</td><td data-label="On your lane">three requests: nothing</td></tr>
+<tr><td>A withdrawal, a restore</td><td data-label="Costs">the flags, the ledger row, the fingerprint; the restore's rewrite is one object copy inside the bucket</td><td data-label="On your lane">nothing measurable; the two questions were the only model calls on this page</td></tr>
+<tr><td>Retired rows</td><td data-label="Costs">storage for thirty days, then the policy removes them</td><td data-label="On your lane">566 rows until 22 October, plus the note's 3 until the restore cleared their expiry</td></tr>
+<tr><td>The bucket's versions</td><td data-label="Costs">every generation kept for a year (Nearline after 90 days), then a lifecycle rule deletes it</td><td data-label="On your lane">four generations of the handbook, one of the note</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry to remember: publishing is cheap and reversible because it is flags, and the expensive parts of a version, the parse and the embeddings, are paid once on the way in and never again while the window is open. Everything on this page cost less than the two questions you asked.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Exactly one version is current</td><td data-label="The check">the versions cell in step 3</td><td data-label="Pass looks like"><code>current versions: 1 | staged rows: 0</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A retired row carries its successor and its expiry</td><td data-label="The check">the same cell</td><td data-label="Pass looks like"><code>superseded_by acme_&hellip;  expire_at 2026-10-22</code> on both retired versions</td></tr>
+<tr><td>3</td><td data-label="Claim">Nothing in the worker deletes a row</td><td data-label="The check">the purge plan in step 4</td><td data-label="Pass looks like"><code>"expired": 0</code>, the policy named in the note</td></tr>
+<tr><td>4</td><td data-label="Claim">An older event is refused before a download</td><td data-label="The check">the first replay in step 5</td><td data-label="Pass looks like"><code>ingest_stale_event</code>, <code>older than the ledger</code>, with both generations</td></tr>
+<tr><td>5</td><td data-label="Claim">A redelivered event is a duplicate, a missing generation is stale</td><td data-label="The check">the other two replays</td><td data-label="Pass looks like"><code>ingest_duplicate</code>, then <code>generation gone</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A withdrawal is a tombstone</td><td data-label="The check">step 6, first block</td><td data-label="Pass looks like"><code>withdrawn chunks 3</code>; 3 rows, 0 current, 3 with <code>expire_at</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The tombstone holds against the same bytes</td><td data-label="The check">step 6, third block</td><td data-label="Pass looks like"><code>ingest_withdrawn</code> with the hint</td></tr>
+<tr><td>8</td><td data-label="Claim">A restore reactivates, nothing embedded</td><td data-label="The check">step 6, third block</td><td data-label="Pass looks like"><code>ingest_reactivated 3 3 0</code>; <code>answerable True</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The ledger names the state, and the walk reads it</td><td data-label="The check"><code>make sources</code> in step 7</td><td data-label="Pass looks like">every acme row <code>indexed</code>; <code>last_event ingest_reactivated</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The note was withdrawn and restored: its three rows carry a <code>reactivated_at</code>, its ledger row is <code>indexed</code> again, and the bucket holds one more generation of it. Three events were replayed and changed nothing. The handbook was only read. Lesson 1.8 runs the nightly walk that compares the bucket with this ledger, and brings back what it should and only that.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.7 Publish versions, retire documents and reject stale events &middot; v5.0</p><p>Next: Lesson 1.8 Restore documents and reconcile index differences.</p></div>

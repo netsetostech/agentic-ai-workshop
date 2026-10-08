@@ -1,0 +1,131 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Dated</span><h3>A dated document on the lane: the header's date, the rule in the prompt, the citation event</h3><p>The smoke note's revision 2 declares a date; the worker stamps it on every row; the packer puts it on the header, the generator adds the sixth rule, and the stream's citation event carries it out.</p></div></div>
+
+<h4>Definition</h4>
+<p>A document declares when it applies in its first lines, <code>Effective from: 2026-10-01</code>, or in its object name for a PDF nobody can edit; the worker's reader takes the date, the ledger row keeps it, and <code>indexer.py</code> stamps it on every chunk row. From there the packer prints it on the source's header, <code>_dated_rule()</code> appends rule six to the prompt because a packed chunk carries a date, and the stream's citation event carries <code>effective_from</code> to the caller, which is the only place outside the container the header's date can be seen. The cells re-issue the smoke fixture's revision 2 under the smoke's own name, wait for the worker, stream the question and read the event, then put revision 1 back the way the smoke does.</p>
+
+<h4>The code</h4>
+@@effective_reader@@
+@@row_stamp@@
+@@dated_rule@@
+@@citation_event@@
+
+<h4>Do it: the dated revision in, the stream read, revision 1 back</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one upload, one streamed question, one upload; paise)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">worker_line() { for i in $(seq 1 30); do sleep 10
+  LINE="$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND (jsonPayload.event=\"ingest_ok\" OR jsonPayload.event=\"ingest_reactivated\") AND (jsonPayload.tenant=\"acme\" OR jsonPayload.doc_key:\"acme_\") AND timestamp>=\"$1\"" \
+    --project "$PROJECT" --limit 1 --format='value(jsonPayload.event,jsonPayload.chunks,jsonPayload.embedded,jsonPayload.effective_from)')"
+  [ -n "$LINE" ] &amp;&amp; { echo ">> event chunks embedded effective_from: $LINE"; return; }; done; echo ">> no worker line in five minutes"; }
+SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; gcloud storage cp evals/demo/smoke_note_v2.md "gs://$PROJECT-uploads/acme/smoke_note.md"; worker_line "$SINCE"
+curl -N -s -X POST "$API/v1/stream" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"Where is the smoke lantern kept, and from when?","tenant_id":"acme"}' \
+  | python -c "
+import sys, json
+ev, text = None, []
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith('event: '): ev = line[7:]
+    elif line.startswith('data: ') and ev == 'citation':
+        d = json.loads(line[6:]); print('citation', d['n'], d['source'].split('/')[-1], '| effective_from', d.get('effective_from'), '| quote', repr(d['quote'][:50]))
+    elif line.startswith('data: ') and ev == 'token': text.append(json.loads(line[6:])['t'])
+    elif line.startswith('data: ') and ev == 'done':
+        d = json.loads(line[6:]); print('done: tokens_in', d.get('tokens_in'), '| tokens_out', d.get('tokens_out'), '| latency_ms', d.get('latency_ms'), '| the price is on the row, not in the event')
+print('answer:', ''.join(text)[:160])"
+SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; gcloud storage cp evals/demo/smoke_note_v1.md "gs://$PROJECT-uploads/acme/smoke_note.md"; worker_line "$SINCE"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the first line reads ingest_ok with 3 embedded on a lane that never held revision 2; the answer's wording is the model's)</span><span class="ro">read only</span></div><pre tabindex="0">>> event chunks embedded effective_from: ingest_reactivated	3	0	2026-10-01
+citation 1 smoke_note.md | effective_from 2026-10-01 | quote 'The smoke lantern is kept in bay 7 of the Pune wa'
+done: tokens_in 1xxx | tokens_out 3xx | latency_ms 2xxx | the price is on the row, not in the event
+answer: The smoke lantern is kept in bay 7 of the Pune warehouse [1], effective from 1 October 2026 ...
+>> event chunks embedded effective_from: ingest_reactivated	3	0	None</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Revision 2 came back with the date the ledger had kept for it, nothing embedded, and the question was answered from its rows: the citation event carried <code>effective_from 2026-10-01</code>, which is the row's stamp, which is what the packer wrote on the header the model read, and the answer said from when the fact applies because rule six was in the prompt for this request and not for the handbook's. Then revision 1 came back, undated, and the same question would again be answered without the rule. Lesson 1.6 did this to the handbook; the header and the rule are why it mattered.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Reserve</span><h3>The answer's reserve, the retry, and the tokens on the rows</h3><p>Why the reserve is %%ANSWER%% and not 1,024, what the generator does when a first attempt is cut off, and where the tokens of a day are read.</p></div></div>
+
+<h4>Definition</h4>
+<p>The output reserve is what the model may spend on the answer and, on the 3.x family, on the thinking before it: both draw from <code>max_output_tokens</code>. At 1,024 a statute answer with its quotes ran out fourteen times in one live eval, and each cut-off JSON was scored as a refusal, which is why the setting reads %%ANSWER%% and why the generator, when the finish reason says the cap was hit and no draft could be parsed, logs <code>generation_truncated</code> and asks once more with three times the room. Both attempts are billed and summed into the row, because a truncated-then-retried answer used to cost the tenant two calls and count as one. The rows carry the tokens of every answer, and <code>make usage</code> sums them by tenant with the rupee column beside; the log carries the retries, and a lane whose reserve is right has none.</p>
+
+<h4>The code</h4>
+@@reserve_setting@@
+@@retry@@
+@@usage_fields@@
+
+<h4>Do it: the day's tokens, and the retries there were not</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0: two log reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make usage PROJECT=$PROJECT HOURS=24 | sed -n '/^by tenant/,/^$/p'
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND (jsonPayload.event="generation_truncated" OR jsonPayload.event="context_budget_drop")' \
+  --project "$PROJECT" --freshness 24h --limit 5 --format='value(timestamp,jsonPayload.event,jsonPayload.tokens_out,jsonPayload.packed,jsonPayload.dropped)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts; a drop line from lesson 2.3's Act question may appear, a truncation should not)</span><span class="ro">read only</span></div><pre tabindex="0">by tenant
+tenant                 answers    tok_in  tok_out       USD       INR  p95 ms  unans
+------------------------------------------------------------------------------------
+acme                        NN     xxxxx     xxxx    0.0xxx      x.xx    4xxx   0.0x
+2026-09-2xT1x:xx:xx.xxxxxxZ	context_budget_drop		1x	x</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The day's tokens sat in two columns with their price beside them, which is the budget seen from the bill: <code>tok_in</code> is the packed sets of every answer plus their fixed prompts, and a wider <code>top_k</code> or a larger budget moves that column before it moves anything else. The log held no truncation, because the reserve was sized for the answers this corpus produces, and the drop lines it held were the ones you caused on purpose.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What the budget costs, the knob on a candidate, and the lines this lesson leaves empty</h3><p>The rupee line, a candidate revision with a budget too small for five sections, and the two budget lines that belong to later modules.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The packed set</td><td data-label="Costs">its tokens at the input rate, $%%RATE_IN%% per million for %%GEN_MODEL%%: about Rs %%RS_1K_IN%% per thousand input tokens at %%USD_INR%%</td><td data-label="On your lane">five handbook sections, under a paisa a question; twenty Act pages, a few paise</td></tr>
+<tr><td>The answer and its thinking</td><td data-label="Costs">$%%RATE_OUT%% per million out: five times the input rate, so a long answer costs more than a long context</td><td data-label="On your lane">a few hundred tokens a question</td></tr>
+<tr><td>Counting</td><td data-label="Costs"><code>count_tokens</code> is not billed as generation</td><td data-label="On your lane">step 4's calls</td></tr>
+<tr><td>A cached prefix</td><td data-label="Costs">cached input at a tenth of the rate, from %%MIN_CACHE%% tokens up; storage by the hour</td><td data-label="On your lane">Module 6; <code>cached_tokens 0</code> until then</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle at <code>MIN_INSTANCES</code> 0; one question at the generator's rate</td><td data-label="On your lane">step 8, a rupee, then reverted</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The knob: a budget too small, on a candidate that takes no traffic</h4>
+<p><code>max_context_tokens</code> is a setting, so the way to see the drop on the live corpus without touching the live service is a candidate revision, as in lessons 2.2 to 2.4: a budget of 600 tokens leaves room for about three handbook sections after the fixed prompt, so the same question at <code>top_k</code> 5 packs three, drops two, logs the drop, and answers from what it packed. The variable is not set on the live service, so the undo removes it and the default returns.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; one question; one log read; then the undo)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars MAX_CONTEXT_TOKENS=600 --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+curl -s -X POST "$CAND/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":5}' \
+  | python -c "import sys, json; j = json.load(sys.stdin); print('candidate: tokens_in', j['tokens_in'], '| citations', len(j['citations']), '| answerable', j['answerable'], '| pool', j['stages']['pool'])"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="context_budget_drop"' \
+  --project "$PROJECT" --freshness 5m --limit 2 --format='value(timestamp,jsonPayload.packed,jsonPayload.dropped)'
+gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate --remove-env-vars MAX_CONTEXT_TOKENS --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet
+echo "template now: ${MAX_CONTEXT_TOKENS:-$(svc_env documind-api MAX_CONTEXT_TOKENS)}"; echo "(empty means unset: the default, %%TOTAL_RAW%%)"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts may differ by a section; the drop line is the point)</span><span class="ro">read only</span></div><pre tabindex="0">candidate: tokens_in 6xx | citations 2 | answerable True | pool 20
+2026-09-2xT1x:xx:xx.xxxxxxZ	3	2
+template now:
+(empty means unset: the default, %%TOTAL_RAW%%)</pre></div>
+
+<h4>The lines this lesson leaves empty</h4>
+<p>Two of the five lines are zero in the API's budget on purpose. The tenant pack is a stable prefix of the tenant's corpus that a context cache serves at a tenth of the rate, from %%MIN_CACHE%% tokens up, and Module 6 fills it: on the answer it appears as <code>cached_tokens</code> inside <code>tokens_in</code>. The history is the chat service's rolling summary, and Module 6 keeps it outside this API. The budget class knows both so that the sum can be read in one place when they are filled; the packer only ever sees the chunks line.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A budget a thirteenth of the default packed three sections and dropped two, the log said so, the answer came from the three, and the live service never knew; the variable came out again and the template returned to the default. That is the whole shape of the knob: a number in the environment, judged on a candidate, with the drop line and <code>tokens_in</code> as the two measurements, and lesson 7's eval as the judge of whether the smaller prompt still answers.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The API's budget is the total less the fixed prompt</td><td data-label="The check">step 3, the second line</td><td data-label="Pass looks like"><code>system %%FIXED_TOKENS_RAW%%</code>, <code>chunks %%CHUNK_BUDGET_RAW%%</code>, pack and history 0</td></tr>
+<tr><td>2</td><td data-label="Claim">Handbook sections fit at twenty; full Act pages do not</td><td data-label="The check">step 3</td><td data-label="Pass looks like">the kit's output, to the token</td></tr>
+<tr><td>3</td><td data-label="Claim">A counter that reads more trims from the tail</td><td data-label="The check">step 3, the last line</td><td data-label="Pass looks like">fewer packed than under the estimate</td></tr>
+<tr><td>4</td><td data-label="Claim">The estimate is right for English and wrong for Hindi</td><td data-label="The check">step 4</td><td data-label="Pass looks like">ratio near 1 for NP-03, well above 1 for the Hindi clause</td></tr>
+<tr><td>5</td><td data-label="Claim">The kit's price function reproduces the answer's cost</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>cost.price()</code> equal to <code>cost_usd</code>, INR beside it</td></tr>
+<tr><td>6</td><td data-label="Claim">The estimate of the packed set is near the model's count</td><td data-label="The check">step 5, the last line</td><td data-label="Pass looks like">ratio 0.9 to 1.1</td></tr>
+<tr><td>7</td><td data-label="Claim">A document's date reaches the header, the rule and the citation event</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>effective_from 2026-10-01</code> on the event; an answer that says from when</td></tr>
+<tr><td>8</td><td data-label="Claim">The reserve held: no truncation</td><td data-label="The check">step 7</td><td data-label="Pass looks like">no <code>generation_truncated</code> line in the day</td></tr>
+<tr><td>9</td><td data-label="Claim">A smaller budget drops, logs, and still answers</td><td data-label="The check">step 8</td><td data-label="Pass looks like">a drop line; the variable gone afterwards</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. The smoke fixture went to revision 2 and back to revision 1, where lesson 1.8's smoke leaves it; a candidate revision took no traffic and its variable was removed before the tag was dropped. The questions you asked are usage rows with their tokens on them. Lesson 3.5 takes the packed set into the model and out again as a contract: the draft the model fills, the citations resolved to real chunk ids, and the refusal on an empty pool.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Generation &middot; Lesson 3.4 Pack evidence within the context budget &middot; v5.0</p><p>Next: Lesson 3.5 Generate structured answers, citations and refusals.</p></div>

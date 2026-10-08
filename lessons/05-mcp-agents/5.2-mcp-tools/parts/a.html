@@ -1,0 +1,73 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 5 &middot; MCP and agents &middot; Lesson 5.2</div>
+<h1>Expose, discover and invoke MCP tools: <span>the kit's server, four tools, and a local client</span></h1>
+<p>The UI is how a person reaches your lane. MCP is how an agent does: Claude Desktop, Cursor, another team's ADK app, any agent you did not build. The kit's MCP server exposes four of the lane's own operations as tools. A client discovers them with one JSON-RPC method, <code>tools/list</code>, and invokes one with another, <code>tools/call</code>. You import the server and read what it declares. You start it on your machine with your lane behind it, send <code>tools/list</code> over plain HTTP, and call <code>retrieve</code> from fastmcp's client, the same client the smoke test and ADK use. Three calls that fail show where the server checks what.</p>
+<div class="hero-chips"><div class="hero-chip">MCP</div><div class="hero-chip">FastMCP</div><div class="hero-chip">tools/list</div><div class="hero-chip">tools/call</div><div class="hero-chip">JSON-RPC</div><div class="hero-chip">streamable HTTP</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Expose, discover, invoke</a></li>
+<li><a href="#s2">The words: MCP, server, client, tool, schema, tools/list, tools/call, tool error, transport</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Expose: what the server declares</a></li>
+<li><a href="#s4">Start the server on your machine</a></li>
+<li><a href="#s5">Discover: tools/list on the wire</a></li>
+<li><a href="#s6">Invoke: retrieve from a local client</a></li>
+<li><a href="#s7">Why the server is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a server exposes, what a client discovers and what an invocation carries. You will also learn where the kit's server checks the arguments, the caller and the tenant. Then you will prove it: <code>tools/list</code> names four, and <code>retrieve</code> answers a local client with your lane's own citations.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Expose, discover, invoke</h3><p>Three verbs, and the checks between them.</p></div></div>
+
+<p><strong>Expose.</strong> An MCP server offers tools: named operations, each with a description and an input schema. FastMCP builds all three from an ordinary Python function. The name is the function's own, or the one given. The description is the docstring's first line. The schema comes from the signature, with each argument's line taken from the docstring's Args. The kit's server, <code>services/mcp/server.py</code>, exposes four tools: <code>retrieve</code>, <code>list_documents</code>, <code>corpus_stats</code> and <code>calculate_processing_cost</code>. Each is one of the lane's own operations. <code>retrieve</code> calls the one <code>retrieve()</code> the chat brains call, and the server keeps no index of its own.</p>
+
+<p><strong>Discover.</strong> A client asks <code>tools/list</code> and receives those declarations. A model reads them the way it read the kit's tool definitions in lesson 5.7: the description says when to use a tool, and the schema says what to send. The protocol is JSON-RPC 2.0 over HTTP. The kit's server is stateless, so a single POST to <code>/mcp</code> is enough, and the server answers as a server-sent event.</p>
+
+<p><strong>Invoke.</strong> <code>tools/call</code> names a tool and its arguments. The server runs it and returns the result as data, or a tool error with a message the caller can act on. The kit's server checks three things, in order. First the arguments. Then who is calling, from a bearer token minted for the server's own address. Then which tenant, from the roster. The <code>tenant</code> argument only chooses among rosters the caller is already on. The cost tool asks none of this, because it touches no tenant's data.</p>
+
+<p><strong>Where the checks are not.</strong> Listing needs no identity. Anyone who can reach the server can read its four declarations. On Cloud Run, IAM decides who can reach it, and that is lesson 5.3.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127869;</div><div>
+<p><strong>A restaurant's menu card.</strong> The card is <code>tools/list</code>: each dish's name, a line on what it is, and what you may choose, such as spice, portion, rice or roti. Anyone who sits down may read it. The order is <code>tools/call</code>: a dish and your choices, written on the waiter's pad. The kitchen checks the order first ("no memo on this menu"), then whose table it is, then whether that table's account is open. A refused order comes back as a note from the kitchen, not as silence. The price list on the back can be read and totted up by anyone, because it names no customer.</p></div></div>
+
+<h4>Compose a tools/call</h4>
+<p>Choose a tool, its arguments and who is calling. The panel shows the JSON-RPC request a client sends, and what the kit's server answers.</p>
+
+<div class="diagram pc" id="mc">
+<div class="dg-title">tools/call against the kit's MCP server - %%N_OUT%% answers, each the server's own</div>
+<div class="pc-box"><div class="pc-in"><label>Tool<select id="mc-tool"></select></label><label>Caller<select id="mc-who"></select></label></div>
+<b class="h">Arguments</b><div class="pc-in" id="mc-args"></div>
+<b class="h">The request</b><div class="rpc" id="mc-rpc"></div>
+<b class="h">The server answers</b><div class="ans" id="mc-ans" aria-live="polite"></div></div>
+<p class="dg-cap">Every answer was returned by the kit's own <code>server.py</code>, run on localhost at build time with the token check, the roster, rag-api and Firestore stood in. The stand-ins hold each document under the class lesson 10.4's relabel gave it. So <code>statute</code> keeps the Act's passages, and <code>form</code>, a listed type that is no class, empties the pool.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the server's checks and messages, not your lane's documents. Your corpus, your rosters and your answers will differ.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: MCP, server, client, tool, schema, tools/list, tools/call, tool error, transport</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>MCP</strong></td><td data-label="Meaning">The Model Context Protocol: how an agent discovers and calls the tools a server offers.</td><td data-label="On your lane">the kit's server, <code>documind-mcp</code></td></tr>
+<tr><td><strong>Server</strong></td><td data-label="Meaning">The side that offers tools.</td><td data-label="On your lane"><code>services/mcp/server.py</code>, on FastMCP %%PIN%%</td></tr>
+<tr><td><strong>Client</strong></td><td data-label="Meaning">The side that lists tools and calls them.</td><td data-label="On your lane">fastmcp's <code>Client</code>; Claude Desktop, ADK, lesson 10.6's peer</td></tr>
+<tr><td><strong>Tool</strong></td><td data-label="Meaning">A named operation with a description and an input schema.</td><td data-label="On your lane"><code>retrieve</code>, <code>list_documents</code>, <code>corpus_stats</code>, <code>calculate_processing_cost</code></td></tr>
+<tr><td><strong>Input schema</strong></td><td data-label="Meaning">The JSON schema of a tool's arguments, read from the function's signature.</td><td data-label="On your lane"><code>retrieve</code> needs <code>query</code>; may take <code>doc_type</code>, <code>top_k</code>, <code>tenant</code></td></tr>
+<tr><td><strong>tools/list</strong></td><td data-label="Meaning">The JSON-RPC method that returns the tools' declarations.</td><td data-label="On your lane">four</td></tr>
+<tr><td><strong>tools/call</strong></td><td data-label="Meaning">The JSON-RPC method that runs one tool with arguments.</td><td data-label="On your lane">the gratuity question, to <code>retrieve</code></td></tr>
+<tr><td><strong>Tool error</strong></td><td data-label="Meaning">A failed call, returned as a result with its message rather than as a crash.</td><td data-label="On your lane"><code>query cannot be empty</code>; a roster refusal</td></tr>
+<tr><td><strong>Streamable HTTP</strong></td><td data-label="Meaning">MCP carried by HTTP POSTs to one path, answered as JSON or server-sent events.</td><td data-label="On your lane"><code>/mcp</code></td></tr>
+<tr><td><strong>Stateless</strong></td><td data-label="Meaning">No session between requests; every request carries its own identity.</td><td data-label="On your lane"><code>stateless_http=True</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: discovery tells a model what it may ask for, and invocation is where the server decides whether to answer.</p>

@@ -1,0 +1,103 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code> and <code>NUMBER</code> set by the setup above.</p>
+<ul>
+<li><strong>The gateway from lesson 9.1.</strong> <code>make smoke-slm</code> checks the gateway's <code>documind-slm</code> route, and step 7 sends the gateway the PAN it re-routed.</li>
+<li><strong>The API as <code>make up</code> deployed it.</strong> Step 7 puts a no-traffic candidate revision on it with the gateway backend. The API already knows the gateway's URL (<code>LITELLM_URL</code>, set when it was deployed), and <code>make deploy-gateway</code> let the API's account invoke the gateway.</li>
+<li><strong>An L4 in <code>us-central1</code>.</strong> A project's first L4 deploy in a region is granted a quota of three GPUs, with zonal redundancy off, which is how the kit deploys. You need no request.</li>
+<li><strong>About 240 MB for <code>~/tf-venv</code>,</strong> for step 3's transformers. Step 3 also downloads about 31 MB of tokenizer files from Hugging Face.</li>
+<li><strong>Steps 6 and 7 in one sitting.</strong> Step 6 wakes the GPU; step 7 uses it while it is warm.</li>
+<li><strong>What the lesson changes.</strong> It deploys <code>documind-slm</code>, which scales to zero, stores its image of more than 3.3 GB in Artifact Registry, and lets two accounts invoke it. It puts a candidate revision on the API and removes its tag, and creates <code>~/tf-venv</code>. The GPU bills while an instance lives: Rs %%HOUR_INR%% an hour, and up to 10 idle minutes after your last request.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>A Modelfile from the tokenizer</h3><p>make_modelfile.py on the tokenizer of the model the kit expects a supplied fine-tune to start from. No GPU, no Google Cloud.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make_modelfile.py</code> reads a model's tokenizer and renders one user turn through its chat template. It turns that render into Ollama's template, and takes the stop tokens from the tokenizer's own end tokens:</p>
+@@render@@
+<p>It needs the tokenizer's files, not the weights. The first cell makes a venv with a transformers that can read this tokenizer, and jinja2, which <code>apply_chat_template</code> needs. The second runs the generator on <code>%%TUNED_FROM%%</code>, the model the kit's comments name, and prints the Modelfile.</p>
+
+<h4>Do it</h4>
+%%CELL_TFVENV%%
+%%CELL_MODELFILE%%
+%%OUT_MODELFILE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The template is the tokenizer's own turn markers:</strong> <code>&lt;|turn&gt;user</code>, <code>&lt;turn|&gt;</code> and <code>&lt;|turn&gt;model</code>. The stop is <code>&lt;turn|&gt;</code>. Gemma 3 marks its turns with <code>&lt;start_of_turn&gt;</code>. A Modelfile typed from Gemma 3's documentation would be exactly the mismatch the generator exists to prevent.</li>
+<li><strong>The file expects a GGUF beside it:</strong> <code>FROM ./documind-slm.gguf</code>. That is the name <code>make deploy-slm</code> fetches the weights under.</li>
+<li><strong>The cell does not use the kit's pin.</strong> <code>services/slm/requirements.txt</code> pins transformers 4.57.1, which cannot load this tokenizer, even with jinja2 and protobuf added: it stops at an <code>AttributeError</code> while reading the special tokens. And jinja2, without which <code>apply_chat_template</code> refuses to run, is not in <code>requirements.txt</code>. So the cell installs transformers %%TF_PIN%% and jinja2.</li>
+<li><strong>The template carries the user turn and nothing else.</strong> It has <code>{{ .Prompt }}</code> and no <code>{{ .System }}</code>. Ollama fills a template like this one turn at a time, and passes the system message as <code>.System</code>, so a template that never names it drops it. The API sends its rules, and the JSON shape it parses, as the system turn (step 7). A supplied model served with this Modelfile never reads them. The stand-in's library template reads every message, and treats the system turn as a user turn.</li>
+<li><strong>The warning is harmless.</strong> Reading a tokenizer needs no PyTorch.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The waits and the bill, from the kit</h3><p>Every timeout along a request's path, read from the kit's files, then the GPU's hour at Google's rates. No network.</p></div></div>
+
+<h4>Definition</h4>
+<p>A request to the small model passes up to four waits. <code>run_eval</code> waits for the API, the API waits for the gateway, the gateway waits for the SLM, and the SLM allows each request its own timeout. The gateway's route to the small model:</p>
+@@route@@
+<p>The API's side:</p>
+@@gwwait@@
+<p>The cell reads these values and the rest from the kit's files, prints them in the order a request meets them, and prices the instance at Google's <code>us-central1</code> rates for an L4 without zonal redundancy.</p>
+
+<h4>Do it</h4>
+%%CELL_WAITS%%
+%%OUT_WAITS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The API gives up before the gateway.</strong> The API waits 90 seconds, and the gateway waits 110 for either self-hosted route. When the small model takes longer than 90 seconds, the API returns 502 while the gateway is still waiting. <code>config.yaml</code> sends <code>documind-slm</code> to Gemini when the self-hosted model is "cold, scaled to zero or out of quota". After a slow cold start, that fallback can only answer a caller that has already gone. It still helps when the backend fails fast: a missing service, or a refused token.</li>
+<li><strong>A cold start fits if it takes less than 90 seconds.</strong> The kit's own comment puts a cold GPU 30 to 60 seconds away. Step 6 measures yours. The panel above shows what each caller gets for any start and load time.</li>
+<li><strong>The gate forgives one timeout.</strong> <code>run_eval</code> asks a row again two seconds after a timeout. By then, the first try has usually woken the instance.</li>
+<li><strong>The GPU bills by the instance.</strong> $1.4209 an hour, Rs %%HOUR_INR%%, whether it answers one request or none. The idle window can add up to Rs %%IDLE_INR%% after each session's last request. A month at min-instances 1 comes to Rs %%MONTH_INR%%. The kit rounds the hour to $1.42 and says Rs 86,904.</li>
+</ul></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>The stand-in, deployed and smoke-tested</h3><p>make deploy-slm with SLM_STOCK, then the kit's smoke test: the model listed, both doors, the gateway's route, the label.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make deploy-slm</code> stages the build, then deploys it on one L4 behind IAM:</p>
+@@deploy@@
+<p>The image creates the model while it is built:</p>
+@@image@@
+<p>Cloud Build builds a GPU service's source on an <code>e2-highcpu-8</code> machine, and this build pulls 3.3 GB into the image, so the first deploy takes several minutes. Then <code>make smoke-slm</code> runs five checks as the UI's account. The gateway check is this one:</p>
+@@smokegw@@
+
+<h4>Do it</h4>
+%%CELL_DEPLOY%%
+%%OUT_DEPLOY%%
+%%CELL_SMOKE%%
+%%OUT_SMOKE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The model is listed.</strong> <code>/api/tags</code> answered in 0.1 s, because the instance the startup probe started was still up.</li>
+<li><strong>The first generation took 12.0 s.</strong> The probe only asks <code>/api/tags</code>, so the smoke test's first <code>/api/generate</code> loaded the model into the GPU. The OpenAI-compatible door then answered in 0.6 s.</li>
+<li><strong>The gateway's route answered, and its name says who served it:</strong> <code>ollama_chat/documind-slm</code>. Read that name every time. The check passes on any 200, so it also passes when <code>documind-slm</code>'s fallback answers with Gemini's name.</li>
+<li><strong>The service says what it serves:</strong> the label <code>stock</code>, and the image's path in Artifact Registry.</li>
+</ul></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>The cold start, timed</h3><p>After more than 10 idle minutes: the instance, the model's load and a warm answer, each timed.</p></div></div>
+
+<h4>Definition</h4>
+<p>Leave <code>documind-slm</code> alone for more than 10 minutes, so that Cloud Run stops the instance. Then the cell mints the UI account's token, as the smoke test does, and times three calls:</p>
+<ol>
+<li><code>/api/tags</code>, which waits for an instance;</li>
+<li>the first <code>/api/generate</code>, which loads the model into the GPU;</li>
+<li>a second <code>/api/generate</code>, warm.</li>
+</ol>
+<p>If the instance is still up, the cell says so, and you run it again later.</p>
+
+<h4>Do it</h4>
+%%CELL_TIME%%
+%%OUT_TIME%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The cold start, timed.</strong> %%COLD%% s to the first answer: %%START_S%% s for an instance, then %%LOAD_S%% s to load the model. That is the first proof. The stand-in's times are illustrations; yours are your lane's.</li>
+<li><strong>Warm, the same call took 0.6 s.</strong></li>
+<li><strong>Under 90 seconds, so the API would have waited for it.</strong> Put your own two numbers in the panel above.</li>
+<li><strong>Warm has two lengths.</strong> The model stays loaded for 5 minutes (Ollama's default; the kit sets no other) and the instance lives up to 10. A request between the fifth and the tenth minute pays the load again, on an instance that has been billing all along.</li>
+</ul></div>

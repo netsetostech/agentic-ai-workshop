@@ -1,0 +1,100 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>The small model behind the gateway and the API</h3><p>Lesson 9.1's PAN answered, the small model on a candidate revision, one answer priced, the scoped gate, and the cleanup.</p></div></div>
+
+<h4>Definition</h4>
+<p>Three things, in order:</p>
+<ol>
+<li><strong>The gateway.</strong> Lesson 9.1's three requests again. The PAN with a date goes to <code>documind-sensitive</code>, which now has a backend.</li>
+<li><strong>The API.</strong> <code>make candidate MODEL_BACKEND=gateway GENERATOR_MODEL=documind-slm</code> puts a no-traffic revision on the API; it is the command the Makefile's own comment gives for judging the self-hosted model. Then one golden question through it, lk-06. The API sends the gateway its rules and the JSON shape as the system turn, and the context and the question as the user turn:</li>
+</ol>
+@@messages@@
+<p>Its answer names a model, but the name is the route it asked for, not the model that served it:</p>
+@@named@@
+<p>So the cell reads the price instead. The gateway prices the route that served the answer, at <code>config.yaml</code>'s rates, and the API passes that cost on. A self-hosted answer costs 20.50 USD a million tokens, in and out; a Gemini answer does not.</p>
+<ol start="3">
+<li><strong>The gate,</strong> scoped to the rows that cite the HR policy, then lk-06's row in its report. Last, the cleanup: the candidate's tag removed and the GPU scaled to zero.</li>
+</ol>
+
+<h4>Do it</h4>
+%%CELL_ROUTE%%
+%%OUT_ROUTE%%
+%%CELL_CANDIDATE%%
+%%OUT_CANDIDATE%%
+%%CELL_ASK%%
+%%OUT_ASK%%
+%%CELL_GATE%%
+%%OUT_GATE%%
+%%CELL_GATED%%
+%%OUT_GATED%%
+%%CELL_CLEANUP%%
+%%OUT_CLEANUP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The sensitive route answered.</strong> The PAN with a date got an HTTP 200 from <code>ollama_chat/documind-slm</code>. Its cost header, %%PCOST%% USD for %%PTIN%% tokens in and %%PTOUT%% out, is the self-hosted rate. In lesson 9.1 the same request got an error. A GPU in <code>us-central1</code> answered it. So the text the hook kept from Gemini, because it must not leave, went to Iowa.</li>
+<li><strong>The bare PAN still went to Gemini.</strong> The hook never re-routed it (lesson 9.1).</li>
+<li><strong>The candidate answered lk-06 through the small model.</strong> The answer carries a citation, and its cost matches <code>documind-slm</code>'s rate. The model field says <code>documind-slm</code>, and it would say that whoever answered. When the hook reads a context as CONFIDENTIAL, it masks it and sends it to Gemini, and only the price shows it. The CONFIDENTIAL patterns are an email address or a ten-digit number, and acme's own CGST Act holds an email address.</li>
+<li><strong>The gate judged it.</strong> lk-06 passed. That is the second proof: a gated answer from the small model. Of %%N_ROWS%% rows, %%N_PASS%% passed. The stand-in missed %%MISSES%%: lk-02 answered without "15 June", and lk-08 refused a question the policy answers. That is still above every threshold. The misses are an illustration of what a 4B model does; your rows are your lane's.</li>
+<li><strong>Two runs can differ.</strong> The API sends no temperature, which is right for Gemini 3: Google says to leave it at the default. A stock model samples at its library's default, and <code>%%STOCK%%</code>'s is 1.</li>
+<li><strong>The cleanup.</strong> The candidate's tag is gone, and the live revision never took its traffic. <code>make slm-off</code> set min-instances to 0, which <code>make deploy-slm</code> had already set. It cannot stop an idle instance: that stops by itself within 10 minutes, and bills until then. Lesson 9.4 proves zero GPU instances.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The model is created when the image is built,</strong> because importing a 2 GB GGUF is time a cold start does not have.</li>
+<li><strong>The Modelfile is generated, never typed.</strong> A template that disagrees with the checkpoint produces fluent text that never stops.</li>
+<li><strong>Ollama is pinned to 0.33.3.</strong> Gemma 4 support arrived in the 0.33 line, and an older Ollama loads the GGUF and produces nonsense rather than refusing.</li>
+<li><strong>The startup probe waits for the model, not the process.</strong> <code>/api/tags</code> lists the model only once Ollama has it.</li>
+<li><strong>The GPU is its own act.</strong> <code>make deploy-slm</code> is never a side effect of deploying everything else, because of the bill.</li>
+<li><strong><code>us-central1</code>, not Mumbai.</strong> L4 GPUs in <code>asia-south1</code> are by invitation only. Delhi (<code>asia-south2</code>) has the RTX PRO 6000 if the data must stay in India, at a different price and a minimum of 20 vCPU and 80 GiB.</li>
+<li><strong>The sensitive route has no fallback.</strong> A cold GPU means a slow answer, not a leak.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The Modelfile and the waits</td><td data-label="Costs">a venv, and 31 MB of tokenizer files from Hugging Face</td><td data-label="On your lane">free</td></tr>
+<tr><td><code>make deploy-slm</code></td><td data-label="Costs">a Cloud Build on <code>e2-highcpu-8</code> that pulls 3.3 GB, and the image's storage in Artifact Registry</td><td data-label="On your lane">build minutes and storage, priced on Google's pages</td></tr>
+<tr><td>The SLM, running</td><td data-label="Costs">an L4 with 8 vCPU and 32 GiB, billed from an instance's start to its stop</td><td data-label="On your lane">Rs %%HOUR_INR%% an hour, plus up to 10 idle minutes (Rs %%IDLE_INR%%) after the last request</td></tr>
+<tr><td>Left at min-instances 1</td><td data-label="Costs">the same instance, all month</td><td data-label="On your lane">Rs 86,904 a month, by the kit's figure</td></tr>
+<tr><td>The gateway and the candidate</td><td data-label="Costs">CPU-only Cloud Run, billed while serving, and a handful of answers</td><td data-label="On your lane">a small model's answers are logged at <code>config.yaml</code>'s rate, which the kit calls a rate, not a price: the GPU's hour is the price</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does. The transformers facts come from running <code>make_modelfile.py</code> under both versions when this page was built.</p>
+<ul>
+<li><strong>The sensitive route leaves India.</strong> <code>SLM_REGION</code> defaults to <code>us-central1</code>, while <code>config.yaml</code> tags <code>documind-slm</code> <code>residency-in</code> and <code>documind-sensitive</code> <code>dpdpa</code>. The text the hook re-routes, because it must not leave, goes to a GPU in Iowa.</li>
+<li><strong><code>make_modelfile.py</code> does not run on the kit's pins.</strong> transformers 4.57.1 cannot load the Gemma 4 tokenizer. And jinja2, which <code>apply_chat_template</code> needs, is not in <code>requirements.txt</code>.</li>
+<li><strong>The generated template drops the system turn.</strong> It has no <code>{{ .System }}</code>, and the API sends its rules and its JSON shape as the system turn. A supplied model served with it never reads them.</li>
+<li><strong>The API names the route it asked for, not the model that answered.</strong> The gateway's reply says which model served it, and <code>generate()</code> returns the route instead. A context the hook reads as CONFIDENTIAL is masked and answered by Gemini, and the answer still says <code>documind-slm</code>. Only the price shows it.</li>
+<li><strong>The fallback after a slow cold start never reaches the API.</strong> The API waits 90 seconds and the gateway 110. A cold start slower than 90 seconds is a 502 at the API, whatever <code>documind-slm</code>'s fallback does afterwards.</li>
+<li><strong>The smoke test's gateway check passes whoever answers.</strong> It counts any 200, Gemini's fallback included.</li>
+<li><strong>The model unloads at 5 minutes, and the instance bills for up to 10.</strong> The image sets no <code>OLLAMA_KEEP_ALIVE</code>. And nothing ends the idle window: <code>make slm-off</code> sets the same min-instances 0 that <code>make deploy-slm</code> set.</li>
+<li><strong>A small model samples at its own default.</strong> The gateway path sends no temperature, so the stand-in answers at 1, and two runs of the gate can disagree.</li>
+</ul></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The Modelfile, from the tokenizer</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>&lt;|turn&gt;user</code> in the template and <code>PARAMETER stop "&lt;turn|&gt;"</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The waits</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the API 90 s, the gateway 110 s, the probe 160 s</td></tr>
+<tr><td>3</td><td data-label="Claim">The stand-in, deployed</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>&gt;&gt; slm: https://documind-slm-NUMBER.us-central1.run.app</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The smoke test</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>5 passed</code>, with <code>stock</code> on the last check</td></tr>
+<tr><td>5</td><td data-label="Claim">The cold start, timed</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>a cold start:</code> and the seconds to the first answer</td></tr>
+<tr><td>6</td><td data-label="Claim">The sensitive route answered</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>a PAN and a date  HTTP 200  answered by ollama_chat/documind-slm</code></td></tr>
+<tr><td>7</td><td data-label="Claim">A gated answer from the small model</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>documind-slm's rate</code>, then <code>lk-06: pass</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The tag removed, the GPU at zero</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>documind-slm scaled to zero</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>documind-slm</code> runs on a Cloud Run L4 in <code>us-central1</code>, scaled to zero, serving the stand-in (<code>slm-source=stock</code>). Its image is in Artifact Registry, and the gateway's two self-hosted routes now have a backend. The API's candidate revision has lost its tag, and the live revision still answers through Vertex AI (<code>MODEL_BACKEND=vertex</code>). <code>~/tf-venv</code> holds transformers %%TF_PIN%%. Lesson 9.3 inspects the vLLM service and the GKE alternative.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 9 Serving &middot; Lesson 9.2 Serve a supplied or stock model using Ollama &middot; v5.0</p><p>Next: Lesson 9.3 Inspect the vLLM service and the GKE alternative.</p></div>

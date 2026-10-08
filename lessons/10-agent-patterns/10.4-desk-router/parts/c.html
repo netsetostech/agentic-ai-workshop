@@ -1,0 +1,222 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; The kit's code</span><h3>Two signals and one arbiter, in the code</h3><p>The numbers, L1's schema, the two signals in parallel, the acceptance rules, the arbiter, the graph that runs the chosen desks, and the Desk's offline check.</p></div></div>
+
+<h4>Definition</h4>
+<p><strong>The numbers.</strong> Every threshold sits in one block at the top of the router, under a comment that says what it is.</p>
+@@consts@@
+
+<p><strong>L1's request.</strong> The schema has five fields, each an enum or a boolean, and all five are required. An answer outside the schema is a parse failure, treated like a timeout. The prompt describes each desk by the documents it owns, holds the %%N_EXEMPLARS%% examples of <code>desk_routes.PROMPT_EXEMPLARS</code> and the labelling rules, and fences as data the question (up to %%QUESTION_CHARS%% characters), the previous question (up to %%PREV_CHARS%%) and the previous route. It carries no company id, name or number. Its version, <code>%%PROMPT_VERSION%%</code>, goes on every row.</p>
+@@schema@@
+
+<p><strong>The two signals.</strong> Inside <code>_route()</code>, L1 and the vote start together on a thread pool. L1 is counted on the turn's Meter before it is sent, so a turn at its model-call cap sends none. Both are waited for until %%L1_S%% seconds after they start, and never past the router's %%BUDGET_S%%-second budget. Then <code>accept()</code> runs on what came back. With no verdict and no L1 answer, the turn takes the fallback. With no verdict but an L1 answer, rule F.</p>
+@@signals@@
+
+<p><strong>The acceptance rules.</strong> Rule D asks only for a sign of a case, from either signal. Rule A needs the two to agree at %%ACCEPT_VOTES%% of %%K%%. The share is votes over %%K%%, not over the index, so a small index is never confident. Rule F's enum is L1's route, the vote's route and <code>clarify</code>, each once.</p>
+@@accept@@
+
+<p><strong>The arbiter.</strong> One call, given whatever is left of the budget, at most %%L2_S%% seconds. A choice outside the candidates is a parse failure. On any failure L1's route stands with confidence low, and the checks add the desk chips so the person can choose.</p>
+@@arbiter@@
+
+<p><strong>The graph.</strong> <code>services/chat/desk_graph.py</code> runs only answer, clarify and fallback turns; a case, out-of-scope, denied or not-covered turn is answered by code and never enters it. <code>dispatch()</code> calls no model and goes to the first desk the decision names. The parts are a list the router fixed, and <code>next_part()</code> only pops it: a second desk starts only while the turn has %%PART_MIN_S%% seconds left, and otherwise becomes a chip. No tool can name a desk, and no desk can hand the turn to another.</p>
+@@dispatch@@
+
+<p><strong>The in-force lines.</strong> For each Act an answer cites, <code>in_force_line()</code> says what the corpus's own text says: when the Act comes into force, what repeals or amends it, or how current the text is. No date is shown while <code>IN_FORCE</code> holds none, and in your kit it holds none, so the Codes' lines say the date is not shown until a person has checked it against the Gazette.</p>
+@@inforce@@
+
+<p><strong>Agent mode.</strong> When L1 says the answer needs arithmetic on figures in the question (<code>needs_calculation</code>), the handbook or statute desk runs as a small agent with the desk's calculators from <code>shared/desk_calc.py</code>, under the same turn limits. The model reads the passages and chooses the call; code does the arithmetic and names the clause or section it rests on. A gratuity figure is always labelled an estimate.</p>
+
+<h4>Do it: the router on every dev row, on your machine</h4>
+<p>No lane and no cost: <code>evals/route_eval.py --local</code> runs <code>decide()</code> in process on every scored dev row, with a scripted classifier and offline embeddings. For each row, it takes the row's own group out of the vote first, so a question never finds itself.</p>
+%%CELL_LOCAL%%
+%%OUT_LOCAL%%
+<p>The first line says what this measures: the cascade, not a model. The scripted classifier answers each row's own label, and is wrong on purpose on about one row in eight; its arbiter picks the label whenever the label is among the candidates. So the accuracy says that the anchors, the vote, the acceptance rules, the arbiter's enum and the checks carry a question to the right desk when the signals are this good. The methods show how much code settles: the anchors, and the %%N_SINGLE%% globex rows in single mode. Rule F took %%N_LOCAL_ARB%% rows, where the offline vote did not back L1 at %%ACCEPT_VOTES%% of %%K%%. The cost line counts the scripted calls at four characters a token. Step 10 runs the same rows through your lane's real models.</p>
+
+<h4>Do it: the Desk's offline check</h4>
+<p><code>make desk-check</code> is the proof that the Desk's code holds, with no lane and no cost. It checks that the route set is the one <code>evals/build_routes.py</code> builds and that every row is sound, runs the self-tests and unit tests of the eval and the probe, runs the router on the dev rows as the cell above did, checks that the threshold sweep counts right, and checks that every calculator rule says what its line of the corpus says. Then it runs the chat service's tests for the case queue, the router and the desk graph, which need the chat image's libraries: the first run makes <code>~/graph-venv</code> and installs <code>services/chat/requirements.txt</code> into it, which takes a few minutes. Every line must pass; a failing one stops the run.</p>
+%%CELL_DESKCHECK%%
+%%OUT_DESKCHECK%%
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; REST</span><h3>/v1/route and /v1/desk, over REST</h3><p>Decisions alone as an eval account, answers, the three callers a router must not get wrong, a figure worked out in code, then the smokes: the routed Desk's and, with the door on, the Google Chat door's refusals.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat service's docstring lists the routed Desk's three routes, and the shadow. The third, <code>GET /v1/desk/check</code>, is for the Google Chat bridge, which asks it on a person's behalf before it queues a question; the cells below do not call it.</p>
+@@routes@@
+<p>The tenant, the person and the previous turn are never fields of <code>/v1/desk</code>'s body: the service reads the first two from your identity and the third from the thread, and an unknown field is a 422. <code>/v1/route</code> answers a <code>desk_eval</code> caller only, at most %%ROUTE_RATE%% calls a minute per account in each worker. It has no thread, so its body may carry <code>prev_question</code> and <code>prev_route</code>, which stand in for the earlier turn a follow-up row of the route set needs. Its reply is the decision: the route, the method, the rule that accepted it, the signals, the calls and the rupees.</p>
+
+<h4>Do it: decisions</h4>
+<p>Five questions to <code>/v1/route</code> as <code>evalacme</code>: the smoke's disclosure, an invoice, a clause code, a named Act, and lk-06 with no identifier. Then lk-06 again, as <code>documind-ui-sa</code>.</p>
+%%CELL_ROUTE%%
+%%OUT_ROUTE%%
+<p>Four decisions cost nothing: the gate took the disclosure, and the invoice number, <code>NP-03</code> and the Bonus Act each decided alone. lk-06 needed the models. On your lane its line shows how many of the %%K%% neighbours voted handbook and how close the nearest was. lk-06 is itself a dev row in the index, so its nearest neighbour is its own text. <code>ui-sa</code>, the UI's own account, which <code>make smoke</code> calls as, holds no <code>desk_eval</code> role and is refused.</p>
+
+<h4>Do it: answers</h4>
+<p>lk-06 and lk-17 to <code>/v1/desk</code>, each in its own session. For each section, the cell prints the title, the objects cited, whether the answer holds the route set's expected words, and the in-force lines.</p>
+%%CELL_DESK%%
+%%OUT_DESK%%
+<p>The handbook section cites only <code>hr_policy_2026.md</code>, the one <code>policy</code> object acme holds. The statute section cites only Acts and the ministry's guidance. Its in-force lines follow the order of the citations, each Act once, and end with the same line every time.</p>
+
+<h4>Do it: the leaver, the single desk, and a question back</h4>
+<p>lk-06 as the leaver; globex's DPDP question as <code>evalglobex</code>; "What is the notice period?" as <code>evalacme</code>.</p>
+%%CELL_MORE%%
+%%OUT_MORE%%
+<p>The leaver's roles open only the case desk. The words do not show that, so the router ran its signals, chose handbook, and the roles check then denied it, with no search, and offered a case. globex is in single mode: statute, method <code>single</code>, no classifier and no model call for the routing. The last question names nothing, and on the stand-in that built this page the two signals disagreed, so the arbiter chose <code>clarify</code>. On your lane the models decide; if they agree on handbook, this line is a handbook answer instead.</p>
+
+<h4>Do it: a figure, worked out in code</h4>
+<p>jn-03 asks for a figure: "%%QJN03%%" When L1 marks a question <code>needs_calculation</code>, the handbook desk runs in agent mode. A small agent searches the handbook's passages, and a calculator from <code>shared/desk_calc.py</code> does the arithmetic. The calculator takes the balance only from the person's message and the cap only from clause LV-07 of a passage this turn read; any other number is refused, and the agent is told why.</p>
+%%CELL_CALC%%
+%%OUT_CALC%%
+<p>The route is handbook, chosen like any other; the section's <code>mode</code> is <code>agent</code>, and its calls are in <code>tool_calls</code>. The block after the answer is written by code, not by the model: the formula, where each number came from, and the condition LV-07 sets. The 60 days need no arithmetic: NP-03 states them, and the agent read and cited it. On the stand-in that built this page a scripted model played the agent. On your lane <code>gemini-3.6-flash</code> chooses the searches and the calls, so its words, its number of searches and its <code>model_calls</code> are its own, and the block appears only when it called a calculator.</p>
+
+<h4>Do it: the live smoke</h4>
+<p><code>smoke/smoke_desk.py</code> checks the routed Desk in one run, as the eval accounts, then runs 5.6's case-queue smoke. Its questions are the route set's own rows, read by id, and each run uses fresh sessions.</p>
+%%CELL_SMOKE%%
+%%OUT_SMOKE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The routed Desk's %%N_SMOKE_DESK%% checks passed. The handbook answer cited acme's own objects and held the row's expected words. The statute answer carried its in-force lines. The disclosure was a case by rule, with no model call, no case written and the POSH card naming each office's Local Committee. The invoice was out of scope by its anchor, with nothing searched. The leaver was denied with no retrieval. globex answered from its single desk. <code>/v1/route</code> answered <code>evalacme</code> and refused <code>ui-sa</code>. Then the case queue's %%N_SMOKE_CASES%% checks passed as in 5.6: acme's gate is still in front of everything.</p></div>
+
+<h4>Optional: the Google Chat door's refusals</h4>
+<p>This needs the door on your lane, step 3's optional part, and no Google Workspace. On a lane whose last apply had the door off, <code>make smoke-gchat</code> refuses and says so. <code>smoke/smoke_gchat.py</code> sends %%N_SMOKE_GCHAT_W%% requests that must be refused. Steps 1 and 2 go to the bridge as <code>documind-outsider-sa</code>: a Chat-shaped event to <code>/</code> and a push envelope to <code>/work</code>. The outsider is one of the bridge's invokers, so Cloud Run lets it in, and the 401, "%%CODE_401%%", comes from the bridge's own code. Steps 3 and 4 go to the chat service's <code>POST /v1/desk</code> as <code>documind-evalacme-sa</code> and as <code>ui-sa</code>, each naming a person in <code>X-DocuMind-Principal</code>, and the Desk's rule 1 refuses both: "%%NOT_A_DELEGATE%%". Then the smoke prints the latest rows of each kind from the last hour. The kit's comments call steps 3 and 4 the alert's own test: each writes a <code>desk_delegation_refused</code> row, which "%%ALERT_NAME%%" counts, so expect it to fire and notify whatever channels your lane's alerts use. That is on purpose. No step shows the door accepting a call, because nobody may mint a token as <code>documind-gchat-sa</code>, by design. A person in Google Chat, as in step 4, is that proof.</p>
+%%CELL_SMOKEGCHAT%%
+%%OUT_SMOKEGCHAT%%
+<p>Two <code>gchat_verify_failed</code> rows give the reason <code>wrong_caller</code>, with booleans about the refused token and never the token itself. Two <code>desk_delegation_refused</code> rows name the caller, the reason and the path, and no person. The <code>gchat</code>, <code>gchat_answer</code> and <code>via</code> "gchat" rows show <code>(none)</code> unless someone messaged the app in the last hour.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>The shadow, the rows and the log</h3><p>zeta's router in shadow beside ordinary chat turns; a chunk, its registry entry and an exemplar in Firestore; every row the router logged; the Google Chat door's rows and claims; the Desk's day in BigQuery; then zeta on.</p></div></div>
+
+<p><strong>Shadow first.</strong> A company that is not ready to route can let the router watch. With <code>desk_route</code> at <code>shadow</code>, every <code>/v1/chat</code> turn for that company is answered by its brain as before, and the router decides the same question beside it, with its own Meter, and logs a <code>desk_shadow</code> row. It answers nothing and keeps nothing. Shadow needs <code>desk_gate</code> not off, so the door answers every disclosure before the router could see it; zeta already has the gate's rules, because nothing has switched them off. zeta goes on to <code>desk_route</code> on later in this step, and the routed Desk waits for a complete POSH queue. So zeta gets its queues, with <code>evalzeta</code> as head office's committee, then the role, then the shadow.</p>
+%%CELL_SHADOW%%
+%%OUT_SHADOW%%
+
+<h4>Do it: three ordinary chat turns</h4>
+<p>Three of zeta's route-set questions to <code>/v1/chat</code> as <code>evalzeta</code>, with the direct brain: a travel cap from zeta's handbook, the Code on Wages, and zeta's own contract.</p>
+%%CELL_CHATS%%
+%%OUT_CHATS%%
+
+<h4>Do it: the rows in Firestore</h4>
+<p>acme's chunk for <code>NP-03</code>, the handbook's registry entry, the exemplar for lk-06, and the three companies' switches, read with the Firestore client.</p>
+%%CELL_ROWS%%
+%%OUT_ROWS%%
+
+<h4>Do it: the log</h4>
+<p>Every <code>desk</code> and <code>desk_shadow</code> row the chat service logged since step 3.</p>
+%%CELL_LOGS%%
+%%OUT_LOGS%%
+
+<h4>Optional: the Google Chat door's rows</h4>
+<p>This needs the door on your lane, step 3's optional part: without it there is no <code>documind-gchat</code> database to read. Two direct reads of what step 4's conversation left, if you had it. The <code>desk</code> rows with <code>via</code> "gchat" are the Desk's own rows for the turns the bridge asked for. The handbook turn names you and the delegate; the disclosure's names nobody, as on the Desk page. The bridge's claims are in its own Firestore database, <code>documind-gchat</code>, never the default one where the rosters and roles live. A claim stops a message that Chat delivers twice, or that Pub/Sub pushes twice, from being answered twice. Its id is a hash of the message's name, it holds no text and no email, and it expires %%CLAIM_TTL_H%% hours after it was made. A TTL policy then deletes it; how soon after is not confirmed.</p>
+@@claims@@
+%%CELL_GCHATROWS%%
+%%OUT_GCHATROWS%%
+<p>The disclosure has no claim, because a gate hit is never claimed. If you did not configure the app, both counts are 0.</p>
+
+<h4>Do it: the Desk's day in BigQuery</h4>
+<p>Since step 3's apply, the log sink copies the chat service's <code>desk</code> rows into BigQuery. <code>make desk-views</code> checks <code>terraform/sql/desk_daily.sql</code> with a dry run, then creates the view <code>documind_observability.desk_daily</code>: one row per India day, company, desk and kind of caller, with the turns, their outcomes, the escalations, how each turn was decided, the arbiter's share, the chip turns, the rupees and the latencies. No column names a person, a session or a question. The <code>bq</code> query then reads today's rows. Run it a few minutes after step 7, since the sink takes a little while to deliver rows and BigQuery types the table's columns from the rows it has seen. This is a preview; lesson 11.5 explains the sink and the views.</p>
+%%CELL_VIEWS%%
+%%OUT_VIEWS%%
+
+<h4>Do it: zeta on</h4>
+<p>The shadow rows are what a company reads before it switches. On the stand-in they agree with the route set's labels. Read yours first, and switch zeta on when they do.</p>
+%%CELL_ZETAON%%
+%%OUT_ZETAON%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The three chat turns were answered by the direct brain as before, each holding its expected words where the row has some. Beside each, the router wrote one <code>desk_shadow</code> row. On the stand-in that built this page, for example, the models chose handbook and out of scope, and the Code on Wages went by its anchor; on your lane the model rows are your models' choice. The chunk's class is <code>policy</code>, and its <code>doc_key</code> is the registry's pin, so the next ingest of the same bytes keeps the class. The exemplar holds a %%K%%-neighbour vote's raw material: a route, a group, a 768-dimension vector and the index version. The log has one row for every turn the routed Desk decided: your turns from the Desk page, the cells' and the smoke's, with surface <code>route</code> for the decisions alone. The refused <code>ui-sa</code> call was turned away before any decision, so it has none. The disclosure's rows name no person. No row holds a question. The routes on the model rows are your models' choices, and step 10 counts how often they match the labels. <code>desk_daily</code> counts the same <code>desk</code> turns by company, desk and caller, with no person in any column. If you had step 4's conversation in Google Chat, its two turns are <code>desk</code> rows like any other, with <code>via</code> "gchat", and its one claim holds six fields and no words.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it is shaped this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Code before models.</strong> Who is asking, the gate, the masking and the anchors cost nothing, cannot be talked round, and can be read and tested. A disclosure the gate recognises never reaches a model, and an Aadhaar or card number with a valid check digit is masked before anything reads the words. The gate is pattern rules, so rule D is there for the disclosures they miss.</li>
+<li><strong>Identifiers, not topic words.</strong> An anchor is something a question can only mean one way: a clause code the company itself uses, the title of an Act, an invoice number, a checked GSTIN. Topic words such as "leave" or "bonus" are what the signals are for. A question near a case keeps its anchor only as a hint.</li>
+<li><strong>A classifier with nowhere to write.</strong> L1's schema has no free-text field, so a question that says "ignore your instructions" can at most choose a wrong desk, and the desk's filter still holds. Its output is a few tokens, and an answer outside the schema is caught as a parse failure.</li>
+<li><strong>Two signals that fail differently.</strong> L1 reads the desks' descriptions and the rules. The vote reads the route set's labelled examples, the same rows for acme and zeta. When they agree at %%ACCEPT_VOTES%% of %%K%%, the turn costs one cheap call. When they disagree, one stronger call settles it.</li>
+<li><strong>Asymmetric on purpose.</strong> Rule D escalates on any sign of a case, from either signal, before anything else: a wrong escalation costs a queue a minute, a missed disclosure is a legal failure.</li>
+<li><strong>The arbiter chooses, it does not invent.</strong> L2's enum is what the two signals proposed, and <code>clarify</code>. It cannot name a desk neither proposed.</li>
+<li><strong>The filter is code.</strong> A router error sends a question to the wrong desk; it never widens what a desk reads. The handbook desk reads <code>policy</code> and nothing else.</li>
+<li><strong>No hand-offs.</strong> The parts are a list the router fixed and the graph pops. No tool names a desk, no agent hands the turn to another, and a desk that cannot answer offers a chip, which is a new turn the person chooses.</li>
+<li><strong>Never a 500.</strong> An exception in the roles lookup, the gate or the masking sends the turn to a person, with no text kept. Any later exception, or more than %%BUDGET_S%% seconds, gives the fallback: one answer over every class the person may read, with the desk chips.</li>
+<li><strong>Shadow before on.</strong> A company can watch the router decide its real traffic, with every answer unchanged, before it switches.</li>
+<li><strong>Unreviewed text is on no desk.</strong> A class is pinned to the bytes a person reviewed. A new version stays <code>unknown</code> until someone reads it and re-pins it with <code>make doc-types FOLLOW=&lt;name&gt; APPLY=1</code>.</li>
+</ul>
+
+<h4>What it costs</h4>
+<p>From the kit's prompts and <code>shared/prices.py</code>, at Rs 85 to the dollar. Token counts are estimates at four characters a token, for lk-06's question; a longer question costs a little more. <code>make route-probe</code> measures the real output tokens on your lane.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Calls</th><th>Rupees</th></tr></thead>
+<tbody>
+<tr><td>A gate hit, an anchor, a chip, a single desk</td><td data-label="Calls">no model call for the routing</td><td data-label="Rupees">Rs 0</td></tr>
+<tr><td>L1 accepted (rule D, A, B or C)</td><td data-label="Calls">one flash-lite call: about %%L1_IN%% tokens in for lk-06, at most %%L1_OUT%% out; one query embedding</td><td data-label="Rupees">at most Rs %%L1_CAP%% for lk-06; Rs %%L1_30%% at 30 tokens out</td></tr>
+<tr><td>Rule F</td><td data-label="Calls">one flash call more: about %%L2_IN%% tokens in for lk-06, at most %%L2_OUT%% out, thinking included</td><td data-label="Rupees">at most Rs %%L2_CAP%% more</td></tr>
+<tr><td>The query embedding</td><td data-label="Calls">counted in <code>router_calls</code></td><td data-label="Rupees">not priced by the kit</td></tr>
+<tr><td>The answer desks</td><td data-label="Calls">one rag-api answer over the desk's classes; in agent mode, the agent's flash calls over searches that call no model</td><td data-label="Rupees">as any <code>/v1/query</code> answer; in agent mode, the agent's calls</td></tr>
+<tr><td><code>make route-index</code></td><td data-label="Calls">about %%N_INDEX%% short embeddings for each routed company</td><td data-label="Rupees">not priced by the kit</td></tr>
+<tr><td>Shadow on zeta</td><td data-label="Calls">a routing decision beside every chat turn</td><td data-label="Rupees">as the rows above, per turn</td></tr>
+<tr><td><code>make route-eval SPLIT=dev</code></td><td data-label="Calls">%%N_SCORED%% routing decisions and %%N_DESK_ROWS%% desk answers</td><td data-label="Rupees">the sum; the answers are most of it</td></tr>
+<tr><td>The offline cells</td><td data-label="Calls">nothing leaves your machine</td><td data-label="Rupees">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The thresholds are not calibrated.</strong> %%K%%, %%ACCEPT_VOTES%%, %%CASE_VOTES%%, %%TAU_OOS%%, the %%L1_S%%, %%L2_S%% and %%BUDGET_S%% seconds, the %%STICKY_MIN%% minutes and the %%PART_MIN_S%% seconds of a second part are starting values. <code>evals/route_threshold.py</code> sweeps <code>TAU_OOS</code> and <code>ACCEPT_VOTES</code>, and is meant to run once people have written and reviewed rows.</li>
+<li><strong>No person has written a route row.</strong> All %%N_ROUTE_ROWS%% rows of <code>evals/routes.jsonl</code> are model drafts, and the test split is empty. So <code>make route-eval SPLIT=test</code> fails its gate on every lane until people write the test rows.</li>
+<li><strong>No case, clarify or escalation rows.</strong> Recall for <code>case</code> and <code>clarify</code> is 0 of 0, escalation recall is not measured, and the index holds no case example, so the vote's half of rule D cannot fire yet. Only L1 and 5.6's gate escalate.</li>
+<li><strong>English only.</strong> Every route row is in English. 5.6's gate has Hindi and Hinglish examples; the router's routing of Hindi and Hinglish questions is not measured.</li>
+<li><strong>The dev figures are optimistic.</strong> The deployed index holds the dev rows themselves, so in a live dev run the vote finds each question's own row. <code>--local</code> holds each row's group out; a live run cannot.</li>
+<li><strong>Rule E is not built.</strong> Accepting L1 on its own confidence needs flash-lite on <code>global</code> to return its top two logprobs, and the probe has not shown that.</li>
+<li><strong>L2 thinks at LOW.</strong> MINIMAL waits until the probe shows <code>gemini-3.6-flash</code> takes it.</li>
+<li><strong>The router's alerts are off.</strong> Its three alert policies (the fallback share, the L2 share, and clarify and out-of-scope week on week) exist only on a lane planned with <code>DESK_ROUTER_ALERTS=true</code>, and the default is false.</li>
+<li><strong>No in-force dates.</strong> <code>IN_FORCE</code> holds no date until a person enters the Labour Codes' and the DPDP Act's dates from the Gazette.</li>
+</ul></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the eval and the checklist</h3><p>The router's eval on the dev split, the test split's gate, nineteen checks, and Module 5's gate.</p></div></div>
+
+<h4>Do it: the router's eval, dev split</h4>
+<p><code>make route-eval</code> posts every scored dev row to <code>/v1/route</code> as the row's own eval account: %%N_SCORED%% rows, with the %%N_HELD%% rows of the prompt's example groups left out, since the prompt has seen them. Each handbook, statute and denial row, %%N_DESK_ROWS%% of them, goes to <code>/v1/desk</code> too, for its answer and citations. The report gives each rate with its interval, the confusion matrix, whether answers cite only the desk's classes and the caller's company, the router's cost, and the p50 and p95 of the routing and of the answers. The dev gates are a route accuracy of %%DEV_GATE%% or more, each desk's recall at %%DESK_GATE%% or more, and every escalation row escalated; a <code>FAIL</code> line names a gate missed. If the Desk answers 429, more than %%ROUTE_RATE%% routes a minute from one account, the eval waits the minute out and tries again, up to three times.</p>
+%%CELL_EVALDEV%%
+%%OUT_EVALDEV%%
+<p>Read the figures as an upper bound: the vote finds each question's own row in the index. The denominators are the route set's, the same on every lane. The rates, the rupees and the times are yours. <code>case</code> and <code>clarify</code> recall are 0 of 0 on every lane, because the route set has no such rows.</p>
+
+<h4>Do it: the test split</h4>
+%%CELL_EVALTEST%%
+%%OUT_EVALTEST%%
+<p>This is the gate this lesson's proof names, and it fails on every lane: the test split has no rows, so <code>route_eval.py</code> returns 1 and make stops with <code>Error 1</code>. It waits for people to write the test rows, escalation rows among them, and for the thresholds to be calibrated on the dev rows first. Until then, the dev run above is the measurement, and an optimistic one.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Every row of a registered acme object carries its class</td><td data-label="The check">step 3, nothing left to change</td><td data-label="Pass looks like"><code>pinned</code> on every registered object, <code>unregistered</code> on any object an earlier lesson left that the manifest does not name, and <code>"to_change": 0</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A class belongs to the reviewed version</td><td data-label="The check">step 8, the rows</td><td data-label="Pass looks like"><code>the pin is the chunk's doc_key: True</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Each routed company has its examples</td><td data-label="The check">step 3, the index</td><td data-label="Pass looks like"><code>"rows": %%N_INDEX%%</code> and <code>"index_version": "%%INDEX_VERSION%%"</code> for acme and zeta</td></tr>
+<tr><td>4</td><td data-label="Claim">acme is routed; globex has one desk</td><td data-label="The check">step 3, the switches</td><td data-label="Pass looks like"><code>"desk_route": "on"</code>; <code>"desk_route": "single"</code> with <code>"desk_single": "statute"</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The Desk page answers from the handbook</td><td data-label="The check">step 4</td><td data-label="Pass looks like">an answer citing <code>acme/hr_policy_2026.md</code>, saying 60 days</td></tr>
+<tr><td>6</td><td data-label="Claim">A statute answer carries its in-force lines</td><td data-label="The check">step 4, and step 7's answers</td><td data-label="Pass looks like">a line for each Act cited, then "%%NOT_ADVICE%%"</td></tr>
+<tr><td>7</td><td data-label="Claim">The Desk's code holds, offline</td><td data-label="The check">step 6, the offline check</td><td data-label="Pass looks like"><code>the dev gates hold</code>, <code>every rule says what its corpus line says, and the figures hold</code>, and <code>OK</code> at the end</td></tr>
+<tr><td>8</td><td data-label="Claim">Code decides what it can, at Rs 0</td><td data-label="The check">step 7, decisions</td><td data-label="Pass looks like"><code>model_calls 0  Rs 0.0</code> on the POSH, lk-10, NP-03 and lk-18 lines</td></tr>
+<tr><td>9</td><td data-label="Claim">Only an eval account gets a bare decision</td><td data-label="The check">step 7, decisions</td><td data-label="Pass looks like"><code>as ui-sa 403</code></td></tr>
+<tr><td>10</td><td data-label="Claim">A leaver is denied with no search</td><td data-label="The check">step 7, the leaver</td><td data-label="Pass looks like"><code>route denied outcome denied  retrieve_calls 0</code> and <code>chips ['case']</code></td></tr>
+<tr><td>11</td><td data-label="Claim">A single desk asks no classifier</td><td data-label="The check">step 7, globex</td><td data-label="Pass looks like"><code>mode single route statute method single  model_calls 0</code></td></tr>
+<tr><td>12</td><td data-label="Claim">A figure is worked out by code</td><td data-label="The check">step 7, a figure</td><td data-label="Pass looks like"><code>mode agent</code>, and a "Worked out in code" line with <code>min(50, 45) = 45 days</code></td></tr>
+<tr><td>13</td><td data-label="Claim">The live smokes pass</td><td data-label="The check">step 7, the smoke</td><td data-label="Pass looks like"><code>%%N_SMOKE_DESK%% passed, 0 failed</code>, then <code>%%N_SMOKE_CASES%% passed, 0 failed</code></td></tr>
+<tr><td>14</td><td data-label="Claim">Shadow decides beside the brain and answers nothing</td><td data-label="The check">step 8, the chats and the log</td><td data-label="Pass looks like"><code>brain direct</code> on each chat line; three <code>desk_shadow chat  zeta</code> rows</td></tr>
+<tr><td>15</td><td data-label="Claim">A disclosure's row names nobody</td><td data-label="The check">step 8, the log</td><td data-label="Pass looks like"><code>None</code> as the user on every <code>case  rule</code> row</td></tr>
+<tr><td>16</td><td data-label="Claim">The dev eval scores every row</td><td data-label="The check">step 10, dev</td><td data-label="Pass looks like"><code>%%N_SCORED%% rows scored, %%N_HELD%% left out</code>, and no <code>not scored</code> line</td></tr>
+<tr><td>17</td><td data-label="Claim">The test gate waits for people's rows</td><td data-label="The check">step 10, test</td><td data-label="Pass looks like"><code>FAIL  route accuracy 0/0 (no rows) is under %%DEV_GATE%%</code>, then make's <code>Error 1</code></td></tr>
+<tr><td>18</td><td data-label="Claim">Module 5's gate still passes</td><td data-label="The check">step 10, below</td><td data-label="Pass looks like"><code>6 passed, 0 failed</code></td></tr>
+<tr><td>19</td><td data-label="Claim">Only Google Chat may call the bridge, and only the bridge may name a person to the Desk</td><td data-label="The check">step 7, the Google Chat door's refusals (with the door on)</td><td data-label="Pass looks like"><code>%%N_SMOKE_GCHAT%% passed, 0 failed</code>: <code>401</code> on steps 1 and 2, <code>403 '%%NOT_A_DELEGATE%%'</code> on 3 and 4</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Do it: Module 5's gate</h4>
+<p>The chat service keeps the gate lesson 5.7 set: <code>make smoke-chat PROJECT=documind-ai-YOUR-ID</code>, the four brains and the outsider. The routed Desk sits beside <code>/v1/chat</code>, not in front of it, so every brain answers as before.</p>
+%%CELL_SMOKECHAT%%
+%%OUT_SMOKECHAT%%
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Your lane runs the kit you pulled, with <code>DESK_JOB=true</code> kept. <code>evalleaver</code> is on acme's roster as a leaver and <code>evalglobex</code> on globex's; <code>evalacme</code>, <code>evalleaver</code>, <code>evalglobex</code> and <code>evalzeta</code> hold <code>desk_eval</code>, and <code>evalglobex</code> and <code>evalzeta</code> hold <code>ic_member:head_office</code> in their companies. acme, zeta and globex each have a doc_type registry set by you, and every current row of a registered object carries its class in Firestore, Vector Search, Vertex AI Search and BigQuery; their answer caches were expired. The objects earlier lessons uploaded that the manifest does not name, such as the smoke notes, stay <code>unknown</code> and on no desk. acme and zeta each hold %%N_INDEX%% exemplars. In <code>tenant_settings</code>, acme's <code>desk_route</code> is on; zeta has its queues, the gate's rules and <code>desk_route</code> on; globex has its queues and a single statute desk. Your home folder has <code>~/queues.globex.json</code>, <code>~/queues.zeta.json</code> and <code>~/graph-venv</code>. BigQuery has the <code>desk_daily</code> view. If you ran step 3's optional part, your lane also has the Google Chat door, and <code>GCHAT_DOOR=true</code> goes on every later plan beside <code>DESK_JOB=true</code>: the <code>documind-gchat</code> service, running as <code>documind-gchat-sa</code>, with <code>documind-gchatpush-sa</code> as Pub/Sub's push identity; the <code>documind-gchat</code> Firestore database for its claims; the <code>documind-gchat-work</code> topic and its push subscription, <code>documind-gchat-push</code>; and the Chat API. <code>desk_gchat</code> is on for acme only if you configured the app in step 4, and then your Workspace address is on acme's roster too; it is off for every other company. The log holds <code>make smoke-gchat</code>'s two refused delegations, if you ran it, which the alert "%%ALERT_NAME%%" counted. From now on, an acme or zeta employee who opens the Desk page gets Ask the Desk, and every globex question on the Desk goes to the law. A new version of a registered file stays <code>unknown</code>, and off every desk, until someone re-pins it. The router's alert policies are still off: once it has taken some turns, <code>make plan up DESK_ROUTER_ALERTS=true</code>, as <code>make desk</code> printed, and keep the flag on every later plan, beside <code>DESK_JOB=true</code> and, with the door on, <code>GCHAT_DOOR=true</code>. A Desk turn that code answers writes no checkpoint, though a case turn may open a case draft, which for most case types starts with the person's masked question. An answer, clarify or fallback turn keeps its thread in the chat service's checkpointer, under a session of its own. Lesson 10.5 runs one desk as an agent whose every calculator argument is checked, and measures routed desks against one agent and no agent.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 10 Agent patterns &middot; Lesson 10.4 Route each question to one specialist agent &middot; v5.0</p><p>Next: Lesson 10.5 Run a desk as an agent with checked calculator arguments.</p></div>

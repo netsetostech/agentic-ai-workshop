@@ -1,0 +1,213 @@
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Prepare</span><h3>Credentials, backend and a clean baseline</h3><p>Do this before presenting. Stop at an error; do not paste the next stage until its checkpoint passes.</p></div></div>
+<p>Use the same operator shell and virtual environment throughout. Create a chapter directory before changing the backend, save its original pin, and run the offline planner check. These files are local demo state; keep them out of commits.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT; prepare once per demonstration</span><button class="cp" type="button">copy</button></div><pre tabindex="0">: "${PROJECT:?run the shell setup first}"
+: "${API:?run the shell setup first}"
+export RUN_ID="$(python -c 'import uuid; print(uuid.uuid4().hex[:10])')"
+export DEMO_DIR="$PWD/.lesson44/$RUN_ID"
+mkdir -p "$DEMO_DIR"
+
+ch44_prepare() {
+  GOOGLE_CLOUD_PROJECT="$PROJECT" python - &lt;&lt;'PY' &gt; "$DEMO_DIR/backend-before.txt"
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from shared.tenancy import backend_for
+print(backend_for("acme") or "default")
+PY
+  [ "$?" -eq 0 ] &amp;&amp; [ -s "$DEMO_DIR/backend-before.txt" ] || return 1
+  make tenant-backend PROJECT="$PROJECT" TENANT=acme RETRIEVAL_BACKEND=vector || return
+  python services/ingest/reconcile.py --selftest || return
+  make reconcile PROJECT="$PROJECT" TENANT_ONLY=acme
+}
+ch44_prepare</pre></div>
+<div class="box box-amber"><div class="box-title">Prepare the lane before creating the deliberate difference</div><p>The baseline must have no pending retire, reingest, backfill or touch actions. Queued and withdrawn entries may remain; neither is drift. If an unrelated PDF is missing from the ledger, handle it in preparation: inspect the plan, apply only a plan you intend to execute, wait for ingestion and plan again. <code>APPLY=1</code> operates across acme, not only this chapter's note. Do not hide a failed managed-mirror operation by disabling the mirror midway through the demonstration.</p><p>A Firestore <code>ACCESS_TOKEN_SCOPE_INSUFFICIENT</code> means the token used by Python lacks the required scope. Renew the intended Application Default Credentials in this workstation, and check whether <code>GOOGLE_APPLICATION_CREDENTIALS</code> is selecting a different credential file. A successful gcloud command alone does not prove Python's ADC works.</p></div>
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Fixture</span><h3>Create this chapter's note and the checks</h3><p>A fresh name, a new fact and an unchanged local copy remove the dependencies on earlier lessons.</p></div></div>
+<p>This chapter does not use <code>~/lesson34_note.md</code> or the smoke-lantern question. Another smoke note may still answer that question even after one copy is retired. Our primary checks are the exact source name, its object generation and its citation; a bare <code>answerable True</code> is insufficient.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run once; keep the note and its checksum unchanged</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export NOTE="$DEMO_DIR/note.md"
+export SOURCE="acme/lesson44_${RUN_ID}.md"
+export OBJECT="gs://${PROJECT}-uploads/$SOURCE"
+export QUESTION="Where is the violet compass for drill $RUN_ID stored?"
+cat &gt; "$NOTE" &lt;&lt;EOF
+# Recovery drill $RUN_ID
+
+The violet compass for drill $RUN_ID is stored in locker Q7
+in the Jaipur training room.
+EOF
+sha256sum "$NOTE" &gt; "$DEMO_DIR/note.sha256"
+export DOC_KEY="acme_$(sha256sum "$NOTE" | cut -d ' ' -f1)"
+python - &lt;&lt;'PY'
+import json, os
+from pathlib import Path
+Path(os.environ["DEMO_DIR"], "query.json").write_text(json.dumps({
+    "query": os.environ["QUESTION"], "tenant_id": "acme", "stream": False
+}), encoding="utf-8")
+PY
+declare -p RUN_ID DEMO_DIR NOTE SOURCE OBJECT QUESTION DOC_KEY &gt; "$DEMO_DIR/session.env"
+printf 'Keep this directory for the whole demo: %s\n' "$DEMO_DIR"</pre></div>
+<h4>Load the checks once</h4><p>The helper block is preparation, not a slide to type live. It stops on failed uploads, polls the exact source and generation, checks citations, and refuses to apply an unexplained tenant-wide plan. The log filter includes both the version key and generation, so another acme upload cannot satisfy the wait. To resume after reopening a shell, first run the shared shell setup, then source this directory's <code>session.env</code> and <code>helpers.sh</code>; do not create a new note midway through a restore.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; save and load the chapter checks; no cloud writes in this block</span><button class="cp" type="button">copy</button></div><pre tabindex="0">cat &gt; "$DEMO_DIR/helpers.sh" &lt;&lt;'SH'
+set -o pipefail
+
+ch44_source() {
+  local token
+  token="$(tok "$API")" || return
+  curl -fsS "$API/v1/sources?tenant_id=acme" \
+    -H "Authorization: Bearer $token" |
+    python -c 'import json,sys
+j=json.load(sys.stdin)
+r=next((r for r in j["sources"] if r["name"]==sys.argv[1]),None)
+print(json.dumps(r,indent=2))' "$SOURCE" &gt; "$DEMO_DIR/source.json" || return
+  cat "$DEMO_DIR/source.json"
+}
+
+ch44_ask() {
+  local token
+  token="$(tok "$API")" || return
+  curl -fsS "$API/v1/query" -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    --data-binary @"$DEMO_DIR/query.json" &gt; "$DEMO_DIR/answer.json" || return
+  python - "$1" &lt;&lt;'PY'
+import json, os, sys
+from pathlib import Path
+j=json.loads(Path(os.environ["DEMO_DIR"], "answer.json").read_text())
+backend=j.get("stages", {}).get("retrieval_backend")
+cited=any(c.get("source_uri")==os.environ["OBJECT"] for c in j.get("citations", []))
+print("retrieval:", backend, "| answerable:", j["answerable"], "| fixture cited:", cited)
+print(j["answer"])
+for c in j.get("citations", []):
+    print("citation:", c.get("source_uri"), "|", c.get("quote", ""))
+assert backend=="vector", "Wait for the backend pin to refresh; inspect the returned stages."
+if sys.argv[1]=="present":
+    assert j["answerable"] and cited, "The answer must cite this exact fixture."
+    assert "Q7" in j["answer"] and "Jaipur" in j["answer"], "Check the fixture's stated location."
+else:
+    assert not cited, "The retired fixture is still cited; inspect retrieval and propagation."
+    if j["answerable"]:
+        print("Another source answered. This is not proof that the fixture is still indexed.")
+PY
+}
+
+ch44_logs() {
+  gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.doc_key=\"$DOC_KEY\" AND jsonPayload.generation=\"$CH44_GENERATION\" AND timestamp&gt;=\"$CH44_SINCE\"" \
+    --project "$PROJECT" --limit 10 \
+    --format='table(timestamp,jsonPayload.event,jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded,jsonPayload.error)'
+}
+
+ch44_upload() {
+  sha256sum -c "$DEMO_DIR/note.sha256" || return
+  export CH44_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  gcloud storage cp "$NOTE" "$OBJECT" || return
+  CH44_GENERATION="$(gcloud storage objects describe "$OBJECT" --format='value(generation)')" || return
+  export CH44_GENERATION
+  [ -n "$CH44_GENERATION" ] || return 1
+  for attempt in $(seq 1 30); do
+    ch44_source &gt; /dev/null || return
+    if python - &lt;&lt;'PY'
+import json, os, sys
+from pathlib import Path
+r=json.loads(Path(os.environ["DEMO_DIR"], "source.json").read_text()) or {}
+ready=(r.get("status")=="indexed"
+       and str(r.get("generation"))==os.environ["CH44_GENERATION"]
+       and r.get("doc_key")==os.environ["DOC_KEY"])
+sys.exit(0 if ready else 1)
+PY
+    then cat "$DEMO_DIR/source.json"; return 0; fi
+    sleep 10
+  done
+  echo "STOP: this upload did not reach indexed state within five minutes."
+  ch44_logs
+  return 1
+}
+
+ch44_plan() {
+  make --no-print-directory reconcile PROJECT="$PROJECT" TENANT_ONLY=acme \
+    &gt; "$DEMO_DIR/plan.txt" || { cat "$DEMO_DIR/plan.txt"; return 1; }
+  cat "$DEMO_DIR/plan.txt"
+  python - "$1" &lt;&lt;'PY'
+import json, os, sys
+from pathlib import Path
+rows=[json.loads(s) for s in Path(os.environ["DEMO_DIR"], "plan.txt").read_text().splitlines()
+      if s.startswith("{")]
+summary=next(r for r in reversed(rows) if r.get("event")=="reconcile_done")
+repairs=[r for r in rows if r.get("reconcile") in ("retire","reingest","backfill","touch")]
+assert summary.get("applied") is False, "Expected a read-only plan."
+if sys.argv[1]=="clean":
+    assert summary["drift"]==0 and not repairs, "Resolve unrelated repairs before the live demo."
+else:
+    assert len(repairs)==1 and repairs[0]["reconcile"]=="retire" \
+        and repairs[0]["name"]==os.environ["SOURCE"], "STOP: plan includes unexpected work."
+    assert summary["drift"]==1
+print("Checkpoint passed:", sys.argv[1])
+PY
+}
+SH
+source "$DEMO_DIR/helpers.sh"
+ch44_plan clean</pre></div>
+<p>The generated local directory contains the query, checksum, original pin and latest responses. If a command fails, inspect its message and the saved response. An upload failure must end that stage; there is no ingestion event to wait for.</p>
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Working</span><h3>Prove the document works</h3><p>Show the source ledger in the UI and the same source's evidence from the API.</p></div></div>
+<p>On the Documents page, use <em>Refresh indexing status</em> and find the exact <code>lesson44_&lt;run-id&gt;.md</code> row. The first upload may need time for the worker and retrieval tier to catch up. The pin is cached for about a minute; the answer's stages prove which backend actually served it.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; upload, wait for this generation, then ask and record N</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_upload &amp;&amp; ch44_ask present &amp;&amp; ch44_plan clean</pre></div>
+<p><strong>Checkpoint:</strong> source indexed at this upload's generation, a cited answer naming locker Q7 in Jaipur, and no pending repair. If the source is indexed but the query has not caught up, repeat <code>ch44_ask present</code> and inspect its evidence; do not upload again merely to wait.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; after the checkpoint passes, save the observed chunk count</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os
+from pathlib import Path
+d=Path(os.environ["DEMO_DIR"])
+r=json.loads((d/"source.json").read_text())
+assert r["status"]=="indexed" and r["doc_key"]==os.environ["DOC_KEY"]
+assert str(r["generation"])==os.environ["CH44_GENERATION"]
+assert int(r["chunks"])&gt;0
+(d/"initial-chunks.txt").write_text(str(r["chunks"]), encoding="utf-8")
+print("N =", r["chunks"])
+PY</pre></div>
+<div class="wjh"><div class="wjh-title">Say it on screen</div><p>Storage, the source ledger and this cited answer agree. N is the count this worker produced; later we will prove that the same N chunks return without new embeddings.</p></div>
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; The gap</span><h3>Delete the cloud file and show the stale index</h3><p>The local original stays safe. Delete only this demonstration's live object.</p></div></div>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; check the backup before deleting; observe before running reconciliation</span><button class="cp" type="button">copy</button></div><pre tabindex="0">sha256sum -c "$DEMO_DIR/note.sha256" &amp;&amp;
+  gcloud storage rm "$OBJECT" &amp;&amp;
+  ch44_source &amp;&amp;
+  ch44_ask present</pre></div>
+<p><strong>Checkpoint:</strong> before a reconciliation run, the ledger can still say indexed and the answer can still cite the fixture. If a scheduled reconciliation already retired it, say that automation closed the gap first; inspect the source and plan rather than claiming the stale state was observed. The bucket's retained version is not a live object in the walk's listing.</p>
+<div class="wjh"><div class="wjh-title">Say it on screen</div><p>The cloud file is gone, but this worker has not processed a deletion. Its current rows are still searchable. This is the difference the reconciliation plan will name.</p></div>
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 3 &middot; Repair</span><h3>Plan retirement, apply it, then prove zero drift</h3><p>Keep preview, mutation and verification as three visible operations.</p></div></div>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; read-only: require exactly one repair, for this fixture</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_plan retire</pre></div>
+<p>The action must be <code>retire</code> for <code>$SOURCE</code>, with reason <em>gone from the bucket</em>, <code>applied: false</code> and drift 1. A plan is evidence, not a repair. Pause other uploads during the demonstration; the kit's apply does not execute a saved, source-scoped plan.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; recheck immediately before the tenant-wide apply</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_plan retire &amp;&amp;
+  make reconcile PROJECT="$PROJECT" TENANT_ONLY=acme APPLY=1 &amp;&amp;
+  ch44_source</pre></div>
+<h4>The code that applies the plan</h4>
+@@apply_retire@@
+@@done_line@@
+<div class="cw"><div class="ch-bar"><span>bash &mdash; verify retirement, citations and the next read-only plan</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_source &amp;&amp;
+python - &lt;&lt;'PY'
+import json, os
+from pathlib import Path
+r=json.loads(Path(os.environ["DEMO_DIR"], "source.json").read_text())
+assert r["status"]=="retired", "Do not continue until this exact source is retired."
+print("The fixture is retired.")
+PY
+ch44_ask absent
+ch44_plan clean</pre></div>
+<p><strong>Checkpoint:</strong> the exact source is retired, the answer no longer cites it once retrieval reflects the change, and a new plan is clean. A refusal is the intended result for the unique question. If another source answers, inspect the citation; do not call that a failed retirement. The displayed reused and embedded counts on a retired ledger row describe its last ingestion, not a new restore.</p>
+<div class="wjh"><div class="wjh-title">Say it on screen</div><p>The apply reported the difference it found, so its own drift may still be 1. The following plan is 0: storage and the index now agree that this document is absent. Restoration is a separate action.</p></div>
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 3 &middot; Return</span><h3>Restore the exact bytes and prove reuse</h3><p>A new upload generation, the same content hash, and the worker's verified reactivation.</p></div></div>
+<p>The checksum must still match. Changing the memo, adding today's date, or replacing it with a base smoke fixture creates different bytes and does not demonstrate the same-version undo. Keep the same object name too.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; upload only if the original checksum still passes; wait for the new generation</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_upload &amp;&amp;
+python - &lt;&lt;'PY'
+import json, os
+from pathlib import Path
+d=Path(os.environ["DEMO_DIR"])
+r=json.loads((d/"source.json").read_text())
+n=int((d/"initial-chunks.txt").read_text())
+assert r["status"]=="indexed" and r["doc_key"]==os.environ["DOC_KEY"]
+assert str(r["generation"])==os.environ["CH44_GENERATION"]
+assert r["chunks"]==n and r["reused"]==n and r["embedded"]==0, \
+    "This was not a complete reuse. Inspect this version's worker events."
+print("Restored:", n, "chunks reused; 0 embedded")
+PY</pre></div>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; show this upload's event, restored citation and clean plan</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ch44_logs
+ch44_ask present
+ch44_plan clean</pre></div>
+<p><strong>Checkpoint:</strong> the worker reports <code>ingest_reactivated</code> for this version and upload generation, the source reads indexed with reused N and embedded 0, the answer again cites the exact fixture, and the plan is clean. If logs arrive later than the ledger, repeat the log read. A fresh <code>ingest_ok</code> may restore the document successfully but does not prove reuse; inspect whether retained rows were missing or the undo window closed.</p>
+<h4>Why the undo counts first</h4>
+@@reactivate_doc@@
+@@reactivate_check@@
+<div class="wjh"><div class="wjh-title">Say it on screen</div><p>The original bytes returned under the original name. The worker checked that all retained chunks were still available and eligible, then reactivated them. We proved the new generation, the reuse counts and the cited source together.</p></div>
+<div class="box box-teal"><div class="box-title">The main demonstration ends here</div><p>You have shown a working document, a stale index, a planned repair, consistent absence, and a verified return. Steps 9 to 11 are separate extensions. Finish with step 12 even if you skip them: it restores the backend pin saved before the demonstration.</p></div>

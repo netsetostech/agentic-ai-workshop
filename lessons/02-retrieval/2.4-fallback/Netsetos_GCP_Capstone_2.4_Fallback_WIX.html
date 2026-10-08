@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 2.4 Test fallback without losing tenant or metadata filters - the rung beneath the index, the three predicates that hold on the way down, and the smoke that refuses a quiet substitution | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.rl-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
+.rl-row{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;gap:2px;min-width:0;}
+.rl-main{border-color:var(--teal);background:var(--teal-light);}
+.rl-stage{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--teal);}
+.rl-what{font-size:12.5px;line-height:1.5;color:var(--slate);}
+.rl-field{font-family:var(--mono);font-size:var(--kicker-size);color:var(--navy);overflow-wrap:anywhere;}
+.rf-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 16px;margin-bottom:10px;align-items:end;}
+.rf-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.rf-l select{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.rf-boxes{display:flex;gap:16px;flex-wrap:wrap;}
+.rf-boxes label{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:var(--small-size);color:var(--slate);}
+.rf-boxes input{width:22px;height:22px;margin:0;}
+.rf-out{display:grid;gap:8px;}
+.rf-step{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12.5px;line-height:1.5;color:var(--slate);min-width:0;}
+.rf-step b{color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:2px;}
+.rf-step code{overflow-wrap:anywhere;}
+.rf-step.flag{border-color:#f59e0b;background:#fffbeb;}
+.rf-step.stop{border-color:#dc2626;background:#fef2f2;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 2 &middot; Retrieval &middot; Lesson 2.4</div>
+<h1>Test fallback without losing tenant or metadata filters: <span>the rung beneath the index, the three predicates that hold on the way down, and the smoke that refuses a quiet substitution</span></h1>
+<p>Lesson 2.3 followed the pool through the ranker. This lesson takes the pool's other source. Firestore holds every embedding the worker wrote, as a field on the row, and its own vector index can answer a question when the kit's index will not, or when a tenant is pinned beneath it. What must not change on the way down is the three predicates: the tenant from the roster, the ledger's current, and the caller's filters. On Firestore each combination of them needs a composite vector index the kit declares, 8 of them, and without one Firestore refuses rather than degrades. Every chunk the rung returns is stamped <code>found_by: firestore</code>, the answer counts <code>vector_chunks 0</code>, and the smoke fails a vector deployment that answers from beneath, because that failure is the one a working demo hides. You will read the rung by hand with the API's predicates, move one tenant onto it and back, break the index for a candidate revision and watch the chaos rung answer with a line in the log, run the kit's own read-only probe of the combined filters, see the tier rebuilt from the rows, and price the rung.</p>
+<div class="hero-chips"><div class="hero-chip">found_by: firestore</div><div class="hero-chip">tenant, current, filters</div><div class="hero-chip">8 composite indexes</div><div class="hero-chip">make tenant-backend</div><div class="hero-chip">vector_search_fallback</div><div class="hero-chip">make smoke: vector tier</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Why a second rung exists, and what must survive the drop</a></li>
+<li><a href="#s2">The words: rung, backend, pin, chaos rung, found_by, pre-filter, composite index, policy, probe, backfill</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The Firestore rung by hand: the API's three predicates on Firestore's own vector index</a></li>
+<li><a href="#s4">Moving one tenant beneath the index by hand, and back</a></li>
+<li><a href="#s5">The chaos rung: an index that will not answer, on a candidate that takes no traffic</a></li>
+<li><a href="#s6">The probe: the kit's read-only check of the combined filters</a></li>
+<li><a href="#s7">The tier from the rows: vector-status, backfill-vectors, and the rows that count the rung</a></li>
+<li><a href="#s8">What the rung costs, where it cannot go, and the policy that sends a tenant home</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why Firestore holds a second copy of every vector, how the same three predicates are applied on that rung as pre-filters, why each combination needs its own composite index, and how a chosen rung and a fallen-into one read differently on the answer. Then you will prove it on your lane: reproduce the rung with the API's predicates, pin acme beneath the index and back, force the chaos rung on a candidate revision and read <code>vector_search_fallback</code>, run <code>commands/check-firestore-fallback.py</code>, and read <code>make smoke</code>'s verdict both ways.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Why a second rung exists, and what must survive the drop</h3><p>An outage is not a refusal, a filter is a predicate on the corpus and not on one way through it, and a substitution nobody noticed is the failure the smoke exists for.</p></div></div>
+
+<p><strong>Firestore already holds every vector, so an outage is not a refusal.</strong> The worker mirrors each chunk's 768 numbers into its row as a vector field, and Firestore's own vector index, a flat scan over the tenant's rows by cosine distance, can find the nearest chunks to a question. It is slower than the kit's index and it skips the ANN tier, but a slower answer is a different thing from no answer. Three roads lead onto that rung: the deployment's <code>RETRIEVAL_BACKEND=firestore</code>, a tenant pinned to it in <code>tenant_settings</code>, and the chaos rung, which is what <code>_dense_retrieve()</code> does when the index raises. On every road the chunks come back stamped <code>found_by: firestore</code>. The answer tells the two kinds apart: <code>stages.retrieval_backend</code> is the backend chosen for the request, and <code>stages.vector_chunks</code> is the index's share of the pool. A pinned tenant reads <code>firestore</code> and 0; a fallen-into rung reads <code>vector</code> and 0.</p>
+
+<p><strong>Three predicates hold on the way down.</strong> The tenant is the roster's, never the body's. <code>current</code> is the ledger's, applied when <code>RETRIEVAL_CURRENT_ONLY</code> is on. The caller's filters are the two keys the API allows, <code>doc_type</code> and <code>kind</code>, and any other key is a 400 before retrieval starts. On the index they travel as restricts; on Firestore they are pre-filters in front of <code>find_nearest</code>, an equality each, or one <code>in</code> for a <code>doc_type</code> list, which runs on the same composite index as the equality, and Firestore will only run a vector query whose pre-filter combination has a composite vector index of its own. The kit declares 8: the tenant alone, the tenant with current, and every combination of the two filter keys with and without current. That is why a new filter key is a Terraform change before it is a code change: without its index Firestore does not degrade, it refuses.</p>
+
+<p><strong>The smoke refuses a quiet substitution.</strong> A vector deployment answering from beneath looks right from every angle a demonstration checks: answers come, citations come, <code>/version</code> still says Vector Search. Only the row says what happened, <code>vector_chunks 0</code> under <code>retrieval_backend vector</code>, and <code>make smoke</code> fails on exactly that pair, naming the two commands that put the tier back: <code>make vector-status</code> to count it and <code>make backfill-vectors</code> to fill it from the rows' stored vectors, with no model call, because the vectors were never lost.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127963;</div><div>
+<p><strong>The second counter.</strong> A records office has a fast desk and an archive counter. The fast desk keeps an index card for every file and finds the nearest ones in a moment; the archive counter keeps the files themselves, every one, and finds the same ones by walking the shelf, slower. When the fast desk is closed, or a department has been told to use the archive, the archive counter serves the same person with the same three rules: it checks the badge for the department, it hands out current files only, and it applies whatever filing-cabinet restriction the request named, provided the shelf has a divider for that combination. Every slip is stamped with the counter that served it. And the office manager's audit rule is blunt: a day when the fast desk was open on paper but every slip came from the archive is a failed audit, however happy the customers were.</p></div></div>
+
+<h4>The ladder: three tiers, one contract</h4>
+<div class="diagram rl" id="ladder">
+<div class="dg-title">Where a pool can come from - and what each rung stamps</div>
+<ol class="rl-list">
+<li class="rl-row"><span class="rl-stage">managed stores</span><span class="rl-what">RAG Engine or Vertex AI Search hold a copy of an <code>any</code> tenant's current versions and rank on their own terms (Module 7); the kit reranks, packs and cites as always</span><span class="rl-field">found_by rag_engine | vertex_search &middot; managed_chunks</span></li>
+<li class="rl-row rl-main"><span class="rl-stage">the kit's index</span><span class="rl-what">Vector Search, dense or hybrid, with the tenant, current and filter restricts; the deployment's default and acme's pin</span><span class="rl-field">found_by vector &middot; vector_chunks 20</span></li>
+<li class="rl-row"><span class="rl-stage">Firestore's own vector index</span><span class="rl-what">the same rows, a flat cosine scan behind the same pre-filters; chosen by a setting or a pin, or fallen into when the index raises</span><span class="rl-field">found_by firestore &middot; vector_chunks 0 &middot; vector_search_fallback when fallen into</span></li>
+</ol>
+<p class="dg-cap">Whatever rung answers, <code>prefer_current()</code> drops retired versions, the reranker orders, the packer fits, and the citations resolve against the packed set (lesson 2.3). The rung changes where the pool comes from, never what happens to it.</p>
+</div>
+
+<h4>The rung finder: the handler's rules, on the settings you choose</h4>
+<p>Which rung answers a request is decided by four things in order: the startup validator, the deployment's backend against the tenant's pin, the tenant's data-region policy against a managed store, and then whether the index answers. The finder below applies the kit's rules in that order, <code>check_retrieval_modes()</code>, <code>choose_for()</code>, <code>retrieval_backend_for()</code> and <code>_dense_retrieve()</code>, and says what the answer, the log and the smoke would show, and which of the 8 composite indexes a Firestore query would need for the predicates you set.</p>
+
+<div class="diagram rf" id="finder">
+<div class="dg-title">Rung finder - config.py, main.py, retriever.py and firestore_indexes.tf, as rules</div>
+<div class="rf-controls">
+<label class="rf-l">RETRIEVAL_BACKEND, the deployment's<select id="rf-backend"><option value="vector">vector (the lane)</option><option value="firestore">firestore</option><option value="rag_engine">rag_engine</option><option value="vertex_search">vertex_search</option></select></label>
+<label class="rf-l">RETRIEVAL_MODE<select id="rf-mode"><option value="dense">dense (the lane)</option><option value="hybrid">hybrid</option></select></label>
+<label class="rf-l">The tenant's pin, tenant_settings.retrieval_backend<select id="rf-pin"><option value="">none</option><option value="vector">vector (acme on the lane)</option><option value="firestore">firestore</option><option value="rag_engine">rag_engine</option><option value="vertex_search">vertex_search</option></select></label>
+<label class="rf-l">The tenant's data_region<select id="rf-policy"><option value="any">any (acme on the lane)</option><option value="in">in</option><option value="">not declared</option></select></label>
+<label class="rf-l">The kit's index<select id="rf-index"><option value="up">answers</option><option value="down">raises (undeployed, unreachable, wrong name)</option></select></label>
+<label class="rf-l">RETRIEVAL_CURRENT_ONLY<select id="rf-current"><option value="off">off (the lane)</option><option value="on">on</option></select></label>
+<label class="rf-l rf-check"><span>The caller's filters</span><span class="rf-boxes"><label><input type="checkbox" id="rf-doc"> doc_type</label><label><input type="checkbox" id="rf-kind"> kind</label></span></label>
+</div>
+<div class="rf-out" id="rf-out" aria-live="polite"></div>
+<p class="dg-cap">The index list is read from <code>terraform/firestore_indexes.tf</code> when this page is built; the backend names from config.py; the smoke's two sentences from <code>smoke/smoke.py</code>. Nothing here calls your lane; steps 3 to 7 do.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the finder is not</div>
+<p>It is not the lane: it says what the code would do, not what your lane did, and the pin it models is read once a minute by the API, so a change you make in step 4 takes up to a minute to show. The managed rungs are Module 7's; here they matter only as the case the policy sends home.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: rung, backend, pin, chaos rung, found_by, pre-filter, composite index, policy, probe, backfill</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Rung</strong></td><td data-label="Meaning">One place a pool can come from. The kit's own tier has two: Vector Search, and Firestore's vector index beneath it. The managed stores are separate tiers with their own copies.</td><td data-label="On your lane">Vector Search by default; Firestore in steps 4 and 5.</td></tr>
+<tr><td><strong>RETRIEVAL_BACKEND</strong></td><td data-label="Meaning">The deployment's default rung, one of vector, firestore, rag_engine, vertex_search, reported by <code>/version</code>. The startup validator refuses hybrid mode on anything but vector.</td><td data-label="On your lane"><code>vector</code>, set by <code>make up</code>.</td></tr>
+<tr><td><strong>Pin</strong></td><td data-label="Meaning"><code>tenant_settings/{tenant}.retrieval_backend</code>: one tenant's rung, written by <code>make tenant-backend</code>, read by the API once a minute, held against the tenant's policy on every request. <code>default</code> clears it.</td><td data-label="On your lane">acme pinned to <code>vector</code> since lesson 1.1; zeta unpinned.</td></tr>
+<tr><td><strong>Chaos rung</strong></td><td data-label="Meaning">The except branch of <code>_dense_retrieve()</code>: an index that raises is answered from Firestore with a <code>vector_search_fallback</code> line and never a 500. Hybrid degrades the same way, to dense Firestore.</td><td data-label="On your lane">Step 5, on a candidate whose deployed index name is wrong.</td></tr>
+<tr><td><strong>found_by, vector_chunks</strong></td><td data-label="Meaning">The stamp on each chunk of the pool and the count of the index's share on the answer and the row. <code>retrieval_backend firestore</code> with 0 is a chosen rung; <code>vector</code> with 0 is a fallen-into one.</td><td data-label="On your lane">20 of 20 normally; 0 in steps 4 and 5.</td></tr>
+<tr><td><strong>Pre-filter</strong></td><td data-label="Meaning">A <code>where</code> in front of <code>find_nearest</code>, an equality each or one <code>in</code> for a <code>doc_type</code> list: the tenant, current when the switch is on, and the caller's <code>doc_type</code> and <code>kind</code>. The same predicates the index applies as restricts.</td><td data-label="On your lane">Step 3's cell, three ways.</td></tr>
+<tr><td><strong>Composite vector index</strong></td><td data-label="Meaning">Firestore's declaration that a given set of pre-filters may front a vector query: the fields, then <code>__name__</code>, then the 768-dimension flat vector. One per combination; a missing one is a refusal.</td><td data-label="On your lane">8 in <code>firestore_indexes.tf</code>, applied by <code>make up</code>.</td></tr>
+<tr><td><strong>data_region, policy_fallback</strong></td><td data-label="Meaning"><code>in</code> keeps a tenant's text on the kit's rows in India, and <code>in</code> is what a missing policy means; a managed pin for such a tenant is served from the kit's own rung with <code>policy_fallback 1</code> on the row.</td><td data-label="On your lane">acme <code>any</code>; step 8 runs the rule offline.</td></tr>
+<tr><td><strong>The probe</strong></td><td data-label="Meaning"><code>commands/check-firestore-fallback.py</code>: a read-only check that the combined <code>doc_type</code> and <code>kind</code> filters hold on the Firestore rung, with and without current, using a verified source's stored metadata, and an evidence file.</td><td data-label="On your lane">Step 6.</td></tr>
+<tr><td><strong>backfill-vectors</strong></td><td data-label="Meaning">The ANN tier from the rows: every current row's stored vector streamed up to the index, no model call. The repair for a worker deployed before the index existed, and the answer to a red smoke.</td><td data-label="On your lane">Step 7, as a plan: nothing to fill.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One pair of words carries the lesson: <em>chosen</em> and <em>fallen into</em>. Both produce a pool stamped <code>firestore</code>, and only the answer's <code>retrieval_backend</code> beside its <code>vector_chunks</code> tells you which happened. The smoke reads the pair; so should you.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">The names this lesson reads off the API, and the two pins</div>
+<p>The index names and the retrieval settings live in the API's environment; a name the service does not set is unset rather than exported empty, because the kit's settings class reads an empty variable as a value, and steps 5 and 6 import the kit. The pins live in Firestore, one document per tenant, and the lane helper prints them.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }
+setenv() { v="$(svc_env documind-api "$1")"; if [ -n "$v" ]; then export "$1=$v"; else unset "$1"; fi; }
+for N in VECTOR_INDEX_ENDPOINT VECTOR_DEPLOYED_INDEX_ID RETRIEVAL_BACKEND RETRIEVAL_MODE RETRIEVAL_CURRENT_ONLY TOP_K_RETRIEVE; do setenv "$N"; done
+echo "endpoint: $VECTOR_INDEX_ENDPOINT  deployed: $VECTOR_DEPLOYED_INDEX_ID"
+echo "backend: ${RETRIEVAL_BACKEND:-vector (default)}  mode: ${RETRIEVAL_MODE:-dense (default)}  current_only: ${RETRIEVAL_CURRENT_ONLY:-off (default)}  top_k_retrieve: ${TOP_K_RETRIEVE:-20 (default)}"
+for T in acme zeta; do python commands/lane.py tenant-backend $T; done
+python commands/lane.py tenant-policy acme</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (your ids differ; the lane pinned acme to vector in lesson 1.1 and never pinned zeta)</span><span class="ro">read only</span></div><pre tabindex="0">endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321  deployed: documind_chunks_v1
+backend: vector  mode: dense (default)  current_only: off (default)  top_k_retrieve: 20 (default)
+acme: retrieval_backend=vector
+zeta: retrieval_backend=default (the deployment RETRIEVAL_BACKEND)
+acme: data_region=any</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Rows</span><h3>The Firestore rung by hand: the API's three predicates on Firestore's own vector index</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/demo_03_the_firestore_rung_by_hand_the_api_s_three_predicates_on_firestore_s_own_vector.py" target="_blank" rel="noopener"><code>demo_03_the_firestore_rung_by_hand_the_api_s_three_predicates_on_firestore_s_own_vector.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The one function that answers from beneath, the two keys it accepts from a caller, the indexes that let it, and a cell that runs it three ways for a fraction of a paisa.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>_firestore_fallback()</code> is short because Firestore does the work. It starts from the chunks collection filtered to the tenant, adds <code>current == true</code> when the switch is on, adds each caller filter as an equality, or as one <code>in</code> for a <code>doc_type</code> list, and asks <code>find_nearest</code> on the embedding field for the nearest rows by cosine distance, <code>TOP_K_RETRIEVE</code> of them. Each row becomes a chunk with its distance flipped into a score, so the reranker and the fallback's own ordering read it like an index result, the 768 numbers dropped so they never reach the model, and <code>found_by</code> set to <code>firestore</code>. The cell reproduces it with the same client calls, prints the first five rows with the fields the predicates read, and estimates what Firestore bills for the query: one read per hundred index entries it scans and one per document it returns.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - _firestore_fallback(): the rung, with the three predicates as pre-filters</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_firestore_fallback</span>(vec: list[float], tenant_id: str, top_k: int, filters: dict | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; list[dict]:
+    <span class="st">&quot;&quot;&quot;Answer from Firestore when Vector Search will not.
+
+    indexer.py mirrors every embedding here as a Vector field precisely so this
+    path exists. It is slower and it skips the ANN tier, but a slower answer is
+    a different thing from an outage - and this is the rung the chaos drill
+    pulls: undeploy the index, ask a question, get an answer anyway.
+
+    The SAME predicates as the index query (12 September 2026, R06): the tenant, the
+    ledger&#x27;s `current`, and the caller&#x27;s filters as equality pre-filters on the row&#x27;s own
+    fields. Until then this path had no `filters` parameter, so a doc_type-filtered
+    question answered from here read the whole tenant. A doc_type list is one `in`
+    pre-filter (workshop lesson 10.4), served by the same composite indexes as `==`.
+
+    Needs the composite index in 12.5&#x27;s firestore_indexes.tf - one per predicate
+    combination. Without it Firestore does not degrade, it refuses.
+    &quot;&quot;&quot;</span>
+    query = _fs().collection(settings.chunks_collection).where(<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;==&quot;</span>, tenant_id)
+    <span class="kw">if</span> settings.retrieval_current_only == <span class="st">&quot;on&quot;</span>:
+        <span class="cm"># The ledger&#x27;s promise (12.5): one current version per document. The pre-filter needs the second</span>
+        <span class="cm"># vector index in firestore_indexes.tf (tenant_id, current, embedding).</span>
+        query = query.where(<span class="st">&quot;current&quot;</span>, <span class="st">&quot;==&quot;</span>, <span class="kw">True</span>)
+    <span class="kw">for</span> k, v <span class="kw">in</span> (filters <span class="kw">or</span> {}).items():
+        query = query.where(k, <span class="st">&quot;in&quot;</span>, v) <span class="kw">if</span> isinstance(v, list) <span class="kw">else</span> query.where(k, <span class="st">&quot;==&quot;</span>, v)   <span class="cm"># doc_type, kind: the keys schemas.FILTER_KEYS allows, main.py checked</span>
+    hits = (query
+            .find_nearest(<span class="st">&quot;embedding&quot;</span>, Vector(vec),
+                          distance_measure=DistanceMeasure.COSINE,
+                          limit=top_k,
+                          distance_result_field=<span class="st">&quot;d&quot;</span>).get())
+    out = []
+    <span class="kw">for</span> h <span class="kw">in</span> hits:
+        d = h.to_dict()
+        d[<span class="st">&quot;id&quot;</span>] = h.id
+        <span class="cm"># COSINE distance: smaller is closer, so flip it to a score the</span>
+        <span class="cm"># reranker can order the same way it orders Vector Search results.</span>
+        d[<span class="st">&quot;score&quot;</span>] = <span class="nu">1.0</span> - d.pop(<span class="st">&quot;d&quot;</span>, <span class="nu">1.0</span>)
+        d.pop(<span class="st">&quot;embedding&quot;</span>, <span class="kw">None</span>)          <span class="cm"># never ship 768 floats to the model</span>
+        <span class="cm"># Which rung answered (16 September 2026). The managed backends and the graph have always</span>
+        <span class="cm"># said; the two rungs of the kit&#x27;s own tier never did, so a fallback and a hit looked the</span>
+        <span class="cm"># same to the caller, to tenant_daily, and to anyone watching a demonstration.</span>
+        d[<span class="st">&quot;found_by&quot;</span>] = <span class="st">&quot;firestore&quot;</span>
+        out.append(d)
+    <span class="kw">return</span> out</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/schemas.py - FILTER_KEYS: the two keys a caller may send, on every path alike</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The filter keys a caller may send (12 September 2026): each one is a restrict namespace the indexer writes on</span>
+<span class="cm"># the datapoint AND a field on the Firestore row, so the same predicate holds on the dense path, the hybrid path</span>
+<span class="cm"># and the Firestore fallback alike. tenant_id is the roster&#x27;s and `current` is the ledger&#x27;s - never the body&#x27;s: a</span>
+<span class="cm"># caller naming either is a header in disguise. main.py refuses any other key with a 400 (check_filters).</span>
+FILTER_KEYS = (<span class="st">&quot;doc_type&quot;</span>, <span class="st">&quot;kind&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/firestore_indexes.tf - the filter combinations, each a composite vector index of its own</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Filter combinations used by the Firestore vector fallback. These already cover</span>
+<span class="cm"># individual and combined doc_type + kind filters, with and without CURRENT.</span>
+locals {
+  chunks_filter_indexes = {
+    doc_type              = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;doc_type&quot;</span>]
+    current_doc_type      = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;current&quot;</span>, <span class="st">&quot;doc_type&quot;</span>]
+    kind                  = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+    current_kind          = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;current&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+    doc_type_kind         = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;doc_type&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+    current_doc_type_kind = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;current&quot;</span>, <span class="st">&quot;doc_type&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+  }
+}</pre></div>
+
+
+<h4>Do it: the rung under three predicate sets</h4>
+<p>Run the cell as it is, then twice more with a filter in front of its first line: <code>F='{"doc_type":"policy"}' python - &lt;&lt;'PY'</code> and <code>F='{"kind":"text"}' python - &lt;&lt;'PY'</code>, the rest unchanged. The worker stamped the lane's uploads <code>doc_type: unknown</code>, so the first filter empties the pool on this rung exactly as it did on the index in lesson 2.1, and the second keeps it whole.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell; one embedding, a few dozen Firestore reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, json, math, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google import genai
+from google.cloud import firestore
+from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
+from google.cloud.firestore_v1.vector import Vector
+PROJECT, REGION = os.environ["PROJECT"], os.environ["REGION"]
+Q = os.environ.get("Q", "What is the notice period for a confirmed E3?")
+F = json.loads(os.environ.get("F", "{}"))                                 # the caller's filters: doc_type, kind
+CURRENT = os.environ.get("RETRIEVAL_CURRENT_ONLY", "off") == "on"
+client = genai.Client(enterprise=True, project=PROJECT, location=REGION)    # held in a name: a discarded client closes its connection
+vec = list(client.models.embed_content(
+    model="text-embedding-005", contents=[Q], config={"output_dimensionality": 768, "task_type": "RETRIEVAL_QUERY"}).embeddings[0].values)
+db = firestore.Client(project=PROJECT)
+q = db.collection("chunks").where("tenant_id", "==", "acme")               # the roster's predicate, never the body's
+if CURRENT:
+    q = q.where("current", "==", True)                                     # the ledger's, when RETRIEVAL_CURRENT_ONLY is on
+for k, v in F.items():
+    # the caller's: FILTER_KEYS only, checked by main.py; a doc_type list is one `in`
+    q = q.where(k, "in", v) if isinstance(v, list) else q.where(k, "==", v)
+hits = q.find_nearest("embedding", Vector(vec), distance_measure=DistanceMeasure.COSINE, limit=20, distance_result_field="d").get()
+pool = []
+for h in hits:
+    d = h.to_dict(); d["id"] = h.id; d["score"] = 1.0 - d.pop("d", 1.0); d.pop("embedding", None); d["found_by"] = "firestore"
+    pool.append(d)
+entries = db.collection("chunks").where("tenant_id", "==", "acme").count().get()[0][0].value
+fields = "tenant_id" + (", current" if CURRENT else "") + "".join(", " + k for k in F)
+print(f"predicates: {fields}{''.join(f' ({k}={v})' for k, v in F.items())} -> {len(pool)} rows, every one found_by firestore")
+for c in pool[:5]:
+    print(f"   {c.get('locator', '?'):9} {c.get('source_uri', '').split('/')[-1][:26]:26} doc_type {str(c.get('doc_type')):8} kind {str(c.get('kind')):6} current {str(c.get('current')):5} score {c['score']:.4f}")
+print(f"index needed: ({fields}, embedding) | reads billed, at most: {math.ceil(entries / 100)} for {entries} index entries + {len(pool)} documents")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected, the three runs (your counts and scores; the row count under each predicate set is the point)</span><span class="ro">read only</span></div><pre tabindex="0">predicates: tenant_id -> 20 rows, every one found_by firestore
+   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+   ...
+index needed: (tenant_id, embedding) | reads billed, at most: 1x for 1xxx index entries + 20 documents
+
+predicates: tenant_id, doc_type (doc_type=policy) -> 0 rows, every one found_by firestore
+index needed: (tenant_id, doc_type, embedding) | reads billed, at most: 1x for 1xxx index entries + 0 documents
+
+predicates: tenant_id, kind (kind=text) -> 20 rows, every one found_by firestore
+   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+   ...
+index needed: (tenant_id, kind, embedding) | reads billed, at most: 1x for 1xxx index entries + 20 documents</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Firestore found the same clause the index finds, NP-03 first, from the rows alone: the vector on the row was enough, which is the whole reason the rung exists. The predicates behaved as predicates on the corpus rather than on one way through it: the tenant narrowed the shelf, the <code>doc_type</code> filter emptied it exactly as it had on the index, and <code>kind</code> kept it whole. Each combination named a different composite index, and every one you asked for existed because the kit declares them all; ask for one that is not declared, a new key say, and the same call raises a failed-precondition error with a link, which is a Terraform change before it is a code change. The bill was tens of reads, which step 8 turns into paise.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Pin</span><h3>Moving one tenant beneath the index by hand, and back</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/demo_04_moving_one_tenant_beneath_the_index_by_hand_and_back.py" target="_blank" rel="noopener"><code>demo_04_moving_one_tenant_beneath_the_index_by_hand_and_back.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The document that pins one tenant, the minute the API takes to notice, the same three predicates on the chosen rung, two tenants that do not cross, and the smoke's line for a chosen rung.</p></div></div>
+
+<h4>Definition</h4>
+<p>A pin is a field, <code>retrieval_backend</code> on <code>tenant_settings/{tenant}</code>, written by <code>make tenant-backend</code> and read by <code>choose_for()</code> once a minute per tenant. A pin the deployment cannot serve, an unknown name or a managed store under hybrid mode, is ignored with a <code>retrieval_pin_ignored</code> line rather than a 500; a pin to a managed store is then held against the tenant's <code>data_region</code>, which is step 8. A pin to <code>firestore</code> takes the chosen road in <code>_dense_retrieve()</code>: no endpoint is asked, the rung answers with the same predicates, and the answer says <code>retrieval_backend firestore</code> beside <code>vector_chunks 0</code>. The smoke reads that pair as a request that ran somewhere else and skips its vector-tier check, because a chosen rung is not a fault. The cells pin acme, wait for the API to notice, ask the same questions under the same filters as step 3, ask two tenants the same question, read the smoke's line, and pin acme back.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - choose_for(): the deployment&#x27;s backend against the tenant&#x27;s pin</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">choose_for</span>(req) -&gt; tuple[str, str, str]:
+    <span class="st">&quot;&quot;&quot;(model backend, model, retrieval backend) for this request: the tenant&#x27;s pins first, else the routed tier (10.3)
+    and the settings. A pinned retrieval_backend the deployment cannot serve - an unknown name, or a managed store
+    under RETRIEVAL_MODE=hybrid (the pair config.py refuses at startup) - is ignored with a line, never a 500.&quot;&quot;&quot;</span>
+    ts = tenant_settings(req.tenant_id)
+    backend = ts.get(<span class="st">&quot;model_backend&quot;</span>) <span class="kw">or</span> settings.model_backend
+    model = ts[<span class="st">&quot;generator_model&quot;</span>] <span class="kw">if</span> ts.get(<span class="st">&quot;generator_model&quot;</span>) <span class="kw">else</span> choose_model_for(req.query)
+    pin = ts.get(<span class="st">&quot;retrieval_backend&quot;</span>)
+    retrieval = settings.retrieval_backend
+    <span class="kw">if</span> pin <span class="kw">and</span> pin != retrieval:
+        <span class="kw">if</span> pin <span class="kw">in</span> RETRIEVAL_BACKENDS <span class="kw">and</span> <span class="kw">not</span> (pin <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">and</span> settings.retrieval_mode == <span class="st">&quot;hybrid&quot;</span>):
+            retrieval = pin
+        <span class="kw">else</span>:
+            log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;retrieval_pin_ignored&quot;</span>, <span class="st">&quot;tenant&quot;</span>: req.tenant_id, <span class="st">&quot;retrieval_backend&quot;</span>: pin,
+                                    <span class="st">&quot;served&quot;</span>: retrieval, <span class="st">&quot;why&quot;</span>: f<span class="st">&quot;one of {&#x27;|&#x27;.join(RETRIEVAL_BACKENDS)}, and a managed store cannot fuse hybrid&quot;</span>}))
+    <span class="kw">return</span> backend, model, retrieval</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - _dense_retrieve(): the chosen road onto the rung</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">if</span> backend == <span class="st">&quot;firestore&quot;</span>:
+        <span class="cm"># The Firestore rung on its own (RETRIEVAL_BACKEND=firestore, or a tenant pinned to it): no endpoint is asked.</span>
+        <span class="cm"># Firestore holds every embedding indexer.py wrote and its own vector index answers,</span>
+        <span class="cm"># tenant pre-filtered - the fallback below, chosen rather than fallen into.</span>
+        <span class="kw">return</span> prefer_current(_firestore_fallback(vec, tenant_id, settings.top_k_retrieve, filters))</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>mk/ingestion.mk - the tenant-backend target</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Which store answers ONE tenant&#x27;s questions: tenant_settings/{TENANT}.retrieval_backend (shared/tenancy.py), the</span>
+<span class="cm"># way 11.4 pins a model. vector | firestore | rag_engine | vertex_search; `default` clears the pin; empty prints it.</span>
+<span class="cm"># Held against the tenant&#x27;s data_region on every request (rag-api main.py: an `in` tenant pinned to a managed</span>
+<span class="cm"># store is served from the kit&#x27;s index with policy_fallback=1 on the row), so a pin cannot move text the policy</span>
+<span class="cm"># keeps home. Read once a minute per tenant - no redeploy.</span>
+tenant-backend: guard-project
+	@test -n <span class="st">&quot;$(TENANT)&quot;</span> || (echo <span class="st">&quot;TENANT=&lt;id&gt; is required&quot;</span>; exit <span class="nu">2</span>); \
+	GOOGLE_CLOUD_PROJECT=$(PROJECT) $(PY) -m shared.tenancy backend $(TENANT) $(RETRIEVAL_BACKEND)</pre></div>
+
+
+<h4>Do it: pin acme beneath the index, and wait for the API to notice</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one field written; up to nine questions while the minute passes)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/lane.py tenant-backend acme firestore          <span class="cm"># the same as: make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=firestore</span>
+ask() { curl -s -X POST "$API/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" -d "$1" \
+  | python -c "import sys, json; j = json.load(sys.stdin); s = j.get('stages', {}); c = j.get('citations') or []; print('backend', s.get('retrieval_backend'), '| vector_chunks', s.get('vector_chunks'), '| pool', s.get('pool'), '| retrieve_ms', s.get('retrieve_ms'), '| answerable', j.get('answerable'), '| first', (c[0]['chunk_id'].rsplit('#', 1)[1] + ' ' + c[0]['source_uri'].split('/')[-1][:22]) if c else '-', '|', j.get('answer', '')[:60])"; }
+for i in $(seq 1 9); do
+  OUT="$(ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}')"; echo "$OUT"
+  case "$OUT" in *"backend firestore"*) break;; esac; sleep 10                     <span class="cm"># the pin is read once a minute</span>
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (a line or two of vector while the cached settings age out, then the chosen rung)</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=firestore
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...</pre></div>
+
+<h4>Do it: the same predicates on the chosen rung, and two tenants that do not cross</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (four questions, a few rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3,"filters":{"doc_type":"policy"}}'
+ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3,"filters":{"kind":"text"}}'
+ask '{"query":"What is the per-trip cap on domestic travel reimbursement?","tenant_id":"acme","stream":false,"top_k":3}'
+ask '{"query":"What is the per-trip cap on travel reimbursement?","tenant_id":"zeta","stream":false,"top_k":3}'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (acme on the chosen rung, zeta on the index; the two amounts are the isolation)</span><span class="ro">read only</span></div><pre tabindex="0">backend firestore | vector_chunks 0 | pool 0 | retrieve_ms 4xx | answerable False | first - | The corpus holds nothing near this question: no passage of this
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first x hr_policy_2026.md | ... Rs 40,000 ...
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first x hr_policy_zeta_2026.md | ... Rs 25,000 ...</pre></div>
+
+<h4>Do it: the smoke's line for a chosen rung, then the pin back</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (two smokes, a rupee each; one field written)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">DOCUMIND_PROJECT=$PROJECT DOCUMIND_API_URL=$API DOCUMIND_TENANT=acme DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$PROJECT.iam.gserviceaccount.com make smoke 2&gt;&amp;1 | grep "vector tier"
+python commands/lane.py tenant-backend acme vector
+for i in $(seq 1 9); do OUT="$(ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}')"; case "$OUT" in *"backend vector"*) echo "$OUT"; break;; esac; sleep 10; done
+DOCUMIND_PROJECT=$PROJECT DOCUMIND_API_URL=$API DOCUMIND_TENANT=acme DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$PROJECT.iam.gserviceaccount.com make smoke 2&gt;&amp;1 | grep "vector tier"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">  [ -- ] vector tier  this request ran on firestore — skipped
+acme: retrieval_backend=vector
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+  [PASS] vector tier  20 of 20 chunks came from the index</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One field moved a tenant beneath the index without a deploy, and the API noticed within its minute. On the chosen rung the three predicates held exactly as on the index: the <code>doc_type</code> filter emptied the pool again, the <code>kind</code> filter kept it, and the answer was the same clause. Two tenants asked the same question on two rungs and got their own handbooks' amounts, because the tenant predicate is the roster's on every rung. The smoke saw a request that ran on <code>firestore</code> by choice and said so instead of failing, which is the line to expect for a pinned tenant; after the pin came back it counted twenty of twenty again. Step 5 is the case it does fail.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Chaos</span><h3>The chaos rung: an index that will not answer, on a candidate that takes no traffic</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/demo_05_the_chaos_rung_an_index_that_will_not_answer_on_a_candidate_that_takes_no_traffi.py" target="_blank" rel="noopener"><code>demo_05_the_chaos_rung_an_index_that_will_not_answer_on_a_candidate_that_takes_no_traffi.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The except branch, a candidate revision whose deployed index does not exist, the answer that still comes, the log line that says why, the smoke's verdict on it, and the template put back.</p></div></div>
+
+<h4>Definition</h4>
+<p>When <code>find_neighbors</code> raises, for an undeployed index, an unreachable endpoint or a deployed index the endpoint does not know, <code>_dense_retrieve()</code> logs one <code>vector_search_fallback</code> line with the error's text and answers from Firestore with the same predicates; hybrid takes the same rung, dense only. The answer then says <code>retrieval_backend vector</code>, because that was the request's backend, and <code>vector_chunks 0</code>, because none came from the index, and that pair under a vector deployment is the one <code>make smoke</code> refuses. The safe way to see it is a candidate revision, no traffic and a tag, whose deployed index name is wrong: the endpoint raises for it as it would for an undeployed index, and the code path is the same one a release-day drill exercises by undeploying the real index for an hour. The undo is different from lesson 2.2's: the variable exists on the live service, so it is set back to its real value rather than removed, or the next revision would inherit the wrong one.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - the chaos rung: the index raised, Firestore answers, the log says so</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">except</span> Exception <span class="kw">as</span> e:
+        <span class="cm"># The chaos rung. An undeployed or unreachable index raises here;</span>
+        <span class="cm"># Firestore holds the same vectors, so answer from there and say so</span>
+        <span class="cm"># in the log rather than returning nothing. Hybrid takes the same rung:</span>
+        <span class="cm"># an outage degrades to dense, logged - it never 500s.</span>
+        logging.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;vector_search_fallback&quot;</span>,
+                                    <span class="st">&quot;tenant&quot;</span>: tenant_id, <span class="st">&quot;error&quot;</span>: str(e)[:<span class="nu">200</span>]}))
+        <span class="kw">return</span> prefer_current(_firestore_fallback(vec, tenant_id, settings.top_k_retrieve, filters))</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - the count the smoke reads</span><span class="ro">read only</span></div><pre tabindex="0">    stages[<span class="st">&quot;vector_chunks&quot;</span>] = sum(<span class="nu">1</span> <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;found_by&quot;</span>) == <span class="st">&quot;vector&quot;</span>)   <span class="cm"># the ANN tier&#x27;s share (16 September 2026): 0 while retrieval_backend is `vector` means the Firestore rung answered</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>smoke/smoke.py - check 3a: the pair, and the sentence it prints for each case</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">if</span> j <span class="kw">and</span> ver.get(<span class="st">&quot;retrieval_backend&quot;</span>) == <span class="st">&quot;vector&quot;</span> <span class="kw">and</span> stg.get(<span class="st">&quot;retrieval_backend&quot;</span>, <span class="st">&quot;vector&quot;</span>) == <span class="st">&quot;vector&quot;</span>:
+        <span class="kw">if</span> stg.get(<span class="st">&quot;vector_chunks&quot;</span>, <span class="nu">0</span>) &gt; <span class="nu">0</span>:
+            ok(<span class="st">&quot;vector tier&quot;</span>, f<span class="st">&quot;{stg[&#x27;vector_chunks&#x27;]} of {stg.get(&#x27;pool&#x27;)} chunks came from the index&quot;</span>)
+        <span class="kw">else</span>:
+            bad(<span class="st">&quot;vector tier&quot;</span>, <span class="st">&quot;RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung &quot;</span>
+                               <span class="st">&quot;answered. make vector-status; make backfill-vectors APPLY=1&quot;</span>)
+    <span class="kw">elif</span> j:
+        print(f<span class="st">&quot;  [ -- ] vector tier  this request ran on {stg.get(&#x27;retrieval_backend&#x27;, ver.get(&#x27;retrieval_backend&#x27;))} — skipped&quot;</span>)</pre></div>
+
+
+<h4>Do it: a candidate that cannot reach the index</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; one question to it; one log read; ask() from step 4)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars VECTOR_DEPLOYED_INDEX_ID=documind_chunks_nonesuch --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+curl -s -X POST "$CAND/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}' \
+  | python -c "
+import sys, json
+j = json.load(sys.stdin); s = j['stages']
+print('candidate: backend', s['retrieval_backend'], '| vector_chunks', s['vector_chunks'], '| pool', s['pool'], '| answerable', j['answerable'], '| citations', len(j['citations']))
+ok = s['retrieval_backend'] != 'vector' or s.get('vector_chunks', 0) > 0                   # smoke.py check 3a, by hand
+print('the smoke would say:', '[PASS] vector tier' if ok else '[FAIL] vector tier  RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1')"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="vector_search_fallback"' \
+  --project "$PROJECT" --freshness 10m --limit 2 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the error's wording is the endpoint's; the wrong name appears in it)</span><span class="ro">read only</span></div><pre tabindex="0">candidate: backend vector | vector_chunks 0 | pool 20 | answerable True | citations 3
+the smoke would say: [FAIL] vector tier  RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1
+2026-09-2xT1x:xx:xx.xxxxxxZ	acme	... documind_chunks_nonesuch ...</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the undo: the real name back on the template, the tag dropped, the live service asked once)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars VECTOR_DEPLOYED_INDEX_ID="$VECTOR_DEPLOYED_INDEX_ID" --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet
+echo "template now: $(svc_env documind-api VECTOR_DEPLOYED_INDEX_ID)"
+ask '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":3}'
+gcloud run services describe documind-api --region "$REGION" --project "$PROJECT" --format='value(status.traffic[].percent,status.traffic[].revisionName)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">template now: documind_chunks_v1
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+100;documind-api-00048-xyz</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The candidate asked its endpoint for a deployed index that does not exist, the endpoint raised, and the request was answered anyway from the rows beneath, with the same citations as ever and one line in the log that names the cause. Nobody calling that revision would have known; the answer's own pair, <code>vector</code> with 0, is the only witness, and the smoke's rule turned it into a red line naming the two commands. Then the template got its real name back, in place, and the live service kept counting twenty of twenty throughout, because a candidate with no traffic never touched it. On a release day the same drill undeploys the real index, and the smoke stays red until the tier is back.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Probe</span><h3>The probe: the kit's read-only check of the combined filters</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/demo_06_the_probe_the_kit_s_read_only_check_of_the_combined_filters.py" target="_blank" rel="noopener"><code>demo_06_the_probe_the_kit_s_read_only_check_of_the_combined_filters.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A command that verifies the rung's plumbing with a real source's stored metadata, both current modes, and leaves an evidence file; what it checks and what it refuses to certify.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>commands/check-firestore-fallback.py</code> is the kit's own probe of this rung, written for the day the fallback answered with the wrong tenant's rows. It reads the handbook's ledger row and refuses to continue unless the ledger's hash matches the kit's copy of the file, so the check runs against a version it can vouch for; it picks one current row as the seed, verifies the embedding stamps lesson 1.3 wrote, and uses that row's stored <code>doc_type</code> and <code>kind</code> as the combined filter. Then it calls <code>_firestore_fallback()</code> in-process with current off and on, and for every row that comes back it requires the tenant, both filters, no staging and, in the second mode, <code>current</code>. It writes what it saw to an evidence file and says plainly what it did not test: classification and answer quality are not its business, and it notes when the stored <code>doc_type</code> differs from the manifest, which on a lane whose uploads went through the bucket it does.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>commands/check-firestore-fallback.py - verify_hits(): what every returned row must satisfy</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">verify_hits</span>(hits, *, tenant, source_uri, filters, current_only):
+    require(bool(hits), <span class="st">&quot;No combined-filter results; inspect the Firestore vector index and stored metadata.&quot;</span>)
+    <span class="kw">for</span> row <span class="kw">in</span> hits:
+        key = row.get(<span class="st">&quot;id&quot;</span>, <span class="st">&quot;&lt;missing id&gt;&quot;</span>)
+        require(row.get(<span class="st">&quot;tenant_id&quot;</span>) == tenant, f<span class="st">&quot;Tenant filter failed: {key}&quot;</span>)
+        require(all(row.get(field) == value <span class="kw">for</span> field, value <span class="kw">in</span> filters.items()),
+                f<span class="st">&quot;Combined document-type/kind filter failed: {key}&quot;</span>)
+        require(row.get(<span class="st">&quot;found_by&quot;</span>) == <span class="st">&quot;firestore&quot;</span>, f<span class="st">&quot;Result did not come from Firestore: {key}&quot;</span>)
+        require(<span class="kw">not</span> row.get(<span class="st">&quot;staged&quot;</span>), f<span class="st">&quot;Staged candidate returned: {key}&quot;</span>)
+        <span class="kw">if</span> current_only:
+            require(row.get(<span class="st">&quot;current&quot;</span>) <span class="kw">is</span> <span class="kw">True</span>, f<span class="st">&quot;Current-only filter failed: {key}&quot;</span>)
+    require(any(row.get(<span class="st">&quot;source_uri&quot;</span>) == source_uri <span class="kw">for</span> row <span class="kw">in</span> hits), <span class="st">&quot;Control HR source was not returned.&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/check-firestore-fallback.py - both current modes through the kit&#x27;s own function</span><span class="ro">read only</span></div><pre tabindex="0">    previous = settings.retrieval_current_only
+    <span class="kw">try</span>:
+        <span class="kw">for</span> mode <span class="kw">in</span> (<span class="st">&quot;off&quot;</span>, <span class="st">&quot;on&quot;</span>):
+            settings.retrieval_current_only = mode
+            hits = _firestore_fallback(vector, tenant, <span class="nu">5</span>, filters)
+            verify_hits(hits, tenant=tenant, source_uri=uri, filters=filters, current_only=mode == <span class="st">&quot;on&quot;</span>)
+            report[<span class="st">&quot;results&quot;</span>][mode] = {<span class="st">&quot;ids&quot;</span>: [row[<span class="st">&quot;id&quot;</span>] <span class="kw">for</span> row <span class="kw">in</span> hits], <span class="st">&quot;control_source_found&quot;</span>: <span class="kw">True</span>}
+            print(f<span class="st">&quot;PASS: combined doc_type={filters[&#x27;doc_type&#x27;]!r}+kind=&#x27;text&#x27;, current={mode}, rows={len(hits)}&quot;</span>, flush=<span class="kw">True</span>)
+    <span class="kw">finally</span>:
+        settings.retrieval_current_only = previous</pre></div>
+
+
+<h4>Do it: the probe, then its evidence</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one embedding read off a row, a few dozen Firestore reads; nothing written to the cloud)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export GOOGLE_CLOUD_PROJECT="$PROJECT"                                    <span class="cm"># the probe insists the two agree</span>
+python commands/check-firestore-fallback.py
+python -c "import json; r = json.load(open('operator-evidence/firestore-combined-filters.json')); print('evidence:', r['filters'], '| current off:', len(r['results']['off']['ids']), 'rows | current on:', len(r['results']['on']['ids']), 'rows | doc_key', r['doc_key'][:17] + '...')"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your key; the NOTE is the lane's own truth about doc_type)</span><span class="ro">read only</span></div><pre tabindex="0">{"project": "documind-ai-YOUR-ID", "collection": "chunks", "source_uri": "gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md", "source_status": "indexed", "source_doc_key": "acme_497809ff..."}
+Verified HR source: 283 current chunks; stored doc_type='unknown'; manifest doc_type='policy'
+NOTE: stored metadata differs from the manifest. This probe tests the stored equality filters; it does not certify policy classification or repair metadata.
+PASS: combined doc_type='unknown'+kind='text', current=off, rows=5
+PASS: combined doc_type='unknown'+kind='text', current=on, rows=5
+PASS: both Firestore filter modes verified. Evidence: operator-evidence/firestore-combined-filters.json
+evidence: {'doc_type': 'unknown', 'kind': 'text'} | current off: 5 rows | current on: 5 rows | doc_key acme_497809ff...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The probe did in one command what steps 3 and 4 did by hand, against a source it first proved was the version the ledger holds: the combined filter held on the rung with current off and with it on, every returned row belonged to acme, carried both filter values, was not staged, and in the second mode was current. It refused nothing on your lane because the plumbing is right, and it said what it would not vouch for, which is the honest shape of a probe. The evidence file is the kind of artefact a release review reads: which key, which filters, which rows, in a file rather than in someone's memory. It sits inside the kit's clone; <code>git status</code> will show it, and it is yours to keep or delete.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Tier</span><h3>The tier from the rows: vector-status, backfill-vectors, and the rows that count the rung</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/demo_07_the_tier_from_the_rows_vector_status_backfill_vectors_and_the_rows_that_count_th.py" target="_blank" rel="noopener"><code>demo_07_the_tier_from_the_rows_vector_status_backfill_vectors_and_the_rows_that_count_th.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The index's own count, the plan that would refill it from the rows without a model, and the usage rows that say which rung served the pool for the last hour.</p></div></div>
+
+<h4>Definition</h4>
+<p>Because Firestore holds every vector, the ANN tier is rebuildable from the rows: <code>backfill-vectors</code> reads every current row of a tenant, checks that its stored vector was made with the document profile, and streams the datapoints up, with no embedding call. It exists for two states, a worker deployed before the index did and an apply that lost its index, and it is the second half of the smoke's own advice. Without <code>APPLY=1</code> it is a plan: the current rows, how many would need a fresh document embedding, how many are invalid, and a note on what to pause during a repair. <code>vector-status</code> is the first half, the index's own datapoint count and the deployment's last sync, which is what a claim about Vector Search rests on. The last cell reads the usage rows the way lesson 2.3 did, grouped by the rung that served the pool: the pinned minutes of step 4 sit in a <code>firestore</code> row of their own.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>mk/ingestion.mk - vector-status: the index&#x27;s own count</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># `make up` returns with the index created and EMPTY - correct, vector.tf names no batch input and</span>
+<span class="cm"># the worker fills it - so this is the line to run after make ingest-corpus, and the line to run</span>
+<span class="cm"># before claiming a Vector Search demonstration. vectorsCount is the index&#x27;s own number; a streamed</span>
+<span class="cm"># upsert takes a few minutes to appear in it. The answer&#x27;s stages.vector_chunks is the other half</span>
+<span class="cm"># of the proof: 0 while stages.retrieval_backend is `vector` means the Firestore rung answered.</span>
+vector-status: guard-project
+	@PROJECT=$(PROJECT) REGION=$(REGION) TF_DIR=$(TF_DIR) bash commands/vector-status.sh</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>mk/ingestion.mk - backfill-vectors: the tier from the rows</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The ANN tier from the rows. Firestore holds every embedding - that is what the chaos rung reads - so a</span>
+<span class="cm"># tier that is empty when the corpus is not costs one pass over the rows and no model call. The state</span>
+<span class="cm"># this repairs: a worker deployed before vector.tf existed, or an apply that lost its index and succeeded</span>
+<span class="cm"># on the second run. Prints the count; APPLY=1 acts. TENANT_ONLY= one tenant.</span>
+backfill-vectors: guard-project
+	PYTHONPATH=.:services/ingest GOOGLE_CLOUD_PROJECT=$(PROJECT) \
+	VECTOR_INDEX_NAME=$$(cd $(TF_DIR) &amp;&amp; terraform output -raw vector_index_name) \
+	  $(PY) services/ingest/reconcile.py --project $(PROJECT) --backfill-vectors \
+	  $(<span class="kw">if</span> $(TENANT_ONLY),--tenant $(TENANT_ONLY),) $(<span class="kw">if</span> $(APPLY),--apply,)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/reconcile.py - the plan&#x27;s line</span><span class="ro">read only</span></div><pre tabindex="0">            print(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;backfill_vectors_plan&quot;</span>, <span class="st">&quot;index&quot;</span>: index_name, <span class="st">&quot;tenant&quot;</span>: a.tenant <span class="kw">or</span> <span class="st">&quot;*&quot;</span>,
+                              <span class="st">&quot;current_chunks&quot;</span>: len(rows),
+                              <span class="st">&quot;needs_document_embedding&quot;</span>: sum(<span class="kw">not</span> document_embedding_matches(r) <span class="kw">for</span> r <span class="kw">in</span> rows),
+                              <span class="st">&quot;invalid_chunks&quot;</span>: sum(<span class="kw">not</span> r.get(<span class="st">&quot;text&quot;</span>) <span class="kw">or</span> <span class="kw">not</span> r.get(<span class="st">&quot;tenant_id&quot;</span>) <span class="kw">or</span> bool(r.get(<span class="st">&quot;staged&quot;</span>))
+                                                    <span class="kw">for</span> r <span class="kw">in</span> rows),
+                              <span class="st">&quot;embedding_task_type&quot;</span>: EMBEDDING_TASK_TYPE,
+                              <span class="st">&quot;note&quot;</span>: <span class="st">&quot;Pause uploads/undo/batch writers; keep answer caches off during repair and validation.&quot;</span>}))</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/usage_rows.py - the table by rung</span><span class="ro">read only</span></div><pre tabindex="0">    show(<span class="st">&quot;by retrieval backend (which store served the pool; 13 September 2026)&quot;</span>, group(rows, (<span class="st">&quot;retrieval_backend&quot;</span>,)), (<span class="st">&quot;retrieval_backend&quot;</span>,))</pre></div>
+
+
+<h4>Do it: count the tier, plan its refill, read the rows by rung, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (read-only: the plan writes nothing without --apply)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/lane.py vector-status                             <span class="cm"># the same as: make vector-status PROJECT=$PROJECT</span>
+python commands/lane.py backfill-vectors --tenant acme            <span class="cm"># the same as: make backfill-vectors PROJECT=$PROJECT TENANT_ONLY=acme</span>
+make usage PROJECT=$PROJECT HOURS=1 | sed -n '/by retrieval backend/,/^$/p'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts; the plan's zeros are the point, and the firestore row is step 4's)</span><span class="ro">read only</span></div><pre tabindex="0">index: documind-chunks  datapoints: 4xxx  shards: 1  update: STREAM_UPDATE
+endpoint: documind-endpoint  deployed: documind_chunks_v1  synced: 2026-09-2xT1x:xx:xx.xxxxxxZ
+{"event": "backfill_vectors_plan", "index": "projects/NUMBER/locations/asia-south1/indexes/1234567890123456789", "tenant": "acme", "current_chunks": 1xxx, "needs_document_embedding": 0, "invalid_chunks": 0, "embedding_task_type": "RETRIEVAL_DOCUMENT", "note": "Pause uploads/undo/batch writers; keep answer caches off during repair and validation."}
+
+by retrieval backend (which store served the pool; 13 September 2026)
+retrieval_backend      answers    tok_in  tok_out       USD       INR  p95 ms  unans
+------------------------------------------------------------------------------------
+firestore                    5      xxxx      xxx    0.0xxx      x.xx    2xxx   0.20
+vector                       6      xxxx      xxx    0.0xxx      x.xx    2xxx   0.00</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The index reported its own count, a few thousand datapoints across the three tenants, synced; the plan found every current acme row already carrying a document-profile vector and nothing invalid, so a repair would upload them all and embed none; and the usage rows showed the last hour split by rung, the minutes acme spent pinned in a row of their own with the one unanswerable question from the emptied pool counted against it. That table is also where a day of silent fallbacks would show: a <code>vector</code> row whose answers came from beneath still reads <code>vector</code> here, which is why the smoke reads <code>vector_chunks</code> and not this column.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What the rung costs, where it cannot go, and the policy that sends a tenant home</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_4/demo_08_what_the_rung_costs_where_it_cannot_go_and_the_policy_that_sends_a_tenant_home.py" target="_blank" rel="noopener"><code>demo_08_what_the_rung_costs_where_it_cannot_go_and_the_policy_that_sends_a_tenant_home.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The rupee line, the two places the rung cannot serve, and the data-region rule run offline.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A question on the rung</td><td data-label="Costs">Firestore reads: one per hundred index entries the flat scan visits and one per document returned, at the listed read rate; about 37 for a tenant the size of acme's mirror</td><td data-label="On your lane">a fraction of a paisa each; steps 3 and 4</td></tr>
+<tr><td>The kit's index</td><td data-label="Costs">the deployed index bills by the hour whether it is asked or not; a question on the rung saves nothing there</td><td data-label="On your lane">unchanged by this lesson</td></tr>
+<tr><td>A pin</td><td data-label="Costs">one Firestore write; the API re-reads it within a minute, no deploy</td><td data-label="On your lane">step 4, twice</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle at <code>MIN_INSTANCES</code> 0; one question at the generator's rate</td><td data-label="On your lane">step 5, a rupee, then reverted</td></tr>
+<tr><td>The probe and the plan</td><td data-label="Costs">a few dozen reads; the plan streams every current row of the tenant once</td><td data-label="On your lane">Rs 0 in practice</td></tr>
+<tr><td>A real backfill</td><td data-label="Costs">the rows read once and the datapoints streamed up; no embedding</td><td data-label="On your lane">not run: nothing to fill</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Where the rung cannot go</h4>
+<p>Two places. It has no sparse leg, so <code>RETRIEVAL_MODE=hybrid</code> with <code>RETRIEVAL_BACKEND=firestore</code> is refused at startup by the validator lesson 2.2 ran, and a hybrid deployment that falls onto the rung is served dense for that request. And it holds only the kit's rows: a tenant whose pool comes from a managed store is on a different tier with its own copy, which is Module 7's, and the only part of that story this lesson needs is the policy below.</p>
+
+<h4>The policy that sends a tenant home</h4>
+<p>A tenant's <code>data_region</code> says where its text may be held: <code>any</code> lets the managed mirror copy its current versions abroad, <code>in</code> keeps it on the kit's rows in India, and a missing or unknown value is <code>in</code>, because an unreadable policy is the strict one. <code>retrieval_backend_for()</code> holds every request's backend against it: a managed pin for an <code>in</code> tenant is served from the kit's own rung instead, the deployment's if that is vector or firestore, otherwise Firestore, with <code>policy_fallback 1</code> on the row, which the warehouse sums into a column. The cell runs the two pure functions behind that decision offline; nothing leaves the machine.</p>
+<div class="cw"><div class="ch-bar"><span>shared/tenancy.py - policy_of() and permits(): the two pure rules</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">policy_of</span>(doc: dict | <span class="kw">None</span>) -&gt; str:
+    <span class="st">&quot;&quot;&quot;The data_region a tenant_settings document declares - `in` unless it says `any`. The one normalisation both
+    readers use: a missing field, an unknown value or no document at all is `in`, never a guess.&quot;&quot;&quot;</span>
+    region = str((doc <span class="kw">or</span> {}).get(<span class="st">&quot;data_region&quot;</span>) <span class="kw">or</span> <span class="st">&quot;in&quot;</span>).strip().lower()
+    <span class="kw">return</span> region <span class="kw">if</span> region <span class="kw">in</span> DATA_REGIONS <span class="kw">else</span> <span class="st">&quot;in&quot;</span>
+...
+<span class="kw">def</span> <span class="fn">permits</span>(policy: str, region: str | <span class="kw">None</span>) -&gt; bool:
+    <span class="st">&quot;&quot;&quot;May a store in `region` hold text under this policy? `any` permits every store; `in` permits a store inside
+    India only - none of the managed stores is there today (us-central1, global), and the rule is data, not code.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> policy == <span class="st">&quot;any&quot;</span>:
+        <span class="kw">return</span> <span class="kw">True</span>
+    <span class="kw">return</span> str(region <span class="kw">or</span> <span class="st">&quot;&quot;</span>).strip().lower().startswith(INDIA_REGION_PREFIXES)
+
+
+RETRIEVAL_BACKENDS = (<span class="st">&quot;vector&quot;</span>, <span class="st">&quot;firestore&quot;</span>, <span class="st">&quot;rag_engine&quot;</span>, <span class="st">&quot;vertex_search&quot;</span>)   <span class="cm"># rag-api&#x27;s config.RETRIEVAL_BACKENDS; the gate holds the two equal</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - retrieval_backend_for(): a managed pin held against the policy</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">retrieval_backend_for</span>(tenant_id: str, backend: str) -&gt; tuple[str, int]:
+    <span class="st">&quot;&quot;&quot;The backend that will serve, held against the tenant&#x27;s data_region (13 September 2026, evening): a managed
+    store (config.MANAGED_BACKENDS) for a tenant whose text may not leave India - `in`, which an absent policy also
+    means - is the kit&#x27;s own index instead, with policy_fallback=1 on the row: the deployment&#x27;s own backend when
+    that is one (vector, firestore), else Firestore, which holds every embedding the worker wrote. Never the store,
+    never a 500; the row says it happened, so a day of fallbacks is a count.&quot;&quot;&quot;</span>
+    ts = tenant_settings(tenant_id)
+    <span class="kw">if</span> backend <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">and</span> policy_of(ts) != <span class="st">&quot;any&quot;</span>:
+        own = settings.retrieval_backend <span class="kw">if</span> settings.retrieval_backend <span class="kw">not</span> <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">else</span> <span class="st">&quot;firestore&quot;</span>
+        <span class="kw">return</span> own, <span class="nu">1</span>
+    <span class="kw">return</span> backend, <span class="nu">0</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/sql/tenant_daily.sql - the managed share and the policy fallbacks, summed</span><span class="ro">read only</span></div><pre tabindex="0">  -- The managed stores<span class="st">&#x27; share of the pools, and the questions a tenant&#x27;</span>s data_region sent to the kit&#x27;s index instead
+  -- of a managed store (main.py retrieval_backend_for): a day <span class="kw">with</span> policy_fallbacks <span class="kw">is</span> a policy working, <span class="kw">not</span> a fault.
+  SUM(CAST(jsonPayload.managed_chunks AS INT64)) AS managed_chunks,
+  SUM(CAST(jsonPayload.policy_fallback AS INT64)) AS policy_fallbacks,</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys
+sys.path.insert(0, ".")
+from shared.tenancy import policy_of, permits
+for doc in ({}, {"data_region": "any"}, {"data_region": "in"}, {"data_region": "eu"}):
+    print(f"{str(doc):24} -> policy {policy_of(doc)}")
+for policy, region in (("in", "asia-south1"), ("in", "us-central1"), ("in", "global"), ("any", "us-central1")):
+    print(f"{policy:4} tenant, a store in {region:12} -> {'may hold it' if permits(policy, region) else 'may not'}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">{}                       -> policy in
+{'data_region': 'any'}   -> policy any
+{'data_region': 'in'}    -> policy in
+{'data_region': 'eu'}    -> policy in
+in   tenant, a store in asia-south1  -> may hold it
+in   tenant, a store in us-central1  -> may not
+in   tenant, a store in global       -> may not
+any  tenant, a store in us-central1  -> may hold it</pre></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Firestore finds the same clause from the rows alone</td><td data-label="The check">step 3, the first run</td><td data-label="Pass looks like">NP-03 first, <code>found_by firestore</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The caller's filters are predicates on the rung too</td><td data-label="The check">step 3, the two runs with F</td><td data-label="Pass looks like">0 rows under <code>doc_type=policy</code>, 20 under <code>kind=text</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A pin moves one tenant beneath the index without a deploy</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>backend firestore | vector_chunks 0</code> within a minute</td></tr>
+<tr><td>4</td><td data-label="Claim">Two tenants on two rungs do not cross</td><td data-label="The check">step 4, the last two questions</td><td data-label="Pass looks like">Rs 40,000 for acme, Rs 25,000 for zeta</td></tr>
+<tr><td>5</td><td data-label="Claim">A chosen rung is not a fault</td><td data-label="The check">step 4, the first smoke</td><td data-label="Pass looks like"><code>[ -- ] vector tier ... skipped</code></td></tr>
+<tr><td>6</td><td data-label="Claim">An index that raises is answered from beneath, logged</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>backend vector | vector_chunks 0</code>, a <code>vector_search_fallback</code> line</td></tr>
+<tr><td>7</td><td data-label="Claim">The smoke refuses that pair, and the template is back</td><td data-label="The check">step 5</td><td data-label="Pass looks like">the <code>[FAIL] vector tier</code> sentence; <code>template now: documind_chunks_v1</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The combined filters hold with current off and on</td><td data-label="The check">step 6</td><td data-label="Pass looks like">two <code>PASS: combined</code> lines and the evidence file</td></tr>
+<tr><td>9</td><td data-label="Claim">The tier is countable and rebuildable from the rows</td><td data-label="The check">step 7</td><td data-label="Pass looks like">a datapoint count; <code>needs_document_embedding 0, invalid_chunks 0</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. acme's pin went to <code>firestore</code> and back to <code>vector</code>, where lesson 1.1 left it. A candidate revision of the API took no traffic and its wrong index name was replaced by the real one on the template before the tag was dropped; run <code>make plan</code> if you want Terraform's word that the service matches its declaration. The probe wrote <code>operator-evidence/firestore-combined-filters.json</code> inside the kit's clone. The questions you asked are usage rows, five of them under <code>firestore</code>. Lesson 2.5 rewrites the question before it reaches this pool and measures whether that helps; Module 3 then takes the pool into the prompt.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 2 Retrieval &middot; Lesson 2.4 Test fallback without losing tenant or metadata filters &middot; v5.0</p><p>Next: Lesson 2.5 Rewrite the query before retrieval, and measure it.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var INDEXES = [{"name":"chunks_vector","fields":["tenant_id"]},{"name":"chunks_current_vector","fields":["tenant_id","current"]},{"name":"chunks_filter_vector[doc_type]","fields":["tenant_id","doc_type"]},{"name":"chunks_filter_vector[current_doc_type]","fields":["tenant_id","current","doc_type"]},{"name":"chunks_filter_vector[kind]","fields":["tenant_id","kind"]},{"name":"chunks_filter_vector[current_kind]","fields":["tenant_id","current","kind"]},{"name":"chunks_filter_vector[doc_type_kind]","fields":["tenant_id","doc_type","kind"]},{"name":"chunks_filter_vector[current_doc_type_kind]","fields":["tenant_id","current","doc_type","kind"]}], MANAGED = ["rag_engine", "vertex_search"], TOPK = 20, CACHE_S = 60;
+  var root = document.getElementById('finder'); if (!root) return;
+  var $ = function(id){ return document.getElementById(id); };
+  var out = $('rf-out');
+  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function step(title, body, cls){ return '<div class="rf-step' + (cls ? ' ' + cls : '') + '"><b>' + esc(title) + '</b>' + body + '</div>'; }
+  function isManaged(b){ return MANAGED.indexOf(b) >= 0; }
+  function render(){
+    var backend = $('rf-backend').value, mode = $('rf-mode').value, pin = $('rf-pin').value, policyDoc = $('rf-policy').value,
+        indexUp = $('rf-index').value === 'up', current = $('rf-current').value === 'on', fDoc = $('rf-doc').checked, fKind = $('rf-kind').checked;
+    var steps = [], logs = [];
+    /* 1. config.check_retrieval_modes(): hybrid needs the vector backend */
+    if (mode === 'hybrid' && backend !== 'vector') {
+      steps.push(step('1 · startup', 'refused: <code>RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector</code> - the service does not start, so nothing below applies', 'stop'));
+      out.innerHTML = steps.join(''); return;
+    }
+    steps.push(step('1 · startup', '<code>check_retrieval_modes(' + esc(backend) + ', ' + esc(mode) + ')</code> passes; <code>/version</code> reports <code>retrieval_backend ' + esc(backend) + '</code>'));
+    /* 2. main.choose_for(): the pin, unless it is one the deployment cannot serve */
+    var served = backend, s2;
+    if (pin && pin !== backend) {
+      if (isManaged(pin) && mode === 'hybrid') { logs.push('retrieval_pin_ignored'); s2 = 'the pin to <code>' + esc(pin) + '</code> is ignored: a managed store cannot fuse hybrid; served from <code>' + esc(backend) + '</code>, with a <code>retrieval_pin_ignored</code> line'; }
+      else { served = pin; s2 = 'the pin wins: this tenant is served from <code>' + esc(pin) + '</code> (read once every ' + CACHE_S + ' s)'; }
+    } else s2 = pin ? 'the pin names the deployment\'s own backend: nothing changes' : 'no pin: the deployment\'s <code>' + esc(backend) + '</code>';
+    steps.push(step('2 · the pin', s2));
+    /* 3. main.retrieval_backend_for(): a managed store against the tenant's data_region */
+    var policy = policyDoc === 'any' ? 'any' : 'in', policyFallback = 0, s3;
+    if (isManaged(served) && policy !== 'any') {
+      var own = isManaged(backend) ? 'firestore' : backend; policyFallback = 1;
+      s3 = 'policy <code>' + policy + '</code>' + (policyDoc === '' ? ' (a missing policy is <code>in</code>)' : '') + ' keeps this tenant\'s text home: <code>' + esc(served) + '</code> is not asked; served from <code>' + esc(own) + '</code> with <code>policy_fallback 1</code> on the row';
+      served = own;
+    } else s3 = isManaged(served) ? 'policy <code>any</code>: the managed store may hold this tenant\'s text, so it serves' : 'the kit\'s own tier: the policy has nothing to say';
+    steps.push(step('3 · the policy', s3, policyFallback ? 'flag' : ''));
+    /* 4. retriever._dense_retrieve(): the rung */
+    var foundBy, vectorChunks = 0, managedChunks = 0, s4, cls4 = '';
+    if (isManaged(served)) { foundBy = served; managedChunks = TOPK; s4 = 'the managed store ranks its copy; the pool is stamped <code>found_by ' + esc(served) + '</code>, <code>managed_chunks ' + TOPK + '</code>'; }
+    else if (served === 'firestore') { foundBy = 'firestore'; s4 = 'the chosen road: no endpoint is asked; Firestore\'s vector index answers behind the pre-filters; <code>found_by firestore</code>'; }
+    else if (indexUp) { foundBy = 'vector'; vectorChunks = TOPK; s4 = 'Vector Search answers (' + esc(mode) + ') under the restricts; <code>found_by vector</code>, <code>vector_chunks ' + TOPK + '</code>'; }
+    else { foundBy = 'firestore'; logs.push('vector_search_fallback'); cls4 = 'flag'; s4 = 'the chaos rung: the index raised, one <code>vector_search_fallback</code> line, and Firestore answers dense with the same predicates; <code>found_by firestore</code>, <code>vector_chunks 0</code>' + (mode === 'hybrid' ? ' (hybrid degrades to dense here)' : ''); }
+    steps.push(step('4 · the rung', s4, cls4));
+    /* 5. the answer and the row */
+    steps.push(step('5 · what the answer says', '<code>stages.retrieval_backend ' + esc(served) + '</code> · <code>vector_chunks ' + vectorChunks + '</code> · <code>managed_chunks ' + managedChunks + '</code> · <code>policy_fallback ' + policyFallback + '</code> · chunks stamped <code>found_by ' + esc(foundBy) + '</code>' + (logs.length ? ' · log: <code>' + logs.map(esc).join('</code>, <code>') + '</code>' : ' · no fallback line')));
+    /* 6. the Firestore index the predicates need, when Firestore answers */
+    if (foundBy === 'firestore') {
+      var want = ['tenant_id'].concat(current ? ['current'] : []).concat(fDoc ? ['doc_type'] : []).concat(fKind ? ['kind'] : []);
+      var hit = INDEXES.filter(function(ix){ return ix.fields.join(',') === want.join(','); })[0];
+      steps.push(step('6 · the composite index', 'pre-filters <code>(' + want.join(', ') + ')</code> need the vector index <code>(' + want.join(', ') + ', __name__, embedding)</code>: ' + (hit ? 'declared as <code>' + esc(hit.name) + '</code> in firestore_indexes.tf' : 'not declared - Firestore refuses the query (a failed precondition naming the index)'), hit ? '' : 'stop'));
+    } else steps.push(step('6 · the composite index', 'not needed: ' + (isManaged(served) ? 'the store applies the tenant and the doc_type on its own terms' : 'the restricts travel with the index query')));
+    /* 7. smoke.py check 3a */
+    var s7;
+    if (backend === 'vector' && served === 'vector') s7 = vectorChunks > 0 ? '<code>[PASS] vector tier  ' + TOPK + ' of ' + TOPK + ' chunks came from the index</code>' : '<code>[FAIL] vector tier  ' + esc("RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1") + '</code>';
+    else s7 = '<code>[ -- ] vector tier  this request ran on ' + esc(served) + ' — skipped</code>';
+    steps.push(step('7 · make smoke', s7, s7.indexOf('[FAIL]') >= 0 ? 'stop' : ''));
+    out.innerHTML = steps.join('');
+  }
+  ['rf-backend', 'rf-mode', 'rf-pin', 'rf-policy', 'rf-index', 'rf-current', 'rf-doc', 'rf-kind'].forEach(function(id){ $(id).addEventListener('change', render); });
+  render();
+})();
+</script>
+</body>
+</html>

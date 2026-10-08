@@ -1,0 +1,73 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 2 &middot; Retrieval &middot; Lesson 2.1</div>
+<h1>Apply query embeddings and authorized filters: <span>the question's vector, the tenant from identity, and the two filters a caller may send</span></h1>
+<p>Module 1 put the records in place. This module reads them. A question arrives as text and leaves the API as a vector; the caller's identity, not the request, decides whose documents it may search; two named filters may narrow the search and anything else is refused before any work is done; and the index is asked with restricts that make one index serve three tenants without a leak. You will embed a question yourself and compare a direct index search with the API's citations, ask the same question of two tenants with one identity and get two answers, send the wrong filters and read the 400s, and read the stages block that says which store answered.</p>
+<div class="hero-chips"><div class="hero-chip">RETRIEVAL_QUERY</div><div class="hero-chip">The tenant from identity</div><div class="hero-chip">doc_type, kind</div><div class="hero-chip">400 for anything else</div><div class="hero-chip">One index, three tenants</div><div class="hero-chip">stages.retrieval_backend</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What retrieval sees</a></li>
+<li><a href="#s2">The words: query vector, identity, roster, filter key, restrict, pool, stages</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#preflight">Verify the deployed index and select the backend</a></li>
+<li><a href="#s3">The question's vector: direct candidates and API citations</a></li>
+<li><a href="#s4">Authorized: the tenant comes from identity, and one index serves three</a></li>
+<li><a href="#s5">Filters: two keys, a 400 for everything else</a></li>
+<li><a href="#s6">The restricts, the per-request backend, and the stages block</a></li>
+<li><a href="#s7">Current is the ledger's filter, never the caller's</a></li>
+<li><a href="#s8">The cache shares the vector, the pool is not the answer, and what a question costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+<li><a href="#restore-pin">Finish: restore the saved tenant pin</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a question becomes a vector under the query profile of the same declared model the worker stamped on every row, why the tenant a request may search is taken from the verified identity and the roster rather than from the request, which two filter keys a caller may send and why an unknown key is a 400 rather than an empty result, and how the tenant, the ledger's <code>current</code> and the caller's filters reach the index as restricts. Then you will prove it on your lane: inspect the index candidates with your own call, ask two tenants the same question, send four filters and read four verdicts, and read a full <code>stages</code> block.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What retrieval sees</h3><p>A vector instead of a question, an identity instead of a claim, and predicates instead of trust.</p></div></div>
+
+<p><strong>Retrieval never sees the question; it sees its vector.</strong> The API embeds the question once, under <code>RETRIEVAL_QUERY</code>, with the model and version the worker stamped on every row in lesson 1.3, and that one vector is used twice: the answer cache looks it up first, and the retrieval sends it to the index. The vector is 768 numbers made to be compared with the document vectors on the rows, which is why the pairing matters: a question embedded under the document profile, or with another model, would still return a ranked list, and the list would be wrong. The API reads the pair from the same environment variables the worker does, so the two cannot drift apart without a deploy.</p>
+
+<p><strong>The tenant comes from who is asking, never from what they ask.</strong> A request names a tenant, but the API does not believe it. The identity comes from the IAP assertion or the bearer token, verified for this service's own audience; then the roster in Firestore is asked one question: is this email on this tenant's roster? A yes proceeds; a no is a 403 before any embedding, any index call, any model. The body field that once named a user is accepted and unread, because a user named in the body is a header in disguise. The same identity may sit on several rosters, and then the same question to two tenants gets two answers from two corpora in one index, with nothing crossing between them.</p>
+
+<p><strong>Filters are predicates on the corpus, and there are two.</strong> A caller may send <code>doc_type</code> and <code>kind</code>, each a string; <code>doc_type</code> may instead be a list of up to five classes, any of which a row may carry. They become restricts on the index query and pre-filters on the Firestore rung, the same predicate on both paths. Any other key is refused with a 400 that names the allowed keys, because a key that filters nothing on one path and everything on another is a typo that would read like an honest "nothing found". Two things are never the caller's to filter: the tenant, which is the roster's, and <code>current</code>, which is the ledger's.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128273;</div><div>
+<p><strong>A records room with a badge reader.</strong> You do not tell the clerk which company's files you may see; your badge does, and the clerk checks it against the register before opening a drawer. Your question is not read out loud either: it is written on a card in the room's own code so the clerk can match it against the cards on the files. You may ask for a drawer by type or by kind, and the clerk will honour those two labels, but ask for "the files of the other company" and you are refused at the counter, not sent to an empty drawer. And a file that has been superseded is never handed over, whatever you ask, because the register, not you, decides which version is current.</p></div></div>
+
+<h4>Walk a request through the gates</h4>
+<p>The player below is the API's query handler as a sequence of gates, with your lane's real data: the identity you send, the tenant you name, and the filters. Pick a combination and read the verdict at each gate, the restricts that would reach the index, and the answer the two handbooks would give. The travel cap is Rs 40,000 in acme's handbook and Rs 25,000 in zeta's, which is what makes one question prove the tenant restrict.</p>
+
+<div class="diagram rq" id="gates">
+<div class="dg-title">The request gate - verify_iap, the roster, check_filters, the restricts</div>
+<div class="rq-controls">
+<label class="rq-l">Who is asking <select id="rq-who"><option value="ui">documind-ui-sa (on the acme, zeta and globex rosters)</option><option value="outsider">documind-outsider-sa (on no roster)</option><option value="none">no token at all</option><option value="bad">a token minted for another service</option></select></label>
+<label class="rq-l">tenant_id in the request <select id="rq-tenant"><option value="acme">acme</option><option value="zeta">zeta</option><option value="globex">globex</option><option value="nobody">nobody (no such tenant)</option></select></label>
+<label class="rq-l">filters <select id="rq-filters"><option value="none">none</option><option value="kind">{"kind": "text"}</option><option value="policy">{"doc_type": "policy"}</option><option value="tenant">{"tenant_id": "zeta"}</option><option value="number">{"doc_type": 3}</option><option value="current">{"current": "true"}</option></select></label>
+</div>
+<ol class="rq-path" id="rq-path"></ol>
+<p class="dg-cap">The question is always "What is the per-trip cap on travel reimbursement?". The gates are the handler's own order: Cloud Run's door, <code>verify_iap</code>, <code>enforce_membership</code>, <code>check_filters</code>, then the restricts and the pool. The <code>doc_type: policy</code> case is real: the worker stamps a plain upload <code>unknown</code> (lesson 1.1), so the filter matches nothing and the API refuses with an empty pool rather than guessing.</p>
+</div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: query vector, identity, roster, filter key, restrict, pool, stages</h3><p>Nine words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Query vector</strong></td><td data-label="Meaning">The question's 768 numbers under <code>RETRIEVAL_QUERY</code>, from the model and version the rows carry. Made once per request; shared by the answer cache and the retrieval; never stored.</td><td data-label="On your lane"><code>text-embedding-005@1</code>, the API's <code>embed_query()</code>.</td></tr>
+<tr><td><strong>Identity</strong></td><td data-label="Meaning">The verified caller: the IAP assertion when a person comes through IAP, else a bearer identity token verified for the service's own URL. A body or header naming a user is not identity.</td><td data-label="On your lane">Your <code>tok()</code> impersonates <code>documind-ui-sa</code>; <code>otok()</code> the outsider.</td></tr>
+<tr><td><strong>Roster</strong></td><td data-label="Meaning"><code>tenants/{tenant}/members/{email}</code>: one document read decides membership. The same roster the UI, the chat service and the MCP server consult.</td><td data-label="On your lane">Lesson 1.1 put you on acme's; <code>make roster</code> put the UI's account on all three.</td></tr>
+<tr><td><strong>Filter key</strong></td><td data-label="Meaning">One of <code>doc_type</code> and <code>kind</code>, with a non-empty string value; <code>doc_type</code> may instead list one to five, any of which matches. A restrict namespace on every datapoint and a field on every row, so the same predicate holds on both paths.</td><td data-label="On your lane"><code>kind: text</code> matches; <code>doc_type: policy</code> matches nothing.</td></tr>
+<tr><td><strong>Restrict</strong></td><td data-label="Meaning">What the index query carries: the tenant always, <code>current</code> when the setting is on, and the caller's filters. The Firestore rung applies the same three as pre-filters: an equality, or <code>in</code> for a <code>doc_type</code> list.</td><td data-label="On your lane">Read off <code>_dense_retrieve()</code> in step 6.</td></tr>
+<tr><td><strong>Pool</strong></td><td data-label="Meaning">The candidates retrieval returns, <code>TOP_K_RETRIEVE</code> of them, before the reranker cuts them to the request's <code>top_k</code>. Retired rows never survive it.</td><td data-label="On your lane"><code>stages.pool</code>: 20 by default.</td></tr>
+<tr><td><strong>Per-request backend</strong></td><td data-label="Meaning">Which store answers this request: the tenant's pin, held against its data region; a managed store for a tenant whose text must stay home falls back to the kit's own index with <code>policy_fallback: 1</code>.</td><td data-label="On your lane"><code>stages.retrieval_backend: vector</code> while the lesson pin holds.</td></tr>
+<tr><td><strong>Stages</strong></td><td data-label="Meaning">The clocks and counts on every answer: <code>retrieve_ms</code>, <code>rerank_ms</code>, <code>generate_ms</code>, <code>pool</code>, <code>vector_chunks</code>, <code>retrieval_backend</code>, <code>policy_fallback</code>, and <code>rerank_fallback</code> when the reranker stood down.</td><td data-label="On your lane">Read in step 6.</td></tr>
+<tr><td><strong>Current</strong></td><td data-label="Meaning">The ledger's flag from lesson 1.7. <code>RETRIEVAL_CURRENT_ONLY=on</code> sends it as a restrict; <code>prefer_current()</code> drops retired rows from the pool regardless; the caller cannot ask for retired rows.</td><td data-label="On your lane">The handbook's retired revisions never appear, in step 7.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three of these words were written by the worker and are now read: the stamp behind the query vector, the restricts on the datapoint, the flag on the row. Retrieval adds only the identity and the two keys, and refuses everything else at the door.</p>
+

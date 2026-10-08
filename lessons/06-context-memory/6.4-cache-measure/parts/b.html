@@ -1,0 +1,46 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>tok</code>. Step 3 makes %%N_EMB%% embeddings, which cost a fraction of a paisa. Step 4 creates a candidate with <code>SEMANTIC_CACHE=on</code> that serves no traffic, and asks it %%N_EMB%% questions. About fifty of them reach the model, so the replay costs roughly as many rupees as it has misses, at half a rupee each. Step 6 removes the candidate's tag.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The curve</span><h3>The curve: every candidate threshold on the labelled pairs</h3><p>The pairs, the check that they can judge anything, and both rates for nine thresholds.</p></div></div>
+
+<h4>Definition</h4>
+<p>A pair names its golden row, its tenant, the question, and whether it asks the same fact. <code>check_pairs()</code> refuses a set that cannot judge a threshold. It rejects a pair whose row does not exist, a same-fact pair against an unanswerable row, a pair identical to its golden question (the exact rung would serve that, so it tests nothing), a pair on the wrong tenant, and a set with fewer than 15 same-fact or 10 different pairs. The tool then embeds the %%N_ORIG%% golden questions and the %%N_PAIRS%% pairs with <code>text-embedding-005</code>, <code>RETRIEVAL_QUERY</code>, 768 numbers, which is how the API embeds a question. For each pair it takes the cosine similarity to its own golden question. <code>curve()</code> counts the hits and false hits at each candidate threshold, and <code>recommend()</code> picks the lowest one with no false hit. It embeds in us-central1 by default; the model is the same one the API calls in its own region.</p>
+
+<h4>The code</h4>
+@@pairs@@
+@@check@@
+@@curve@@
+
+<h4>Do it</h4>
+%%CELL_CURVE%%
+%%OUT_CURVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the table from the bottom up. At the top candidates, no different pair hits, but few same-fact pairs do either. Moving down, the same-fact hits climb quickly, and so do the false hits. The line under the table is your lane's lowest safe threshold, and the list after it is the different pairs sorted by how close they came. That table is this lesson's first proof, the threshold curve. The nearest false pairs are usually the one-token ones: a grade, a zero, minimum against maximum. Now run <code>cat ~/cache93_curve.json</code>, copy the output into the explorer above, and press <em>Read my report</em>. The dots then become your similarities.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The replay</span><h3>The replay: the same pairs, asked live at 0.95</h3><p>A candidate with the answer cache on, the golden questions first, then every pair.</p></div></div>
+
+<h4>Definition</h4>
+<p>The live cache does more than the curve. For a new question, the near rung asks Firestore for the tenant's five nearest stored questions, walks them nearest first, stops at the first below the threshold, and serves the first one that is still alive. The replay asks the candidate the %%N_ORIG%% golden questions first. Those are misses, and each answerable, cited answer is stored. Then it asks every pair. A hit returns a stored answer word for word, so the cell can tell which golden question it came from. Its own golden answer on a same-fact pair is a right hit; its own golden answer on a different pair is a false hit. Another question's answer is a hit from that question, which you judge by reading it. The cell prints only the hits, then a count for each kind of pair, and saves every result to <code>~/cache93_replay.json</code>.</p>
+
+<h4>The code</h4>
+@@near@@
+
+<h4>Do it: the candidate</h4>
+%%CELL_CANDIDATE%%
+%%OUT_CANDIDATE%%
+
+<h4>Do it: the replay</h4>
+%%CELL_REPLAY%%
+%%OUT_REPLAY%%
+
+<div class="box box-amber"><div class="box-title">If the replay lists questions with no answer</div>
+<p>Each question gets a second try, two seconds after a 5xx or a timeout, as the kit's own <code>run_eval.py</code> gives it: one retry separates a blip from an outage. A blip, such as the first request to a fresh revision failing once, shows as a line saying how many questions were answered on a second try. A question that fails twice is listed with its HTTP status, and the replay carries on without it.</p>
+<p>The status is all the client sees. The reason is in the API's own log, and this reads the last three tracebacks, with the revision that threw each one:</p>
+%%CELL_TRACE%%
+<p>If every question failed, the candidate cannot answer at all; if a few did, those questions reach a step the others do not. The traceback's last lines name the step.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Set the replay's count of different pairs served from the cache beside the curve's false hits at 0.95. If the two agree, the offline curve predicted the live cache, which is what makes it worth running before any threshold goes live. A difference has a reason you can find in the hits list. A line reading <code>hit from</code> means another stored golden question was nearer than the pair's own. Read its answer: sometimes it is the right answer for the pair, and sometimes it is a second kind of false hit that the curve cannot see. Every <code>FALSE HIT</code> line is a customer who would have got a confident, cited, wrong answer at the kit's 0.95.</p></div>

@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 1.5 Follow upload events, retries, dead-letter handling and the batch lane - one object, one message, one verdict | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.dp-controls{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:10px;}
+.dp-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;flex:1 1 280px;min-width:0;}
+.dp-l select{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.dp-path{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;}
+.dp-path li{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.45;color:var(--slate);display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;min-width:0;}
+.dp-path li b{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal);}
+.dp-path li.end{border:2px solid var(--teal);background:var(--teal-light);color:var(--navy);}
+.dp-path li.bad{border:2px solid #d97706;background:#fffbeb;color:var(--navy);}
+.dp-clock{margin-top:10px;}
+.dp-clock table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:var(--kicker-size);color:var(--navy);}
+.dp-clock th,.dp-clock td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);}
+.dp-clock th{color:var(--slate);font-weight:500;}
+.dp-clock tr.dlq td{color:#92400e;font-weight:700;}
+.dp-clock .dp-note{font-size:var(--small-size);color:var(--slate);margin:6px 0 0;}
+@media (prefers-reduced-motion: reduce){.dp-path li{transition:none;}}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 1 &middot; RAG foundation &middot; Lesson 1.5</div>
+<h1>Follow upload events, retries, dead-letter handling and the batch lane: <span>one object, one message, one verdict</span></h1>
+<p>Lessons 1.1 to 1.4 followed a document from bytes to records and took for granted that the worker was called. This lesson is about the call. An object landing in the bucket becomes a message; the message reaches the worker carrying a token nobody else can mint; the worker answers with an HTTP status; and the platform does one of three things with that status: acknowledges it, tries again after a growing pause, or, after twelve refusals, parks the message where you can read it. Then the one document the push path must not attempt, and the lane that takes it instead.</p>
+<div class="hero-chips"><div class="hero-chip">OBJECT_FINALIZE</div><div class="hero-chip">One push subscription</div><div class="hero-chip">OIDC as the worker</div><div class="hero-chip">600 s to answer</div><div class="hero-chip">10 s to 600 s, twelve attempts</div><div class="hero-chip">ingest-dlq-sub</div><div class="hero-chip">250 pages</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What an upload event is</a></li>
+<li><a href="#s2">The words: notification, push, ack, backoff, dead letter, queued claim</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The plumbing: read the notification, the topic and the subscription off your lane</a></li>
+<li><a href="#s4">The verdicts: the HTTP-code rule, and your last upload's request log</a></li>
+<li><a href="#s5">Poison: a message that can never succeed, and the retries you can watch</a></li>
+<li><a href="#s6">The batch lane: the 250-page decision, the queued claim, the job</a></li>
+<li><a href="#s7">Dead letters: reading the queue, deciding, cleaning up</a></li>
+<li><a href="#s8">At-least-once, and what it costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how an upload becomes a delivery (a bucket notification into a topic, a push subscription that calls the worker as the worker's own identity), the one rule that governs every delivery (a 2xx is acknowledged, anything else is retried with exponential backoff until a ceiling of twelve attempts sends the message to a dead-letter topic), and why a document over 250 pages is never attempted on that path but queued for a job on the same image. Then you will prove it on your lane: read the plumbing, read the request log of the upload you made in lesson 1.4, put a message in that can never succeed and watch it retried, list the batch queue, and read the dead letter when it lands.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What an upload event is</h3><p>A record about an object, carried by a queue that promises to deliver it at least once, to a worker that answers with a number.</p></div></div>
+
+<p><strong>The bucket does not call the worker.</strong> When an object is finalized in the uploads bucket, Cloud Storage writes one record about it, the object's name, bucket, generation, size and content type, and publishes that record into a Pub/Sub topic. A push subscription on the topic delivers each record to the worker as an HTTP POST, with an identity token minted for the worker's own service account, so the worker, which allows no unauthenticated caller, accepts the call and nobody else on the internet can make it. The record is the whole message; the worker parses it into the <code>IngestMessage</code> contract from lesson 1.1, field for field.</p>
+
+<p><strong>The worker answers with a status, and the status is a decision.</strong> Pub/Sub does not read the response body. A 2xx means "delivered, done": the message is acknowledged and never seen again, whether the worker indexed the document, found it already indexed, or handed it to the batch lane. Anything else means "not done": the subscription waits, ten seconds the first time and up to ten minutes later on, and delivers the same message again. It does that up to twelve times. After the twelfth refusal the message is forwarded to a dead-letter topic, where a subscription holds it for a person to read. The worker chooses its answers with this in mind: a message it can never parse gets a 400, because retrying it changes nothing; a failure that might be transient gets a 500, because the next attempt may succeed.</p>
+
+<p><strong>At least once, not exactly once.</strong> The queue promises that every record is delivered, not that it is delivered once or in order. A worker that took a long time may see the same message again before it has answered; two workers may receive the same record concurrently; an older version's event may arrive after a newer version was indexed. Every one of these happens on a real lane, and the records of lessons 1.1 to 1.4 are the defence: the claim taken in a transaction makes a duplicate harmless, and the ledger's generation makes a late event harmless. The last defence is a ceiling: a document that cannot finish inside the 600 seconds a push request is allowed is not attempted at all. Its pages are counted first, a claim marked <code>queued</code> is written, and a job with no request deadline picks it up.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128666;</div><div>
+<p><strong>A courier with a delivery rule.</strong> The bucket is the sender; the subscription is a courier who keeps a copy of every parcel until the receiver signs. Sign, and the copy is destroyed. Refuse, and the courier comes back tomorrow, then the day after, then in four days, then in eight, up to twelve visits, and after that the parcel goes to a depot where the sender can collect it. The receiver, who knows this, signs for parcels that are theirs even when the box is empty (a duplicate), and refuses only when refusing is worth another visit. And a parcel too big for the doorstep is not brought to the doorstep at all: the courier leaves a slip, and a lorry comes for it.</p></div></div>
+
+<h4>Follow one delivery</h4>
+<p>The player below follows one message from the bucket to its end. Pick what the worker answers and watch the path change: the acknowledged verdicts end at a record from lesson 1.4, the refused ones enter the retry clock, whose timings are the subscription's own policy. The clock is arithmetic on the policy, not a measurement; Pub/Sub adds a little jitter of its own.</p>
+
+<div class="diagram dp" id="delivery">
+<div class="dg-title">The delivery player - one message, one verdict</div>
+<div class="dp-controls">
+<label class="dp-l">The worker answers <select id="dp-verdict"><option value="indexed">200: indexed (lesson 1.4's records written)</option><option value="duplicate">200: duplicate (the bytes were already claimed)</option><option value="stale">200: stale (an older generation than the ledger holds)</option><option value="queued">200: queued_batch (over 250 pages, handed to the job)</option><option value="poison">400: poison (the message cannot be parsed)</option><option value="failed">500: ingest failed (the claim released with the error)</option><option value="refused">429: no instance yet (Cloud Run still cold-starting)</option><option value="timeout">504: the request ran past 600 s</option></select></label>
+</div>
+<ol class="dp-path" id="dp-path"></ol>
+<div class="dp-clock" id="dp-clock"></div>
+<p class="dg-cap">Every path starts the same way: an <code>OBJECT_FINALIZE</code> record, one topic, one push subscription, one POST with the worker's own token. The verdict decides the rest. The retry clock assumes the same verdict every time, which is what a poison message gets; a transient failure usually clears on the second or third attempt.</p>
+</div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: notification, push, ack, backoff, dead letter, queued claim</h3><p>Nine words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Notification</strong></td><td data-label="Meaning">The bucket's rule: on which events to publish a record, into which topic, in which format. One rule, on the uploads bucket, for <code>OBJECT_FINALIZE</code> only, in the <code>JSON_API_V1</code> format the worker's contract parses.</td><td data-label="On your lane">Listed in step 3.</td></tr>
+<tr><td><strong>Topic and push subscription</strong></td><td data-label="Meaning">The topic holds the records; the push subscription delivers each one as a POST to an endpoint. The endpoint is the worker's deterministic Cloud Run URL, and the POST carries an OIDC token for the worker's service account.</td><td data-label="On your lane"><code>documind-ingest</code>, <code>documind-ingest-push</code>, the worker at <code>documind-ingest-&lt;number&gt;.asia-south1.run.app</code>.</td></tr>
+<tr><td><strong>Ack deadline</strong></td><td data-label="Meaning">How long the subscription waits for an answer before it treats the delivery as failed: 600 seconds, the same as the worker's request timeout.</td><td data-label="On your lane"><code>ackDeadlineSeconds: 600</code>.</td></tr>
+<tr><td><strong>The HTTP-code rule</strong></td><td data-label="Meaning">2xx acknowledges; any other status, or no answer inside the deadline, is a failed delivery to be retried.</td><td data-label="On your lane">Read in the worker's <code>push()</code> in step 4.</td></tr>
+<tr><td><strong>Backoff</strong></td><td data-label="Meaning">The pause before a retry, doubling from a minimum to a maximum: 10 seconds to 600 seconds here.</td><td data-label="On your lane">Visible as the gaps between the 400s in step 5.</td></tr>
+<tr><td><strong>Delivery attempts</strong></td><td data-label="Meaning">The ceiling: after this many failed deliveries the message is forwarded to the dead-letter topic. Twelve here, not the minimum five, because a corpus upload lands thirty objects at once and Cloud Run refuses calls while it cold-starts.</td><td data-label="On your lane"><code>maxDeliveryAttempts: 12</code>; about an hour from the first refusal to the twelfth.</td></tr>
+<tr><td><strong>Dead letter</strong></td><td data-label="Meaning">A message that exhausted its attempts, forwarded to <code>documind-ingest-dlq</code> and held by <code>ingest-dlq-sub</code> until a person reads it and decides.</td><td data-label="On your lane">Read with <code>make dlq</code> in step 7.</td></tr>
+<tr><td><strong>Poison</strong></td><td data-label="Meaning">A message the worker can never parse: an object with no tenant prefix, a name that escapes its prefix, a size of zero. The worker answers 400 and logs <code>ingest_poison</code>.</td><td data-label="On your lane">The zero-byte PDF <code>make poison</code> uploads in step 5.</td></tr>
+<tr><td><strong>Queued claim</strong></td><td data-label="Meaning">The batch lane's hand-off: a claim with status <code>queued</code> and an <code>ingest_batch</code> record, written for a PDF over <code>MAX_INLINE_PAGES</code> (250) before any page is parsed. The push request is acknowledged; the job takes the claim in a transaction and runs the same pipeline with no deadline.</td><td data-label="On your lane"><code>make queued</code> lists them; step 6.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these are lesson 1.4's records seen from the queue's side. The <em>claim</em> is what makes a redelivery a duplicate instead of a second index; the <em>generation</em> on the ledger row is what makes a late event stale instead of a rollback. Lesson 1.7 takes the second one apart; this lesson watches the deliveries that make both necessary.</p>
+
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">One name this lesson reads off the worker</div>
+<p>Whether the batch job is declared on your lane is a fact the worker carries in its environment as <code>BATCH_JOB</code>. Read it once; step 6 uses it.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }   # -n ... p: an entry with an empty value prints nothing
+export BATCH_JOB="$(svc_env documind-ingest BATCH_JOB)"; echo "batch job declared: ${BATCH_JOB:-no (BATCH_JOB is empty)}"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected on a lane deployed with the defaults</span><span class="ro">read only</span></div><pre tabindex="0">batch job declared: no (BATCH_JOB is empty)</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Plumbing</span><h3>The plumbing: read the notification, the topic and the subscription off your lane</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/demo_03_the_plumbing_read_the_notification_the_topic_and_the_subscription_off_your_lane.py" target="_blank" rel="noopener"><code>demo_03_the_plumbing_read_the_notification_the_topic_and_the_subscription_off_your_lane.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Three resources and two grants, declared in one Terraform file, and the four read-only commands that show them as the platform holds them.</p></div></div>
+
+<h4>Definition</h4>
+<p>Everything between the bucket and the worker is declared in <code>terraform/eventarc.tf</code>: the two topics (the ingest topic and its dead-letter twin), the bucket notification that publishes <code>OBJECT_FINALIZE</code> records into the first, the push subscription that delivers them to the worker's URL with an OIDC token, and the subscription that lets a person read the dead letters. Two IAM grants make it work and both fail silently without: Cloud Storage's own service agent must be allowed to publish into the topic, and Pub/Sub's service agent must be allowed to mint tokens as the worker's account. The file's opening comment records that an earlier draft used an Eventarc trigger instead, which delivers a CloudEvent around this subscription, its token, its ceiling and its DLQ; the worker, which parses a Pub/Sub envelope, answered 400 to it.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>terraform/eventarc.tf - the topics, the grant, and the bucket notification</span><span class="ro">read only</span></div><pre tabindex="0">resource <span class="st">&quot;google_pubsub_topic&quot;</span> <span class="st">&quot;ingest&quot;</span> { name = <span class="st">&quot;documind-ingest&quot;</span> }
+resource <span class="st">&quot;google_pubsub_topic&quot;</span> <span class="st">&quot;ingest_dlq&quot;</span> { name = <span class="st">&quot;documind-ingest-dlq&quot;</span> }
+
+<span class="cm"># Cloud Storage publishes as its own service agent. Without this grant the notification is</span>
+<span class="cm"># created and nothing ever arrives - the first silent failure on this path.</span>
+resource <span class="st">&quot;google_pubsub_topic_iam_member&quot;</span> <span class="st">&quot;gcs_publishes&quot;</span> {
+  topic  = google_pubsub_topic.ingest.id
+  role   = <span class="st">&quot;roles/pubsub.publisher&quot;</span>
+  member = <span class="st">&quot;serviceAccount:${data.google_storage_project_service_account.gcs.email_address}&quot;</span>
+}
+
+resource <span class="st">&quot;google_storage_notification&quot;</span> <span class="st">&quot;uploads&quot;</span> {
+  bucket         = google_storage_bucket.uploads.name
+  topic          = google_pubsub_topic.ingest.id
+  payload_format = <span class="st">&quot;JSON_API_V1&quot;</span>
+  event_types    = [<span class="st">&quot;OBJECT_FINALIZE&quot;</span>]
+  depends_on     = [google_pubsub_topic_iam_member.gcs_publishes]
+}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/eventarc.tf - the push subscription: the token, the policy, the ceiling</span><span class="ro">read only</span></div><pre tabindex="0">resource <span class="st">&quot;google_pubsub_subscription&quot;</span> <span class="st">&quot;ingest_push&quot;</span> {
+  name  = <span class="st">&quot;documind-ingest-push&quot;</span>
+  topic = google_pubsub_topic.ingest.name
+
+  push_config {
+    push_endpoint = local.ingest_url
+    oidc_token {
+      <span class="cm"># The worker is --no-allow-unauthenticated. Pub/Sub mints an OIDC token</span>
+      <span class="cm"># for this service account, so the endpoint is reachable by Pub/Sub and</span>
+      <span class="cm"># by nothing else on the internet. commands/lesson-12.5.sh grants the</span>
+      <span class="cm"># account run.invoker on the service once the service exists.</span>
+      service_account_email = google_service_account.ingest.email
+    }
+  }
+
+  <span class="cm"># At-least-once, with a ceiling: attempts with exponential backoff, then the message goes</span>
+  <span class="cm"># to the DLQ instead of being retried for a week. Twelve, not five: a corpus upload lands</span>
+  <span class="cm"># thirty objects at once, the worker takes one request per instance, and Cloud Run refuses</span>
+  <span class="cm"># (&quot;no available instance&quot;) while it cold-starts - the first live load sent a document</span>
+  <span class="cm"># to the DLQ on five refusals that were never the document&#x27;s fault.</span>
+  retry_policy {
+    minimum_backoff = <span class="st">&quot;10s&quot;</span>
+    maximum_backoff = <span class="st">&quot;600s&quot;</span>
+  }
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.ingest_dlq.id
+    max_delivery_attempts = <span class="nu">12</span>
+  }
+  ack_deadline_seconds = <span class="nu">600</span>
+  depends_on           = [google_service_account_iam_member.pubsub_mints_ingest_token]
+}</pre></div>
+
+<p>Read the comment above the retry policy: it is the reason the ceiling is twelve, and it is a story from the first live load, not a default.</p>
+
+<h4>Read it off the platform</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (all read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud storage buckets notifications list "gs://$PROJECT-uploads" --project "$PROJECT"
+
+gcloud pubsub subscriptions describe documind-ingest-push --project "$PROJECT" \
+  --format='yaml(pushConfig.pushEndpoint,pushConfig.oidcToken.serviceAccountEmail,ackDeadlineSeconds,retryPolicy,deadLetterPolicy)'
+
+gcloud pubsub subscriptions describe ingest-dlq-sub --project "$PROJECT" --format='value(topic)'
+
+gcloud run services describe documind-ingest --region "$REGION" --project "$PROJECT" \
+  --format='yaml(spec.template.spec.timeoutSeconds,spec.template.spec.containerConcurrency,spec.template.metadata.annotations)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your numbers differ; the shape and the settings are the point)</span><span class="ro">read only</span></div><pre tabindex="0">---
+event_types:
+- OBJECT_FINALIZE
+id: '1'
+payload_format: JSON_API_V1
+topic: //pubsub.googleapis.com/projects/documind-ai-YOUR-ID/topics/documind-ingest
+ackDeadlineSeconds: 600
+deadLetterPolicy:
+  deadLetterTopic: projects/documind-ai-YOUR-ID/topics/documind-ingest-dlq
+  maxDeliveryAttempts: 12
+pushConfig:
+  oidcToken:
+    serviceAccountEmail: documind-ingest-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com
+  pushEndpoint: https://documind-ingest-NUMBER.asia-south1.run.app
+retryPolicy:
+  maximumBackoff: 600s
+  minimumBackoff: 10s
+projects/documind-ai-YOUR-ID/topics/documind-ingest-dlq
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '30'
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 1
+      timeoutSeconds: 600</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the same five facts from the platform that the Terraform file declares: one event type, one payload format, one push endpoint that is the worker's URL, one token identity that is the worker's account, and the policy: 600 seconds to answer, 10 to 600 seconds between attempts, twelve attempts, then the dead-letter topic. The worker's own settings close the loop: it answers one request per instance, in at most 600 seconds, on up to thirty instances. Nothing in this step can be changed from here; all of it is what every upload on your lane has been going through since Module 0.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Verdicts</span><h3>The verdicts: the HTTP-code rule, and your last upload's request log</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/demo_04_the_verdicts_the_http_code_rule_and_your_last_upload_s_request_log.py" target="_blank" rel="noopener"><code>demo_04_the_verdicts_the_http_code_rule_and_your_last_upload_s_request_log.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The handler that turns a message into a status, its six answers, and the two log records every delivery leaves.</p></div></div>
+
+<h4>Definition</h4>
+<p>The worker's <code>push()</code> handler is the only route the subscription calls. It decodes the envelope, parses the record into the contract, and answers 400 the moment parsing fails, because a message that fails to parse will fail the same way on every retry and the dead-letter queue is where it belongs. Everything after that is a 200 with a different body: <code>stale</code> when the ledger already holds a newer generation, <code>duplicate</code> when the claim is already taken, <code>withdrawn</code> when a person retired the source, <code>queued_batch</code> when the batch lane already has it, <code>already_current</code> when the other lane seeded the version, <code>reactivated</code> for the undo, <code>indexed</code> for the ordinary path. Only one thing is a 500: <code>index_document()</code> raising after it has released the claim with the error, which is the case where a retry might succeed.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - push(): the envelope, the contract, and the 400</span><span class="ro">read only</span></div><pre tabindex="0">@app.post(<span class="st">&quot;/&quot;</span>)
+<span class="kw">async</span> <span class="kw">def</span> <span class="fn">push</span>(request: Request):
+    envelope = <span class="kw">await</span> request.json()
+    <span class="kw">try</span>:
+        raw = base64.b64decode(envelope[<span class="st">&quot;message&quot;</span>][<span class="st">&quot;data&quot;</span>])
+        msg = IngestMessage.model_validate_json(raw)
+    <span class="kw">except</span> (KeyError, ValueError, ValidationError) <span class="kw">as</span> e:
+        <span class="cm"># 400, NOT 500. A message this worker can never parse must not be</span>
+        <span class="cm"># retried five times before reaching the DLQ - it will fail the same</span>
+        <span class="cm"># way every time. Ack the poison and let the DLQ hold it.</span>
+        log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;ingest_poison&quot;</span>, <span class="st">&quot;error&quot;</span>: str(e)[:<span class="nu">200</span>]}))
+        <span class="kw">raise</span> HTTPException(<span class="nu">400</span>, <span class="st">&quot;unparseable message&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - push(): the acknowledged verdicts after a lost claim</span><span class="ro">read only</span></div><pre tabindex="0">        <span class="kw">elif</span> status_of(_db, doc.doc_key) == <span class="st">&quot;queued&quot;</span>:
+            <span class="cm"># Handed to the batch lane by an earlier delivery and waiting for the batch job (batch.py) to take it:</span>
+            <span class="cm"># acked as queued, so the wait is a fact in the log and not a &quot;duplicate&quot; that hides it.</span>
+            <span class="kw">return</span> {<span class="st">&quot;status&quot;</span>: <span class="st">&quot;queued_batch&quot;</span>, <span class="st">&quot;doc_key&quot;</span>: doc.doc_key}
+        <span class="kw">else</span>:
+            <span class="cm"># Already done by an earlier delivery, or by an earlier upload of the</span>
+            <span class="cm"># same bytes. Returning 200 ACKS the message: this is a success, not a</span>
+            <span class="cm"># failure, and retrying it would achieve nothing.</span>
+            <span class="kw">return</span> {<span class="st">&quot;status&quot;</span>: <span class="st">&quot;duplicate&quot;</span>, <span class="st">&quot;doc_key&quot;</span>: doc.doc_key}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - push(): the only 500</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">try</span>:
+        <span class="kw">return</span> index_document(doc, msg, content)
+    <span class="kw">except</span> IngestFailed:
+        <span class="kw">raise</span> HTTPException(<span class="nu">500</span>, <span class="st">&quot;ingest failed&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/contracts.py - IngestMessage: the fields, and what makes a message poison</span><span class="ro">read only</span></div><pre tabindex="0">    model_config = ConfigDict(populate_by_name=<span class="kw">True</span>)
+
+    bucket: str
+    name: str
+    size: int = Field(ge=<span class="nu">1</span>)
+    content_type: str = Field(alias=<span class="st">&quot;contentType&quot;</span>)
+    generation: str
+    tenant_id: str = <span class="st">&quot;&quot;</span>
+
+    @field_validator(<span class="st">&quot;name&quot;</span>)
+    @classmethod
+    <span class="kw">def</span> <span class="fn">_no_traversal</span>(cls, v: str) -&gt; str:
+        <span class="kw">if</span> <span class="st">&quot;..&quot;</span> <span class="kw">in</span> v <span class="kw">or</span> v.startswith(<span class="st">&quot;/&quot;</span>):
+            <span class="kw">raise</span> ValueError(<span class="st">&quot;object name escapes its prefix&quot;</span>)
+        <span class="kw">return</span> v
+
+    @model_validator(mode=<span class="st">&quot;after&quot;</span>)
+    <span class="kw">def</span> <span class="fn">_tenant_from_path</span>(self):
+        <span class="kw">if</span> <span class="kw">not</span> self.tenant_id:
+            prefix, sep, rest = self.name.partition(<span class="st">&quot;/&quot;</span>)
+            <span class="kw">if</span> <span class="kw">not</span> sep <span class="kw">or</span> <span class="kw">not</span> prefix <span class="kw">or</span> <span class="kw">not</span> rest:
+                <span class="kw">raise</span> ValueError(<span class="st">&quot;object is not under a tenant prefix&quot;</span>)
+            self.tenant_id = prefix
+        <span class="kw">return</span> self</pre></div>
+
+<p>The contract's <code>size</code> field carries <code>ge=1</code>: a zero-byte object fails validation, and validation failing is what makes a message poison. That is the whole mechanism <code>make poison</code> exercises in the next step.</p>
+
+<h4>Read the two records your 1.4 upload left</h4>
+<p>Every delivery writes a request log entry (Cloud Run's, with the status the worker answered and how long it took) and, from the worker, a JSON line with the verdict. The first read below lists the last few POSTs the subscription made to the worker; the second lists the worker's own verdicts for the same window. Your note from lesson 1.4 should be there twice: once as the duplicate the unchanged bytes produced, once as the indexed version.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (both read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND logName=\"projects/$PROJECT/logs/run.googleapis.com%2Frequests\" AND timestamp>=\"$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ)\"" \
+  --project "$PROJECT" --limit 6 --format='table(timestamp,httpRequest.requestMethod,httpRequest.status,httpRequest.latency)'
+
+gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event:\"ingest_\" AND timestamp>=\"$(date -u -d '-3 hours' +%Y-%m-%dT%H:%M:%SZ)\"" \
+  --project "$PROJECT" --limit 6 --format='table(timestamp,jsonPayload.event,jsonPayload.doc_key,jsonPayload.chunks,jsonPayload.lane)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your times and keys differ; widen the window if 1.4 was longer ago)</span><span class="ro">read only</span></div><pre tabindex="0">TIMESTAMP                 REQUEST_METHOD  STATUS  LATENCY
+2026-09-22T12:06:41.118Z  POST            200     7.412s
+2026-09-22T11:58:07.902Z  POST            200     0.611s
+TIMESTAMP                 EVENT             DOC_KEY                 CHUNKS  LANE
+2026-09-22T12:06:41.001Z  ingest_ok         acme_9c41d0e2b7f5...    3       push
+2026-09-22T11:58:07.844Z  ingest_duplicate  acme_111510fcf0a6...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both deliveries were acknowledged, and the request log shows why they looked so different to the worker: the duplicate took a fraction of a second, because the claim was already taken and nothing was downloaded, while the indexed version took several seconds of parsing, embedding and writing. Neither was retried, because a 200 is a 200 whatever the body says. Keep the shape of these two reads: they are how you follow any delivery on this lane, and the next step fills them with a status you have not seen yet.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Poison</span><h3>Poison: a message that can never succeed, and the retries you can watch</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/demo_05_poison_a_message_that_can_never_succeed_and_the_retries_you_can_watch.py" target="_blank" rel="noopener"><code>demo_05_poison_a_message_that_can_never_succeed_and_the_retries_you_can_watch.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A zero-byte object, the 400 it earns, and the subscription trying again on the clock from step 1. Start this now: the clock runs for about an hour.</p></div></div>
+
+<h4>Definition</h4>
+<p>A poison message is one the worker refuses before it touches the document, because the record itself is unusable. The kit's drill makes the simplest one: an empty PDF. Cloud Storage publishes its record with <code>size: "0"</code>, the contract requires a size of at least one, validation fails, the worker logs <code>ingest_poison</code> with the field named and answers 400. From the subscription's side a 400 is a failed delivery like any other, so it retries: after ten seconds, then twenty, then forty, doubling to the ten-minute cap, twelve attempts in all. The worker refuses each one in a fraction of a second and costs nothing. The message, not the object, is what travels; the object sits in the bucket untouched, which is why the last step of this lesson deletes it.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>commands/poison.sh - what make poison runs</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm">#!/usr/bin/env bash</span>
+<span class="cm"># make poison TENANT= (mk/ingestion.mk): a zero-byte object in, then the worker&#x27;s 400 and its ingest_poison line. The</span>
+<span class="cm"># push subscription (eventarc.tf) retries a non-2xx with backoff, twelve attempts, then documind-ingest-dlq: make dlq.</span>
+<span class="cm"># The same without make:  PROJECT=&lt;id&gt; TENANT=acme bash commands/poison.sh</span>
+set -uo pipefail
+: <span class="st">&quot;${PROJECT:?set PROJECT=&lt;project id&gt;}&quot;</span>
+TENANT=<span class="st">&quot;${TENANT:-acme}&quot;</span>
+SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ); NAME=poison-$(date +%s).pdf; : &gt; <span class="st">&quot;/tmp/$NAME&quot;</span>
+gcloud storage cp <span class="st">&quot;/tmp/$NAME&quot;</span> <span class="st">&quot;gs://$PROJECT-uploads/$TENANT/$NAME&quot;</span> &amp;&amp; echo <span class="st">&quot;&gt;&gt; zero-byte object in: $NAME&quot;</span>
+<span class="kw">for</span> i <span class="kw">in</span> $(seq <span class="nu">1</span> <span class="nu">12</span>); do sleep <span class="nu">10</span>
+  LINE=$(gcloud logging read <span class="st">&quot;resource.type=\&quot;cloud_run_revision\&quot; AND resource.labels.service_name=\&quot;documind-ingest\&quot; AND jsonPayload.event=\&quot;ingest_poison\&quot; AND timestamp&gt;=\&quot;$SINCE\&quot;&quot;</span> --project <span class="st">&quot;$PROJECT&quot;</span> --limit <span class="nu">1</span> --format=<span class="st">&#x27;value(jsonPayload.error)&#x27;</span>)
+  <span class="kw">if</span> [ -n <span class="st">&quot;$LINE&quot;</span> ]; then
+    echo <span class="st">&quot;&gt;&gt; the worker refused it (400): $LINE&quot;</span>
+    echo <span class="st">&quot;&gt;&gt; Pub/Sub retries a non-2xx with backoff (10 s to 600 s, twelve attempts: eventarc.tf), then ingest-dlq: make dlq about an hour after this line&quot;</span>
+    exit <span class="nu">0</span>
+  fi
+done
+echo <span class="st">&quot;&gt;&gt; no ingest_poison line in 2 min&quot;</span>; exit <span class="nu">1</span></pre></div>
+
+
+<h4>Do it: start the drill, then watch the first retries</h4>
+<p>The first block uploads the empty PDF and waits for the worker's first refusal; it prints the validation error the worker logged. Leave a few minutes, then the second block lists every POST the subscription made and every refusal the worker logged since. Note the gaps between the timestamps.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export POISON_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+make poison PROJECT=$PROJECT TENANT=acme</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">>> zero-byte object in: poison-1758542871.pdf
+>> the worker refused it (400): 1 validation error for IngestMessage
+size
+  Input should be greater than or equal to 1 [type=greater_than_equal, input_value='0', input_type=str]
+>> Pub/Sub retries a non-2xx with backoff (10 s to 600 s, twelve attempts: eventarc.tf), then ingest-dlq: make dlq about an hour after this line</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, a few minutes later (read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND logName=\"projects/$PROJECT/logs/run.googleapis.com%2Frequests\" AND httpRequest.status=400 AND timestamp>=\"$POISON_SINCE\"" \
+  --project "$PROJECT" --limit 12 --format='table(timestamp,httpRequest.status,httpRequest.latency)'
+
+echo "refusals logged so far: $(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event=\"ingest_poison\" AND timestamp>=\"$POISON_SINCE\"" --project "$PROJECT" --limit 12 --format='value(timestamp)' | wc -l) of 12"</pre></div>
+
+<div class="cw"><div class="ch-bar">
+<span>expected, about five minutes in (newest first; your seconds differ)</span><span class="ro">read only</span></div><pre tabindex="0">TIMESTAMP                 STATUS  LATENCY
+2026-09-22T12:22:52.410Z  400     0.031s
+2026-09-22T12:20:32.077Z  400     0.028s
+2026-09-22T12:19:12.615Z  400     0.030s
+2026-09-22T12:18:32.201Z  400     0.027s
+2026-09-22T12:18:12.884Z  400     0.029s
+2026-09-22T12:18:02.560Z  400     0.044s
+refusals logged so far: 6 of 12</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One object produced one message, and the message has been delivered six times in five minutes: the gaps read ten, twenty, forty, eighty and one hundred and sixty seconds, the doubling the policy declares. Every delivery got the same 400 in about thirty milliseconds, because the worker refuses at the contract and never downloads the object. The seventh attempt comes five minutes after the sixth, the eighth ten minutes after that, and from there every ten minutes until the twelfth, about an hour after the first. Then, and only then, the message leaves this subscription for the dead-letter topic. Step 7 reads it there; step 6 fits in the meantime.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Batch lane</span><h3>The batch lane: the 250-page decision, the queued claim, the job</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/demo_06_the_batch_lane_the_250_page_decision_the_queued_claim_the_job.py" target="_blank" rel="noopener"><code>demo_06_the_batch_lane_the_250_page_decision_the_queued_claim_the_job.py</code></a>.</li><li>Optional: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/optional/demo_06_the_batch_lane_the_250_page_decision_the_queued_claim_the_job.py" target="_blank" rel="noopener"><code>optional/demo_06_the_batch_lane_the_250_page_decision_the_queued_claim_the_job.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The document a push request must not attempt, the record that hands it off, and the consumer that runs the same pipeline without a deadline.</p></div></div>
+
+<h4>Definition</h4>
+<p>A push request has 600 seconds. Document AI reads about a page a second, so a 400-page contract cannot finish, and a worker killed at the deadline cannot release its claim: the retry finds the claim <code>processing</code> and is acknowledged as a duplicate, and the document is stuck until a person notices. The kit refuses to let that happen. Before any page is sent to Document AI, the worker counts a PDF's pages off its page tree (lesson 1.2) and, above <code>MAX_INLINE_PAGES</code> (250), writes two records instead of indexing: an <code>ingest_batch</code> record with everything needed to fetch the same bytes later, and the claim with status <code>queued</code>. The request is acknowledged. The consumer is a Cloud Run job on the very same image, started by the worker the moment it queues (when the job is declared) and by an hourly schedule regardless; it takes each queued claim in a transaction, downloads the bytes by generation, and calls the worker's own <code>index_document()</code> with <code>lane="batch"</code>, which is how the page ceiling is not consulted a second time. A failure leaves the claim <code>failed</code> with the error, and the next run does not retake it.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - index_document(): the decision, before Document AI</span><span class="ro">read only</span></div><pre tabindex="0">            <span class="cm"># The batch decision BEFORE Doc AI (12 September 2026): a PDF&#x27;s page count comes off its page tree</span>
+            <span class="cm"># for nothing, and a document the push lane cannot finish must not pay for OCR it will not use -</span>
+            <span class="cm"># the first version parsed the whole file and then looked at the count. Anything that is not a</span>
+            <span class="cm"># PDF is counted by the parser, as before.</span>
+            pages = _pdf_pages(content) <span class="kw">if</span> msg.content_type == <span class="st">&quot;application/pdf&quot;</span> <span class="kw">else</span> <span class="kw">None</span>
+            <span class="kw">if</span> lane == <span class="st">&quot;push&quot;</span> <span class="kw">and</span> pages <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> pages &gt; MAX_INLINE_PAGES:
+                doc = doc.model_copy(update={<span class="st">&quot;pages&quot;</span>: pages, <span class="st">&quot;effective_from&quot;</span>: effective_from_of(msg.name, <span class="kw">None</span>)})
+                _enqueue_batch(doc, msg)
+                <span class="kw">return</span> {<span class="st">&quot;status&quot;</span>: <span class="st">&quot;queued_batch&quot;</span>, <span class="st">&quot;pages&quot;</span>: pages}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _enqueue_batch(): the two records and the hand-off</span><span class="ro">read only</span></div><pre tabindex="0">    _db.collection(<span class="st">&quot;ingest_batch&quot;</span>).document(doc.doc_key).set({
+        <span class="st">&quot;tenant_id&quot;</span>: doc.tenant_id, <span class="st">&quot;gcs_uri&quot;</span>: doc.gcs_uri, <span class="st">&quot;bucket&quot;</span>: msg.bucket, <span class="st">&quot;name&quot;</span>: msg.name,
+        <span class="st">&quot;content_type&quot;</span>: msg.content_type, <span class="st">&quot;size&quot;</span>: msg.size, <span class="st">&quot;pages&quot;</span>: doc.pages, <span class="st">&quot;generation&quot;</span>: str(msg.generation),
+        <span class="st">&quot;status&quot;</span>: <span class="st">&quot;queued&quot;</span>, <span class="st">&quot;queued_at&quot;</span>: firestore.SERVER_TIMESTAMP})
+    _db.collection(<span class="st">&quot;documents&quot;</span>).document(doc.doc_key).set(
+        {<span class="st">&quot;status&quot;</span>: <span class="st">&quot;queued&quot;</span>, <span class="st">&quot;pages&quot;</span>: doc.pages, <span class="st">&quot;generation&quot;</span>: str(msg.generation),
+         <span class="st">&quot;queued_at&quot;</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)
+    consumer = <span class="st">&quot;no job declared (BATCH_JOB unset): make batch runs the queue now, make batch-job declares and schedules it&quot;</span>
+    <span class="kw">if</span> BATCH_JOB:
+        <span class="kw">try</span>:
+            op = _run_batch_job()
+            consumer = f<span class="st">&quot;{BATCH_JOB} started ({op or &#x27;run requested&#x27;}); the hourly schedule backstops it&quot;</span>
+        <span class="kw">except</span> Exception <span class="kw">as</span> e:  <span class="cm"># noqa: BLE001 - the queue is durable; the schedule and make batch drain it</span>
+            consumer = f<span class="st">&quot;{BATCH_JOB} could not be started ({type(e).__name__}); the hourly schedule drains the queue&quot;</span>
+            log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;batch_job_start_failed&quot;</span>, <span class="st">&quot;tenant&quot;</span>: doc.tenant_id, <span class="st">&quot;doc_key&quot;</span>: doc.doc_key,
+                                    <span class="st">&quot;job&quot;</span>: BATCH_JOB, <span class="st">&quot;error&quot;</span>: f<span class="st">&quot;{type(e).__name__}: {e}&quot;</span>[:<span class="nu">300</span>]}))</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - take_batch(): the job takes a queued claim in a transaction</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">take_batch</span>(db: firestore.Client, doc_key: str) -&gt; bool:
+    <span class="st">&quot;&quot;&quot;The batch job takes a queued claim (13 September 2026): documents/{doc_key} queued -&gt; processing, in a transaction,
+    so two runs of the job never index one document twice. False when the claim is not queued any more - indexed,
+    processing, failed or gone. The claim keeps its fields (the object, the pages, the generation); ingest_batch/ says
+    which run took it.&quot;&quot;&quot;</span>
+    ref = db.collection(<span class="st">&quot;documents&quot;</span>).document(doc_key)
+
+    @firestore.transactional
+    <span class="kw">def</span> <span class="fn">_take</span>(tx: firestore.Transaction) -&gt; bool:
+        snap = ref.get(transaction=tx)
+        <span class="kw">if</span> <span class="kw">not</span> snap.exists <span class="kw">or</span> snap.get(<span class="st">&quot;status&quot;</span>) != <span class="st">&quot;queued&quot;</span>:
+            <span class="kw">return</span> <span class="kw">False</span>
+        tx.set(ref, {**(snap.to_dict() <span class="kw">or</span> {}), <span class="st">&quot;status&quot;</span>: <span class="st">&quot;processing&quot;</span>, <span class="st">&quot;lane&quot;</span>: <span class="st">&quot;batch&quot;</span>,
+                     <span class="st">&quot;claimed_at&quot;</span>: firestore.SERVER_TIMESTAMP})
+        <span class="kw">return</span> <span class="kw">True</span>
+
+    won = _take(db.transaction())
+    <span class="kw">if</span> won:
+        db.collection(<span class="st">&quot;ingest_batch&quot;</span>).document(doc_key).set(
+            {<span class="st">&quot;status&quot;</span>: <span class="st">&quot;processing&quot;</span>, <span class="st">&quot;taken_at&quot;</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)
+    <span class="kw">return</span> won</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/batch.tf - the job: the ingest image, a different command, no platform retries</span><span class="ro">read only</span></div><pre tabindex="0">resource <span class="st">&quot;google_cloud_run_v2_job&quot;</span> <span class="st">&quot;ingest_batch&quot;</span> {
+  count    = local.batch ? <span class="nu">1</span> : <span class="nu">0</span>
+  name     = <span class="st">&quot;documind-ingest-batch&quot;</span>
+  location = var.region
+  template {
+    task_count = <span class="nu">1</span>
+    template {
+      service_account = google_service_account.ingest.email
+      max_retries     = <span class="nu">0</span>       <span class="cm"># the claim carries the retry: a failed document says why, the next run does not retake it</span>
+      timeout         = <span class="st">&quot;7200s&quot;</span> <span class="cm"># a thousand-page Act at a second a page through Document AI, with room</span>
+      containers {
+        image   = var.reconcile_image
+        command = [<span class="st">&quot;python&quot;</span>]
+        args    = [<span class="st">&quot;batch.py&quot;</span>, <span class="st">&quot;--project&quot;</span>, var.project_id]</pre></div>
+
+
+<h4>Read the lane, Rs 0</h4>
+<p>The queue is a Firestore query the kit prints for you. The job and its schedule exist only if <code>BATCH_JOB</code> was set when the lane was deployed; the box above the setup read it off the worker.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make queued PROJECT=$PROJECT
+
+if [ -n "$BATCH_JOB" ]; then
+  gcloud run jobs describe "$BATCH_JOB" --region "$REGION" --project "$PROJECT" --format=json | python -c "
+import json, sys
+def walk(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k in ('image', 'args', 'timeoutSeconds', 'maxRetries', 'taskCount'): print(f'{k}: {v}')
+            walk(v)
+    elif isinstance(o, list):
+        for v in o: walk(v)
+walk(json.load(sys.stdin))"
+  gcloud scheduler jobs describe documind-ingest-batch-hourly --location "$REGION" --project "$PROJECT" --format='value(schedule,timeZone,state)'
+else
+  echo "no batch job on this lane: a queued claim waits until make batch-job declares it (BATCH_JOB=true, a Terraform plan and apply)"
+fi</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected on a lane without the job (the default; a Firestore UserWarning line may precede the count)</span><span class="ro">read only</span></div><pre tabindex="0">0 queued document(s)
+no batch job on this lane: a queued claim waits until make batch-job declares it (BATCH_JOB=true, a Terraform plan and apply)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected on a lane where make batch-job has run</span><span class="ro">read only</span></div><pre tabindex="0">0 queued document(s)
+taskCount: 1
+maxRetries: 0
+timeoutSeconds: 7200s
+image: asia-south1-docker.pkg.dev/documind-ai-YOUR-ID/documind/ingest:3f2a9c1
+args: ['batch.py', '--project', 'documind-ai-YOUR-ID']
+15 * * * *	Asia/Kolkata	ENABLED</pre></div>
+
+<div class="box box-amber"><div class="box-title">Optional, and it costs money: send a 270-page document down the lane</div>
+<p>The corpus has no PDF over 250 pages, so the drill makes one: the CGST Act (236 pages) and the IT Act (34) joined with pypdf on your machine, at no cost. Uploading it costs nothing either, and that is the point of the first half: the worker counts 270 pages, writes the queued claim, answers 200, and no page has been sent to Document AI. The second half is where the money goes. When the job is declared, the worker starts it at once and it parses all 270 pages: about Rs 34 on the OCR processor, about Rs 230 on the Layout Parser (at the list prices lesson 1.2 quoted and Rs 85 to the dollar), plus a few rupees of embeddings for roughly six hundred windows. When the job is not declared, the claim simply waits, and <code>make queued</code> shows it. Decide before you upload.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the join is free; the upload starts the paid parse if the job is declared)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+from pypdf import PdfReader, PdfWriter
+w = PdfWriter()
+for path in ("evals/corpus/acme/cgst_act_2017.pdf", "evals/corpus/acme/it_act_2000.pdf"):
+    for page in PdfReader(path).pages:
+        w.add_page(page)
+with open("/tmp/cgst_it_bundle.pdf", "wb") as f:
+    w.write(f)
+print("bundle pages:", len(PdfReader("/tmp/cgst_it_bundle.pdf").pages))
+PY
+
+SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+gcloud storage cp /tmp/cgst_it_bundle.pdf "gs://$PROJECT-uploads/acme/cgst_it_bundle.pdf"
+for i in $(seq 1 30); do sleep 10
+  LINE="$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event=\"ingest_queued_batch\" AND timestamp>=\"$SINCE\"" \
+    --project "$PROJECT" --limit 1 --format='value(jsonPayload.pages,jsonPayload.consumer)')"
+  [ -n "$LINE" ] &amp;&amp; { echo ">> queued: pages, consumer: $LINE"; break; }
+done
+make queued PROJECT=$PROJECT</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (the consumer line depends on BATCH_JOB)</span><span class="ro">read only</span></div><pre tabindex="0">bundle pages: 270
+>> queued: pages, consumer: 270	documind-ingest-batch started (run requested); the hourly schedule backstops it
+1 queued document(s)
+  acme_3ff3f2ac3237...  gs://documind-ai-YOUR-ID-uploads/acme/cgst_it_bundle.pdf  pages=270  generation=1758543112345678</pre></div>
+<p>With the job declared, the queue empties within minutes and the worker's usual records appear for the bundle, this time with <code>lane: batch</code> on the <code>ingest_ok</code> line and a <code>batch_run</code> line from the job. Without it, the claim stays queued; <code>make batch-job</code> declares and schedules the job with a plan through <code>make plan</code>'s guard, then its apply (keep <code>BATCH_JOB=true</code> on every later <code>make plan</code> or <code>make up</code>, or the guard refuses the plan that would delete the job), and <code>make batch</code> starts a run and waits for it.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the batch lane as three records and one job: the queue (a Firestore query, empty unless you took the optional drill), the job (the ingest image with a different command, two hours instead of ten minutes, no platform retries because the claim carries the retry), and the schedule that drains whatever the worker could not start. The decision that feeds it is made before the first rupee is spent, which you saw if you uploaded the bundle: 270 pages counted for free, a claim written, a 200 returned, and the parse belongs to the job.</p></div>
+
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Dead letters</span><h3>Dead letters: reading the queue, deciding, cleaning up</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/demo_07_dead_letters_reading_the_queue_deciding_cleaning_up.py" target="_blank" rel="noopener"><code>demo_07_dead_letters_reading_the_queue_deciding_cleaning_up.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/cleanup/demo_07_dead_letters_reading_the_queue_deciding_cleaning_up.py" target="_blank" rel="noopener"><code>cleanup/demo_07_dead_letters_reading_the_queue_deciding_cleaning_up.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_5/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Where a message goes after its twelfth refusal, how to read it without consuming it, and the three things a person can do with it.</p></div></div>
+
+<h4>Definition</h4>
+<p>A dead-letter topic is not an error log; it is a queue of messages that still exist. When the push subscription has delivered a message twelve times without an acknowledgement, it forwards the message, unchanged, to <code>documind-ingest-dlq</code>, and the subscription <code>ingest-dlq-sub</code> holds it. Pulling from that subscription without acknowledging shows the message and leaves it there; acknowledging it is the only thing that removes it. A person reading a dead letter has three choices: fix the cause and upload the object again, which is a new event and a fresh twelve attempts; acknowledge the message to drop it, because the object was never meant to be indexed; or leave it while the cause is investigated. What a person must not do is fix the worker and expect the dead letter to retry itself: it is out of the push subscription for good.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>mk/ingestion.mk - dlq: a peek, not a pull</span><span class="ro">read only</span></div><pre tabindex="0">dlq: guard-project
+	gcloud pubsub subscriptions pull ingest-dlq-sub --project $(PROJECT) --limit <span class="nu">5</span> --format=<span class="st">&#x27;table(message.messageId,message.attributes.objectId,message.attributes.eventTime,deliveryAttempt)&#x27;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/eventarc.tf - where the dead letters are read from</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Somewhere to read the poison from. The README&#x27;s Tier B block pulls from it by name.</span>
+resource <span class="st">&quot;google_pubsub_subscription&quot;</span> <span class="st">&quot;ingest_dlq_sub&quot;</span> {
+  name  = <span class="st">&quot;ingest-dlq-sub&quot;</span>
+  topic = google_pubsub_topic.ingest_dlq.name
+}</pre></div>
+
+
+<h4>Read it, when it has landed</h4>
+<p>The poison message from step 5 reaches the queue about an hour after its first refusal. Run the first line then; an empty listing earlier is the retries still running, not a fault. The second read decodes the message's own record, the same JSON the worker refused, to see the size of zero with your own eyes.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, about an hour after step 5 (both peek; nothing is acknowledged)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make dlq PROJECT=$PROJECT
+
+gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 --format='value(message.data)' \
+  | base64 -d | python -c "import json,sys; r=json.load(sys.stdin); print({k: r.get(k) for k in ('name','size','contentType','generation','timeCreated')})"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your ids and times differ; the last column is this subscription's own count, not the twelve)</span><span class="ro">read only</span></div><pre tabindex="0">MESSAGE_ID         OBJECT_ID                    EVENT_TIME                DELIVERY_ATTEMPT
+12345678901234567  acme/poison-1758542871.pdf   2026-09-22T12:17:52.318Z  1
+{'name': 'acme/poison-1758542871.pdf', 'size': '0', 'contentType': 'application/pdf', 'generation': '1758542872123456', 'timeCreated': '2026-09-22T12:17:52.101Z'}</pre></div>
+
+<h4>Decide, then clean up</h4>
+<p>This dead letter deserves the second choice: the object was never meant to be indexed. Acknowledge the message to remove it from the queue, and delete the empty object from the bucket, because an object with no ledger row is exactly what the nightly walk of lesson 1.8 looks for, and it would rewrite the object onto itself and send the same poison round again every night. Both commands change your lane; both act only on the drill's own artefacts.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (removes the dead letter and the empty object; nothing else)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 --auto-ack --format='value(message.attributes.objectId)'
+gcloud storage rm "gs://$PROJECT-uploads/acme/poison-"*.pdf</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme/poison-1758542871.pdf
+Removing gs://documind-ai-YOUR-ID-uploads/acme/poison-1758542871.pdf...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read a message that had been refused twelve times, decoded the record inside it and found the zero that made it poison, and then took the operator's decision: drop it, and remove its cause. Notice what did not need doing: no worker was restarted, no subscription touched, no retry forced. The platform did the retrying, stopped at the ceiling, and kept the evidence for you. A dead letter you could not explain would be the other case, and the first read in step 4, the request log, is where that investigation starts.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>At-least-once, and what it costs</h3><p>The three ways a delivery can surprise a worker, the defence for each, the one hazard the ceiling exists for, and where the rupees go.</p></div></div>
+
+<h4>Three surprises, three defences</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>The queue may</th><th>Because</th><th>The defence</th></tr></thead>
+<tbody>
+<tr><td>Deliver a message twice, even concurrently</td><td data-label="Because">an answer arrives after the ack deadline, or a redelivery overlaps a slow first attempt</td><td data-label="The defence">the claim, taken in a Firestore transaction: the second delivery finds <code>processing</code> or <code>indexed</code> and is acknowledged as a duplicate (lesson 1.4)</td></tr>
+<tr><td>Deliver events out of order</td><td data-label="Because">retries and backoff reorder them: an older generation's event can arrive after the newer one was indexed</td><td data-label="The defence">the generation guard: the ledger's generation is read first, an older event is acknowledged as <code>stale</code>, and the bytes are fetched by generation, never "whatever the object holds now" (lesson 1.7)</td></tr>
+<tr><td>Refuse the worker's door</td><td data-label="Because">Cloud Run answers "no available instance" while it cold-starts, and a corpus upload lands thirty objects at once against one request per instance</td><td data-label="The defence">twelve attempts, not five, so a document is never dead-lettered for a refusal that was not its fault</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - claim(): why a transaction</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">claim</span>(db: firestore.Client, doc_key: str, gcs_uri: str, tenant_id: str, retake: bool = <span class="kw">False</span>) -&gt; bool:
+    <span class="st">&quot;&quot;</span><span class="st">&quot;Claim doc_key. True if THIS caller may proceed, False if someone already did.
+
+    The transaction is the whole point. Read-then-write without one is a race
+    with a window measured in milliseconds - and Pub/Sub delivers duplicates
+    concurrently, so it is a window that gets hit. Two workers both read
+    &quot;</span>absent&quot;, both write, <span class="kw">and</span> the document <span class="kw">is</span> ingested twice.
+
+    The row carries tenant_id (<span class="nu">12</span> September <span class="nu">2026</span>): the MCP server&#x27;s list_documents filters on the field, never on</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/lesson-12.5.sh - the worker&#x27;s own limits: one request per instance, 600 seconds, thirty instances</span><span class="ro">read only</span></div><pre tabindex="0">gcloud run deploy documind-ingest \
+  --image=${REGION:-us-central1}-docker.pkg.dev/$PROJECT/documind/ingest:$GIT_SHA \
+  --region=${REGION:-us-central1} --platform=managed \
+  --no-allow-unauthenticated \
+  --ingress=internal \
+  --memory=2Gi --cpu=<span class="nu">2</span> --concurrency=<span class="nu">1</span> --timeout=<span class="nu">600</span> \
+  --min-instances=<span class="nu">0</span> --max-instances=<span class="nu">30</span> \
+  --execution-environment=gen2 \
+  --service-account=documind-ingest-sa@$PROJECT.iam.gserviceaccount.com \</pre></div>
+
+
+<h4>The hazard the ceiling exists for</h4>
+<p>There is one failure the claim cannot defend against on its own. A request that runs past 600 seconds is killed by the platform, not by the worker, so the code that releases the claim never runs. The claim stays <code>processing</code>; the subscription retries; the retry finds the claim taken and is acknowledged as a duplicate; and the document is never indexed while every delivery reports success. The 250-page ceiling is the answer: no push request is allowed to begin a document that could reach the deadline, and the job that takes such documents has two hours and no platform retries, because a failed document says why on its claim and the next run does not retake it. Lesson 1.8's reconcile is the backstop that would notice a claim stuck in <code>processing</code>.</p>
+<div class="cw"><div class="ch-bar"><span>terraform/batch.tf - two hours, and the claim carries the retry</span><span class="ro">read only</span></div><pre tabindex="0">      max_retries     = <span class="nu">0</span>       <span class="cm"># the claim carries the retry: a failed document says why, the next run does not retake it</span>
+      timeout         = <span class="st">&quot;7200s&quot;</span> <span class="cm"># a thousand-page Act at a second a page through Document AI, with room</span></pre></div>
+
+
+<h4>What deliveries bill, and what they do not</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Event</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A notification and a message</td><td data-label="Costs">Pub/Sub bills per message volume in gigabytes; a record is about a kilobyte</td><td data-label="On your lane">a corpus upload of thirty objects is thirty kilobytes: nothing</td></tr>
+<tr><td>A push request</td><td data-label="Costs">Cloud Run bills the worker's CPU and memory while it answers: seconds for an indexed document, milliseconds for a refusal or a duplicate</td><td data-label="On your lane">the poison drill's twelve refusals: a fraction of a second in total</td></tr>
+<tr><td>A dead letter</td><td data-label="Costs">storage in the topic for the subscription's retention (seven days by default), then it is gone unless acknowledged first</td><td data-label="On your lane">one message; read it before next week</td></tr>
+<tr><td>The batch job</td><td data-label="Costs">the job's CPU and memory while it runs, plus what the document itself costs to parse and embed</td><td data-label="On your lane">the optional bundle: Rs 34 or Rs 230 of Document AI, the job's own time is paise</td></tr>
+<tr><td>Reading logs and queues</td><td data-label="Costs">nothing beyond the logging quota</td><td data-label="On your lane">every read on this page</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry to remember: the delivery machinery is nearly free, and the expensive thing is the document, which is why the kit spends nothing before it knows what it is dealing with: parse the record before downloading, count the pages before parsing, take the claim before embedding. Every refusal in this lesson happened before the first rupee.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">One notification, one topic, one push subscription</td><td data-label="The check">the four reads in step 3</td><td data-label="Pass looks like"><code>OBJECT_FINALIZE</code>, <code>JSON_API_V1</code>, the endpoint is the worker's URL, the token is <code>documind-ingest-sa</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The policy is declared, not defaulted</td><td data-label="The check">the subscription in step 3</td><td data-label="Pass looks like">600 s, 10 s to 600 s, <code>maxDeliveryAttempts: 12</code>, the dead-letter topic named</td></tr>
+<tr><td>3</td><td data-label="Claim">A 2xx acknowledges whatever the body says</td><td data-label="The check">your 1.4 upload's request log in step 4</td><td data-label="Pass looks like">two POSTs, both 200, one in milliseconds (the duplicate), one in seconds (the index)</td></tr>
+<tr><td>4</td><td data-label="Claim">A 400 is retried on the clock</td><td data-label="The check">the reads in step 5</td><td data-label="Pass looks like">400s about 10, 20, 40, 80 and 160 seconds apart; <code>ingest_poison</code> counted once per attempt</td></tr>
+<tr><td>5</td><td data-label="Claim">The retries stop at twelve</td><td data-label="The check"><code>make dlq</code> in step 7, about an hour later</td><td data-label="Pass looks like">the poison object's message in <code>ingest-dlq-sub</code>, its record carrying <code>size '0'</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The 250-page line is drawn before Document AI</td><td data-label="The check">the code in step 6, and the optional bundle</td><td data-label="Pass looks like"><code>ingest_queued_batch</code> with <code>pages 270</code> and no parse on the push lane</td></tr>
+<tr><td>7</td><td data-label="Claim">The queue is a claim</td><td data-label="The check"><code>make queued</code> in step 6</td><td data-label="Pass looks like"><code>0 queued document(s)</code>, or the bundle with its pages and generation</td></tr>
+<tr><td>8</td><td data-label="Claim">The batch job is the worker, without a deadline</td><td data-label="The check">the job and schedule reads in step 6</td><td data-label="Pass looks like">the ingest image, <code>batch.py --project</code>, 7200 s, <code>maxRetries: 0</code>, <code>15 * * * *</code> Asia/Kolkata</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One empty object, uploaded and then deleted; one dead letter, read and then acknowledged; and, only if you took the optional drill, one 270-page bundle under acme with its own records. Everything else was read. Lesson 1.6 goes back to a document that is already indexed and changes one clause of it, to see exactly what a re-issue costs.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.5 Follow upload events, retries, dead-letter handling and the batch lane &middot; v5.0</p><p>Next: Lesson 1.6 Reindex a changed section and measure embedding reuse.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var COMMON = [["1", "OBJECT_FINALIZE: Cloud Storage writes the object's record (name, bucket, generation, size, contentType) and publishes it into documind-ingest."], ["2", "documind-ingest-push delivers it: one POST to the worker's URL, with an OIDC token minted as documind-ingest-sa. The ack deadline starts: 600 s."], ["3", "push() decodes the envelope and parses the record into IngestMessage."]], VERDICTS = {"indexed": {"steps": [["4", "The claim is taken, the pages counted, the document parsed, chunked, embedded, written staged, swapped, upserted, mirrored, recorded: lesson 1.4's seven records."], ["5", "200 {\"status\": \"indexed\"}: the message is acknowledged and destroyed. Log: ingest_ok."]], "end": "ok"}, "duplicate": {"steps": [["4", "The bytes hash to a doc_key whose claim is already processing or indexed: nothing is downloaded, nothing written."], ["5", "200 {\"status\": \"duplicate\"}: acknowledged. Log: ingest_duplicate. A 200 is a 200 whatever the body says."]], "end": "ok"}, "stale": {"steps": [["4", "The ledger row for this object already names a newer generation: an older event, delivered late."], ["5", "200 {\"status\": \"stale\"}: acknowledged, nothing downloaded, nothing changed. Log: ingest_stale_event (lesson 1.7)."]], "end": "ok"}, "queued": {"steps": [["4", "The PDF's page tree says more than 250 pages: no page goes to Document AI. Two records instead: ingest_batch/{doc_key} and the claim with status queued; the job is started if declared."], ["5", "200 {\"status\": \"queued_batch\"}: acknowledged. Log: ingest_queued_batch. The job indexes it with lane=\"batch\" and no deadline."]], "end": "ok"}, "poison": {"steps": [["4", "Validation fails: a size of 0, or an object with no tenant prefix, or a name that escapes it. Log: ingest_poison, with the field named."], ["5", "400: not acknowledged. The subscription waits and delivers the same message again. The worker will refuse it the same way every time."]], "end": "bad", "clock": true}, "failed": {"steps": [["4", "index_document() raises after Document AI, the embedding call or a store failed; the claim is released with the error. Log: ingest_failed."], ["5", "500: not acknowledged. The subscription retries; the next attempt finds the claim failed, takes it back and tries again. A transient cause clears; a permanent one reaches the ceiling."]], "end": "bad", "clock": true}, "refused": {"steps": [["4", "Cloud Run has no warm instance and answers 429 before the worker sees the request: a corpus upload lands thirty objects against one request per instance."], ["5", "Not acknowledged, no worker log line at all. The subscription retries; by the second or third attempt an instance is up. This is why the ceiling is twelve."]], "end": "bad", "clock": true}, "timeout": {"steps": [["4", "The worker is still parsing when 600 s pass: the platform kills the request, and the code that releases the claim never runs. The claim stays processing."], ["5", "504: not acknowledged. The retry finds the claim taken and is acknowledged as a duplicate: every delivery reports success and the document is never indexed. The 250-page ceiling exists so that a push request never begins such a document."]], "end": "bad"}}, CLOCK = [[1, 0], [2, 10], [3, 30], [4, 70], [5, 150], [6, 310], [7, 630], [8, 1230], [9, 1830], [10, 2430], [11, 3030], [12, 3630]];
+  var root = document.getElementById('delivery'); if (!root) return;
+  var sel = document.getElementById('dp-verdict'), path = document.getElementById('dp-path'), clock = document.getElementById('dp-clock');
+  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function mmss(s){ return Math.floor(s / 60) + 'm' + ('0' + (s % 60)).slice(-2) + 's'; }
+  function render(){
+    var v = VERDICTS[sel.value], steps = COMMON.concat(v.steps);
+    path.innerHTML = steps.map(function(s, i){
+      var last = i === steps.length - 1, cls = last ? (v.end === 'ok' ? 'end' : 'bad') : '';
+      return '<li class="' + cls + '"><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span></li>';
+    }).join('');
+    if (v.clock){
+      var rows = CLOCK.map(function(c, i){
+        var wait = i === 0 ? '-' : mmss(CLOCK[i][1] - CLOCK[i - 1][1]);
+        return '<tr' + (i === CLOCK.length - 1 ? ' class="dlq"' : '') + '><td>' + c[0] + '</td><td>' + wait + '</td><td>' + mmss(c[1]) + '</td><td>' + (sel.value === 'refused' ? (i < 2 ? 'refused at the door' : 'an instance is up: the worker answers') : 'the same verdict') + '</td></tr>';
+      }).join('');
+      clock.innerHTML = '<table><thead><tr><th>attempt</th><th>wait before it</th><th>elapsed</th><th>outcome</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+        '<p class="dp-note">After the twelfth failed attempt the message is forwarded to documind-ingest-dlq and ingest-dlq-sub holds it: about an hour after the first. The waits double from the 10 s minimum to the 600 s maximum; Pub/Sub adds jitter, so your gaps are close to these, not equal to them.</p>';
+    } else {
+      clock.innerHTML = v.end === 'ok' ? '<p class="dp-note">Acknowledged on the first delivery: no clock runs. The message is gone; the records (or the log line) are what remain.</p>'
+                                       : '<p class="dp-note">No clock can help here: each retry is acknowledged as a duplicate. The defence is not to start such a request, which is what the page ceiling in step 6 does.</p>';
+    }
+  }
+  sel.addEventListener('change', render);
+  render();
+})();
+</script>
+</body>
+</html>

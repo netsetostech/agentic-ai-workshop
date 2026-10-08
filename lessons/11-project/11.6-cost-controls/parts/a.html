@@ -1,0 +1,89 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 11 &middot; Project &middot; Lesson 11.6</div>
+<h1>Exercise model routing, budgets and shutdown controls: <span>the tier at 85 percent, and the lane off at night</span></h1>
+<p>DocuMind spends money on three clocks. Every answer costs a model call, the month adds up the whole project's bill, and every hour an instance stays up it is billed. Each clock has its own control. The router sends each question to the cheapest model that can answer it, and a breaker reads the month's spend and stops choosing Pro at 80 percent. The billing budget emails the billing admins as the month's bill passes its lines. The off switch floors the GPU services, the gateway and the UI to zero instances every night at 23:00, and <code>make off</code> does the same by hand.</p>
+<p>In this lesson you read all three as the kit writes them down. You replay 85 percent on a candidate revision that takes no traffic, and watch the model tier change. Then you turn the lane off and watch its instances go to zero.</p>
+<div class="hero-chips"><div class="hero-chip">ROUTING</div><div class="hero-chip">the classifier</div><div class="hero-chip">the 80 percent breaker</div><div class="hero-chip">SPEND_PCT</div><div class="hero-chip">the billing budget</div><div class="hero-chip">make off</div><div class="hero-chip">make gpu-cap</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three clocks, three controls</a></li>
+<li><a href="#s2">The words: tier, classifier, breaker, counter, replay, billing budget, floor, quota cap</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The controls, as the kit writes them down</a></li>
+<li><a href="#s4">The month so far</a></li>
+<li><a href="#s5">The tier at 85 percent</a></li>
+<li><a href="#s6">Off at night, and the ceiling under it</a></li>
+<li><a href="#s7">Why the controls look like this, what they cost, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn which control acts on which clock, what each one does and does not do, and why none of them turns DocuMind off. Then you will prove two things on your lane:</p>
+<ul>
+<li>at 85 percent of the month's budget, the router sends a worked question to flash instead of Pro;</li>
+<li>after <code>make off</code>, the lane's instances go to zero.</li>
+</ul></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three clocks, three controls</h3><p>Per answer, per month and per hour: what spends, and what holds it back.</p></div></div>
+
+<p><strong>Per answer: the router and the breaker.</strong> With <code>ROUTING=on</code>, rag-api first asks <code>gemini-3.1-flash-lite</code> to label the question SIMPLE, MEDIUM or COMPLEX (<code>router.classify()</code>). Then <code>breakers.choose_model()</code> picks the model from the label and the month's spend:</p>
+<ul>
+<li><strong>normal:</strong> SIMPLE goes to flash-lite, MEDIUM to flash, COMPLEX to Pro;</li>
+<li><strong>strict, from 80 percent of the month's cap:</strong> COMPLEX goes to flash and everything else to flash-lite. Pro is never chosen.</li>
+</ul>
+<p>The spend is the API's own counter: one Firestore document per month, <code>budget/&lt;month&gt;</code>, which every answer adds its cost to, divided by <code>BUDGET_USD</code> (100 dollars on the lane). <code>SPEND_PCT</code> replaces that reading, so you can see what the lane does at 85 percent without spending it. On the lane, <code>ROUTING</code> is off, and every question goes to <code>GENERATOR_MODEL</code>.</p>
+
+<p><strong>Per month: the billing budget.</strong> This is a different number. Cloud Billing's budget covers the whole project (Cloud Run, Firestore, the index, BigQuery and the models) in the billing account's own currency: 5,000 by default, which is rupees on an Indian account. It emails the billing admins at 50, 80 and 100 percent of actual spend, and when the forecast passes 120 percent. It changes nothing on the lane.</p>
+
+<p><strong>Per hour: floors, the off switch and the ceiling.</strong> A service's <code>min-instances</code> keeps instances warm while it is idle: the UI at one on a session day, or a GPU service at one, which costs Rs 121 an hour. Three controls hold this in check:</p>
+<ul>
+<li>the <code>documind-off</code> job floors four services to zero at 23:00 IST every night, and <code>make off</code> does the same by hand;</li>
+<li><code>make gpu-cap</code> caps the region's L4 quota at one card, so no service can get a second;</li>
+<li><code>alerts.tf</code>'s <code>gpu_left_warm</code> pages when a GPU instance stays up for two hours.</li>
+</ul>
+
+<p><strong>None of them turns DocuMind off.</strong> <code>breakers.py</code> explains why: a budget alert that takes the service down "converts a finance problem into an outage." The controls make the lane cheaper, slower to start, or quieter; it stays up. <code>make down</code> removes the lane altogether. That is the end of the course, not a control, and this lesson does not run it.</p>
+
+<div class="analogy"><div class="analogy-icon">&#9992;&#65039;</div><div>
+<p><strong>A company's travel desk, and the office's power.</strong> The travel desk books each trip in the cheapest class that works: economy for a one-hour hop, business only for an overnight flight with a meeting on landing. Once the quarter's travel budget passes 80 percent, business class comes off the menu, and people still travel. Finance's budget report is a different number: every expense, not only travel, and all it does is send a letter. At night the facilities timer switches the air conditioning off at 11, whoever forgot. Under all of it sits the sanctioned load on the electricity connection, a ceiling no timer can lift. Those are the router, the breaker, the billing budget, the off switch and the quota cap.</p></div></div>
+
+<h4>The router at any spend</h4>
+<p>Choose whether routing is on, the class the classifier gave a question, and the month's spend. The panel shows the routing mode, the model chosen, what a typical answer costs, and what happens at 100 percent.</p>
+
+<div class="diagram pc" id="rt">
+<div class="dg-title">breakers.choose_model(): the question's class and the month's spend pick the model</div>
+<div class="pc-box"><b class="h">The question and the month</b>
+<div class="pc-in"><label class="chk"><input type="checkbox" id="rt-on" checked> ROUTING on</label>
+<label>The class the classifier gave<select id="rt-cls"><option value="SIMPLE">SIMPLE: a lookup</option><option value="MEDIUM">MEDIUM: an explanation</option><option value="COMPLEX">COMPLEX: a worked, multi-step question</option></select></label>
+<label>The month's spend: <span id="rt-pv">85%</span><input type="range" id="rt-pct" min="0" max="120" step="1" value="85"></label></div>
+<div class="fs-grid" id="rt-out" aria-live="polite"></div></div>
+<p class="dg-cap">The choice is <code>breakers.choose_model()</code>, ported to this page. A check at build time compares the port with the kit's function at %%N_GRID%% points: every class, every half percent from 0 to 120, with ROUTING on and off. The rates are <code>cost.py</code>'s; the typical answer is 2,000 tokens in and 300 out.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the kit's rule. On your lane the classifier decides the class, and the rupees are your own answers'.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: tier, classifier, breaker, counter, replay, billing budget, floor, quota cap</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Tier</strong></td><td data-label="Meaning">The model a question is sent to.</td><td data-label="On your lane"><code>gemini-3.1-flash-lite</code>, <code>gemini-3.6-flash</code>, <code>gemini-3.1-pro-preview</code></td></tr>
+<tr><td><strong>Classifier</strong></td><td data-label="Meaning"><code>router.classify()</code>: one flash-lite call that labels the question.</td><td data-label="On your lane">SIMPLE, MEDIUM or COMPLEX</td></tr>
+<tr><td><strong>Routing</strong></td><td data-label="Meaning"><code>ROUTING=on</code> puts the classifier and the breaker on <code>/v1/query</code>.</td><td data-label="On your lane">off: <code>lesson-12.2.sh</code>'s default</td></tr>
+<tr><td><strong>Breaker</strong></td><td data-label="Meaning"><code>breakers.py</code>: the spend at which routing turns strict.</td><td data-label="On your lane">80 percent of <code>BUDGET_USD</code></td></tr>
+<tr><td><strong>The month's counter</strong></td><td data-label="Meaning">A Firestore document that every answer adds its cost to.</td><td data-label="On your lane"><code>budget/&lt;month&gt;</code>, the month in UTC; <code>BUDGET_USD</code> 100</td></tr>
+<tr><td><strong>Replay</strong></td><td data-label="Meaning"><code>SPEND_PCT</code>: a spend that replaces the counter's reading.</td><td data-label="On your lane">unset</td></tr>
+<tr><td><strong>Billing budget</strong></td><td data-label="Meaning">Cloud Billing's budget on the whole project's bill.</td><td data-label="On your lane"><code>BUDGET_AMOUNT</code> 5,000 in the account's currency; emails at 50, 80 and 100 percent, and a 120 percent forecast</td></tr>
+<tr><td><strong>Floor</strong></td><td data-label="Meaning">A service's <code>min-instances</code>: instances kept up while idle.</td><td data-label="On your lane">0, except on a session day (the UI at 1)</td></tr>
+<tr><td><strong>The off switch</strong></td><td data-label="Meaning">The <code>documind-off</code> job at 23:00 IST, and <code>make off</code> by hand.</td><td data-label="On your lane">four services floored to zero</td></tr>
+<tr><td><strong>Quota cap</strong></td><td data-label="Meaning">A consumer quota override on the region's L4 GPU quota.</td><td data-label="On your lane"><code>CAP</code> 1 in <code>us-central1</code> (<code>make gpu-cap</code>)</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the breaker and the billing budget are two budgets. The breaker reads the API's own model spend in dollars; the billing budget reads the whole bill in the account's currency. Neither knows the other.</p>

@@ -1,0 +1,86 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.8</div>
+<h1>Exercise DLP, guardrails and audit behavior: <span>the PII scan before indexing, Model Armor on both sides of the model, and an audit trail nobody can edit</span></h1>
+<p>Lessons 4.6 and 4.7 settled who may ask. This lesson is about what may be read, what may be said, and what is written down. You upload a note carrying the kit's synthetic PAN, GSTIN, Aadhaar and mobile, and find each one recorded by type, never by value. You switch Model Armor on for a candidate revision and send it a plain question, an injection in English, the same injection in Hinglish and a question about a PAN. Then you read the audit events the upload left in a bucket that refuses to delete them, and you check what the admin console's audit tab can and cannot show.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_TYPES%% info types, one list</div><div class="hero-chip">scan before indexing</div><div class="hero-chip">findings without values</div><div class="hero-chip">400 prompt_blocked</div><div class="hero-chip">502 response_blocked</div><div class="hero-chip">5-year retention</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three controls: a scan before indexing, a guard on both sides of the model, a record nobody edits</a></li>
+<li><a href="#s2">The words: info type, finding, template, MATCH_FOUND, ARMOR, audit event, retention and lock</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The PII scan: one list, and a note that trips it</a></li>
+<li><a href="#s4">The findings: types and offsets, in Firestore and in the DLP tab</a></li>
+<li><a href="#s5">Model Armor: the template, the guard, and a candidate with ARMOR=on</a></li>
+<li><a href="#s6">Four questions to the candidate: plain, two injections, a PAN</a></li>
+<li><a href="#s7">The audit trail: the events in the retention bucket</a></li>
+<li><a href="#s8">The audit tab: what the admin console reads, and what it misses</a></li>
+<li><a href="#s9">Why the controls are shaped this way, what they cost, and what the kit does not do yet</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why the PII scan runs before indexing and never quotes what it found, why Model Armor screens the question before retrieval and the answer only once it is complete, and why an audit event goes to a bucket rather than a table. Then you will prove each control on your lane: the PAN in the findings and in the DLP tab, a 400 <code>prompt_blocked</code> from the candidate, and the upload's own events in the audit bucket. You will also see that the admin console's audit tab does not show that upload, and why.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three controls: a scan before indexing, a guard on both sides of the model, a record nobody edits</h3><p>Each control sits at the one point where it can still stop what it exists to stop.</p></div></div>
+
+<p><strong>The PII scan runs before indexing, because after indexing it is too late.</strong> Once a chunk is embedded and upserted, any question can retrieve it. A scan run afterwards only describes a leak that has already happened. So the ingest worker sends every chunk of a document to Sensitive Data Protection (DLP) before anything is written. It uses one list of %%N_TYPES%% info types, Indian identifiers first, and counts a match only at <code>LIKELY</code> or above. A finding records the type, the likelihood and a byte offset, never the matched text: a findings store that quoted each PAN would become the place PANs are kept. If DLP cannot be reached, the whole message fails and is retried. An unscanned document never reaches the index.</p>
+
+<p><strong>Scanning records PII; it does not remove it.</strong> A document with findings is still indexed, because a vendor contract with a GSTIN in it is exactly what the tenant uploaded it to search. The findings tell the operator where PII sits, the admin console's DLP tab draws them, and lesson 4.7's tenant walls decide who may retrieve it.</p>
+
+<p><strong>Model Armor screens both sides of the model.</strong> The question is screened before retrieval. An injection that reaches the retriever has already chosen which documents the model will read, and no filter on the answer can undo that choice. A blocked question is a 400 with the reason, <code>prompt_blocked</code>, and costs no retrieval and no model call. The answer is screened after the model finishes, on the complete text. A guard that watched tokens as they streamed past would already have shown the user half of what it meant to block. So when the guard is on, the streaming endpoint holds its tokens until the whole answer has been screened. A blocked answer is a 502 with <code>response_blocked</code>. The guard is a switch, <code>ARMOR</code>, and it is off by default. This lesson turns it on for a candidate revision that serves no traffic.</p>
+
+<p><strong>The audit trail is a set of files nobody can change.</strong> Each event is one JSON object, written once to a Cloud Storage bucket whose retention policy refuses to delete or overwrite an object for five years. The action must be on a registered list, and the writer refuses to drop an event it cannot store. The ingest worker writes <code>doc.upload</code> and <code>dlp.finding</code>. The admin console writes its own events there too, and also copies them into a Firestore index, <code>audit_index</code>. That index is what its audit tab reads, so events that only the worker writes never appear in the tab.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127974;</div><div>
+<p><strong>A bank branch's back office.</strong> Every form that arrives is read before it is filed, and a clerk writes in the register: PAN on page 2, Aadhaar on page 3, never the numbers themselves. If that clerk is away, the form waits in the tray; it is never filed unread. At the counter, a guard listens to what the customer asks and to what the teller hands back, and can stop either. Every filing is also written into a bound, page-numbered ledger kept in the strongroom for five years. The manager keeps a quick-look binder too, but only the manager's own actions are copied into it. A filing done by the back office is in the strongroom ledger and not in the binder.</p></div></div>
+
+<h4>Two pipelines, three controls</h4>
+<p>Choose a question's path through the guard, or a document's path through the scan. The query side runs exactly as <code>/v1/query</code> calls the guard. The upload side follows the worker from the scan to its last audit event, and shows where each record appears.</p>
+
+<div class="diagram pc" id="pipes">
+<div class="dg-title">A question through Model Armor, a document through the PII scan - screen_prompt(), screen_response() and the ingest worker</div>
+<div class="pc-box"><b class="h">A question to /v1/query</b>
+<div class="pc-in">
+<label>The revision's ARMOR<select id="pq-armor"><option value="on">on</option><option value="off">off</option></select></label>
+<label>The question<select id="pq-prompt"><option value="bad">an injection Model Armor flags</option><option value="ok">a clean question</option></select></label>
+<label>The model's answer<select id="pq-answer"><option value="ok">clean</option><option value="bad">flagged by a filter</option></select></label>
+</div>
+<div id="pq-out" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">A document into the ingest worker</b>
+<div class="pc-in">
+<label>The document<select id="pu-pii"><option value="yes">carries a PAN and a mobile</option><option value="no">carries no PII</option></select></label>
+<label>The DLP call<select id="pu-dlp"><option value="ok">answers</option><option value="fail">fails</option></select></label>
+</div>
+<div id="pu-out" aria-live="polite"></div></div>
+<p class="dg-cap">The query side ports <code>screen_prompt()</code> and <code>screen_response()</code> from <code>services/rag-api/main.py</code>. For all %%N_G%% combinations of its choices, the build ran the kit's own two functions with a stand-in guard, and the panel had to agree with each. The upload side follows <code>services/ingest/main.py</code>, and the build checks the lines it depends on.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows what the code does with a verdict, not what Model Armor or DLP will decide about a given text. That depends on Google's classifiers and on the template's confidence floor, which is why steps 3 and 6 send real text to your lane.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: info type, finding, template, MATCH_FOUND, ARMOR, audit event, retention and lock</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>DLP</strong></td><td data-label="Meaning">Sensitive Data Protection's <code>inspect_content</code>: reads text and reports what kinds of sensitive data it holds, and where. Regional, and billed by the bytes it reads.</td><td data-label="On your lane">asia-south1, for text</td></tr>
+<tr><td><strong>Info type</strong></td><td data-label="Meaning">One kind of sensitive data DLP can detect. <code>shared/pii.py</code> holds the only list; the worker and the admin console's <code>dlp.py</code> both import it.</td><td data-label="On your lane">%%N_TYPES%%: Aadhaar, PAN, GST, email, phone, name, date of birth</td></tr>
+<tr><td><strong>Likelihood floor</strong></td><td data-label="Meaning">How sure DLP must be before a match counts.</td><td data-label="On your lane"><code>LIKELY</code></td></tr>
+<tr><td><strong>Finding</strong></td><td data-label="Meaning">One match: the info type, the likelihood, the byte offset in the chunk, and the chunk's id. Never the matched text: <code>include_quote</code> is false.</td><td data-label="On your lane">step 4 prints one</td></tr>
+<tr><td><strong>dlp_findings</strong></td><td data-label="Meaning">The Firestore collection of findings: one record per scanned document that had any, written before the document is indexed.</td><td data-label="On your lane">what the DLP tab draws</td></tr>
+<tr><td><strong>Model Armor template</strong></td><td data-label="Meaning">The set of filters one sanitize call applies: prompt injection and jailbreak, sensitive data, and four responsible-AI filters.</td><td data-label="On your lane"><code>documind-guard</code>, asia-south1</td></tr>
+<tr><td><strong>MATCH_FOUND</strong></td><td data-label="Meaning">A filter's verdict that the text matched. The guard blocks on MATCH_FOUND from any filter.</td><td data-label="On your lane">confidence floor <code>MEDIUM_AND_ABOVE</code></td></tr>
+<tr><td><strong>prompt_blocked, response_blocked</strong></td><td data-label="Meaning">The reasons the API returns: a 400 before retrieval for a blocked question, a 502 after the usage row for a blocked answer.</td><td data-label="On your lane">step 6</td></tr>
+<tr><td><strong>ARMOR</strong></td><td data-label="Meaning">The API revision's switch for the guard. With <code>off</code>, <code>guard.py</code> is never imported and nothing is screened.</td><td data-label="On your lane"><code>off</code> on the live revision</td></tr>
+<tr><td><strong>Audit event</strong></td><td data-label="Meaning">One JSON object, <code>id, ts, action, actor, target, meta</code>, written once at <code>YYYY/MM/DD/&lt;tenant&gt;/&lt;action&gt;-&lt;id&gt;.json</code>. The action must be one of %%N_ACTIONS%% registered names.</td><td data-label="On your lane"><code>gs://PROJECT-audit</code></td></tr>
+<tr><td><strong>Retention and lock</strong></td><td data-label="Meaning">Retention refuses to delete or overwrite an object before its age reaches the period. The lock makes the period itself impossible to shorten or remove.</td><td data-label="On your lane">five years; locked only with <code>AUDIT_LOCK=true</code></td></tr>
+<tr><td><strong>audit_index</strong></td><td data-label="Meaning">The admin console's Firestore copy of the events it writes itself, which its audit tab reads.</td><td data-label="On your lane">no worker events</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: DLP and Model Armor answer different questions. DLP reads documents once, on the way in, and asks what personal data they hold. Model Armor reads every question and every answer, on the way through, and asks whether the text is an attack or unsafe. Its sensitive-data filter overlaps with DLP's job, but step 6 shows it is not the same list.</p>

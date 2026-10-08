@@ -1,0 +1,236 @@
+<div class="box box-amber"><div class="box-title">The names this lesson reads off your services</div>
+<p>The index, the endpoint, the BigQuery table and the audit bucket are named in the environment of the two services that use them. Read them once into the shell; every cell below uses these variables. Both reads are read-only.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }   # -n ... p: an entry with an empty value prints nothing
+export VECTOR_INDEX_NAME="$(svc_env documind-ingest VECTOR_INDEX_NAME)" BQ_CHUNK_TABLE="$(svc_env documind-ingest BQ_CHUNK_TABLE)" AUDIT_BUCKET="$(svc_env documind-ingest AUDIT_BUCKET)"
+export VECTOR_INDEX_ENDPOINT="$(svc_env documind-api VECTOR_INDEX_ENDPOINT)" VECTOR_DEPLOYED_INDEX_ID="$(svc_env documind-api VECTOR_DEPLOYED_INDEX_ID)"
+echo "index:    $VECTOR_INDEX_NAME"; echo "endpoint: $VECTOR_INDEX_ENDPOINT  deployed: $VECTOR_DEPLOYED_INDEX_ID"
+echo "mirror:   $BQ_CHUNK_TABLE  audit: $AUDIT_BUCKET"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (your ids differ; a name may carry the project id or its number)</span><span class="ro">read only</span></div><pre tabindex="0">index:    projects/documind-ai-YOUR-ID/locations/asia-south1/indexes/1234567890123456789
+endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321  deployed: documind_chunks_v1
+mirror:   documind-ai-YOUR-ID.rag_data.chunk_source  audit: documind-ai-YOUR-ID-audit</pre></div>
+<p>Steps 5 and 7 also need the two SDKs lesson 1.3 installed (<code>google-cloud-aiplatform</code>, <code>google-genai</code>); step 6 uses the <code>bq</code> command that ships with the Cloud SDK.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Write</span><h3>Write: the order the worker keeps, and a fresh document to watch</h3><p>The sequence in the worker's own words, the claim that starts it, and a three-chunk note indexed while you count the datapoints.</p></div></div>
+
+<h4>Definition</h4>
+<p>The worker writes seven records for one version, in a fixed order. The claim first, in a transaction, so that a duplicate delivery from Pub/Sub finds the document taken and does nothing. Then the rows, staged. Then the swap, which flips the staged rows current and retires the previous version's rows in one pass. Then the tier: the new datapoints up, the retired ids out. Then the BigQuery mirror. Then the claim is finished with its counts, the ledger row is written, the fingerprint refreshed, the audit event emitted, and last of all the log line. A failure anywhere gives the claim back with the error on it, so the next delivery can try again and an operator can read why.</p>
+
+<h4>See it in the UI</h4>
+<p>On the <em>Documents</em> page the button <em>Refresh indexing status</em> does one thing: it reloads the Versions table from the ledger. An upload confirmation is not an indexed document; the row appearing in that table is, because the ledger row is written after every other record.</p>
+
+<h4>The code</h4>
+@@claim@@
+@@finish@@
+@@main_swap@@
+@@main_tail@@
+@@main_audit@@
+<p>Read the four comments in the swap block again: staged and invisible, one pass, the tier follows, the retired ids come out. That block is the design; the rest is bookkeeping around it.</p>
+
+<h4>Do it: index a note, and count the datapoints before and after</h4>
+<p>The note is the kit's three-clause warehouse memo with one line added: your account and today's date. The line matters. A version is its bytes, and the kit's reindex smoke from Module 0 uploads the unchanged file under another name; if it ever ran on your lane, those bytes are already claimed, and the worker acks the same bytes again as a duplicate and writes nothing. One line of your own makes a new version key. The note is a Markdown file of about 500 characters with no PII: no Document AI, three embeddings, about a hundredth of a paisa. The block reads the index's datapoint count, writes and uploads the note, waits for the worker's line, then waits for the count to move. The index's statistics refresh on their own schedule, so the last wait can take a few minutes.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one small ingest)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">idx_count() { gcloud ai indexes describe "$(basename "$VECTOR_INDEX_NAME")" --region="$REGION" --project="$PROJECT" --format='value(indexStats.vectorsCount)' 2>/dev/null; }
+BEFORE="$(idx_count)"; echo "datapoints before: ${BEFORE:-0}"
+export NOTE="$HOME/lesson34_note.md"
+{ cat evals/demo/smoke_note_v1.md; printf '\nIndexed for lesson 1.4 by %s on %s.\n' "$ME" "$(date -u +%F)"; } > "$NOTE"
+SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+gcloud storage cp "$NOTE" "gs://$PROJECT-uploads/acme/smoke_note_v1.md"
+for i in $(seq 1 30); do sleep 10
+  LINE="$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.doc_key:\"acme_\" AND timestamp>=\"$SINCE\"" \
+    --project "$PROJECT" --limit 1 --format='value(jsonPayload.event,jsonPayload.doc_key,jsonPayload.chunks,jsonPayload.pages,jsonPayload.embedded)')"
+  [ -n "$LINE" ] &amp;&amp; { echo ">> event doc_key chunks pages embedded: $LINE"; break; }
+done
+for i in $(seq 1 30); do N="$(idx_count)"; [ "${N:-0}" -ge $(( ${BEFORE:-0} + 3 )) ] &amp;&amp; { echo "datapoints now: $N"; break; }; sleep 20; done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (N is your lane's count before; the key is yours, because the note is)</span><span class="ro">read only</span></div><pre tabindex="0">datapoints before: N
+>> event doc_key chunks pages embedded: ingest_ok  acme_9c41d0e2b7f5a1...  3  1  3
+datapoints now: N+3</pre></div>
+
+<div class="box box-amber"><div class="box-title">If the line says duplicate, or nothing comes</div>
+<p>Two reads tell you what the worker did with an upload. The first lists every ingest event of the last twenty minutes with its verdict: <code>ingest_duplicate</code> means the bytes were already claimed on this lane, <code>ingest_failed</code> carries the error, and no line at all means the event never reached the worker. The second reads the claim for the unchanged demo bytes; its <code>gcs_uri</code> names the object that holds them, which on a lane where the smoke has run is <code>acme/smoke_note.md</code>. The claim is per version, not per name: that is the record this whole step is about.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (both read-only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event:\"ingest_\" AND timestamp>=\"$(date -u -d '-20 min' +%Y-%m-%dT%H:%M:%SZ)\"" \
+  --project "$PROJECT" --limit 10 --format='value(timestamp,jsonPayload.event,jsonPayload.doc_key,jsonPayload.error)'
+
+python - &lt;&lt;'PY'
+import os, hashlib, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+db = firestore.Client(project=os.environ["PROJECT"])
+sha = hashlib.sha256(open("evals/demo/smoke_note_v1.md", "rb").read()).hexdigest()
+d = db.collection("documents").document(f"acme_{sha}").get().to_dict() or {}
+print("the demo bytes' claim, acme_%s...:" % sha[:12],
+      {k: d.get(k) for k in ("status", "gcs_uri", "chunks", "generation")} if d else "no claim: these bytes were never seen on this lane")
+PY</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected on a lane where the reindex smoke has run</span><span class="ro">read only</span></div><pre tabindex="0">2026-09-22T11:58:07.412Z  ingest_duplicate  acme_111510fcf0a6ce7c...
+the demo bytes' claim, acme_111510fcf0a6...: {'status': 'indexed', 'gcs_uri': 'gs://documind-ai-YOUR-ID-uploads/acme/smoke_note.md', 'chunks': 3, 'generation': '1758...'}</pre></div></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One upload became one claim, three rows, three datapoints, three mirror rows, one ledger row, one fingerprint and one audit event, in that order, and the index's own counter moved by exactly the number of rows. The line the block printed carries the version key and the counts; the next three steps read the records that key names, one store at a time.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Inspect</span><h3>Inspect Firestore: the claim, the rows, the ledger row, the fingerprint</h3><p>Four records in one database, read by the key you can compute from the file's bytes.</p></div></div>
+
+<h4>Definition</h4>
+<p>Everything in Firestore hangs off two keys you already know from lesson 1.1. The version key, <code>doc_key = acme_&lt;sha256 of the bytes&gt;</code>, names the claim and stamps every row. The document key, <code>acme~smoke_note_v1.md</code>, names the ledger row. Neither is assigned by a database; both are computed, so you can derive them on your laptop from the file and go straight to the records without a search.</p>
+
+<h4>The code</h4>
+@@mirror_tail@@
+@@record_source@@
+@@fingerprint@@
+
+<h4>Read all four, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, hashlib, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+NOTE = os.environ.get("NOTE", os.path.expanduser("~/lesson34_note.md"))    # the note you wrote in step 3
+sha = hashlib.sha256(open(NOTE, "rb").read()).hexdigest()
+key = f"acme_{sha}"
+print("doc_key from the note's bytes:", key[:20] + "...")
+claim = db.collection("documents").document(key).get().to_dict() or {}
+print("documents/:", {k: claim.get(k) for k in ("status", "chunks", "reused", "embedded", "generation", "tenant_id")})
+rows = sorted(((s.id, s.to_dict()) for s in db.collection("chunks").where("tenant_id", "==", "acme").where("doc_key", "==", key).stream()),
+              key=lambda r: int(r[0].rsplit("#", 1)[1]))
+print("chunks/:", len(rows), "rows | current:", sum(d.get("current") is True for _, d in rows),
+      "| staged:", sum(bool(d.get("staged")) for _, d in rows), "| with expire_at:", sum(d.get("expire_at") is not None for _, d in rows))
+for cid, d in rows:
+    print(f"  {cid.split('#')[0][:18]}...#{cid.rsplit('#', 1)[1]}  {d['locator']:9} section={d.get('section')!r} hash={d['chunk_hash'][:12]} vector={len(d['embedding'])} doc_type={d.get('doc_type')}")
+src = db.collection("sources").document("acme~smoke_note_v1.md").get().to_dict() or {}
+print("sources/acme~smoke_note_v1.md:", {k: src.get(k) for k in ("status", "chunks", "reused", "embedded", "retired", "effective_from")},
+      "| doc_key matches:", src.get("doc_key") == key, "| sha256 matches:", src.get("sha256") == sha)
+led = db.collection("ledger").document("acme").get().to_dict() or {}
+print("ledger/acme:", {k: led.get(k) for k in ("fingerprint", "versions", "last_event")})
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the key and the last hash are yours: the note carries your name; generation, fingerprint and versions differ too)</span><span class="ro">read only</span></div><pre tabindex="0">doc_key from the note's bytes: acme_9c41d0e2b7f5a1...
+documents/: {'status': 'indexed', 'chunks': 3, 'reused': 0, 'embedded': 3, 'generation': '1758542671234567', 'tenant_id': 'acme'}
+chunks/: 3 rows | current: 3 | staged: 0 | with expire_at: 0
+  acme:9c41d0e2b7f5...#0  preamble  section=None hash=70501fc5957f vector=768 doc_type=unknown
+  acme:9c41d0e2b7f5...#1  SM-01     section='SM-01 - The smoke lantern' hash=14adcf0a776b vector=768 doc_type=unknown
+  acme:9c41d0e2b7f5...#2  SM-02     section='SM-02 - The ladder' hash=(yours) vector=768 doc_type=unknown
+sources/acme~smoke_note_v1.md: {'status': 'indexed', 'chunks': 3, 'reused': 0, 'embedded': 3, 'retired': 0, 'effective_from': None} | doc_key matches: True | sha256 matches: True
+ledger/acme: {'fingerprint': '9b1d5e7a3c2f4680', 'versions': N, 'last_event': 'ingest_ok'}</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four records, one key, and every count agrees: the claim says three chunks, three rows are current, none is staged or carries an expiry, and the ledger row names the same version and the same bytes you hashed locally. <code>doc_type</code> reads <code>unknown</code> because the worker does not classify a plain text upload (lesson 1.1 met this); it is the same value the datapoint will carry as a restrict in the next step. The fingerprint is the one line that is about the tenant, not the document: it moved because the set of current versions did.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Inspect</span><h3>Inspect Vector Search: the datapoint, its restricts, and a search for itself</h3><p>The index as a store of records, not just a search engine: read a datapoint back by id, then ask the index to find a row by its own vector.</p></div></div>
+
+<h4>Definition</h4>
+<p>A Vector Search index is usually described by what it answers, but it is also a store: one datapoint per id, and the id is the chunk id from Firestore. The worker builds each datapoint from the row (the dense vector, the sparse vector, the four restricts) and streams it up; a retired row's id is removed the same way. Two calls let you inspect the store directly. Reading datapoints by id returns what the index holds for them. Searching with a row's own vector, under the same restricts the API sends, must return that row first with the highest possible score, because nothing is closer to a vector than itself.</p>
+
+<h4>The code</h4>
+@@to_datapoints@@
+@@remove@@
+
+<h4>The index and its deployment, as gcloud sees them</h4>
+<p>Three things exist: the index, the endpoint, and the deployed index that joins them and is the one that costs money per hour. The kit's <code>make vector-status</code> runs <code>commands/vector-status.sh</code>, which takes the two names from the shell (the variables you exported above) or, failing that, from Terraform's outputs; the two commands below are the same reads by hand.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud ai indexes describe "$(basename "$VECTOR_INDEX_NAME")" --region="$REGION" --project="$PROJECT" \
+  --format='yaml(displayName,indexStats.vectorsCount,indexStats.shardsCount,indexUpdateMethod,metadata.config.dimensions,metadata.config.distanceMeasureType)'
+gcloud ai index-endpoints describe "$(basename "$VECTOR_INDEX_ENDPOINT")" --region="$REGION" --project="$PROJECT" \
+  --format='yaml(displayName,deployedIndexes[].id,deployedIndexes[].indexSyncTime,deployedIndexes[].dedicatedResources.machineSpec.machineType)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts and times differ)</span><span class="ro">read only</span></div><pre tabindex="0">displayName: documind-chunks
+indexStats:
+  shardsCount: 1
+  vectorsCount: '1745'
+indexUpdateMethod: STREAM_UPDATE
+metadata:
+  config:
+    dimensions: 768
+    distanceMeasureType: DOT_PRODUCT_DISTANCE
+displayName: documind-endpoint
+deployedIndexes:
+- dedicatedResources:
+    machineSpec:
+      machineType: e2-standard-2
+  id: documind_chunks_v1
+  indexSyncTime: '2026-09-22T10:41:07.000Z'</pre></div>
+@@vector_status@@
+
+<h4>Read one datapoint back, then search for it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, hashlib, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import aiplatform, firestore
+from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import Namespace
+PROJECT, REGION = os.environ["PROJECT"], os.environ["REGION"]
+ENDPOINT, DEPLOYED = os.environ["VECTOR_INDEX_ENDPOINT"], os.environ["VECTOR_DEPLOYED_INDEX_ID"]
+db = firestore.Client(project=PROJECT)
+NOTE = os.environ.get("NOTE", os.path.expanduser("~/lesson34_note.md"))    # the note you wrote in step 3
+sha = hashlib.sha256(open(NOTE, "rb").read()).hexdigest()
+cid = f"acme:{sha}#1"                                                  # SM-01, the smoke lantern
+vec = list(db.collection("chunks").document(cid).get().to_dict()["embedding"])
+aiplatform.init(project=PROJECT, location=REGION)
+ep = aiplatform.MatchingEngineIndexEndpoint(ENDPOINT)
+dp = ep.read_index_datapoints(deployed_index_id=DEPLOYED, ids=[cid])[0]
+same = len(dp.feature_vector) == len(vec) and all(abs(a - b) &lt; 1e-6 for a, b in zip(dp.feature_vector, vec))
+print(f"datapoint {dp.datapoint_id.split('#')[0][:18]}...#1: {len(dp.feature_vector)} numbers | same as the row's vector: {same}")
+print("restricts:", [(r.namespace, list(r.allow_list)) for r in dp.restricts])
+print("sparse dimensions:", len(dp.sparse_embedding.dimensions))
+hits = ep.find_neighbors(deployed_index_id=DEPLOYED, queries=[vec], num_neighbors=3,
+                         filter=[Namespace(name="tenant_id", allow_tokens=["acme"]), Namespace(name="current", allow_tokens=["true"])])[0]
+for n in hits:
+    print(f"  {n.id.split('#')[0][:18]}...#{n.id.rsplit('#', 1)[1]}  distance {n.distance:.4f}" + ("   &lt;- itself" if n.id == cid else ""))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the two lower distances are yours; if the sparse line reads 0, the read left the sparse half out and the restricts are the point)</span><span class="ro">read only</span></div><pre tabindex="0">datapoint acme:9c41d0e2b7f5...#1: 768 numbers | same as the row's vector: True
+restricts: [('tenant_id', ['acme']), ('kind', ['text']), ('doc_type', ['unknown']), ('current', ['true'])]
+sparse dimensions: 24
+  acme:9c41d0e2b7f5...#1  distance 1.0000   &lt;- itself
+  acme:9c41d0e2b7f5...#2  distance 0.7xxx
+  acme:9c41d0e2b7f5...#0  distance 0.6xxx</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The index gave back, under the chunk's own id, the same 768 numbers Firestore holds and the four labels the worker attached, which is the whole agreement between the two stores: same ids, same vectors, same tenant. The search then found the row by its own vector with a dot product of 1.0, the score of a unit vector against itself, and put the note's two other clauses next, because the restricts confined the search to acme's current rows and the note's clauses share more meaning with each other than with an Act. This is the call the API makes for every question, with a question's vector in place of the row's.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Inspect</span><h3>Inspect the mirror and the audit trail</h3><p>The two records that are written last and read least: the SQL lane's copy of every chunk, and the event that outlives them all.</p></div></div>
+
+<h4>Definition</h4>
+<p>When the worker's environment names a BigQuery table, every indexed chunk is also streamed there as one row: the text, the page, the heading, the kind, and the PII verdict the worker computed before indexing. Nothing ever updates or deletes those rows; a re-issue appends its chunks beside the old ones, and whoever reads the table joins on the ledger to learn what is current. It is the copy Module 2's SQL lane reads, and the one place a chunk's text can be queried with <code>WHERE</code>. Separately, one audit event per upload goes into a retention-locked bucket as a small JSON object. It cannot be edited or removed inside the retention window, which is why it, and not the log line, is the record an auditor is shown.</p>
+
+<h4>The code</h4>
+@@bq@@
+@@bq_schema@@
+@@audit_emit@@
+
+<h4>Read the mirror rows, then the audit event</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (two BigQuery queries, then one read from the audit bucket)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">bq --project_id="$PROJECT" query --use_legacy_sql=false --format=pretty \
+  "SELECT chunk_id, heading_path, kind, doc_type, pii_flag, FORMAT_TIMESTAMP('%H:%M:%S', ingested_at) AS at
+   FROM \`$BQ_CHUNK_TABLE\` WHERE tenant_id = 'acme' AND source_uri = 'gs://$PROJECT-uploads/acme/smoke_note_v1.md' ORDER BY chunk_id"
+
+bq --project_id="$PROJECT" query --use_legacy_sql=false --format=pretty \
+  "SELECT COUNT(*) AS rows_ever, COUNT(DISTINCT source_uri) AS documents FROM \`$BQ_CHUNK_TABLE\` WHERE tenant_id = 'acme'"
+
+gcloud storage cat "gs://$AUDIT_BUCKET/$(date -u +%Y/%m/%d)/acme/doc.upload-*.json" \
+  | python -c "import json,sys,hashlib,os; sha=hashlib.sha256(open(os.environ.get('NOTE', os.path.expanduser('~/lesson34_note.md')),'rb').read()).hexdigest(); [print(json.dumps(e, indent=1)) for e in map(json.loads, sys.stdin.read().replace('}{', '}\n{').split('\n')) if e['target']['id'].endswith(sha)]"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts, ids and times differ)</span><span class="ro">read only</span></div><pre tabindex="0">+--------------------------------------------------+---------------------------+------+----------+----------+----------+
+|                     chunk_id                     |       heading_path        | kind | doc_type | pii_flag |    at    |
++--------------------------------------------------+---------------------------+------+----------+----------+----------+
+| acme:9c41d0e2b7f5...#0                           | NULL                      | text | unknown  |    false | 10:39:52 |
+| acme:9c41d0e2b7f5...#1                           | SM-01 - The smoke lantern | text | unknown  |    false | 10:39:52 |
+| acme:9c41d0e2b7f5...#2                           | SM-02 - The ladder        | text | unknown  |    false | 10:39:52 |
++--------------------------------------------------+---------------------------+------+----------+----------+----------+
++-----------+-----------+
+| rows_ever | documents |
++-----------+-----------+
+|      2031 |         9 |
++-----------+-----------+
+{
+ "id": "3d6d8a5e-...",
+ "ts": "2026-09-22T10:39:53.412Z",
+ "action": "doc.upload",
+ "actor": {"tenant_id": "acme", "email": "system:ingest"},
+ "target": {"type": "document", "id": "acme_9c41d0e2b7f5...", "tenant_id": "acme"},
+ "meta": {"gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/smoke_note_v1.md", "pages": 1, "chunks": 3, "pii": false, "kinds": ["text"], "reused": 0, "embedded": 3, "retired": 0}
+}</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The mirror holds the note's three chunks with the heading of each clause and a PII verdict of false, and it holds more rows for acme than Firestore has current rows, because the handbook's revision 2 from lesson 1.3 is still there: retired in Firestore, appended for ever here. The audit event names the version by the same key you computed from the bytes and carries the same counts as the claim. Three stores, three reads, one story.</p></div>
+

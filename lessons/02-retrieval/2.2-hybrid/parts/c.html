@@ -1,0 +1,154 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Ablation</span><h3>The ablation: one knob per arm, no model in the loop</h3><p>Four arms, three numbers each, a miss list under every arm, and what the hybrid row does and does not say.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>evals/ablate.py</code> runs retrieval only, from outside the API, against the golden rows that carry <code>must_retrieve</code> anchors: %%ANCH%% of the %%ROWS%% rows today, %%ACME_ROWS%% of them acme's, with %%ANCHORS%% anchors of which %%CODES%% are clause codes. Each arm changes one thing: dense 5 with no reranker, dense 20 then rerank to 5, which is the lane's own recipe, dense 50 then rerank, and hybrid 20 then rerank. The dense leg of every arm is Firestore's <code>find_nearest</code> with the tenant filter, not the index; the hybrid arm's sparse leg is BM25 over the tenant's rows, fused with <code>rrf()</code> in-process at alpha 0.7. Beside every reranked number stands <code>recall@depth</code>, the reranker's ceiling, and under every arm the rows that cost a point say whether the anchor was ranked out or never retrieved. No generation call is made; the exit code is 1 only when an arm could not run a single row.</p>
+
+<h4>The code</h4>
+@@make_ablate@@
+@@ablate_arms@@
+@@ablate_hybrid@@
+@@ablate_metrics@@
+
+<h4>Do it: a wiring check, then acme's rows with a ledger</h4>
+<p>The first run takes five rows and about a minute; the second takes acme's %%ACME_ROWS%% rows and a few minutes, and appends one JSON line per arm to a ledger you keep. <code>make ablate</code> passes your exported <code>REGION</code> as the embedding region, which is where the API embeds; the direct call is the same line without make.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (embeddings in paise; the Ranking API per request, a few rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ablate PROJECT=$PROJECT ABLATE_ARGS="--tenant acme --limit 5"
+<span class="cm"># the same without make: python evals/ablate.py --project $PROJECT --region $REGION --tenant acme --limit 5</span>
+
+make ablate PROJECT=$PROJECT ABLATE_ARGS="--tenant acme --ledger ~/ablate.jsonl"
+tail -n 4 ~/ablate.jsonl | python -c "import sys, json; [print(j['arm'][:32].ljust(34), 'recall@5', j['recall_at_5'], 'mrr', j['mrr'], 'p95', j['p95_ms'], 'ms') for j in map(json.loads, sys.stdin)]"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your numbers are yours; the column order, the miss lines and the reading order are fixed)</span><span class="ro">read only</span></div><pre tabindex="0">%%ACME_ROWS%% rows with anchors, NN anchors, one knob per arm (project documind-ai-YOUR-ID, embeddings in asia-south1, ranker on global)
+
+arm                                          recall@depth  recall@5    mrr rows@1.0  p95 ms
+dense 5, no reranker                                 0.9x      0.9x   0.8x       3x    xxxx
+dense 20 -> rerank 5   (the lane)                    0.9x      0.9x   0.9x       3x    xxxx
+       lost: lk-xx: PB-02 - ranked out (in the candidates, not the five)
+dense 50 -> rerank 5                                 0.9x      0.9x   0.9x       3x    xxxx
+hybrid 20 -> rerank 5  (4.5, not wired)              0.9x      0.9x   0.9x       3x    xxxx
+
+Read it in this order: recall@depth is the reranker's ceiling - if the 20 and 50 rows agree, depth is not the knob;
+recall@5 of the lane's row minus the first row is the reranker's lift, and p95 is what it costs;
+the hybrid row says whether a BM25 leg is worth wiring - twenty of the anchors are clause codes, its home ground;
+the rag_engine row (--arms all) is 4.3's corpus against the lane's own rows - a managed chunk that splits a clause from its code shows up as a miss.</pre></div>
+
+<p>The kit's author measured this on 8 September 2026, over the 43 anchored rows the golden set had then: dense 5 alone 0.91 recall at 5 and 0.81 MRR; the lane's dense 20 then rerank 0.96 and 0.91; dense 50 then rerank 0.99 and 0.94 at four times the latency; and the hybrid row identical to the lane's row at alpha 0.5 and, on acme's rows, 0.7. Those figures are in the file's docstring, and they are the baseline your ledger line is read against.</p>
+@@ablate_read@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four recipes ran over the same rows and the same question set, and each was scored by whether the anchor came back, not by whether an answer sounded right, so nothing a model said could flatter a recipe. The hybrid row's honest reading is narrow: with BM25 as the sparse leg and Firestore as the dense one, fusing changed nothing at depth 20 on this golden set, because the dense leg already held the anchors and RRF at 0.7 could only reorder. It says nothing about the index's own sparse leg, which step 3 showed is a weaker ruler, and it says nothing about the API's wiring, which is step 7's business. The arm's label, "not wired", is the file telling you the same.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Candidate</span><h3>The knob: hybrid on a candidate that takes no traffic, compared, then removed</h3><p>A revision that answers on a tag URL and serves nobody, the same questions to both, and the variable taken back out.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>RETRIEVAL_MODE</code> is read once, at startup, and <code>check_retrieval_modes()</code> refuses the pairs the service could not honour before it serves a request: hybrid with a managed backend, hybrid with the Firestore backend. The way to judge a switch is the kit's own: a revision of <code>documind-api</code> deployed with <code>--no-traffic</code> and a tag, which gets a URL of its own and no traffic, while the live revision keeps serving. With <code>MIN_INSTANCES</code> at 0 an idle revision costs nothing. Two rules from the release lessons apply here. The identity token's audience stays the service's canonical URL whichever URL you call, so <code>tok "$API"</code> is right for the candidate too. And environment variables merge across revisions, so a variable set for one candidate would ride into the next one unless removed; the last block removes it and drops the tag.</p>
+
+<h4>The code</h4>
+@@modes@@
+@@pin_rule@@
+
+<h4>Do it: hybrid on a candidate, the same two questions to both revisions, then undo</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; two version reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars RETRIEVAL_MODE=hybrid --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+for U in "$API" "$CAND"; do
+  curl -s "$U/version" -H "Authorization: Bearer $(tok "$API")" \
+    | python -c "import sys, json; j = json.load(sys.stdin); print('$U'.split('//')[1].split('.')[0].ljust(36), 'mode', j['retrieval_mode'], '| backend', j['retrieval_backend'])"
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">documind-api-NUMBER                  mode dense | backend vector
+candidate---documind-api-NUMBER      mode hybrid | backend vector</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (four questions, one or two rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ask() { curl -s -X POST "$1/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d "{\"query\":\"$2\",\"tenant_id\":\"acme\",\"stream\":false,\"top_k\":3}" \
+  | python -c "import sys, json; j = json.load(sys.stdin); s = j['stages']; print('  ', '$1'.split('//')[1].split('---')[0].split('.')[0][:9].ljust(10), [c['chunk_id'].rsplit('#', 1)[1].rjust(3) + ' ' + c['source_uri'].split('/')[-1][:22] for c in j['citations']], '| retrieve_ms', s['retrieve_ms'], '| pool', s['pool'], '| vector_chunks', s['vector_chunks'])"; }
+for Q in "What is the total payable on invoice INV-2026-0412?" "What is the notice period for a confirmed E3?"; do
+  echo "$Q"; ask "$API" "$Q"; ask "$CAND" "$Q"
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your ids and milliseconds differ; the citations agreeing or not is the measurement)</span><span class="ro">read only</span></div><pre tabindex="0">What is the total payable on invoice INV-2026-0412?
+   documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 6xx | pool 20 | vector_chunks 20
+   candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 7xx | pool 20 | vector_chunks 20
+What is the notice period for a confirmed E3?
+   documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 6xx | pool 20 | vector_chunks 20
+   candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 7xx | pool 20 | vector_chunks 20</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the undo: the variable removed, the tag dropped, the live mode read again)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --remove-env-vars RETRIEVAL_MODE --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet
+curl -s "$API/version" -H "Authorization: Bearer $(tok "$API")" | python -c "import sys, json; print('live mode:', json.load(sys.stdin)['retrieval_mode'])"
+gcloud run services describe documind-api --region "$REGION" --project "$PROJECT" --format='value(status.traffic[].percent,status.traffic[].revisionName)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">live mode: dense
+100;documind-api-00042-xyz</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A second revision of the API came up with hybrid on, answered on its own URL, took no traffic, and was asked the same questions as the live one. The citations are the reranker's choice from the pool, so hybrid can only change them by changing which twenty candidates arrive, not their order; where the citations agreed, the pool's membership was the same and hybrid changed nothing for that question, which step 5's bound predicted for a 0.3 leg over a dense pool that already held the anchor; where they differed, the difference is the finding, and the gate that decides whether it is a good one is lesson 7's, <code>make eval-live</code> against the candidate URL. Then the variable was removed, so the next candidate does not inherit it, and the tag was dropped. The next <code>make plan</code> may show the service template moved; <code>make up</code> puts it back.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What hybrid costs, where it cannot go, and what the harness does not measure</h3><p>The rupee line, the two places the mode is refused or degrades, and the column that lets a day of hybrid be compared with a day of dense.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The sparse vector</td><td data-label="Costs">nothing: a hash and a count, on the worker at ingest and in the API per question</td><td data-label="On your lane">already on every datapoint since lesson 1.3</td></tr>
+<tr><td>A hybrid query</td><td data-label="Costs">the same as a dense one: the deployed index bills by the hour, not per query</td><td data-label="On your lane">the three queries in step 4</td></tr>
+<tr><td>The ablation</td><td data-label="Costs">four embeddings a row in paise; three Ranking API requests a row, billed per request; the rows' text read once from Firestore</td><td data-label="On your lane">acme's %%ACME_ROWS%% rows: a few rupees at the Ranking API's listed rate per thousand; check the price page</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle at <code>MIN_INSTANCES</code> 0; the questions you ask it at the generator's rate</td><td data-label="On your lane">step 7's four answers, one or two rupees</td></tr>
+<tr><td>Step 3's rulers</td><td data-label="Costs">Firestore reads of the rows' text, inside the free quota</td><td data-label="On your lane">Rs 0, twice</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Where hybrid cannot go</h4>
+<p>Two places, one at startup and one at runtime. A managed backend has no sparse leg to fuse and the Firestore rung's vector index takes one dense vector and nothing else, so <code>check_retrieval_modes()</code> refuses both pairs before the service serves; a tenant pinned to a managed store under hybrid mode is served from the deployment's backend with a <code>retrieval_pin_ignored</code> line instead. At runtime the chaos rung applies to hybrid as to dense: an unreachable index degrades to the Firestore rung, which is dense only, with a <code>vector_search_fallback</code> line and never a 500. The cell asks the validator the two questions offline.</p>
+@@chaos@@
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0: no call leaves the machine)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys
+sys.path[:0] = [".", "services/rag-api"]
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", os.environ["PROJECT"])
+for k in ("RETRIEVAL_MODE", "RETRIEVAL_BACKEND", "RETRIEVAL_CURRENT_ONLY", "TOP_K_RETRIEVE", "RERANK_TIMEOUT_S", "SEMANTIC_CACHE"):
+    if os.environ.get(k) == "":
+        del os.environ[k]                                  # an empty export from an earlier names box means the default
+from config import check_retrieval_modes
+for backend, mode in (("vector", "hybrid"), ("firestore", "hybrid"), ("rag_engine", "hybrid"), ("firestore", "dense")):
+    try:
+        check_retrieval_modes(backend, mode); print(f"{backend:10} {mode:6} -> allowed")
+    except ValueError as e:
+        print(f"{backend:10} {mode:6} -> refused: {str(e)[:96]}...")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">vector     hybrid -> allowed
+firestore  hybrid -> refused: RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: the Firestore backend is dense-only. Set RETR...
+rag_engine hybrid -> refused: RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: rag_engine embeds and searches on its own ...
+firestore  dense  -> allowed</pre></div>
+
+<h4>What the harness does not measure, and what the usage rows can</h4>
+<p>The ablation's hybrid arm is BM25 plus Firestore's dense rung, fused in-process; the API's hybrid mode is the hashed word-count leg plus the index, fused on the index. The 8 September result, hybrid identical to the lane, is a statement about the first pair. The second pair is judged on a candidate, as in step 7, and over time on the usage rows: every answer's row carries <code>retrieval_mode</code>, and the warehouse view groups by it, so a day served under hybrid can be set beside a day served under dense with the same columns lesson 11.5 reads. And when a better sparse ruler is wanted on the index itself, the encoder is the place: <code>SPARSE_ENCODER_VERSION</code> is stamped on every row, so a weighting with rarity in it is a reindex away, and lesson 1.6 showed what a reindex costs.</p>
+@@usage_mode@@
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The lane serves dense unless told otherwise</td><td data-label="The check">the setup box; <code>/version</code> in step 7</td><td data-label="Pass looks like"><code>mode: dense (default)</code>, <code>retrieval_mode: dense</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The index's sparse ruler buries the invoice; BM25 finds it</td><td data-label="The check">step 3</td><td data-label="Pass looks like">anchor rank in the hundreds, then rank 1</td></tr>
+<tr><td>3</td><td data-label="Claim">The same holds for a clause without its code in the question</td><td data-label="The check">step 3, NP-03</td><td data-label="Pass looks like">hundreds against 1 again</td></tr>
+<tr><td>4</td><td data-label="Claim">Dense, sparse-only and fused are three queries to one endpoint</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the anchor in the dense and fused lists, absent from the sparse one</td></tr>
+<tr><td>5</td><td data-label="Claim">The kit's RRF reproduces the index's fused order</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>the legs differ: True</code> first, then <code>first is the same: True</code>, heads agree on 4 or 5 of 5</td></tr>
+<tr><td>6</td><td data-label="Claim">Alpha 1 and 0 return the legs; the 0.3 leg cannot beat a dense top-20 id</td><td data-label="The check">step 5</td><td data-label="Pass looks like">two <code>True</code> lines; %%B2%% below %%B3%%</td></tr>
+<tr><td>7</td><td data-label="Claim">The ablation scores four arms without a model</td><td data-label="The check">step 6</td><td data-label="Pass looks like">four rows, recall@depth beside recall@5, a ledger line per arm</td></tr>
+<tr><td>8</td><td data-label="Claim">Hybrid is judged on a candidate and taken back out</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>mode hybrid</code> on the tag URL, <code>live mode: dense</code> after the undo</td></tr>
+<tr><td>9</td><td data-label="Claim">Impossible pairs are refused at startup</td><td data-label="The check">step 8</td><td data-label="Pass looks like">two <code>refused</code> lines naming the fix</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. Step 7 created two revisions of the API that took none and removed the tag and the variable again; the service's live revision never changed. The ablation left <code>~/ablate.jsonl</code>, one line per arm, which lesson 7 reads as a baseline. The bench in step 1 keeps whatever you pasted only until you leave the page. Lesson 2.3 takes the pool this lesson measured and studies the reranker that cuts it to the citations you see.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 2 Retrieval &middot; Lesson 2.2 Compare dense and hybrid retrieval &middot; v5.0</p><p>Next: Lesson 2.3 Rerank and inspect retrieved candidates.</p></div>

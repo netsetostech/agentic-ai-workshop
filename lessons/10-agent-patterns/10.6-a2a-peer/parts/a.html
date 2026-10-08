@@ -1,0 +1,72 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 10 &middot; Agent patterns &middot; Lesson 10.6</div>
+<h1>Trace the implemented A2A peer and its permissions: <span>one task through three protocols, and who the lane sees</span></h1>
+<p><code>documind-agent</code> is the agent another team would build. It holds no kit code: it knows DocuMind by one address, <code>documind-mcp</code>. Other agents can reach it over A2A, through an agent card that describes it and <code>message/send</code>, which gives it a task. One task crosses three protocols: A2A from the caller to the peer, MCP from the peer to the server, and HTTPS from the server to rag-api. Each hop carries a different identity, and none carries the caller's. You read the peer's permissions from the kit's files and ask for its card with and without a token. Then you run the module's A2A gate, and trace one task through its history and the two logs.</p>
+<div class="hero-chips"><div class="hero-chip">A2A</div><div class="hero-chip">agent card</div><div class="hero-chip">message/send</div><div class="hero-chip">McpToolset</div><div class="hero-chip">documind-agent-sa</div><div class="hero-chip">acme only</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">One task, three protocols, three identities</a></li>
+<li><a href="#s2">The words: A2A, agent card, skill, message/send, task, history, peer, McpToolset</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The peer's permissions, as the kit writes them</a></li>
+<li><a href="#s4">The card: refused without a token, read with one</a></li>
+<li><a href="#s5">The gate: make smoke-agent</a></li>
+<li><a href="#s6">One task, traced</a></li>
+<li><a href="#s7">Why the peer is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the peer may do and on whose behalf, which identity each hop carries, and why a task's caller disappears after the first door. Then you will prove it: the card refused without a token, and <code>message/send</code> completing as a task. You will also see the zeta request refused by the roster and relayed, and the outsider stopped at the peer's door.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>One task, three protocols, three identities</h3><p>A peer, not a brain; and its permissions are its account's.</p></div></div>
+
+<p><strong>A peer, not a brain.</strong> The four chat brains live inside the kit and call <code>retrieve()</code> directly. The peer lives outside it. It is an ADK <code>LlmAgent</code> whose only tools are the lane's four, which <code>McpToolset</code> discovers from <code>documind-mcp</code>. Its image copies only its own folder, and <code>agent.py</code> imports nothing from the kit. ADK's <code>to_a2a</code> serves it over A2A. The agent card at <code>/.well-known/agent-card.json</code> says who it is and where to send tasks, and JSON-RPC at <code>/</code> takes <code>message/send</code>.</p>
+
+<p><strong>Three hops, three identities.</strong> A caller sends a task with an ID token minted for the peer's address. Cloud Run admits it only if the caller is one of the two invokers, <code>documind-ui-sa</code> or <code>documind-chat-sa</code>. A2A carries no identity of its own, so the peer never learns who asked. For each tool call, the peer mints a fresh token as its own account, <code>documind-agent-sa</code>, for <code>documind-mcp</code>'s address. The server verifies that token, finds <code>documind-agent-sa</code> on acme's roster alone, and calls rag-api as <code>documind-mcp-sa</code>.</p>
+
+<p><strong>The peer's permissions are its account's.</strong> <code>documind-agent-sa</code> may call <code>documind-mcp</code> and nothing else in the lane. It may call Gemini, and it is on one roster. So whoever the caller is, a task reads acme's documents and only acme's. A task naming zeta is refused by the server's roster check, and the peer relays the refusal as its answer.</p>
+
+<p><strong>The task carries its trail back.</strong> The reply to <code>message/send</code> is a task: its state, artifacts with the answer, and a history holding every message. The history includes each tool call the peer made, and what came back.</p>
+
+<div class="analogy"><div class="analogy-icon">&#9992;</div><div>
+<p><strong>A travel agency with a corporate account.</strong> The agency has one login to an airline's corporate portal, set up for one company, and its door admits only its two regular clients. Whichever client walks in, the agent books through that one login, so every booking is that company's, and the portal knows only the agency. A request to book for another company is refused by the portal, and the agent passes the refusal on. The receipt the agency hands you lists every search it ran for you, and what the portal said.</p></div></div>
+
+<h4>Follow one task</h4>
+<p>Choose who sends the task and what it asks. The panel follows it through each service, with the identity each one saw.</p>
+
+<div class="diagram pc" id="tr">
+<div class="dg-title">One task - documind-agent, then documind-mcp, then rag-api</div>
+<div class="pc-box"><b class="h">The task</b>
+<div class="pc-in"><label>Sent by<select id="tr-who"></select></label><label>It asks<select id="tr-req"></select></label></div>
+<ol class="hops" id="tr-out" aria-live="polite"></ol></div>
+<p class="dg-cap">Each hop is what the kit's peer and server did at build time. Gemini was stood in by a model that calls the tool a request names. The answers for ui-sa and chat-sa were identical, because the peer cannot tell them apart.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>On your lane, Gemini chooses the tool and writes the answer. The doors and the identities are the kit's, and those do not change.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: A2A, agent card, skill, message/send, task, history, peer, McpToolset</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>A2A</strong></td><td data-label="Meaning">Agent2Agent: a protocol for one agent to discover another and give it tasks.</td><td data-label="On your lane"><code>documind-agent</code> serves it</td></tr>
+<tr><td><strong>Agent card</strong></td><td data-label="Meaning">An agent's description: its name, where to send tasks, what it can do.</td><td data-label="On your lane"><code>/.well-known/agent-card.json</code>, name <code>documind_peer</code></td></tr>
+<tr><td><strong>Skill</strong></td><td data-label="Meaning">Something the card says the agent can do.</td><td data-label="On your lane">the model; the tools, when the card could list them</td></tr>
+<tr><td><strong>message/send</strong></td><td data-label="Meaning">The JSON-RPC method that gives the agent a task.</td><td data-label="On your lane">the gratuity question</td></tr>
+<tr><td><strong>Task</strong></td><td data-label="Meaning">The reply: a state, artifacts with the answer, and a history.</td><td data-label="On your lane">state <code>completed</code></td></tr>
+<tr><td><strong>History</strong></td><td data-label="Meaning">Every message of the task, tool calls and their results included.</td><td data-label="On your lane">four messages for one tool call</td></tr>
+<tr><td><strong>Peer</strong></td><td data-label="Meaning">An agent outside the kit, reaching the lane only through its public surface.</td><td data-label="On your lane"><code>documind-agent</code>, through <code>documind-mcp</code></td></tr>
+<tr><td><strong>McpToolset</strong></td><td data-label="Meaning">ADK's MCP client: it discovers a server's tools and calls them.</td><td data-label="On your lane"><code>documind-mcp</code>'s <code>/mcp</code></td></tr>
+<tr><td><strong>Header provider</strong></td><td data-label="Meaning">The function <code>McpToolset</code> calls for each tool call's headers.</td><td data-label="On your lane">a fresh token, as <code>documind-agent-sa</code></td></tr>
+<tr><td><strong>Invoker</strong></td><td data-label="Meaning">An account Cloud Run lets call a service.</td><td data-label="On your lane">ui-sa and chat-sa, on the peer</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold. The card is how an agent finds the peer, and the token is how Cloud Run lets it in. Neither tells the lane who asked.</p>

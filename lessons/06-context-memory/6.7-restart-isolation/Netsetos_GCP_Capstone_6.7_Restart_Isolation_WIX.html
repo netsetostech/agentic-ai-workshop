@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 6.7 Verify restart recovery and session isolation - a conversation that outlives a redeploy, and a thread nobody else can read | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.pc-in{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px 12px;margin:6px 0;}
+.pc-in label{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.pc-in select{font:inherit;font-size:16px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.pc-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.55;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.pc-box b.h{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
+.fs-grid{display:grid;grid-template-columns:minmax(0,9em) minmax(0,1fr);gap:4px 10px;font-size:12.5px;}
+.fs-grid b{color:var(--navy);font-weight:600;}
+.fs-grid code{overflow-wrap:anywhere;}
+.fs-grid .yes{color:var(--teal-dark);font-weight:600;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.7</div>
+<h1>Verify restart recovery and session isolation: <span>a conversation that outlives a redeploy, and a thread nobody else can read</span></h1>
+<p>Two properties make the chat service safe to put in front of people. A conversation must outlive the instance that held it, because Cloud Run replaces instances whenever the service scales to zero or you deploy. And a conversation must be readable by its own person alone, in their own tenant and session, whoever else knows its name. The kit builds both: the checkpointer lives outside the instance, and the server makes the thread id from the verified identity. A property you have not tried to break is only a claim. So you try to break both. You put the kit's own app in front of eight different callers. You redeploy your chat service between two turns. Then you ask, in the UI, for a word you never gave.</p>
+<div class="hero-chips"><div class="hero-chip">redeploy</div><div class="hero-chip">new revision</div><div class="hero-chip">tenant:person:session</div><div class="hero-chip">no tenant field</div><div class="hero-chip">TestClient</div><div class="hero-chip">you, in the UI</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Two properties, and how to watch them hold</a></li>
+<li><a href="#s2">The words: revision, instance, redeploy, durable, thread, isolation, bearer leg, assertion</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Isolation, on the kit's own app</a></li>
+<li><a href="#s4">A conversation across a redeploy</a></li>
+<li><a href="#s5">Another person finds nothing</a></li>
+<li><a href="#s6">The rows behind both</a></li>
+<li><a href="#s7">Why the properties hold, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn which part of the kit makes each property true, and how to test a property by trying to break it. Then you will prove both: eight callers against the kit's own app, a word that survives a redeploy of your chat service and a word the ADK brain forgets. You will also find nothing when you ask in the UI, and see the rows that show why.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Two properties, and how to watch them hold</h3><p>Durability is about the instance. Isolation is about the key.</p></div></div>
+
+<p><strong>Durability is about the instance.</strong> Cloud Run runs your service as instances of a revision. It adds instances when traffic grows and removes them when it falls. It stops the last one when nobody calls, since the chat service's minimum is zero, and it starts a new revision on every deploy. Anything an instance keeps in its own memory ends with it. The LangChain and LangGraph brains keep the conversation in <code>PostgresSaver</code>, outside every instance, so a new instance reads the thread where the old one left it. The ADK brain keeps its sessions in the instance's memory on this image, as lesson 6.6 found, and loses them.</p>
+
+<p><strong>Isolation is about the key.</strong> The request carries a question, a session name and a brain. It has no field for a tenant or a person, and a field it does not have is ignored if you send it. The person comes from the verified token or the forwarded assertion, and the tenant from the roster. The server joins tenant, person and session into the thread id. A colleague who knows your session name reaches a different thread, because their email is in it. So does a member of another tenant. A session name with a colon, which could split the id, is refused before it gets that far.</p>
+
+<p><strong>Verifying means trying to break it.</strong> The test is to create the conditions that would break a property and watch it hold. Replace the instances between two turns, ask as someone else, name another tenant, send a session name with a colon. Some callers cannot be made on your lane, so you run the kit's app under a test client for them. The restart cannot be faked, so you redeploy your lane.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128273;</div><div>
+<p><strong>A bank's lockers.</strong> Each customer's lockers are numbered in their own series, so two customers can both have a locker 113. The staff open the one registered to the person in front of them, checked against their ID card. A note on the form saying "I belong to the other branch" changes nothing, because the register says which branch you belong to. The lockers are in the vault, not behind a teller's counter, so a change of shift or a renovation leaves them where they were. One counter keeps its customers' things in a drawer instead, and they are gone when that counter closes.</p></div></div>
+
+<h4>Who finds the word</h4>
+<p>Alice gave a word in session <code>lesson113</code>. Choose who asks for it next, where the conversation is kept, what happens between the two turns, and which brain answers. The panel shows the status, the thread the question reaches, and what it finds.</p>
+
+<div class="diagram pc" id="ri">
+<div class="dg-title">The second turn of alice's conversation - the door, the thread id and the store</div>
+<div class="pc-box"><b class="h">The second turn</b>
+<div class="pc-in"><label>Who asks<select id="ri-req"></select></label><label>The store<select id="ri-store"></select></label><label>Between the turns<select id="ri-between"></select></label><label>The brain<select id="ri-brain"></select></label></div>
+<div class="fs-grid" id="ri-out" aria-live="polite"></div></div>
+<p class="dg-cap">The statuses and texts are the kit's own, from step 3's run of its chat app. The rule is checked against that run, and against the page's own copy of it for all 144 choices.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It follows the kit's rules, not a model's words. On your lane the model answers in its own way. What the panel predicts is whether the history it is sent contains the word.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: revision, instance, redeploy, durable, thread, isolation, bearer leg, assertion</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Revision</strong></td><td data-label="Meaning">A fixed version of a Cloud Run service: its image and settings.</td><td data-label="On your lane">a new one on every deploy or settings change</td></tr>
+<tr><td><strong>Instance</strong></td><td data-label="Meaning">A running container of a revision.</td><td data-label="On your lane">none to ten; the chat service scales to zero</td></tr>
+<tr><td><strong>Restart</strong></td><td data-label="Meaning">An instance stops, and a new one starts in its place.</td><td data-label="On your lane">after every quiet spell, since the minimum is zero</td></tr>
+<tr><td><strong>Redeploy</strong></td><td data-label="Meaning">A new revision takes the traffic, and every old instance is replaced.</td><td data-label="On your lane">step 4's settings change</td></tr>
+<tr><td><strong>Durable</strong></td><td data-label="Meaning">Kept outside the instance, so it outlives it.</td><td data-label="On your lane">LangChain and LangGraph threads, yes; ADK sessions, no</td></tr>
+<tr><td><strong>Thread id</strong></td><td data-label="Meaning">The key of a conversation, built by the server.</td><td data-label="On your lane"><code>tenant:person:session</code></td></tr>
+<tr><td><strong>Isolation</strong></td><td data-label="Meaning">Only the thread's own tenant, person and session reach it.</td><td data-label="On your lane">a colleague or another tenant reaches a different thread</td></tr>
+<tr><td><strong>Bearer leg</strong></td><td data-label="Meaning">A caller with an ID token and no person behind it.</td><td data-label="On your lane"><code>documind-ui-sa</code> from your shell: one person to the service</td></tr>
+<tr><td><strong>Assertion</strong></td><td data-label="Meaning">IAP's signed statement of who the person is, forwarded by the UI.</td><td data-label="On your lane">you, in the UI</td></tr>
+<tr><td><strong>TestClient</strong></td><td data-label="Meaning">Runs a FastAPI app in-process, with its start-up and its routes.</td><td data-label="On your lane">the kit's <code>agent.py</code>, in step 3</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: durability decides whether the thread is still there, and isolation decides whose thread a question reaches. A turn needs both to find its own history.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_7/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_7/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_7/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>ME</code> and <code>tok</code>. You need <code>~/graph-venv</code> from lesson 5.4. Step 3's first cell adds FastAPI and lesson 6.6's connector to it, and makes it if it is missing. The chat service must be running in your region, with the UI beside it. Step 4 changes one setting on <code>documind-chat</code>, which makes a new revision, and moves all traffic to it. Step 5 needs you in a browser.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Isolation</span><h3>Isolation, on the kit's own app</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_7/demo_03_isolation_on_the_kit_s_own_app.py" target="_blank" rel="noopener"><code>demo_03_isolation_on_the_kit_s_own_app.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Eight callers against the kit's chat app, run on your machine, then a restart.</p></div></div>
+
+<h4>Definition</h4>
+<p>On your lane only one account can call the chat service from a shell, so the callers isolation is about cannot all be made there. You can run the kit's app on your machine instead, under FastAPI's <code>TestClient</code>, which runs it in-process with its own start-up and routes. Two things are stood in. The token check lets a bearer name alice, bob, carol, the outsider or nobody. The roster puts alice and bob in acme and carol in zeta. The model can answer only from the history it is sent: it recalls saffron if an earlier question in that history contains it. Everything else is the kit's: the request model, the door, the thread id, the LangChain brain and the checkpointer, in memory.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/chat/agent.py - the request: a question, a conversation, a brain, and nowhere to name a tenant or a person</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">class</span> ChatRequest(BaseModel):
+    <span class="st">&quot;&quot;&quot;The question, which conversation it belongs to, and optionally which brain - nothing else.
+
+    tenant_id and user_id used to be fields here, and the agent believed them. Removing them
+    is stronger than validating them: a validation is something a later edit can loosen, and
+    a field that does not exist is not. There is now nowhere in this request to lie. session_id
+    names a conversation INSIDE the caller&#x27;s own tenant and user - the server prefixes both.&quot;&quot;&quot;</span>
+
+    question: str = Field(min_length=<span class="nu">1</span>, max_length=<span class="nu">4000</span>)
+    session_id: str = Field(default=<span class="st">&quot;default&quot;</span>, pattern=r<span class="st">&quot;^[A-Za-z0-9_-]{1,64}$&quot;</span>)
+    brain: Optional[Literal[<span class="st">&quot;langchain&quot;</span>, <span class="st">&quot;langgraph&quot;</span>, <span class="st">&quot;adk&quot;</span>, <span class="st">&quot;direct&quot;</span>]] = <span class="kw">None</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/agent.py - the thread id the server builds from the verified identity</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">thread_config</span>(tenant_id: str, user_id: str, session_id: str) -&gt; dict:
+    <span class="st">&quot;&quot;&quot;The thread id IS the tenancy boundary (8.5): tenant first, so nothing after it can forge
+    another tenant; &#x27;:&#x27; banned in every part, so two users cannot collide on one thread.&quot;&quot;&quot;</span>
+    parts = (tenant_id, user_id, session_id)
+    <span class="kw">if</span> <span class="kw">not</span> all(parts):
+        <span class="kw">raise</span> HTTPException(<span class="nu">500</span>, <span class="st">&quot;tenant, user and session ids must all be non-empty&quot;</span>)
+    <span class="kw">if</span> any(<span class="st">&quot;:&quot;</span> <span class="kw">in</span> p <span class="kw">for</span> p <span class="kw">in</span> parts):
+        <span class="kw">raise</span> HTTPException(<span class="nu">400</span>, <span class="st">&quot;ids must not contain &#x27;:&#x27;&quot;</span>)
+    <span class="kw">return</span> {<span class="st">&quot;configurable&quot;</span>: {<span class="st">&quot;thread_id&quot;</span>: f<span class="st">&quot;{tenant_id}:{user_id}:{session_id}&quot;</span>}}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/agent.py - each turn: the tenant from the roster, the person from the token, the session from the request</span><span class="ro">read only</span></div><pre tabindex="0">    out = brain.answer(
+        req.question,
+        config=thread_config(tenant_id, user[<span class="st">&quot;email&quot;</span>], req.session_id),
+        context={<span class="st">&quot;tenant_id&quot;</span>: tenant_id, <span class="st">&quot;user_id&quot;</span>: user[<span class="st">&quot;email&quot;</span>],
+                 <span class="st">&quot;assertion&quot;</span>: user[<span class="st">&quot;assertion&quot;</span>] <span class="kw">or</span> <span class="st">&quot;&quot;</span>, <span class="st">&quot;brain&quot;</span>: name, <span class="st">&quot;meter&quot;</span>: meter},</pre></div>
+
+
+<h4>Do it: the venv</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (lesson 5.4's venv, with the web layer and 6.6's connector)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">[ -x ~/graph-venv/bin/python ] || python -m venv ~/graph-venv   # lesson 5.4's venv, made here if it is missing
+~/graph-venv/bin/pip install -q "langchain==1.4.0" "langchain-core==1.6.2" "requests==2.34.2" "google-auth==2.57.1" "fastapi==0.141.1" \
+  "cloud-sql-python-connector[pg8000]==1.22.0" "pg8000==1.31.5"   # the chat image's pins, and 6.6's connector
+~/graph-venv/bin/python -c 'import fastapi.testclient, google.cloud.sql.connector; print("graph-venv ok: fastapi", fastapi.__version__)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected </span><span class="ro">read only</span></div><pre tabindex="0">graph-venv ok: fastapi 0.141.1</pre></div>
+
+
+<h4>Do it: eight callers</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the kit's chat app on your machine; no model, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">~/graph-venv/bin/python - &lt;&lt;'PY'
+import logging, os, sys, warnings
+warnings.filterwarnings("ignore"); logging.disable(logging.CRITICAL)
+os.environ.update(CHECKPOINT_DSN="memory", SELF_URL="https://documind-chat.example")   # the app's own start-up, in memory
+sys.path[:0] = [".", "services/chat"]
+from fastapi.testclient import TestClient
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from shared import iap
+import agent, brains
+class Recall(BaseChatModel):                       # a model that can answer only from the history it is sent
+    @property
+    def _llm_type(self): return "recall"
+    def bind_tools(self, tools, **kw): return self
+    def _generate(self, messages, stop=None, run_manager=None, **kw):
+        asked = [str(m.content) for m in messages if m.type == "human"]
+        text = ("Got it: saffron." if "Remember" in asked[-1] else "You asked me to remember saffron."
+                if any("saffron" in a for a in asked[:-1]) else "I have no word from you in this conversation.")
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(text))])
+PEOPLE = {"alice": ("alice@acme.example", "acme"), "bob": ("bob@acme.example", "acme"),
+          "carol": ("carol@zeta.example", "zeta"), "outsider": ("outsider@example.com", None)}
+def identity(headers, bearer_audience=None):       # stands in for the token check: the bearer names the person
+    who = headers.get("authorization", "").removeprefix("Bearer ")
+    if who not in PEOPLE:
+        raise iap.IapError("the bearer token carries no verified email")
+    return {"email": PEOPLE[who][0], "via": "iam", "aud": bearer_audience}
+iap.identity, brains.build_llm = identity, Recall
+agent.tenant_for = lambda email: next((t for e, t in PEOPLE.values() if e == email), None)   # stands in for the roster
+def ask(c, who, question, session="lesson113", **extra):
+    r = c.post("/v1/chat", headers={"Authorization": f"Bearer {who}"},
+               json={"question": question, "session_id": session, "brain": "langchain", **extra})
+    said = r.json().get("answer") or r.json().get("detail")
+    return f"{r.status_code}  {said[0]['msg'] if isinstance(said, list) else said}"
+WORD, ASK = "Remember this word for me: saffron.", "Which word did I ask you to remember?"
+with TestClient(agent.app) as c:                   # one instance of the kit's chat service
+    print(f"  alice gives the word, lesson113        {ask(c, 'alice', WORD)}")
+    print(f"  alice asks for it                      {ask(c, 'alice', ASK)}")
+    print(f"  alice, a new session                   {ask(c, 'alice', ASK, session='lesson113-b')}")
+    print(f"  bob, her tenant, same session name     {ask(c, 'bob', ASK)}")
+    print(f"  carol, another tenant, the same name   {ask(c, 'carol', ASK)}")
+    print(f"  alice, the body naming zeta            {ask(c, 'alice', ASK, tenant_id='zeta')}")
+    print(f"  alice, a session id with a colon       {ask(c, 'alice', ASK, session='lesson113:x')}")
+    print(f"  the outsider                           {ask(c, 'outsider', ASK)}")
+    print(f"  a token that names nobody              {ask(c, 'nobody', ASK)}")
+    print("  the threads the checkpointer holds:")
+    for t in sorted({t.config["configurable"]["thread_id"] for t in agent.app.state.checkpointer.list(None)}):
+        print("    " + t)
+with TestClient(agent.app) as c:                   # a restart: the lifespan builds a new checkpointer
+    print(f"  after a restart, alice asks again      {ask(c, 'alice', ASK)}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell run on the kit's own agent.py and brains.py; every status and answer is the app's own)</span><span class="ro">read only</span></div><pre tabindex="0">  alice gives the word, lesson113        200  Got it: saffron.
+  alice asks for it                      200  You asked me to remember saffron.
+  alice, a new session                   200  I have no word from you in this conversation.
+  bob, her tenant, same session name     200  I have no word from you in this conversation.
+  carol, another tenant, the same name   200  I have no word from you in this conversation.
+  alice, the body naming zeta            200  You asked me to remember saffron.
+  alice, a session id with a colon       422  String should match pattern '^[A-Za-z0-9_-]{1,64}$'
+  the outsider                           403  not a member of any tenant
+  a token that names nobody              401  the bearer token carries no verified email
+  the threads the checkpointer holds:
+    acme:alice@acme.example:lesson113
+    acme:alice@acme.example:lesson113-b
+    acme:bob@acme.example:lesson113
+    zeta:carol@zeta.example:lesson113
+  after a restart, alice asks again      200  I have no word from you in this conversation.</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Alice's second turn found the word; her new session did not. Bob, in her tenant, used the same session name and reached <code>acme:bob@acme.example:lesson113</code>, another thread. Carol reached zeta's. The body that named zeta changed nothing: <code>ChatRequest</code> has no tenant field, so the key was dropped and the roster decided. The colon never reached the thread id, because the request model refused it with a 422. The roster refused the outsider (403), and the identity check refused the token that named nobody (401).</p>
+<p>That left four threads, each under its own tenant and person. Then the app restarted, built a new memory checkpointer, and alice's word was gone. That is the failure step 4 must not show on your lane.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Durability</span><h3>A conversation across a redeploy</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_7/demo_04_a_conversation_across_a_redeploy.py" target="_blank" rel="noopener"><code>demo_04_a_conversation_across_a_redeploy.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A word to two brains, a new revision of the chat service, and the word asked for again.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell gives the word to the LangChain brain and to the ADK brain, each in its own session. Then it redeploys the chat service: it changes one setting, <code>LESSON113_RESTART</code>, which makes a new revision, and moves all traffic to it. Every instance that served the first turns is replaced. Then it asks both brains for the word. It prints the serving revision before and after, and saves the sessions and the time of the redeploy for step 6.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/chat/agent.py - the checkpointer, opened once per instance</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">async</span> <span class="kw">def</span> <span class="fn">lifespan</span>(app: FastAPI):
+    <span class="st">&quot;&quot;&quot;Open the checkpointer once; brains are built on first use and share it.&quot;&quot;&quot;</span>
+    <span class="kw">with</span> ExitStack() <span class="kw">as</span> stack:
+        app.state.checkpointer = build_checkpointer(stack)
+        app.state.brains = {}
+        <span class="kw">yield</span></pre></div>
+
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (a word, a redeploy, the word again)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export CHAT="https://documind-chat-$NUMBER.$REGION.run.app"
+CHAT_TOKEN="$(tok "$CHAT")" python - &lt;&lt;'PY'
+import json, os, subprocess, time, urllib.request
+def text(answer):   # a chat service built before 24 September 2026 can send Gemini's content blocks instead of a string
+    return answer if isinstance(answer, str) else "".join(p if isinstance(p, str) else p.get("text", "") for p in answer
+                                                          if isinstance(p, str) or p.get("type") == "text")
+P, R, CHAT = os.environ["PROJECT"], os.environ["REGION"], os.environ["CHAT"]
+def gc(*a):
+    return subprocess.run(["gcloud", *a, "--project", P, "--region", R, "--quiet"], capture_output=True, text=True, check=True).stdout.strip()
+def serving():
+    return gc("run", "services", "describe", "documind-chat", "--format", "value(status.latestReadyRevisionName)")
+def ask(brain, session, question):
+    req = urllib.request.Request(CHAT + "/v1/chat", method="POST",
+                                 data=json.dumps({"question": question, "session_id": session, "brain": brain}).encode(),
+                                 headers={"Authorization": "Bearer " + os.environ["CHAT_TOKEN"], "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=180) as r:
+        return " ".join(text(json.loads(r.read())["answer"]).split())
+state = {"session": f"lesson113-{os.getpid()}", "before": serving()}
+print(f"serving {state['before']}")
+for brain in ("langchain", "adk"):
+    said = ask(brain, f"{state['session']}-{brain}", "Remember this word for me: saffron. Just confirm you have it.")
+    print(f"  {brain:9} {state['session']}-{brain:9}  {said[:44]!r}")
+state["redeployed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+gc("run", "services", "update", "documind-chat", "--update-env-vars", f"LESSON113_RESTART={int(time.time())}")   # a new revision
+gc("run", "services", "update-traffic", "documind-chat", "--to-latest")
+state["after"] = serving()
+print(f"serving {state['after']}, redeployed at {state['redeployed_at']}Z")
+for brain in ("langchain", "adk"):
+    said = ask(brain, f"{state['session']}-{brain}", "Which word did I ask you to remember?")
+    print(f"  {brain:9} {state['session']}-{brain:9}  saffron {'yes' if 'saffron' in said.lower() else 'no '}  {said[:34]!r}")
+json.dump(state, open(os.path.expanduser("~/lesson113.json"), "w"))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (against a local stand-in and a fake gcloud; the revision names, the time and the answers are invented)</span><span class="ro">read only</span></div><pre tabindex="0">serving documind-chat-00007-x4q
+  langchain lesson113-4242-langchain  "Got it: saffron. I'll keep it for this conve"
+  adk       lesson113-4242-adk        "Got it: saffron. I'll keep it for this conve"
+serving documind-chat-00008-m2k, redeployed at 2026-09-23T11:20:41Z
+  langchain lesson113-4242-langchain  saffron yes  'You asked me to remember "saffron"'
+  adk       lesson113-4242-adk        saffron no   "I don't have a word from you in th"</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The revision changed, so every instance was new. The LangChain brain still had the word. The new instance opened its pool at start-up and read the thread from Cloud SQL, and the model was sent the whole conversation. This is the first half of the lesson's proof.</p>
+<p>The ADK brain did not have it: its session was in the old instance's memory. With a minimum of zero instances, every quiet spell does the same to ADK's conversations.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Isolation, live</span><h3>Another person finds nothing</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_7/demo_05_another_person_finds_nothing.py" target="_blank" rel="noopener"><code>demo_05_another_person_finds_nothing.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>You, through the UI, asking for a word you never gave.</p></div></div>
+
+<h4>Definition</h4>
+<p>From your shell, every call is <code>documind-ui-sa</code>. The other person on your lane is you. The UI forwards your IAP assertion, and the chat service takes your email from it. Open the UI, sign in, choose a brain other than direct in the sidebar, and ask for the word.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the address of your UI)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">echo "open https://documind-ui-$NUMBER.$REGION.run.app and sign in as $ME"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected </span><span class="ro">read only</span></div><pre tabindex="0">open https://documind-ui-NUMBER.asia-south1.run.app and sign in as you@example.com</pre></div>
+
+<ol>
+<li>Open that address, and sign in with the account the line names.</li>
+<li>In the sidebar, set <strong>Brain</strong> to <code>langchain</code>. It starts on <code>direct</code>, which does not reach the chat service.</li>
+<li>Ask: <em>Which word did I ask you to remember?</em></li>
+</ol>
+
+<div class="box box-teal"><div class="box-title">Expected</div>
+<p>An answer that has no word from you, and under it a caption beginning <code>brain: langchain</code>.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You asked as yourself, in a session the UI made for your browser, so your question reached <code>acme:</code> your email <code>:</code> that session. <code>documind-ui-sa</code>'s thread, with saffron in it, has a different key, and nothing in your request could name it. This is the second half of the proof: another person finds nothing. Had the UI let you type step 4's session name, you would still have reached a thread of your own, as bob did in step 3.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The rows</span><h3>The rows behind both</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_7/demo_06_the_rows_behind_both.py" target="_blank" rel="noopener"><code>demo_06_the_rows_behind_both.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Step 4's sessions split at the redeploy, and each person's threads.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell connects as in lesson 6.6. For step 4's two sessions, it reads the checkpoints and when they were written, split at the time of the redeploy. Then it counts each person's threads: yours and <code>documind-ui-sa</code>'s.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the rows behind steps 4 and 5)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">~/graph-venv/bin/python - &lt;&lt;'PY'
+import json, os, subprocess
+from urllib.parse import unquote, urlparse
+from google.cloud.sql.connector import Connector
+gc = lambda *a: subprocess.run(["gcloud", *a, "--project", os.environ["PROJECT"]], capture_output=True, text=True, check=True).stdout.strip()
+dsn = urlparse(gc("secrets", "versions", "access", "latest", "--secret", "documind-checkpoint-dsn"))   # the password stays in memory
+instance = gc("sql", "instances", "describe", "documind-checkpoint", "--format", "value(connectionName)")
+state = json.load(open(os.path.expanduser("~/lesson113.json")))
+with Connector() as connector:
+    db = connector.connect(instance, "pg8000", user=dsn.username, password=unquote(dsn.password), db=dsn.path.lstrip("/"))
+    cur = db.cursor()
+    def q(sql, *args):
+        cur.execute(sql, args)                  # a tuple, empty or not: pg8000 takes len() of it, and None has none
+        return cur.fetchall()
+    for brain in ("langchain", "adk"):
+        session = f"{state['session']}-{brain}"
+        ts = [t for (t,) in q("SELECT checkpoint-&gt;&gt;'ts' FROM checkpoints WHERE thread_id LIKE %s ORDER BY checkpoint_id", "%:" + session)]
+        before = sum(t[:19] &lt; state["redeployed_at"] for t in ts)
+        print(f"  {session}: " + (f"{len(ts)} checkpoints, {before} before the redeploy and {len(ts) - before} after" if ts
+                                  else "no rows - the ADK brain keeps none"))
+    for person in (os.environ["ME"], "documind-ui-sa@"):
+        rows = q("SELECT thread_id, count(*) FROM checkpoints WHERE thread_id LIKE %s GROUP BY thread_id ORDER BY max(checkpoint-&gt;&gt;'ts') DESC",
+                 f"%:{person}%")
+        print(f"  threads of {person.split('@')[0]}: {len(rows)}" + (f"; the latest is session {rows[0][0].split(':', 2)[2]}, {rows[0][1]} checkpoints" if rows else ""))
+    db.close()
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (from a fake connector over rows shaped like the lane's; your sessions and counts will differ)</span><span class="ro">read only</span></div><pre tabindex="0">  lesson113-4242-langchain: 6 checkpoints, 3 before the redeploy and 3 after
+  lesson113-4242-adk: no rows - the ADK brain keeps none
+  threads of you: 1; the latest is session 3f9c2a1d0b7e, 3 checkpoints
+  threads of documind-ui-sa: 2; the latest is session lesson113-4242-langchain, 6 checkpoints</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The LangChain session has checkpoints on both sides of the redeploy, some written by the old revision and some by the new, in one thread. The ADK session has no rows at all. Your thread sits under your own email, beside <code>documind-ui-sa</code>'s. Two people, two sets of rows, one table.</p></div>
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the properties hold, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The store is outside the instance.</strong> Only a database survives a deploy, a scale-to-zero and an instance dying, which is why <code>cloudsql.tf</code> exists.</li>
+<li><strong>The server builds the key.</strong> The tenant is looked up, never received. <code>agent.py</code> removed the fields rather than validating them, because a field that does not exist is stronger than a check a later edit can loosen.</li>
+<li><strong>The door comes first.</strong> Who is asking and whether the roster lists them are settled before any brain runs, so a refused caller never reaches a thread.</li>
+<li><strong>The colon is banned twice.</strong> The request model's pattern refuses it, and <code>thread_config()</code> checks again, so no part of the key can spill into the next.</li>
+<li><strong>Each instance opens its own pool.</strong> The checkpointer is opened once, when an instance starts, so a new instance joins the same tables on its first request.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Isolation on the kit's app</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>A conversation across a redeploy</td><td data-label="Costs">four agent turns, and a new revision with no build</td><td data-label="On your lane">a rupee or two</td></tr>
+<tr><td>You, in the UI</td><td data-label="Costs">one agent turn</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The rows</td><td data-label="Costs">one short connection, reading only</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>ADK's conversations do not survive a restart.</strong> The image lacks SQLAlchemy, as lesson 6.6 found, so every redeploy and every scale-to-zero ends every ADK conversation.</li>
+<li><strong>The memory checkpointer is accepted in production.</strong> <code>CHECKPOINT_DSN=memory</code> starts the service with a warning even under <code>DOCUMIND_PROFILE=gcp</code>. A mistaken setting would lose every conversation at every restart, with that one line as the only sign.</li>
+<li><strong>A shared account is one person.</strong> Every caller with <code>documind-ui-sa</code>'s bearer token is the same person to the chat service: <code>make smoke-chat</code>, a notebook, an agent. Any of them reaches another's thread by using the same session name.</li>
+<li><strong>A body that names a tenant is not refused.</strong> <code>ChatRequest</code> ignores keys it does not have. A client that believes it chose a tenant gets its own, with no error to say otherwise.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The same person and session find the word</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>alice asks for it</code>, <code>200  You asked me to remember saffron.</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Another session, person or tenant finds nothing</td><td data-label="The check">step 3</td><td data-label="Pass looks like">three lines of <code>I have no word from you</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The request cannot choose a tenant</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>the body naming zeta</code> finds alice's word</td></tr>
+<tr><td>4</td><td data-label="Claim">The door refuses before any thread</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>422</code>, <code>403</code>, <code>401</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A redeploy replaces every instance</td><td data-label="The check">step 4</td><td data-label="Pass looks like">two different <code>serving</code> revisions</td></tr>
+<tr><td>6</td><td data-label="Claim">The conversation continues after a redeploy</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>langchain</code> ... <code>saffron yes</code></td></tr>
+<tr><td>7</td><td data-label="Claim">Another person finds nothing</td><td data-label="The check">step 5</td><td data-label="Pass looks like">an answer with no word, and <code>brain: langchain</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The rows straddle the redeploy</td><td data-label="The check">step 6</td><td data-label="Pass looks like">checkpoints <code>before the redeploy</code> and <code>after</code>, and <code>no rows</code> for ADK</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>documind-chat</code> has a new revision, with one more setting, <code>LESSON113_RESTART</code>, and all traffic on it. The next <code>make deploy-services</code> replaces the service's settings and removes it. The chat service holds step 4's LangChain thread and your thread from the UI; ADK's session went with the old revision. <code>~/lesson113.json</code> holds step 4's sessions. Lesson 6.8 resumes a turn that was paused or cut off, from its checkpoint.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.7 Verify restart recovery and session isolation &middot; v5.0</p><p>Next: Lesson 6.8 Resume a paused or cut-off turn: checkpoint and resume.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var root = document.getElementById('ri'); if (!root) return;
+var REQ = {"alice": {"label": "alice again, same session", "email": "alice@acme.example", "tenant": "acme", "session": "lesson113"}, "alice-new": {"label": "alice, a new session", "email": "alice@acme.example", "tenant": "acme", "session": "lesson113-b"}, "bob": {"label": "bob, her tenant, the same session name", "email": "bob@acme.example", "tenant": "acme", "session": "lesson113"}, "carol": {"label": "carol, another tenant, the same name", "email": "carol@zeta.example", "tenant": "zeta", "session": "lesson113"}, "alice-zeta": {"label": "alice, the body naming tenant zeta", "email": "alice@acme.example", "tenant": "acme", "session": "lesson113", "note": "the tenant_id field is ignored; the roster decides"}, "colon": {"label": "alice, session id lesson113:x", "status": 422, "detail": "String should match pattern '^[A-Za-z0-9_-]{1,64}$'"}, "outsider": {"label": "an account on no roster", "status": 403, "detail": "not a member of any tenant"}, "nobody": {"label": "a token that names nobody", "status": 401, "detail": "the bearer token carries no verified email"}}, OPT = {req: REQ, store: {"postgres": "the lane: PostgresSaver on Cloud SQL", "memory": "CHECKPOINT_DSN=memory"}, between: {"nothing": "nothing: the same instance answers", "restart": "the instance restarts", "redeploy": "a redeploy: a new revision"}, brain: {"graph": "LangChain or LangGraph", "adk": "ADK", "direct": "direct"}}, FIRST = "acme:alice@acme.example:lesson113", $ = function(id){ return document.getElementById(id); };
+function rule(req, store, between, brain){ var r = REQ[req];
+if (r.status) { return {status: String(r.status), thread: 'none: refused before any brain', finds: 'nothing', why: r.detail}; }
+var thread = r.tenant + ':' + r.email + ':' + r.session;
+if (brain === 'direct') { return {status: '200', thread: thread, finds: 'nothing', why: 'the direct brain keeps no history'}; }
+var kept = between === 'nothing' || (store === 'postgres' && brain === 'graph'), same = thread === FIRST;
+var why = !same ? 'another thread: ' + (r.email === 'alice@acme.example' ? 'another session' : r.tenant === 'acme' ? 'another person' : 'another tenant')
+: !kept ? 'the thread is gone: ' + (brain === 'adk' ? 'ADK keeps its sessions in memory on this image' : 'the checkpointer was in memory')
+: 'the same thread, still held' + (r.note ? ' (' + r.note + ')' : '');
+return {status: '200', thread: thread, finds: same && kept ? 'the word' : 'nothing', why: why}; }
+function el(tag, cls, text){ var e = document.createElement(tag); if (cls) { e.className = cls; } e.textContent = text; return e; }
+function render(){ var o = rule($('ri-req').value, $('ri-store').value, $('ri-between').value, $('ri-brain').value), out = $('ri-out');
+out.textContent = '';
+[['Status', o.status], ['Thread', o.thread], ['Turn 2 finds', o.finds], ['Why', o.why]].forEach(function(r){
+out.appendChild(el('b', '', r[0])); out.appendChild(el('span', r[0] === 'Turn 2 finds' && o.finds === 'the word' ? 'yes' : '', r[1])); }); }
+Object.keys(OPT).forEach(function(k){ var s = $('ri-' + k);
+Object.keys(OPT[k]).forEach(function(v){ var o = el('option', '', k === 'req' ? OPT[k][v].label : OPT[k][v]); o.value = v; s.appendChild(o); });
+s.addEventListener('change', render); });
+$('ri-between').value = 'redeploy'; render();
+})();
+</script>
+</body>
+</html>

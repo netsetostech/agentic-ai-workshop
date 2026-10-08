@@ -1,0 +1,127 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>API</code> and <code>ME</code> set by the setup above.</p>
+<ul>
+<li><strong>Text-to-Speech.</strong> <code>make apis</code> enabled <code>texttospeech.googleapis.com</code> in Module 0. <code>make media</code> calls it with your Application Default Credentials.</li>
+<li><strong>Three packages.</strong> Step 4's first line installs Pillow, the Text-to-Speech client and a static ffmpeg, because Cloud Shell has no ffmpeg. The three figures are already drawn and committed, so the drawing libraries are not needed.</li>
+<li><strong>The pin window.</strong> The setup moved acme to the kit's own index, which is where the worker writes the video's segments. Step 5 asks acme there.</li>
+<li><strong>What the lesson changes.</strong> It adds the town hall video to acme and withdraws the transcript. <code>make smoke-media</code> then leaves a generated image in the media bucket and a small probe image in acme's corpus.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>From a segment to a pill, run</h3><p>The kit's answer contract and the UI's own pill, over three packed sources: a table row, a figure and a clip.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell resolves a model's draft against three packed sources, as rag-api does, with the kit's <code>resolve()</code>. Then it draws the answer with the UI's own <code>_label</code> and <code>_mmss</code>, lifted out of <code>citations.py</code>, which imports Streamlit. It also names the usage row's modality with the API's <code>modality_of</code>. The draft cites the clip, and also a source that is not in the context. Last, the cell applies <code>run_eval</code>'s rule for a media row twice: once to an answer citing the clip, once to one citing the table row.</p>
+
+<h4>The code</h4>
+@@citation@@
+@@label@@
+
+<h4>Do it</h4>
+%%CELL_RULES%%
+%%OUT_RULES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong><code>resolve()</code> kept the clip's fields:</strong> <code>kind: segment</code>, the <code>media_url</code>, <code>start</code> 200.7 and <code>end</code> 238.0. They come from the packed chunk the model cited, never from the model. The draft's <code>[Source 7]</code> was dropped, because nothing was packed as source 7.</li>
+<li><strong>The UI turned <code>[3]</code> into <code>[Clip 3, 03:20]</code>.</strong> The number is the source's place in the context. The time is its start, cut to the whole second. Under Sources the video plays from second 200, captioned with the clip's window.</li>
+<li><strong>Each kind draws its own pill:</strong> a figure <code>[Fig 2]</code>, and a text chunk stays <code>[1]</code>. A segment with no start draws <code>[Clip 3, ?]</code> and plays from second 0.</li>
+<li><strong><code>modality_of()</code>:</strong> any segment among the sources makes the row <code>video</code>, and a figure without one makes it <code>image</code>.</li>
+<li><strong><code>run_eval</code>'s rule is about the kind alone.</strong> Citing the clip counts for mm-03. Citing the table row, with the same words, does not.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Build</span><h3>The clip built, the transcript withdrawn, the video heard</h3><p>The town hall synthesised with its ground truth, the text version taken down, the video through the worker, and its segments read back.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make media MEDIA_ARGS=--video</code> runs <code>evals/build_media.py</code>:</p>
+<ul>
+<li>It keeps the three committed figures.</li>
+<li>It picks two Chirp 3 HD voices by name from the API's list, and synthesises each speaker turn of <code>townhall_2026_q1.md</code>, with 0.7 seconds between turns.</li>
+<li>It draws four slides, the first saying the video is synthetic, and muxes slides and speech with ffmpeg.</li>
+<li>It writes the ground truth beside the video: each turn's start and end, measured from the audio it made.</li>
+</ul>
+%%CELL_MEDIA%%
+%%OUT_MEDIA%%
+
+<p>Next, the transcript goes. <code>upload.sh</code> keeps a transcript home once its video exists, as it keeps a PDF's text mirror home, but it removes nothing already sent:</p>
+@@upload_rule@@
+<p><code>make retire</code> withdraws it as lesson 7.4 showed. The rows are retired, acme's two managed stores delete their copies, and the ledger row becomes a tombstone. The object stays in the bucket, and <code>make restore</code> would bring it back.</p>
+%%CELL_RETIRE%%
+%%OUT_RETIRE%%
+
+<p>Then the video goes up as a new document. <code>make reindex</code> copies it into acme's uploads and waits for the worker's line. The worker's media branch describes it in one Gemini call:</p>
+@@describe@@
+%%CELL_REINDEX%%
+%%OUT_REINDEX%%
+
+<p>Last, read the video's rows from acme's index, and hold them against the ground truth:</p>
+%%CELL_ROWS%%
+%%OUT_ROWS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The clip and its ground truth exist.</strong> The voices were picked by name, five turns were timed as they were synthesised, and the MP4 was written with <code>townhall_2026_q1.segments.json</code> beside it. Both are gitignored. <code>upload.sh</code> never sends the JSON, and the nightly walk skips it.</li>
+<li><strong>The transcript is withdrawn:</strong> its %%N_TRANSCRIPT%% chunk retired, its copies deleted from acme's stores, its ledger row a tombstone.</li>
+<li><strong>The worker heard the video:</strong> <code>ingest_ok</code> with 5 chunks, 0 reused and 5 embedded. Each segment's summary is one embedding. Nothing was reused, because this is a new document.</li>
+<li><strong>The segments pass the checks this lesson makes.</strong> Each is at most a minute and starts before it ends, and the last one ends within a second of the speech. The EMEA line is quoted in the segment over Arjun's turn.</li>
+<li><strong>Your segments are Gemini's.</strong> It cuts your video its own way, so your count, edges and wording differ from these. The checks are what should hold.</li>
+</ul></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>The clip at its second</h3><p>Golden row mm-03's question, asked as the UI asks it, then checked three ways: the kind, the second and a link that opens there.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell asks mm-03's question through <code>/v1/stream</code> as <code>documind-ui-sa</code>. It reads the events the UI reads, the packed sources first and then the tokens, and draws the answer with the UI's own <code>_label</code>. Then it checks three things:</p>
+<ol>
+<li>the kind, by <code>run_eval</code>'s rule;</li>
+<li>the second: the cited clip's window against the ground truth's turn in which the CFO says "5.2 per cent";</li>
+<li>a link that opens the video at that second.</li>
+</ol>
+<p>The link is a V4 URL signed for 15 minutes as <code>documind-ui-sa</code>, the account the UI signs with, which can read the uploads bucket. <code>#t=</code> and the start are appended to it. That is a media fragment: the browser's player starts there, and the fragment is never sent to the server, so the signature still holds.</p>
+<p>What the model saw of the clip is its summary, under a header that names the file and nothing more:</p>
+@@header@@
+<p>The time lives only in the citation's fields, and the UI's player reads it from there:</p>
+@@player@@
+@@kind_check@@
+
+<h4>Do it</h4>
+%%CELL_ASK%%
+%%OUT_ASK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The pool held the video's segments beside a figure and text.</strong> The answer cites the segment with the EMEA line, and the UI draws it as <code>[Clip %%CLIP_N%%, %%CLIP_AT%%]</code>. Your number and second are your lane's.</li>
+<li><strong>The kind check passes:</strong> a segment was cited, which is what mm-03 asks of the live gate.</li>
+<li><strong>The second check passes:</strong> the clip's window holds the turn in which the ground truth puts the CFO's "5.2 per cent".</li>
+<li><strong>The link opens the video there.</strong> Paste it into a browser within 15 minutes and the video starts at the clip's second.</li>
+</ul>
+<p>That is the first proof: the clip at its second.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>make smoke-media, green</h3><p>Module 7's gate: five checks against the API and the MCP server.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make smoke-media</code> runs <code>smoke/smoke_media.py</code> against your API and MCP server, with the tokens minted as <code>documind-ui-sa</code> and <code>documind-outsider-sa</code>. It makes five checks:</p>
+<ol>
+<li>an image generated as a roster member;</li>
+<li>the same request refused for the outsider, by the roster, not the network;</li>
+<li>a figure question answered with a figure citation;</li>
+<li>the media documents listed through the MCP server's <code>list_documents</code>;</li>
+<li>a signed upload URL, a PUT to it, and the worker indexing what was put.</li>
+</ol>
+<p>Its MCP legs need fastmcp, which lesson 5.2 installed.</p>
+
+<h4>Do it</h4>
+%%CELL_SMOKE%%
+%%OUT_SMOKE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The image was generated and recorded.</strong> The object is named by a hash of the prompt, so the same prompt always makes the same name. The API runs with <code>DEMO_MODE=1</code>, as <code>make up</code> deploys it, so only the first run draws and pays: every later run is served from the media bucket, <code>cached=True</code>, for nothing (lesson 7.6).</li>
+<li><strong>The outsider got a 403 from the roster,</strong> after the network had let it in.</li>
+<li><strong>The figure question was answered with a <code>figure</code> citation</strong> whose <code>media_url</code> is the PNG's <code>gs://</code> path.</li>
+<li><strong>The MCP listing counts the video among acme's media documents,</strong> %%N_DOCS%% indexed documents in all on the stand-in; yours include your own uploads.</li>
+<li><strong>The signed PUT went into acme's uploads, and the worker indexed it.</strong> The probe image is the same bytes every run, so from the second run on the worker acknowledges it as a document it already holds.</li>
+</ul>
+<p>That is the second proof: <code>make smoke-media</code> green. The gate asks only the figure question. The clip's citation is step 5's to check.</p></div>

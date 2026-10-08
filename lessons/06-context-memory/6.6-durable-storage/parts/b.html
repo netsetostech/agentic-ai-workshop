@@ -1,0 +1,69 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code> and <code>REGION</code>. You need <code>~/graph-venv</code> from lesson 5.4. Step 3's first cell adds the Cloud SQL connector to it, with the chat image's pins, and makes it if it is missing. Your account must be able to read the DSN secret and connect to the instance, and a project owner can. Steps 5 and 6 read the tables and write nothing. Nothing on your lane changes.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; One thread</span><h3>What a turn writes</h3><p>Two turns of the kit's LangChain brain, their checkpoints and versions counted, then the ADK brain given the lane's DSN.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell runs two turns of the kit's LangChain brain on one thread, against <code>InMemorySaver</code>. It has the interface <code>PostgresSaver</code> implements, one checkpoint per step and one stored value per new version, held in memory instead of Postgres. The first turn asks the brain to remember a word, and the model answers at once. The second asks about gratuity, and the model calls <code>retrieve</code>, which stands in with five passages. After each turn the cell counts the checkpoints and the new versions of messages. Then it prints every version, with its length and size. Last, it gives the ADK brain the lane's DSN, in a venv that has google-adk and no SQLAlchemy, as the chat image does.</p>
+
+<h4>The code</h4>
+@@sessions@@
+
+<h4>Do it: the venv</h4>
+%%CELL_VENV%%
+%%OUT_VENV%%
+
+<h4>Do it: two turns</h4>
+%%CELL_STORE%%
+%%OUT_STORE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The first turn wrote three checkpoints and two versions of messages: the question, then the answer. The second wrote five and four, because the tool call and its result are messages too. Every version holds the whole list. So the last one, %%V_LAST%% bytes, is the conversation, and %%V_ALL%% bytes, all six versions, is what the table keeps. The five passages <code>retrieve()</code> returned are by far the largest message, and every later version stores them again.</p>
+<p>The ADK brain logged its warning and chose memory. The chat image does the same with the same DSN, because it installs google-adk without SQLAlchemy.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Configure</span><h3>What your lane runs</h3><p>The instance, the secret and the setup job, read from your project.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell reads the four pieces from your project. It shows the instance's engine, tier, zone, disk, backups and network. Then its databases and users, and the DSN secret's versions, never its value. It compares the setup job with the service: the image each runs, and when the job last ran. Last, it searches 30 days of the chat service's log for the ADK brain's fallback warning.</p>
+
+<h4>The code</h4>
+@@instance@@
+@@migrate@@
+@@pool@@
+
+<h4>Do it</h4>
+%%CELL_CONF%%
+%%OUT_CONF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The instance is what Terraform asked for: POSTGRES_16 on db-f1-micro, one zone, 10 GB, no backups, and a public address with no authorized networks. The database and user are <code>documind</code> and <code>chat</code>; <code>postgres</code> is Cloud SQL's own. The secret holds the DSN, and nothing printed it.</p>
+<p>The setup job runs on every deploy of the chat service, but the deploy script creates it only when it is missing, so it keeps the image it was first created with. If its image differs from the service's, as here, every later run applied the old library's migrations. A newer checkpointer in the service would never get its own. The ADK line is step 3's warning, logged by your service on an ADK turn: those conversations were never in this database.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Inspect</span><h3>The tables, and one row per thread</h3><p>A connection through the Cloud SQL connector, as the <code>chat</code> user, reading only.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell connects the way the service does, through the Cloud SQL connector, as the <code>chat</code> user. It reads the DSN from the secret into memory, never onto the screen, and opens the connection with the Cloud SQL Python Connector and the pg8000 driver. Your account's IAM decides whether it may connect, and no network is opened to the internet. Then it lists the tables and their rows, the migrations <code>setup()</code> has applied, and one row per thread. Each row shows the tenant, person, session, checkpoints, the last step, and when it ran.</p>
+
+<h4>Do it</h4>
+%%CELL_TABLES%%
+%%OUT_TABLES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four tables, the ones <code>setup()</code> made, and migrations 0 to %%MIG_LAST%%: the job ran. One row per thread is this lesson's proof. Each is a conversation from your earlier lessons: the gate's two agent threads, lesson 5.5's turn, and lesson 6.5's two sessions. A thread with one tool turn has five checkpoints. Lesson 6.5's session B, one turn without a tool and one with, has eight, and its step count ran on across both turns.</p>
+<p>There is no <code>smoke-adk</code> thread and no ADK table. The ADK brain's conversations were in an instance's memory, and they are gone.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; One thread</span><h3>One thread, step by step</h3><p>The latest thread's checkpoints in order, and the size of every version of its messages.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell takes the latest thread and lists its checkpoints in order. For each it shows the step, whether the step took input or ran the loop, and whether the messages changed. Where they changed, it prints the size of the version that step stored.</p>
+
+<h4>Do it</h4>
+%%CELL_THREAD%%
+%%OUT_THREAD%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Each turn opens with an input checkpoint, where the messages have not changed yet. Then every step that adds a message stores the whole list again. The sizes climb by the size of each new message, and the big jump is the five passages. The total is the sum of every version, several times the latest. That is the cost of keeping every version, and step 1's panel scales it to your tenants.</p></div>

@@ -1,0 +1,70 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 1 &middot; RAG foundation &middot; Lesson 1.5</div>
+<h1>Follow upload events, retries, dead-letter handling and the batch lane: <span>one object, one message, one verdict</span></h1>
+<p>Lessons 1.1 to 1.4 followed a document from bytes to records and took for granted that the worker was called. This lesson is about the call. An object landing in the bucket becomes a message; the message reaches the worker carrying a token nobody else can mint; the worker answers with an HTTP status; and the platform does one of three things with that status: acknowledges it, tries again after a growing pause, or, after twelve refusals, parks the message where you can read it. Then the one document the push path must not attempt, and the lane that takes it instead.</p>
+<div class="hero-chips"><div class="hero-chip">OBJECT_FINALIZE</div><div class="hero-chip">One push subscription</div><div class="hero-chip">OIDC as the worker</div><div class="hero-chip">600 s to answer</div><div class="hero-chip">10 s to 600 s, twelve attempts</div><div class="hero-chip">ingest-dlq-sub</div><div class="hero-chip">250 pages</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What an upload event is</a></li>
+<li><a href="#s2">The words: notification, push, ack, backoff, dead letter, queued claim</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The plumbing: read the notification, the topic and the subscription off your lane</a></li>
+<li><a href="#s4">The verdicts: the HTTP-code rule, and your last upload's request log</a></li>
+<li><a href="#s5">Poison: a message that can never succeed, and the retries you can watch</a></li>
+<li><a href="#s6">The batch lane: the 250-page decision, the queued claim, the job</a></li>
+<li><a href="#s7">Dead letters: reading the queue, deciding, cleaning up</a></li>
+<li><a href="#s8">At-least-once, and what it costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how an upload becomes a delivery (a bucket notification into a topic, a push subscription that calls the worker as the worker's own identity), the one rule that governs every delivery (a 2xx is acknowledged, anything else is retried with exponential backoff until a ceiling of twelve attempts sends the message to a dead-letter topic), and why a document over 250 pages is never attempted on that path but queued for a job on the same image. Then you will prove it on your lane: read the plumbing, read the request log of the upload you made in lesson 1.4, put a message in that can never succeed and watch it retried, list the batch queue, and read the dead letter when it lands.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What an upload event is</h3><p>A record about an object, carried by a queue that promises to deliver it at least once, to a worker that answers with a number.</p></div></div>
+
+<p><strong>The bucket does not call the worker.</strong> When an object is finalized in the uploads bucket, Cloud Storage writes one record about it, the object's name, bucket, generation, size and content type, and publishes that record into a Pub/Sub topic. A push subscription on the topic delivers each record to the worker as an HTTP POST, with an identity token minted for the worker's own service account, so the worker, which allows no unauthenticated caller, accepts the call and nobody else on the internet can make it. The record is the whole message; the worker parses it into the <code>IngestMessage</code> contract from lesson 1.1, field for field.</p>
+
+<p><strong>The worker answers with a status, and the status is a decision.</strong> Pub/Sub does not read the response body. A 2xx means "delivered, done": the message is acknowledged and never seen again, whether the worker indexed the document, found it already indexed, or handed it to the batch lane. Anything else means "not done": the subscription waits, ten seconds the first time and up to ten minutes later on, and delivers the same message again. It does that up to twelve times. After the twelfth refusal the message is forwarded to a dead-letter topic, where a subscription holds it for a person to read. The worker chooses its answers with this in mind: a message it can never parse gets a 400, because retrying it changes nothing; a failure that might be transient gets a 500, because the next attempt may succeed.</p>
+
+<p><strong>At least once, not exactly once.</strong> The queue promises that every record is delivered, not that it is delivered once or in order. A worker that took a long time may see the same message again before it has answered; two workers may receive the same record concurrently; an older version's event may arrive after a newer version was indexed. Every one of these happens on a real lane, and the records of lessons 1.1 to 1.4 are the defence: the claim taken in a transaction makes a duplicate harmless, and the ledger's generation makes a late event harmless. The last defence is a ceiling: a document that cannot finish inside the 600 seconds a push request is allowed is not attempted at all. Its pages are counted first, a claim marked <code>queued</code> is written, and a job with no request deadline picks it up.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128666;</div><div>
+<p><strong>A courier with a delivery rule.</strong> The bucket is the sender; the subscription is a courier who keeps a copy of every parcel until the receiver signs. Sign, and the copy is destroyed. Refuse, and the courier comes back tomorrow, then the day after, then in four days, then in eight, up to twelve visits, and after that the parcel goes to a depot where the sender can collect it. The receiver, who knows this, signs for parcels that are theirs even when the box is empty (a duplicate), and refuses only when refusing is worth another visit. And a parcel too big for the doorstep is not brought to the doorstep at all: the courier leaves a slip, and a lorry comes for it.</p></div></div>
+
+<h4>Follow one delivery</h4>
+<p>The player below follows one message from the bucket to its end. Pick what the worker answers and watch the path change: the acknowledged verdicts end at a record from lesson 1.4, the refused ones enter the retry clock, whose timings are the subscription's own policy. The clock is arithmetic on the policy, not a measurement; Pub/Sub adds a little jitter of its own.</p>
+
+<div class="diagram dp" id="delivery">
+<div class="dg-title">The delivery player - one message, one verdict</div>
+<div class="dp-controls">
+<label class="dp-l">The worker answers <select id="dp-verdict"><option value="indexed">200: indexed (lesson 1.4's records written)</option><option value="duplicate">200: duplicate (the bytes were already claimed)</option><option value="stale">200: stale (an older generation than the ledger holds)</option><option value="queued">200: queued_batch (over 250 pages, handed to the job)</option><option value="poison">400: poison (the message cannot be parsed)</option><option value="failed">500: ingest failed (the claim released with the error)</option><option value="refused">429: no instance yet (Cloud Run still cold-starting)</option><option value="timeout">504: the request ran past 600 s</option></select></label>
+</div>
+<ol class="dp-path" id="dp-path"></ol>
+<div class="dp-clock" id="dp-clock"></div>
+<p class="dg-cap">Every path starts the same way: an <code>OBJECT_FINALIZE</code> record, one topic, one push subscription, one POST with the worker's own token. The verdict decides the rest. The retry clock assumes the same verdict every time, which is what a poison message gets; a transient failure usually clears on the second or third attempt.</p>
+</div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: notification, push, ack, backoff, dead letter, queued claim</h3><p>Nine words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Notification</strong></td><td data-label="Meaning">The bucket's rule: on which events to publish a record, into which topic, in which format. One rule, on the uploads bucket, for <code>OBJECT_FINALIZE</code> only, in the <code>JSON_API_V1</code> format the worker's contract parses.</td><td data-label="On your lane">Listed in step 3.</td></tr>
+<tr><td><strong>Topic and push subscription</strong></td><td data-label="Meaning">The topic holds the records; the push subscription delivers each one as a POST to an endpoint. The endpoint is the worker's deterministic Cloud Run URL, and the POST carries an OIDC token for the worker's service account.</td><td data-label="On your lane"><code>documind-ingest</code>, <code>documind-ingest-push</code>, the worker at <code>documind-ingest-&lt;number&gt;.asia-south1.run.app</code>.</td></tr>
+<tr><td><strong>Ack deadline</strong></td><td data-label="Meaning">How long the subscription waits for an answer before it treats the delivery as failed: 600 seconds, the same as the worker's request timeout.</td><td data-label="On your lane"><code>ackDeadlineSeconds: 600</code>.</td></tr>
+<tr><td><strong>The HTTP-code rule</strong></td><td data-label="Meaning">2xx acknowledges; any other status, or no answer inside the deadline, is a failed delivery to be retried.</td><td data-label="On your lane">Read in the worker's <code>push()</code> in step 4.</td></tr>
+<tr><td><strong>Backoff</strong></td><td data-label="Meaning">The pause before a retry, doubling from a minimum to a maximum: 10 seconds to 600 seconds here.</td><td data-label="On your lane">Visible as the gaps between the 400s in step 5.</td></tr>
+<tr><td><strong>Delivery attempts</strong></td><td data-label="Meaning">The ceiling: after this many failed deliveries the message is forwarded to the dead-letter topic. Twelve here, not the minimum five, because a corpus upload lands thirty objects at once and Cloud Run refuses calls while it cold-starts.</td><td data-label="On your lane"><code>maxDeliveryAttempts: 12</code>; about an hour from the first refusal to the twelfth.</td></tr>
+<tr><td><strong>Dead letter</strong></td><td data-label="Meaning">A message that exhausted its attempts, forwarded to <code>documind-ingest-dlq</code> and held by <code>ingest-dlq-sub</code> until a person reads it and decides.</td><td data-label="On your lane">Read with <code>make dlq</code> in step 7.</td></tr>
+<tr><td><strong>Poison</strong></td><td data-label="Meaning">A message the worker can never parse: an object with no tenant prefix, a name that escapes its prefix, a size of zero. The worker answers 400 and logs <code>ingest_poison</code>.</td><td data-label="On your lane">The zero-byte PDF <code>make poison</code> uploads in step 5.</td></tr>
+<tr><td><strong>Queued claim</strong></td><td data-label="Meaning">The batch lane's hand-off: a claim with status <code>queued</code> and an <code>ingest_batch</code> record, written for a PDF over <code>MAX_INLINE_PAGES</code> (250) before any page is parsed. The push request is acknowledged; the job takes the claim in a transaction and runs the same pipeline with no deadline.</td><td data-label="On your lane"><code>make queued</code> lists them; step 6.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these are lesson 1.4's records seen from the queue's side. The <em>claim</em> is what makes a redelivery a duplicate instead of a second index; the <em>generation</em> on the ledger row is what makes a late event stale instead of a rollback. Lesson 1.7 takes the second one apart; this lesson watches the deliveries that make both necessary.</p>
+

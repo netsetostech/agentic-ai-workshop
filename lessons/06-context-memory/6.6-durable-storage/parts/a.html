@@ -1,0 +1,72 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.6</div>
+<h1>Configure and inspect durable conversation storage: <span>the tables, one row per thread, and what every turn adds</span></h1>
+<p>Lesson 6.5 showed that your lane's conversations live in <code>PostgresSaver</code> on Cloud SQL. This lesson opens that storage. Terraform made an instance, a database, a user and a secret; the service mounts them; a one-off job made the tables. Each turn then writes a checkpoint row per step and, for the conversation itself, the whole list of messages again at every new version. You count what a turn writes on the kit's own code, and read the configuration your lane runs. You connect to the database the way the service does, through the Cloud SQL connector, and list the tables and one row per thread. On the way you find which brain's conversations are not there at all.</p>
+<div class="hero-chips"><div class="hero-chip">Cloud SQL</div><div class="hero-chip">PostgresSaver</div><div class="hero-chip">setup() as a job</div><div class="hero-chip">checkpoints</div><div class="hero-chip">checkpoint_blobs</div><div class="hero-chip">one row per thread</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What holds a conversation</a></li>
+<li><a href="#s2">The words: instance, DSN, connector, migration, checkpoint, blob, write, thread</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">What a turn writes</a></li>
+<li><a href="#s4">What your lane runs</a></li>
+<li><a href="#s5">The tables, and one row per thread</a></li>
+<li><a href="#s6">One thread, step by step</a></li>
+<li><a href="#s7">Why storage is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the four pieces that make a conversation outlive an instance, the four tables <code>PostgresSaver</code> keeps, and why a conversation's storage grows faster than the conversation. Then you will prove it: the checkpoints and versions two turns write, your lane's instance, secret and setup job, the checkpoint tables with one row per thread, and one thread's rows in order.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What holds a conversation</h3><p>Four pieces, four tables, and one store that is not there.</p></div></div>
+
+<p><strong>Four pieces.</strong> A conversation outlives an instance only if something outside the instance holds it. On your lane that is a Cloud SQL for PostgreSQL instance, <code>documind-checkpoint</code>: the smallest tier, one zone, 10 GB, no backups. Terraform gives it a database, <code>documind</code>, and a user, <code>chat</code>. It writes the connection string, the DSN, into a Secret Manager secret. The chat service mounts the secret as <code>CHECKPOINT_DSN</code> and the instance as a socket, so the password is never in its image or the repository. The instance has a public address and no authorized networks, so nothing on the internet can open a connection. The Cloud SQL connector checks an identity with IAM, and opens the connection for it.</p>
+
+<p><strong>Tables made once, by a job.</strong> <code>PostgresSaver</code> needs its tables before the first turn. <code>setup()</code> creates them, and it is safe to run twice, which makes it tempting to run at start-up. The kit does not: <code>setup()</code> takes exclusive locks, and several instances racing to run it fail at random. So <code>migrate.py</code> runs it as a Cloud Run job. Version 3.1.2 applies %%N_MIG%% migrations: four tables, three indexes, two column changes, and one that does nothing but keep the count right. The service opens one connection pool per instance at start-up, of one to four connections, and never calls <code>setup()</code>.</p>
+
+<p><strong>Four tables.</strong> <code>checkpoints</code> holds a row per step of every turn, keyed by the thread id. <code>checkpoint_blobs</code> holds the values of the graph's channels, a row per new version. <code>checkpoint_writes</code> holds what each step wrote. <code>checkpoint_migrations</code> holds a row per migration applied. The conversation itself is the <code>messages</code> channel, and every new version of it is stored whole: the list of all messages so far, again. A turn with one tool call adds four messages, so four new versions, each longer than the last.</p>
+
+<p><strong>What is not there.</strong> The ADK brain asks for a database store too, on the same DSN. That needs SQLAlchemy, which google-adk installs only with its <code>db</code> extra, and the chat image installs google-adk without it. So the import fails, <code>brains.py</code> logs a warning, and ADK keeps its sessions in the instance's memory. That is what the memory checkpointer does, without the warning at start-up.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128451;</div><div>
+<p><strong>A sub-registrar's record room.</strong> The deeds are not kept at a clerk's desk. They go to the record room, which outlives every shift. The room has no street door; head office issues keys to named staff. The shelves were built once, by a contractor, before the first deed arrived, not by each clerk on their first morning, which is how one corner gets two sets of shelves. This record room also files a full photocopy of the file after every entry, so the shelves fill much faster than the files grow. One counter never sends its files to the room at all. Its clerk keeps them in a drawer, and they are gone when the shift ends.</p></div></div>
+
+<h4>What keeping every version costs</h4>
+<p>Choose how long a conversation runs, its tool calls, and how many conversations a day your tenants hold. The panel counts the checkpoint rows and versions of messages one conversation leaves. It compares the bytes those versions take with the latest version alone, and how they grow against the instance's 10 GB disk.</p>
+
+<div class="diagram pc" id="ds">
+<div class="dg-title">Messages kept by PostgresSaver - one conversation, then a period</div>
+<div class="pc-box"><b class="h">The conversations</b>
+<div class="pc-in"><label>Turns in a conversation<select id="ds-turns"></select></label><label>Tool calls per turn<select id="ds-tools"></select></label><label>Conversations a day<select id="ds-day"></select></label><label>Kept for<select id="ds-days"></select></label></div>
+<div class="fs-grid" id="ds-out" aria-live="polite"></div></div>
+<p class="dg-cap">A turn with k tool calls writes 3 + 2k checkpoints and 2 + 2k versions of messages, as step 3 counts them on the kit's <code>brains.py</code>. Each message adds what it added there: a question %%INC_H%% bytes, a tool call %%INC_C%%, five passages %%INC_T%%, an answer %%INC_A%%. Only the messages are counted; the other channels and the writes add more rows.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It counts what <code>PostgresSaver</code> keeps of the messages, not what Cloud SQL bills. The instance costs roughly Rs 700 to 850 a month whether it holds one conversation or ten thousand, and its disk is 10 GB.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: instance, DSN, connector, migration, checkpoint, blob, write, thread</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Instance</strong></td><td data-label="Meaning">A Cloud SQL server: engine, tier, zone and disk.</td><td data-label="On your lane"><code>documind-checkpoint</code>: POSTGRES_16, db-f1-micro, zonal, 10 GB</td></tr>
+<tr><td><strong>DSN</strong></td><td data-label="Meaning">The connection string: user, password, database, socket.</td><td data-label="On your lane">the secret <code>documind-checkpoint-dsn</code>, read by the service as <code>CHECKPOINT_DSN</code></td></tr>
+<tr><td><strong>Cloud SQL connector</strong></td><td data-label="Meaning">Opens a connection for an identity IAM allows, with no authorized network.</td><td data-label="On your lane"><code>--add-cloudsql-instances</code> on the service; the Python connector in your shell</td></tr>
+<tr><td><strong>Migration</strong></td><td data-label="Meaning">One change to the schema, applied once and recorded.</td><td data-label="On your lane">%%N_MIG%% in langgraph-checkpoint-postgres 3.1.2</td></tr>
+<tr><td><strong>Setup job</strong></td><td data-label="Meaning">The Cloud Run job that runs <code>migrate.py</code>.</td><td data-label="On your lane"><code>documind-checkpoint-setup</code></td></tr>
+<tr><td><strong>checkpoints</strong></td><td data-label="Meaning">A row per step, keyed by thread and checkpoint id.</td><td data-label="On your lane">3 for a turn with no tool, 5 with one tool call</td></tr>
+<tr><td><strong>checkpoint_blobs</strong></td><td data-label="Meaning">A row per new version of a channel's value.</td><td data-label="On your lane">the whole messages list, at every version</td></tr>
+<tr><td><strong>checkpoint_writes</strong></td><td data-label="Meaning">A row per value a step wrote to a channel.</td><td data-label="On your lane">the new message, and where the graph goes next</td></tr>
+<tr><td><strong>Thread</strong></td><td data-label="Meaning">The key a conversation's rows share.</td><td data-label="On your lane"><code>tenant:person:session</code></td></tr>
+<tr><td><strong>ADK session store</strong></td><td data-label="Meaning">Where the ADK brain keeps its conversations.</td><td data-label="On your lane">an instance's memory: the image has no SQLAlchemy</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a checkpoint is a moment, and a blob is a value at that moment. Checkpoints share a blob while the value does not change.</p>

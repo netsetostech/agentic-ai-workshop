@@ -1,0 +1,57 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why freshness works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The mirror follows the rows.</strong> A new version and the undo both come through the worker, and the mirror is called right after the rows change: <code>after_swap()</code> after the swap, <code>after_undo()</code> after the reactivation. A store is told what the kit's own index was just told.</li>
+<li><strong>The undo re-sends from the rows, not the file.</strong> The rows are what the kit serves, so the copy matches the kit's own index, and nothing is parsed or embedded again.</li>
+<li><strong>A withdrawal is a tombstone, not a deletion.</strong> The object stays in the bucket so that <code>make restore</code> can bring it back, and the walk leaves it alone. <code>reconcile.py</code>'s comment gives the reason: under the old rule, the next night's walk brought back what a person had taken down.</li>
+<li><strong>The restore goes through the worker's one path.</strong> The rewrite makes a new generation, the same event and the same worker. Inside the 30-day undo window the worker reactivates the rows; after it, the bytes are ingested as a fresh version.</li>
+<li><strong>A delete is never refused.</strong> Every store is told, whatever the tenant's policy, and a store that never held the version answers NotFound instead of failing.</li>
+<li><strong>The check is not the writer.</strong> <code>make managed-status</code> reads the ledger and each store's own listing, so it sees what the mirror failed to do, as in step 3. It measures; it repairs nothing.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The mirror's rules</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The ablation</td><td data-label="Costs">%%N_ROWS%% rows: the four arms' query embeddings and Rank API requests (about four and three a row, by the harness's docstring), plus a RAG Engine query, a Vertex AI Search query and two more Rank API requests a row for the store arms; no generation</td><td data-label="On your lane">price the Rank API and both stores' queries on Google's pricing pages</td></tr>
+<tr><td>The new version</td><td data-label="Costs">one chunk embedded and the DLP scan; one copy into each store, one out; a store listing every 20 seconds; one flash answer</td><td data-label="On your lane">a few paise, plus each store's import</td></tr>
+<tr><td>The undo and the restore</td><td data-label="Costs">nothing embedded; one copy into each store; one flash answer each</td><td data-label="On your lane">a few paise each, plus the imports</td></tr>
+<tr><td>The withdrawal</td><td data-label="Costs">deletes, the ledger row, and one flash answer</td><td data-label="On your lane">a few paise</td></tr>
+<tr><td>Version 2's rows</td><td data-label="Costs">283 retired rows kept for the undo window</td><td data-label="On your lane">Firestore storage for 30 days, then the TTL policy deletes them</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>A missing copy stays missing.</strong> The walk plans nothing for a document whose copy failed. The same bytes uploaded again are a duplicate that the worker acknowledges, and the mirror never sees them. Only another version's swap, or an undo, sends the text again. The panel shows this: fail the next copy, upload version 2, run the walk, then upload version 2 again. <code>make managed-status</code> is the only thing that notices.</li>
+<li><strong><code>make retire</code>'s store deletes print no line.</strong> <code>reconcile.py</code> configures no logging, so Python drops the mirror's INFO lines, in your shell and in the nightly Cloud Run job, which gets <code>MANAGED_MIRROR</code> too. Only a failure, which is a WARNING, reaches stderr. The <code>doc.mirror</code> audit events are the record, which is why <code>fresh154</code> reads the audit bucket.</li>
+<li><strong>The ablation cannot see a stale copy.</strong> <code>source_of()</code> resolves a store's context through the kit's rows whatever their <code>current</code> flag says, while the dense arms filter on it. A store that still held a retired version would score that version's text as a hit. The ablation measures quality, and <code>make managed-status</code> measures freshness; neither does the other's job.</li>
+<li><strong>Nothing waits for a Vertex AI Search import.</strong> After every event that copies, the data store reads <code>drift</code> until the long-running import finishes, and no make target waits for it; <code>fresh154</code> polls. <code>managed.py</code>'s comment says the walk verifies the import, but <code>reconcile.py</code> calls the mirror only to delete.</li>
+<li><strong>The hybrid arm's <code>rank-bm25</code> is in no requirements file.</strong> Only the comment above <code>make ablate</code> names it, so a fresh shell fails the arm until it is installed by hand.</li>
+<li><strong><code>ablate.py</code>'s docstring is behind.</strong> It says 43 anchored rows and one managed arm. The golden set has %%N_ROWS%% rows with anchors, and <code>--arms all</code> runs two store arms.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The mirror follows each event</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>upsert</code> and <code>delete:superseded</code> for v2 and for the undo; <code>delete:withdrawn</code> for <code>make retire</code>; <code>in sync</code> after each</td></tr>
+<tr><td>2</td><td data-label="Claim">A failed copy is drift</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>mirror_failed vertex_search</code>, then <code>vertex_search drift, missing ['v1']</code></td></tr>
+<tr><td>3</td><td data-label="Claim">All six arms ran</td><td data-label="The check">step 4</td><td data-label="Pass looks like">six arm lines; the two store arms end <code>(2 rows failed)</code>, which are globex's rows</td></tr>
+<tr><td>4</td><td data-label="Claim">The miss list says where each anchor went</td><td data-label="The check">step 4</td><td data-label="Pass looks like">each <code>lost:</code> line ends <code>ranked out</code> or <code>not retrieved at depth N</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A new version reaches both stores</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>ingest_ok</code> with <code>embedded</code> 1; <code>upsert</code> of the new doc_key in both stores; <code>in sync</code>; 45 days</td></tr>
+<tr><td>6</td><td data-label="Claim">The undo re-sends the old text</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>ingest_reactivated</code> with <code>embedded</code> 0; <code>upsert</code> of the old doc_key in both; <code>in sync</code>; 30 days</td></tr>
+<tr><td>7</td><td data-label="Claim">A withdrawal empties both stores</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>delete:withdrawn</code> from both; <code>handbook withdrawn</code>; <code>in sync</code>; "The context does not say."</td></tr>
+<tr><td>8</td><td data-label="Claim">The restore brings it back</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>reconcile_restored</code>; <code>upsert</code> in both; <code>handbook indexed</code>; <code>in sync</code>; 30 days</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>zeta's handbook went to version 2 and back, and ends as it started: version 1 current, 283 chunks, in both stores. Version 2's copies are gone from both stores. Its 283 rows are retired and expire 30 days after the undo retired them. The object has new generations, from the uploads and the restore's rewrite, and <code>$HOME</code> holds <code>hr_policy_zeta_2026_v2.md</code>, which you can delete. Lesson 7.5 queries a video clip and validates media citations.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 7 Graph and multimodal &middot; Lesson 7.4 Compare quality and test update/withdrawal freshness &middot; v5.0</p><p>Next: Lesson 7.5 Query a video clip and validate media citations.</p></div>

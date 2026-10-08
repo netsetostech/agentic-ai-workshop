@@ -1,0 +1,208 @@
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>Save the session: the state, the inputs, the keys</h3><p>Three things carry a lane from one session to the next, each in its own place, none of them a secret.</p></div></div>
+
+<p>"Saving progress" in the kit is not one file. Terraform's record of what exists lives in your state bucket, the values the planner confirmed live beside the Terraform, and your shell's settings live in your home directory. Read the first two directly, then save the third.</p>
+
+<h4>The Terraform state, in your bucket</h4>
+@@mk_state@@
+
+<p><code>make plan</code> and <code>make up</code> read and write the state through the backend lesson 0.3 initialised: the bucket <code>TFSTATE_BUCKET</code> names, under the prefix <code>TFSTATE_PREFIX</code>, <code>documind/&lt;project&gt;</code> by default. Nothing about the lane's resources is kept on your machine. A fresh clone or a new workstation has no <code>.terraform/</code> folder, and <code>make tf-backend</code> connects it to the state, but only when the state object exists: it never creates an empty backend in its place.</p>
+
+<h4>The saved inputs, beside the Terraform</h4>
+@@infra_files@@
+@@infra_saved@@
+
+<p><code>infrastructure.py</code> writes the %%N_CRITICAL_W%% values it confirmed (%%CRITICAL%%) to the inputs file, and every later plan, check and apply reads them back. A different project or region in the same checkout is refused, never migrated. The selected-plan record is the other file, and it does not outlive the apply:</p>
+
+@@infra_apply@@
+
+<p>So after <code>make up</code> there is no saved plan waiting to be applied again; the next change to the lane starts with a new <code>make plan</code>, which is the point. Read both:</p>
+
+%%CELL_STATE%%
+%%OUT_STATE%%
+
+<p>One state object, and the inputs file's names without their values. If the second line says the file does not exist, the inputs live on the machine that ran <code>make plan</code>, and that is where the next <code>make plan</code> must run.</p>
+
+<h4>The session keys, in your home directory</h4>
+<p><code>commands/session-restart.sh</code> is a file you source: it defines functions and runs nothing. These are the names its save function knows:</p>
+
+@@sr_keys@@
+
+<p>%%N_KEYS%% names, the project and the region first. The save writes only the ones your shell has set, and none is a secret: identity tokens are never saved, because the resume mints new ones. Here is the function:</p>
+
+@@sr_save@@
+
+<p>It refuses to save without <code>PROJECT</code>, <code>REGION</code> and <code>DEMO_ROOT</code>, which the setup block sets. Then it checks the <em>source session</em>, the record of which commit of the kit the lane was deployed from, and the resume checks it again:</p>
+
+@@sr_verify@@
+
+<p>If <code>~/rag-source-session.env</code> does not exist, the save stops with <code>STOP: Missing rag-source-session.env; restore the original source setup.</code> The kit's <code>commands/git-source.sh</code> writes that file for a source repository that keeps the kit under <code>deploy/</code>; your clone keeps it at the root, so if the save stops on it, write the file once yourself, in the same format, from your clone's current commit:</p>
+
+@@git_format@@
+%%CELL_FIRST%%
+
+<p>Then save. The cell exports the two names the helper saves that the setup block calls something else: <code>PROJECT_NUMBER</code> (the setup's <code>NUMBER</code>) and <code>OPERATOR_EMAIL</code> (its <code>ME</code>). <code>TFSTATE_BUCKET</code> is already exported, from step 4.</p>
+
+%%CELL_SAVE%%
+%%OUT_SAVE%%
+
+<p>The <code>PASS</code> line names the file, the names under it are the keys it wrote, and the mode is 600, readable by you alone. Save at the end of every session, after the last change to your shell: a saved session is only as current as the shell it came from.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Switch off</span><h3>make off, and zero instances</h3><p>Four floors lowered, three of them not yet deployed, then the count that proves the lane is quiet.</p></div></div>
+
+<p>First put acme's pin back: run the setup section's second window, the one labelled for the end of the lesson. Then switch off. This is the whole target:</p>
+
+@@mk_off@@
+
+<p>Four switches and a check. Each switch is a make target of its own, and each line starts with <code>-</code>, which tells <code>make</code> to carry on when the line fails. That matters on your lane. <code>make up</code> deploys seven services, and of the four <code>make off</code> floors, only <code>documind-ui</code> is among them: the small model, the vLLM engine and the gateway arrive in Module 9. Their switches fail on a service that does not exist, <code>make</code> notes each error as ignored, and the loop prints <code>absent</code> for them. <code>gke-down</code> removes the vLLM workload from the GKE cluster, which has none yet, and leaves the cluster and its node standing, as its own message says. The loop at the end reads each floor back from the service's template.</p>
+
+@@off_tf@@
+
+<p>The same four floors are lowered every night at 23:00 IST by the <code>documind-off</code> job, so a floor you forget costs an evening; <code>make off-now</code> runs that job by hand. Now run the target:</p>
+
+%%CELL_OFF%%
+%%OUT_OFF%%
+
+<p><code>documind-ui: min-instances 0</code> is the one floor the lane has; the other three say <code>absent</code>. A floor of 0 is a promise about the future, not a count: Cloud Run may keep an idle instance <a href="%%URL_IDLE%%" target="_blank" rel="noopener">up to 15 minutes after its last request</a>, 10 for a GPU. The proof is the count Google keeps, the same gauge the kit's GPU alarm reads:</p>
+
+@@alarm_tf@@
+
+<p>One thing <code>make off</code> does not cover is worth knowing before you ever raise a floor:</p>
+
+@@mk_floor@@
+
+<p><code>MIN_INSTANCES</code> reaches three deploy scripts, the UI's, the MCP server's and the A2A peer's, and <code>make off</code> floors only the UI. Deploy with <code>MIN_INSTANCES=1</code> for a session day, and the read below will show %%UNFLOORED%% still holding an instance after <code>make off</code>. The cell waits out the idle window, then reads <code>instance_count</code> for every Cloud Run service in the project, one point a minute over the last half hour:</p>
+
+%%CELL_ZERO%%
+%%OUT_ZERO%%
+
+<p><code>none - zero instances</code>: no Cloud Run service is answering, and none is billing. Make no request to the lane between <code>make off</code> and the read: the UI, a curl, even the resume's checks in step 11 start an instance and restart the clock. Zero instances is everything <code>make off</code> can do. It is not the end of the bill.</p>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; The bill</span><h3>What still bills when nothing runs</h3><p>Six lines Terraform declared, each billed by the hour, read from the declarations and priced.</p></div></div>
+
+<p>With every service at zero, six things on the lane still bill by the hour. None of them is an instance Cloud Run can scale away; each is capacity Terraform provisioned, and each declaration says what it costs or where to look.</p>
+
+<h4>The six lines, as Terraform declares them</h4>
+<p><strong>The deployed Vector Search index.</strong> An index and an endpoint are records; the deployed index is a machine, and it bills while it serves:</p>
+
+@@vector_tf@@
+
+<p>Which machine depends on the index's shard size, which <code>vector.tf</code> does not set. The API picks it when the index is created, the map below translates it, and the comment records what the API picked for the index the kit was written against: MEDIUM, served on <code>e2-standard-16</code>.</p>
+
+@@vector_shard@@
+
+<p><strong>Spanner</strong>, provisioned, Enterprise edition, %%SP_PU%% processing units, by the hour:</p>
+
+@@spanner_tf@@
+
+<p><strong>Cloud SQL</strong>: %%N_SQL_W%% instances of the cheapest tier, one for the chat service's checkpoints in <code>cloudsql.tf</code>, one for the gateway's spend logs in <code>gateway.tf</code>, both declared by <code>make up</code> whether or not the gateway is ever deployed. The kit's comment gives the tier a rough monthly price; the arithmetic below prices each instance's hours and its disk at the list price instead:</p>
+
+@@cloudsql_tf@@
+
+<p><strong>GKE</strong>: a regional cluster with one Standard node. Every cluster pays a management fee by the hour; GKE's free-tier credit covers one zonal or Autopilot cluster, and this one is regional, so the fee is paid:</p>
+
+@@gke_tf@@
+
+<p><strong>The VPC connector</strong> the services reach the network through, whose machines never drop below %%CONN_MIN_W%%:</p>
+
+@@network_tf@@
+
+<p>Two of these comments promise that <code>make down</code> removes the resource, and <code>gke-down</code>'s message in step 9 says the same of the cluster. Terraform's destroy would remove them all. Step 12 shows why, in the shape the lane runs today, that destroy never starts.</p>
+
+<h4>The arithmetic</h4>
+<p>Every unit price is Google's list price for Mumbai (asia-south1), where your lane runs, read on %%PRICE_DATE%% on the official pages for <a href="%%URL_VERTEX%%" target="_blank" rel="noopener">Vector Search</a>, <a href="%%URL_SPANNER%%" target="_blank" rel="noopener">Spanner</a>, <a href="%%URL_SQL%%" target="_blank" rel="noopener">Cloud SQL</a>, <a href="%%URL_GKE%%" target="_blank" rel="noopener">GKE</a>, <a href="%%URL_COMPUTE%%" target="_blank" rel="noopener">Compute Engine's E2 machines</a> and <a href="%%URL_DISK%%" target="_blank" rel="noopener">its disks</a>. The GKE fee, $%%GKE_FEE%% an hour, is the one <code>gke/README.md</code> states, and GKE's page says where the free-tier credit applies. The <a href="%%URL_CONNECTOR%%" target="_blank" rel="noopener">connector guide</a> names <code>e2-micro</code> as the machine a connector gets when none is set, and <a href="%%URL_VPC%%" target="_blank" rel="noopener">VPC pricing</a> bills connector instances as Compute Engine VMs. A month is %%MONTH_H%% hours, %%YEAR_H%% hours a year over twelve months, and a dollar is Rs %%USD_INR%%, the course's rate in <code>shared/prices.py</code>.</p>
+
+%%COST_TABLE%%
+
+<p><strong>Rs %%DAY_MEDIUM%% a day</strong>, every day the lane exists, whether it is up, off, or still standing after a refused <code>make down</code>: Rs %%WEEK_MEDIUM%% over the five weekdays between two weekend sessions, Rs %%MONTH_MEDIUM%% over a month. It is the figure lesson 0.1 had you write down for a MEDIUM index. The Vector Search node alone is Rs %%VEC_DAY%% a day. The kit's default budget, a <code>BUDGET_AMOUNT</code> of %%BUDGET%% in the billing account's currency (rupees, on an Indian account), lasts %%BUDGET_DAYS%% days at this rate without a single question asked, and the budget's alerts (<code>terraform/budget.tf</code>, lesson 0.1) fire on the way.</p>
+
+<p>With a SMALL index the same day is Rs %%DAY_SMALL%%. The size is fixed when the index is created, and changing it replaces the index, as the comment in <code>vector.tf</code> warns: it is a decision for before <code>make up</code>, not after.</p>
+
+<div class="box box-amber"><div class="box-title">Mumbai list prices, and your bill</div>
+<p>The table prices the lane where it runs. Its services, index, databases and cluster are in Mumbai, <code>asia-south1</code> (Spanner's configuration is <code>regional-asia-south1</code> on every lane), and each unit price is Mumbai's list price as Google's pages gave it on %%PRICE_DATE%%, before tax. Prices change, and an Indian billing account is charged at Google's own rupee prices rather than at Rs %%USD_INR%% to the dollar. The number that counts is your bill: in the console, <em>Billing</em>, then <em>Reports</em>, filtered to your project and grouped by SKU, on a day the lane sat idle.</p></div>
+
+<p>What the table leaves out bills by size or by use rather than by the hour: Firestore, the buckets, the container images, the two RAG Engine corpora and the two data stores, the nightly job's minute, the BigQuery tables' few rows. At the corpus's size these are small next to the six lines, and the bill shows them as well. Now read the six lines on your own lane: the machine behind the deployed index and the shard size the API picked, Spanner's edition and units, the databases' tier, the cluster's location and node, the connector's machines.</p>
+
+%%CELL_STANDING%%
+%%OUT_STANDING%%
+
+<p>If your index says <code>SHARD_SIZE_SMALL</code> on <code>e2-standard-2</code>, use the SMALL figures: the panel in step 1 switches between them. Everything else in the listing should match the table line for line.</p>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Restore</span><h3>Next session: a restored shell</h3><p>A new shell, one function, and proof that it found the same project and region, and an API that answers.</p></div></div>
+
+<p>Next weekend, the shell you saved from is gone. Open a new one and restore it:</p>
+
+%%CELL_RESUME%%
+
+<p><code>rag_resume</code> refuses to start without the saved file, checks the source snapshot again, clears every session name, and sources the file:</p>
+
+@@sr_resume@@
+
+<p>Between these lines and the last ones, it activates <code>rag-shell-venv</code> and checks that every package the operator commands pin is installed, warns if Terraform is missing, sources the git helper, moves into <code>DEMO_ROOT</code>, and refreshes both sign-ins, gcloud's and Python's Application Default Credentials. Then:</p>
+
+@@sr_resume_end@@
+
+<p><code>rag_restore_api_url</code> takes the API's URL from the revision that serves all of the traffic, its <code>SELF_URL</code>, not from a guess. <code>rag_check_resumed_api</code> mints fresh tokens and calls the three GETs of step 7:</p>
+
+@@sr_check@@
+%%OUT_RESUME%%
+
+<p>The proof is in the last lines: the project and region the shell found are the ones you saved, the API URL is the serving revision's, and the three GETs answered. From here, copy <code>API_URL</code> into <code>API</code> and run the setup block's function lines, as the setup section says, and the session carries on where the last one stopped. If the resume stops, its <code>STOP</code> line names the fix. Missing packages: run <code>rag_install_python_dependencies</code>, a function in the same file, which installs the four requirement files the check reads plus <code>numpy</code> and <code>rank-bm25</code>, then checks again. A Python sign-in failure: <code>gcloud auth application-default login</code>, then the resume again. <em>No saved operator session</em>: step 8's save never ran.</p>
+
+<!-- ============================ STEP 12 ============================ -->
+<div class="step" id="s12"><div class="step-n">12</div><div><span class="kicker">Level 5 &middot; Teardown</span><h3>make down, and what only deleting the project removes</h3><p>The kit's teardown, the guard that stops its destroy, and the one command that ends the bill.</p></div></div>
+
+<div class="box box-red"><div class="box-title">Read this step now; run it when you are finished</div>
+<p>Module 1 begins on this lane, so do not run <code>make down</code> at the end of this lesson. Read what it does now, and run it when you are done with the lane.</p></div>
+
+@@mk_down@@
+
+<p>In order: <code>down-services</code>, then <code>managed-stores-down</code>, then <code>terraform destroy</code> with the same variables <code>make plan</code> used, then the list, whatever the destroy did. <code>down-services</code> deletes what Terraform never owned: every service in <code>DOWN_SERVICES</code>, the gateway and the two GPU services from Module 9 (the comment's "Module 11's three"), the candidate tag and the tenants' context caches, each on its own line so that an absent one never stops the next:</p>
+
+@@mk_down_services@@
+
+<p><code>managed-stores-down</code> deletes the RAG Engine corpora for acme and zeta and clears their pins. Then <code>terraform destroy</code> plans the destruction of everything in the state, and stops at plan time:</p>
+
+@@managed_tf@@
+@@mk_managed@@
+
+<p><code>MANAGED_SEARCH</code> is true by default, so the state holds two Vertex AI Search data stores, one for acme and one for zeta, each with <code>prevent_destroy</code>. Terraform rejects any plan that would destroy such a resource, and a destroy plan destroys everything, so this one destroys nothing: the six lines of step 10 keep billing after <code>make down</code>, still Rs %%DAY_MEDIUM%% a day with a MEDIUM index. The list the recipe prints afterwards does not name the data stores; the kit's README does. Lesson 7.3 meets the same guard from the stores' side.</p>
+
+<p>The recipe's last line is the one that ends the bill: delete the throwaway project. <a href="%%URL_SHUTDOWN%%" target="_blank" rel="noopener">Shutting a project down stops all of its billing</a>; for 30 days the project can still be restored, and then it and everything in it are deleted. The same page adds two cautions: charges already run up can still arrive until the current billing cycle ends, and it advises disabling billing on the project before you shut it down. One switch would block the deletion itself: <code>AUDIT_LOCK=true</code> locks the audit bucket's five-year retention and liens the project, which is why it is false for a lab.</p>
+
+%%CELL_DOWN%%
+%%OUT_DOWN%%
+
+<p>Read it against the recipe: the deleted and absent lines from <code>down-services</code>, the corpora and pins from <code>managed-stores-down</code>, Terraform's refusal naming the two data stores, the kit's list, and a non-zero exit, because the recipe exits with the destroy's status. Then, when the course is over, <code>gcloud projects delete "$PROJECT"</code> ends every line on this page.</p>
+
+<!-- ============================ STEP 13 ============================ -->
+<div class="step" id="s13"><div class="step-n">13</div><div><span class="kicker">Level 6 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Thirteen checks, each one step above, each with what a pass looks like on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">acme answers from the kit's index during the lesson</td><td data-label="The check">the setup section's pin</td><td data-label="Pass looks like"><code>acme: retrieval_backend=vector</code>, and the smoke's vector-tier line passes</td></tr>
+<tr><td>1</td><td data-label="Claim">The lane stands on what <code>make up</code> needed</td><td data-label="The check"><code>make preflight</code>, step 4</td><td data-label="Pass looks like">%%N_PREFLIGHT%% <code>ok</code> lines and <code>preflight clean</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The UI answers the smoke's question</td><td data-label="The check">the browser, step 3</td><td data-label="Pass looks like">Tenant: acme; <em>%%MUST%%</em> in the answer; the Gratuity Act among the sources</td></tr>
+<tr><td>3</td><td data-label="Claim">The smoke is green</td><td data-label="The check"><code>make smoke</code> with the tenant, step 5</td><td data-label="Pass looks like">every required check <code>[PASS]</code>, <code>0 fail</code>, no <code>make</code> error</td></tr>
+<tr><td>4</td><td data-label="Claim">A tenant nobody lists is refused, with the API's reason</td><td data-label="The check">the smoke without the tenant, step 6</td><td data-label="Pass looks like"><code>[FAIL] query</code>, <code>status=403</code>, <code>not a member of this tenant</code>; one fail; <code>exit status: 2</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The roster explains the refusal</td><td data-label="The check">the dry run and the Firestore read, step 6</td><td data-label="Pass looks like"><code>documind-ui-sa</code> on acme, zeta and globex; <code>%%SMOKE_TENANT%%</code> empty</td></tr>
+<tr><td>6</td><td data-label="Claim">The three GETs answer, and the door is shut</td><td data-label="The check">the REST cell, step 7</td><td data-label="Pass looks like"><code>HTTP 200</code> three times, <code>/version</code> naming your commit, <code>HTTP 403</code> with no token</td></tr>
+<tr><td>7</td><td data-label="Claim">The progress is saved</td><td data-label="The check">the state read and the save, step 8</td><td data-label="Pass looks like">one <code>default.tfstate</code>; %%N_CRITICAL%% input names; <code>PASS: saved nonsecret restart settings</code>; mode 600</td></tr>
+<tr><td>8</td><td data-label="Claim">The floors are 0</td><td data-label="The check"><code>make off</code>, step 9</td><td data-label="Pass looks like"><code>documind-ui: min-instances 0</code>, the other three <code>absent</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Zero instances</td><td data-label="The check">the Monitoring read, step 9</td><td data-label="Pass looks like"><code>none - zero instances</code></td></tr>
+<tr><td>10</td><td data-label="Claim">What still bills is what the table says</td><td data-label="The check">the listings, step 10, and your Billing report</td><td data-label="Pass looks like">the six lines as declared; the report's idle day beside Rs %%DAY_MEDIUM%%, or Rs %%DAY_SMALL%% with a SMALL index</td></tr>
+<tr><td>11</td><td data-label="Claim">A restored session finds the same project and region</td><td data-label="The check"><code>rag_resume</code> in a new shell, step 11</td><td data-label="Pass looks like"><code>PASS: restored project</code>, <code>PROJECT</code> and <code>REGION</code> as saved, the three GETs passed</td></tr>
+<tr><td>12</td><td data-label="Claim"><code>make down</code> removes the services, not the bill</td><td data-label="The check"><code>make down</code>, step 12, when you are finished</td><td data-label="Pass looks like">services deleted; the destroy refused on the two data stores; then the project deleted</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing new bills. <code>documind-ui</code>'s floor is 0, now set by <code>make off</code> itself; acme's retrieval pin is back on RAG Engine; <code>~/rag-resume.env</code> holds your session's names, beside <code>~/rag-source-session.env</code> and <code>~/rag-git-source.sh</code> if step 8 asked you to write them; the smoke and the UI cost a few questions' tokens. The lane is still up, at zero instances, and still bills the six lines of step 10 for every hour it exists. Module 1 starts on it: lesson 1.1 reads the contracts every source, tenant, page and chunk on this lane obeys.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 0 Setup &middot; Lesson 0.4 Prove the lane, break it once, and switch it off &middot; v5.0</p><p>Next: Module 1 %%NEXT_MODULE%%, Lesson 1.1 %%NEXT_TITLE%%.</p></div>

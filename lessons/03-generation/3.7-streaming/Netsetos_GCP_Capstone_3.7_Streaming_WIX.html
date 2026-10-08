@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 3.7 Stream answers and handle failures - four events on one connection, the sources before the first token, and the failures that degrade into a line instead of a 500 | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.sr-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 16px;margin-bottom:10px;align-items:end;}
+.sr-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.sr-wide{grid-column:1/-1;}
+.sr-l select,.sr-l textarea{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.sr-l textarea{font-family:var(--mono);font-size:16px;line-height:1.35;min-height:160px;resize:vertical;}
+.sr-meta{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal);margin:6px 0 0;}
+.sr-out{display:grid;gap:8px;margin-top:8px;}
+.sr-step{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12.5px;line-height:1.5;color:var(--slate);min-width:0;}
+.sr-step b{color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;display:block;margin-bottom:2px;}
+.sr-step code{overflow-wrap:anywhere;}
+.sr-step ul{margin:4px 0 0;padding-left:20px;}
+.sr-step li{overflow-wrap:anywhere;}
+.sr-step li.flag{color:#92400e;}
+.sr-step.flag{border-color:#f59e0b;background:#fffbeb;}
+.sr-step.stop{border-color:#dc2626;background:#fef2f2;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.7</div>
+<h1>Stream answers and handle failures: <span>four events on one connection, the sources before the first token, and the failures that degrade into a line instead of a 500</span></h1>
+<p>Lesson 3.5 returned one JSON. This lesson returns the same answer as it is written. <code>/v1/stream</code> keeps one connection open and sends Server-Sent Events down it: the citations first, because the packed set is known before a single token exists, then each piece of text as the model produces it, then one <code>done</code> event with the envelope, or an <code>error</code> when the guard refuses the finished answer. The stream takes the same roads as the query and keeps the same clocks; a cache hit and an empty pool each arrive as a single token; and when something on the way fails, the retriever's index, the ranker, the classifier, the cache, the month's counter, the tracing, the answer is still served and one line in the log says what stood in. You will read a stream in curl with a clock on each event, see why its citations differ from the query's, stream the empty pool, read the guard's two doors, force a failure on a candidate that takes no traffic and watch the stream continue, and read the table of everything that degrades and what it degrades to.</p>
+<div class="hero-chips"><div class="hero-chip">event: citation, token, done, error</div><div class="hero-chip">curl -N</div><div class="hero-chip">citations first, from the packed set</div><div class="hero-chip">held tokens, blocked_response</div><div class="hero-chip">rerank_fallback in done.stages</div><div class="hero-chip">row event: stream</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Why a stream, what its four events carry, and what degrades into a line</a></li>
+<li><a href="#s2">The words: SSE, citation event, token, done, error, held, blocked, fallback, stream row, first token</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">A stream in curl: the raw events, their order, and a clock on each</a></li>
+<li><a href="#s4">What a stream's citations are, and the streams of one token</a></li>
+<li><a href="#s5">The guard: a prompt refused before the stream, an answer held until it is screened</a></li>
+<li><a href="#s6">A failure forced on a candidate: the ranker silent, the stream still served, the line in the log</a></li>
+<li><a href="#s7">Every failure and what it degrades to</a></li>
+<li><a href="#s8">What a stream costs, what its row says, and who reads it</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the stream's four events carry and in what order, why its citations are the packed set rather than the model's, how the guard sits on both sides of the stream, and how each failure on the way degrades into a log line with the answer still served. Then you will prove it on your lane: time a stream event by event, stream the empty pool, read the guard's column on the rows, force the ranker to stand down on a candidate and read the line, and check the events the lane has never logged.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Why a stream, what its four events carry, and what degrades into a line</h3><p>The first token is the point, the sources come before it, the same clocks run without spans, and a failure is a line in the log rather than an empty screen.</p></div></div>
+
+<p><strong>A stream exists for the first token, and the sources come before it.</strong> <code>/v1/query</code> answers once, when everything is done. <code>/v1/stream</code> answers as Server-Sent Events on one connection: <code>event: citation</code> lines first, one per packed chunk with the fields a <code>Citation</code> carries and the first 240 characters of the text as its quote; then <code>event: token</code> for each piece of text as the model produces it; then one <code>event: done</code> with the envelope, tokens, model, backend, the three clocks and the pool, the cache verdict and the prompt version. The citations are the packed set because that is known before a single token exists, so the UI can render the sources while the answer is being written; the price is that a stream cites every packed source and the query cites only the ones the model used, and lesson 3.5's resolver never runs here, because JSON cannot usefully be streamed. The tokens are prose with <code>[N]</code> marks, and <code>N</code> is the packed position.</p>
+
+<p><strong>The stream takes the same roads and keeps the same clocks.</strong> The handler's order is the query's: the roster, the filter keys, the guard before the stream starts, so a blocked prompt is a 400 and never a broken stream; then retrieve, rerank with its fallback, and generate, on the same three clocks without spans, because a generator suspended between tokens is no place to hold a span. A cache hit arrives as one token with backend <code>cache</code>; an empty pool arrives as one token with backend <code>none</code> and no model call; the row is logged with event <code>stream</code> and the same columns as a query's. The clock the caller feels is different from the API's: the time to the first citation, the time to the first token, and the time to <code>done</code> are three numbers, and only the last is <code>latency_ms</code>.</p>
+
+<p><strong>A failure degrades into a line, not a 500.</strong> Every rung the request climbs has a stand-in and a name: a classifier that fails is <code>routing_fallback</code> and the generator model answers; a routed tier out of quota before the first token is <code>tier_exhausted</code> and the default model streams; an index that raises is <code>vector_search_fallback</code>; a silent ranker is <code>rerank_fallback</code>; a cache that cannot be read is <code>semantic_cache_failed</code> and a miss; a cache that cannot be written is <code>semantic_cache_store_failed</code>; a month's counter that cannot be written is <code>budget_record_failed</code>; tracing that cannot load is <code>telemetry_not_instrumented</code>. In each case the answer is served, the log names the cause, and where it matters the row counts it. Two things do not degrade, on purpose: a prompt the guard blocks is refused before the stream, and a finished answer the guard blocks becomes <code>event: error</code> after the held tokens are screened, with <code>blocked_response</code> on the row.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127911;</div><div>
+<p><strong>The live commentary.</strong> A radio commentator reads out the team sheets before the whistle, every player who is on the pitch, which is the citations from the packed set. Then the commentary runs play by play, which is the tokens. With the delay censor switched on, the broadcast runs a few seconds behind and either goes out whole or is cut with one announcement, which is the guard holding the tokens and the error event. When the scoreboard feed dies mid-match, the commentator carries on from the referee's list and the producer notes it in the log; nobody at home hears a gap. The final whistle carries the bill, the clocks and who was in the booth, which is <code>done</code>.</p></div></div>
+
+<h4>The stream reader: paste a transcript, read it event by event</h4>
+<p>The reader parses the text <code>curl -N</code> prints, or the transcript step 3 saves: the events in order, the citations with their kinds and dates, the tokens joined back into the answer, and the <code>done</code> event's envelope, read against the handler's rules. It starts on a transcript shaped exactly as main.py writes one, with two of the kit's handbook chunks as the citations and that chunk's own words standing in for the model's; the cases turn it into the other shapes a stream can take.</p>
+
+<div class="diagram sr" id="reader">
+<div class="dg-title">Stream reader - main.py's four events, the handler's rules, and 2.3's reading of the stages</div>
+<div class="sr-controls">
+<label class="sr-l sr-wide">The transcript, as curl -N prints it<textarea id="sr-text" rows="9" spellcheck="false"></textarea></label>
+<label class="sr-l">Cases<select id="sr-case"><option value="">choose a case</option><option value="normal">a cited answer, the tokens of one packed chunk</option><option value="empty">the empty pool: one token, backend none</option><option value="cache">an answer-cache hit: one token, backend cache</option><option value="blocked">the guard blocks the finished answer: event error</option><option value="fallback">the ranker silent: rerank_fallback 1 in done.stages</option></select></label>
+</div>
+<p class="sr-meta" id="sr-meta" aria-live="polite"></p>
+<div class="sr-out" id="sr-out" aria-live="polite"></div>
+<p class="dg-cap">The event names and their fields are main.py's, the sample's clocks are the kit's usage selftest rows, and the readings under <code>done</code> are lesson 2.3's rules for a stages block. Paste your own transcript from step 3 and the numbers are yours.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the reader is not</div>
+<p>It is not a client: it reads a finished transcript and cannot show the one thing a stream is for, the first token arriving before the rest. Step 3's cell times that. And its sample answer is a chunk's own words, because the model's are not known until it writes them.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: SSE, citation event, token, done, error, held, blocked, fallback, stream row, first token</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>SSE</strong></td><td data-label="Meaning">Server-Sent Events: one HTTP response of type <code>text/event-stream</code> that stays open, each event two lines, <code>event: name</code> and <code>data: json</code>, then a blank line. <code>curl -N</code> prints them as they arrive.</td><td data-label="On your lane"><code>/v1/stream</code>; the UI's chat page reads it the same way.</td></tr>
+<tr><td><strong>event: citation</strong></td><td data-label="Meaning">One per packed chunk, before any token: <code>n</code>, the chunk id, source, page, the first 240 characters as the quote, the kind, the media fields and <code>effective_from</code>. A cache hit sends the stored answer's citations in the same shape.</td><td data-label="On your lane">Five for a default question; three for a query's answer.</td></tr>
+<tr><td><strong>event: token</strong></td><td data-label="Meaning">A piece of the answer's text as the model produced it, <code>{"t": ...}</code>; prose with <code>[N]</code> marks, no schema. A hit or an empty pool is one token.</td><td data-label="On your lane">Dozens for a cited answer.</td></tr>
+<tr><td><strong>event: done</strong></td><td data-label="Meaning">The envelope: <code>tokens_in</code>, <code>tokens_out</code>, <code>cached_tokens</code>, <code>model</code>, <code>backend</code>, <code>latency_ms</code>, <code>stages</code>, <code>cache_hit</code>, <code>prompt</code>. Priced on the row, not in the event, on the vertex backend.</td><td data-label="On your lane">The last event of every stream that was not blocked.</td></tr>
+<tr><td><strong>event: error</strong></td><td data-label="Meaning">Sent instead of the tokens when the guard blocks the finished answer: <code>{"error": reason}</code>, after the row is logged with <code>blocked_response</code>.</td><td data-label="On your lane">Never, with <code>ARMOR</code> off.</td></tr>
+<tr><td><strong>Held tokens</strong></td><td data-label="Meaning">With the guard on, the tokens are collected instead of sent, the whole answer is screened once, and then either every token goes out or the error does. A token stream cannot be screened.</td><td data-label="On your lane">Step 5 reads the code; the lane does not hold.</td></tr>
+<tr><td><strong>blocked_prompt, blocked_response</strong></td><td data-label="Meaning">The guard's two verdicts: a blocked prompt is a 400 before retrieval, with a log line; a blocked response is the error event on the stream and a 502 on the query, with <code>guard: blocked_response</code> on the row.</td><td data-label="On your lane"><code>guard: off</code> on every row.</td></tr>
+<tr><td><strong>Fallback line</strong></td><td data-label="Meaning">A warning with an <code>event</code> name and the error's type, written where a rung stood in for another; the answer is served regardless. Eight names in the API.</td><td data-label="On your lane">Step 7's table; one forced in step 6.</td></tr>
+<tr><td><strong>The stream row</strong></td><td data-label="Meaning">The same usage row as a query's, with <code>event: stream</code>, the three clocks, the pool, the flags and the guard verdict; <code>make usage</code> groups it by surface.</td><td data-label="On your lane">Step 4 reads three of them.</td></tr>
+<tr><td><strong>First token</strong></td><td data-label="Meaning">The clock the caller feels: the citations arrive after retrieval and reranking, the first token when the model starts, <code>done</code> when it stops; only the last is <code>latency_ms</code>.</td><td data-label="On your lane">Step 3 times all three.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction carries the lesson: a <em>fallback</em> serves the answer and writes a line; a <em>refusal</em> serves the contract with <code>answerable false</code>; a <em>failure</em> is a status the caller sees. The stream has all three, and the reader below tells them apart by the events alone.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">The names this lesson reads off the API</div>
+<p>The guard, the answer cache, the router and the ranker's deadline live in the API's environment, each with a default the page names; a name the service does not set is unset rather than exported empty. <code>/version</code> reports the cache and the model.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }
+setenv() { v="$(svc_env documind-api "$1")"; if [ -n "$v" ]; then export "$1=$v"; else unset "$1"; fi; }
+for N in ARMOR ARMOR_TEMPLATE SEMANTIC_CACHE ROUTING RERANK_TIMEOUT_S; do setenv "$N"; done
+echo "guard: ${ARMOR:-off (default)}  template: ${ARMOR_TEMPLATE:-documind-guard (default)}  cache: ${SEMANTIC_CACHE:-off (default)}  routing: ${ROUTING:-off (default)}  rerank timeout: ${RERANK_TIMEOUT_S:-5.0 (default)}"
+curl -s "$API/version" -H "Authorization: Bearer $(tok "$API")" | python -c "import sys, json; j = json.load(sys.stdin); print('version:', j['generator_model'], '|', j['prompt'], '| semantic_cache', j['semantic_cache'])"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (a lane deployed by make up leaves all four off)</span><span class="ro">read only</span></div><pre tabindex="0">guard: off (default)  template: documind-guard (default)  cache: off (default)  routing: off (default)  rerank timeout: 5.0 (default)
+version: gemini-3.6-flash | documind-rag@v3 | semantic_cache off</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Stream</span><h3>A stream in curl: the raw events, their order, and a clock on each</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/demo_03_a_stream_in_curl_the_raw_events_their_order_and_a_clock_on_each.py" target="_blank" rel="noopener"><code>demo_03_a_stream_in_curl_the_raw_events_their_order_and_a_clock_on_each.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The handler that writes the events, the generator that yields the packed list once and then the text, and a cell that times the first citation, the first token and done.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>generate_stream()</code> yields three kinds of thing: <code>packed</code> once, with the list the budget kept; <code>token</code> for each piece of text from <code>generate_content_stream</code>; and <code>usage</code> at the end from the last chunk's metadata, which carries the totals. The handler turns the packed list into citation events with the fields a <code>Citation</code> carries, sends each token as it comes unless the guard is holding them, and closes with <code>done</code>. The cell asks the notice-period question on the stream, records the millisecond each event kind first arrived, saves the raw transcript for the reader, and asks the same question on the query to set the two citation counts side by side.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - generate_stream(): why the citations are the packed set, and why there is no schema</span><span class="ro">read only</span></div><pre tabindex="0">    No response_schema here on purpose: you cannot usefully stream structured
+    JSON. The citations do <span class="kw">not</span> need it - they are known BEFORE generation - but
+    they are the PACKED set, <span class="kw">not</span> the reranked pool: the budget may drop a chunk
+    between the reranker <span class="kw">and</span> the prompt, <span class="kw">and</span> a citation to a passage the model
+    never read <span class="kw">is</span> <span class="kw">not</span> a citation. So the first event <span class="kw">is</span> the packed list
+    (<span class="nu">12</span> September <span class="nu">2026</span>, R06) <span class="kw">and</span> /v1/stream cites <span class="kw">from</span> it before the first token.</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - generate_stream(): the packed list once, then the tokens, then the usage</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">yield</span> <span class="st">&quot;packed&quot;</span>, packed
+    prompt = f<span class="st">&quot;{SYSTEM}{_dated_rule(packed)}\n\nContext:\n{context}\n\nQuestion: {query}&quot;</span>
+
+    model = model <span class="kw">or</span> settings.generator_model
+    backend = backend <span class="kw">or</span> settings.model_backend
+    <span class="kw">if</span> backend == <span class="st">&quot;gateway&quot;</span>:
+        <span class="kw">yield</span> <span class="kw">from</span> _gateway_stream(prompt, packed, tenant_id, _gateway_route(model))
+        <span class="kw">return</span>
+    <span class="kw">yield</span> <span class="kw">from</span> _vertex_stream(prompt, packed, tenant_id, model)
+...
+            <span class="kw">if</span> part.text:
+                yielded += <span class="nu">1</span>
+                <span class="kw">yield</span> <span class="st">&quot;token&quot;</span>, part.text</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/stream: the citation events from the packed list, then each token as it comes</span><span class="ro">read only</span></div><pre tabindex="0">        <span class="kw">for</span> kind, payload <span class="kw">in</span> ([(<span class="st">&quot;token&quot;</span>, hit.answer)] <span class="kw">if</span> hit <span class="kw">else</span> [(<span class="st">&quot;token&quot;</span>, empty.answer)] <span class="kw">if</span> empty <span class="kw">else</span>
+                              generate_stream(req.query, chunks, req.tenant_id, model=model, backend=backend)):
+            <span class="kw">if</span> kind == <span class="st">&quot;packed&quot;</span>:
+                <span class="cm"># Citations first, and from the PACKED set (12 September 2026, R06): they are known before a</span>
+                <span class="cm"># single token exists, so the UI renders the sources while the answer is written - but the</span>
+                <span class="cm"># budget may drop a chunk between the reranker and the prompt, and a passage the model never</span>
+                <span class="cm"># read is not a source. generate_stream yields this list before its first token.</span>
+                kinds = [c.get(<span class="st">&quot;kind&quot;</span>, <span class="st">&quot;text&quot;</span>) <span class="kw">for</span> c <span class="kw">in</span> payload]
+                <span class="kw">for</span> i, c <span class="kw">in</span> enumerate(payload, <span class="nu">1</span>):
+                    <span class="cm"># The same fields a Citation carries, so the UI renders a figure or a video</span>
+                    <span class="cm"># segment from the stream exactly as it would from /v1/query (gap G7).</span>
+                    <span class="kw">yield</span> f<span class="st">&quot;event: citation\ndata: {json.dumps({&#x27;n&#x27;: i, &#x27;chunk_id&#x27;: c.get(&#x27;id&#x27;), &#x27;source&#x27;: c[&#x27;source_uri&#x27;], &#x27;page&#x27;: c.get(&#x27;page_start&#x27;), &#x27;quote&#x27;: c[&#x27;text&#x27;][:240], &#x27;kind&#x27;: c.get(&#x27;kind&#x27;, &#x27;text&#x27;), &#x27;media_url&#x27;: c.get(&#x27;media_url&#x27;), &#x27;start&#x27;: c.get(&#x27;start&#x27;), &#x27;end&#x27;: c.get(&#x27;end&#x27;), &#x27;effective_from&#x27;: c.get(&#x27;effective_from&#x27;)})}\n\n&quot;</span>
+            <span class="kw">elif</span> kind == <span class="st">&quot;token&quot;</span>:
+                <span class="kw">if</span> settings.armor == <span class="st">&quot;on&quot;</span>:
+                    held.append(payload)
+                <span class="kw">else</span>:
+                    <span class="kw">yield</span> f<span class="st">&quot;event: token\ndata: {json.dumps({&#x27;t&#x27;: payload})}\n\n&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/stream: the held tokens screened, the error or the tokens, then done</span><span class="ro">read only</span></div><pre tabindex="0">        verdict, reason = screen_response(<span class="st">&quot;&quot;</span>.join(held), guard) <span class="kw">if</span> held <span class="kw">else</span> (guard, <span class="st">&quot;&quot;</span>)
+        <span class="kw">if</span> reason:
+            <span class="kw">yield</span> f<span class="st">&quot;event: error\ndata: {json.dumps({&#x27;error&#x27;: reason})}\n\n&quot;</span>
+        <span class="kw">else</span>:
+            <span class="kw">for</span> t <span class="kw">in</span> held:
+                <span class="kw">yield</span> f<span class="st">&quot;event: token\ndata: {json.dumps({&#x27;t&#x27;: t})}\n\n&quot;</span>
+        model = usage.get(<span class="st">&quot;model&quot;</span>) <span class="kw">or</span> model          <span class="cm"># the model that answered (F45: a tier can fall back)</span>
+        backend = usage.get(<span class="st">&quot;backend&quot;</span>) <span class="kw">or</span> backend    <span class="cm"># and the door it went through (Module 11)</span>
+        done = {**usage, <span class="st">&quot;latency_ms&quot;</span>: int((time.time() - t0) * <span class="nu">1000</span>), <span class="st">&quot;stages&quot;</span>: stages,
+                <span class="st">&quot;cache_hit&quot;</span>: <span class="st">&quot;semantic&quot;</span> <span class="kw">if</span> hit <span class="kw">else</span> <span class="st">&quot;none&quot;</span>,
+                <span class="st">&quot;model&quot;</span>: model, <span class="st">&quot;backend&quot;</span>: backend,
+                <span class="st">&quot;prompt&quot;</span>: f<span class="st">&quot;{settings.prompt_id}@{settings.prompt_version}&quot;</span>}</pre></div>
+
+
+<h4>Do it: one stream, timed, then the query's citations beside it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell; one stream and one query, two rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, json, time, subprocess, urllib.request
+PROJECT, API = os.environ["PROJECT"], os.environ["API"]
+Q = os.environ.get("Q", "What is the notice period for a confirmed E3?")
+tok = subprocess.run(["gcloud", "auth", "print-identity-token", "--include-email", f"--audiences={API}",
+                      f"--impersonate-service-account=documind-ui-sa@{PROJECT}.iam.gserviceaccount.com"], capture_output=True, text=True, check=True).stdout.strip()
+H = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
+req = urllib.request.Request(f"{API}/v1/stream", method="POST", headers=H, data=json.dumps({"query": Q, "tenant_id": "acme", "top_k": 5}).encode())
+t0 = time.perf_counter(); ev = None; first = {}; cits, tokens, done, raw = [], [], {}, []
+with urllib.request.urlopen(req, timeout=180) as r:
+    for line in r:
+        line = line.decode("utf-8").rstrip("\n"); raw.append(line)
+        if line.startswith("event: "):
+            ev = line[7:]; first.setdefault(ev, round((time.perf_counter() - t0) * 1000))
+        elif line.startswith("data: "):
+            d = json.loads(line[6:])
+            if ev == "citation": cits.append(d)
+            elif ev == "token": tokens.append(d["t"])
+            elif ev == "done": done = d
+open("/tmp/stream63.txt", "w", encoding="utf-8").write("\n".join(raw) + "\n")
+print(f"first citation at {first.get('citation')} ms | first token at {first.get('token')} ms | done at {first.get('done')} ms | the API's own latency_ms {done.get('latency_ms')}")
+print(f"{len(cits)} citation events, then {len(tokens)} token events, then done")
+for c in cits:
+    print(f"   citation {c['n']} #{str(c['chunk_id']).rsplit('#', 1)[-1]:>3} {c['source'].split('/')[-1][:22]:22} kind {c['kind']} effective_from {c.get('effective_from')} quote {c['quote'][:34]!r}")
+print("the answer:", " ".join("".join(tokens).split())[:120], "...")
+print("done:", {k: done.get(k) for k in ("tokens_in", "tokens_out", "cached_tokens", "model", "backend", "cache_hit", "prompt")})
+print("stages:", done.get("stages"))
+req = urllib.request.Request(f"{API}/v1/query", method="POST", headers=H, data=json.dumps({"query": Q, "tenant_id": "acme", "stream": False, "top_k": 5}).encode())
+j = json.load(urllib.request.urlopen(req, timeout=180))
+print(f"the query's answer to the same question: {len(j['citations'])} citations, the ones the model used; the stream's {len(cits)} were the packed set")
+print("saved /tmp/stream63.txt: paste it into the reader in step 1")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your milliseconds and words; the order, the five citations and the three clocks are the point)</span><span class="ro">read only</span></div><pre tabindex="0">first citation at 1xxx ms | first token at 2xxx ms | done at 4xxx ms | the API's own latency_ms 4xxx
+5 citation events, then 3x token events, then done
+   citation 1 #  1 hr_policy_2026.md      kind text effective_from None quote 'NP-03 — Notice period\nA confirmed em'
+   citation 2 #  4 hr_policy_2026.md      kind text effective_from None quote '...'
+   ...
+the answer: A confirmed employee in grade E3 must serve a notice period of ... [1] ...
+done: {'tokens_in': 1xxx, 'tokens_out': 4xx, 'cached_tokens': 0, 'model': 'gemini-3.6-flash', 'backend': 'vertex', 'cache_hit': 'none', 'prompt': 'documind-rag@v3'}
+stages: {'policy_fallback': 0, 'retrieval_backend': 'vector', 'retrieve_ms': 6xx, 'pool': 20, 'graph_chunks': 0, 'managed_chunks': 0, 'vector_chunks': 20, 'rerank_ms': 3xx, 'generate_ms': 2xxx}
+the query's answer to the same question: 3 citations, the ones the model used; the stream's 5 were the packed set
+saved /tmp/stream63.txt: paste it into the reader in step 1</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three clocks the caller feels, one the API keeps. The citations arrived when retrieval and reranking were done, about a second in; the first token arrived when the model began, another second later; and <code>done</code> came when it stopped, which is the only number <code>latency_ms</code> measures. The five citations were the packed set, every chunk the model was shown, and the query's three were the ones it chose to cite, which is the difference between knowing the sources before the answer and knowing which sources the answer used. The tokens were prose with the packed positions in brackets, and the envelope in <code>done</code> was the query's minus the price, which the row carries.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Shapes</span><h3>What a stream's citations are, and the streams of one token</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/demo_04_what_a_stream_s_citations_are_and_the_streams_of_one_token.py" target="_blank" rel="noopener"><code>demo_04_what_a_stream_s_citations_are_and_the_streams_of_one_token.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The citation event from a packed chunk, the two cases that send one token and no model call, and the rows the three streams left.</p></div></div>
+
+<h4>Definition</h4>
+<p>A citation event is built from the packed chunk's own fields, the same nine a <code>Citation</code> carries, so the UI renders a figure or a video segment from the stream exactly as from the query. Two streams never reach the model. An answer-cache hit, when <code>SEMANTIC_CACHE</code> is on, sends the stored answer's citations, then the stored answer as one token, then <code>done</code> with backend <code>cache</code> and cost zero; the UI cannot tell, the row can. An empty pool sends no citation, one token that is the refusal the API writes itself, and <code>done</code> with backend <code>none</code>; the row's <code>answerable false</code> feeds the alert. The cell streams the empty pool with the same filter lessons 5.x used, and then reads the rows the streams of this step and the last have written, with the columns that tell them apart.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/stream: the empty pool and a cache hit as one token each, with their backends</span><span class="ro">read only</span></div><pre tabindex="0">        empty = <span class="kw">None</span> <span class="kw">if</span> (hit <span class="kw">or</span> chunks) <span class="kw">else</span> empty_pool_answer(model, stages)
+...
+        <span class="kw">if</span> hit:                                      <span class="cm"># the stored answer as one token: the UI cannot tell, the row can</span>
+            usage = {<span class="st">&quot;tokens_in&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;tokens_out&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;cached_tokens&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;cost_usd&quot;</span>: <span class="nu">0.0</span>, <span class="st">&quot;model&quot;</span>: hit.model, <span class="st">&quot;backend&quot;</span>: <span class="st">&quot;cache&quot;</span>}
+        <span class="kw">elif</span> empty:                                  <span class="cm"># the refusal as one token: no model, no cost, backend &quot;none&quot;</span>
+            usage = {<span class="st">&quot;tokens_in&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;tokens_out&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;cached_tokens&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;cost_usd&quot;</span>: <span class="nu">0.0</span>, <span class="st">&quot;model&quot;</span>: empty.model, <span class="st">&quot;backend&quot;</span>: <span class="st">&quot;none&quot;</span>}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/stream: the row, with event stream and the same columns</span><span class="ro">read only</span></div><pre tabindex="0">        row = usage_row(req, user, usage.get(<span class="st">&quot;tokens_in&quot;</span>, <span class="nu">0</span>), usage.get(<span class="st">&quot;tokens_out&quot;</span>, <span class="nu">0</span>),
+                        usage.get(<span class="st">&quot;cached_tokens&quot;</span>, <span class="nu">0</span>), done[<span class="st">&quot;latency_ms&quot;</span>],
+                        answerable, confidence, <span class="st">&quot;stream&quot;</span>,
+                        modality=modality_of(kinds), model=model,
+                        backend=backend, cost_usd=usage.get(<span class="st">&quot;cost_usd&quot;</span>), guard=verdict, stages=stages, retrieval_backend=rbackend)</pre></div>
+
+
+<h4>Do it: the empty pool as one token, then the stream rows</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one stream that costs nothing; one log read)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -N -s -X POST "$API/v1/stream" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","filters":{"doc_type":"policy"}}' \
+  | python -c "
+import sys, json
+ev, n = None, {}
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith('event: '): ev = line[7:]; n[ev] = n.get(ev, 0) + 1
+    elif line.startswith('data: ') and ev == 'token': print('the one token:', json.loads(line[6:])['t'][:88], '...')
+    elif line.startswith('data: ') and ev == 'done': d = json.loads(line[6:]); print('done: backend', d['backend'], '| tokens_in', d['tokens_in'], '| pool', d['stages']['pool'], '| rerank_ms', d['stages']['rerank_ms'], '| generate_ms', d['stages']['generate_ms'])
+print('events:', n)"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="stream"' \
+  --project "$PROJECT" --freshness 15m --limit 3 --format='value(jsonPayload.answerable,jsonPayload.model_backend,jsonPayload.tokens_in,jsonPayload.tokens_out,jsonPayload.pool,jsonPayload.guard,jsonPayload.brain)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (newest row first; the second stream is step 3's)</span><span class="ro">read only</span></div><pre tabindex="0">the one token: The corpus holds nothing near this question: no passage of this tenant's current documents was ...
+done: backend none | tokens_in 0 | pool 0 | rerank_ms 0 | generate_ms 0
+events: {'token': 1, 'done': 1}
+False	none	0	0	0	off	ui
+True	vertex	1xxx	4xx	20	off	ui</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The filter emptied the pool, and the stream did what the query does in the same case, without a model: no citation events, because nothing was packed, one token carrying the API's own refusal, and a <code>done</code> whose backend is <code>none</code> and whose rerank and generate clocks read zero because they never ran. The rows told the same story in the columns lesson 2.3 read: the empty stream with <code>answerable False</code> and no tokens, the cited one with its pool of twenty and the model's tokens, both with the guard <code>off</code>. Both also read <code>ui</code> in the brain column, although curl sent no label: the API records a request that names no brain as <code>ui</code>, so that column cannot tell a shell from the UI. The row's <code>user</code> can, and lesson 3.8 reads it.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Guard</span><h3>The guard: a prompt refused before the stream, an answer held until it is screened</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/demo_05_the_guard_a_prompt_refused_before_the_stream_an_answer_held_until_it_is_screened.py" target="_blank" rel="noopener"><code>demo_05_the_guard_a_prompt_refused_before_the_stream_an_answer_held_until_it_is_screened.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Model Armor on both sides of the model, why the stream holds its tokens when the guard is on, and what each verdict does to the events and the row.</p></div></div>
+
+<h4>Definition</h4>
+<p>The guard is a setting, <code>ARMOR</code>, and a template, and it is imported only when the setting is on, so a revision that never asked for it neither pays for its client nor fails on a template it does not have. On, it sits on both sides of the model. Before retrieval it screens the prompt, because an injection that reaches the retriever has already chosen which documents the model reads; a block is a 400 with the reason and a <code>guard</code> line, and the stream never starts. After generation it screens the finished answer, and a token stream cannot be screened, so the stream holds every token, screens the whole once, and then sends either all of them or one <code>error</code> event; the row is logged first, with <code>blocked_response</code>, so the rate is counted even when the caller sees nothing. Off, as on your lane, every row says <code>guard: off</code>, and the tokens go out as they come. Turning it on needs the template in Model Armor and the role on the service account, which Module 4 does; here you read the two doors and the column.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - screen_prompt(): before retrieval, a block is a 400</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">screen_prompt</span>(text: str, tenant_id: str) -&gt; str:
+    <span class="st">&quot;&quot;&quot;Before retrieval, never after: an injection that reaches the retriever has already chosen which documents the
+    model reads. A block is a 400 with the reason - a refusal dressed as an answer would hide the rate.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> settings.armor != <span class="st">&quot;on&quot;</span>:
+        <span class="kw">return</span> <span class="st">&quot;off&quot;</span>
+    ok, reason = _guard().check_prompt(text)
+    <span class="kw">if</span> <span class="kw">not</span> ok:
+        log.info(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;guard&quot;</span>, <span class="st">&quot;tenant&quot;</span>: tenant_id, <span class="st">&quot;verdict&quot;</span>: <span class="st">&quot;blocked_prompt&quot;</span>, <span class="st">&quot;reason&quot;</span>: reason}))
+        <span class="kw">raise</span> HTTPException(<span class="nu">400</span>, reason)
+    <span class="kw">return</span> <span class="st">&quot;pass&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - screen_response(): on the buffered answer, the row&#x27;s verdict</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">screen_response</span>(text: str, guard: str) -&gt; tuple[str, str]:
+    <span class="st">&quot;&quot;&quot;On the buffered final answer - a token stream cannot be screened, so /v1/stream holds its tokens when the guard
+    is on. Returns the row&#x27;s verdict and, when blocked, the reason the caller raises AFTER the row is logged.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> settings.armor != <span class="st">&quot;on&quot;</span>:
+        <span class="kw">return</span> guard, <span class="st">&quot;&quot;</span>
+    ok, reason = _guard().check_response(text)
+    <span class="kw">return</span> (<span class="st">&quot;pass&quot;</span>, <span class="st">&quot;&quot;</span>) <span class="kw">if</span> ok <span class="kw">else</span> (<span class="st">&quot;blocked_response&quot;</span>, reason)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/stream: with the guard on, the tokens are held</span><span class="ro">read only</span></div><pre tabindex="0">            <span class="kw">elif</span> kind == <span class="st">&quot;token&quot;</span>:
+                <span class="kw">if</span> settings.armor == <span class="st">&quot;on&quot;</span>:
+                    held.append(payload)
+                <span class="kw">else</span>:
+                    <span class="kw">yield</span> f<span class="st">&quot;event: token\ndata: {json.dumps({&#x27;t&#x27;: payload})}\n\n&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/guard.py - the client and the template, built at import</span><span class="ro">read only</span></div><pre tabindex="0">LOCATION = os.environ.get(<span class="st">&quot;ARMOR_LOCATION&quot;</span>, <span class="st">&quot;asia-south1&quot;</span>)
+TEMPLATE = os.environ.get(<span class="st">&quot;ARMOR_TEMPLATE&quot;</span>, <span class="st">&quot;documind-guard&quot;</span>)
+PROJECT = os.environ[<span class="st">&quot;GOOGLE_CLOUD_PROJECT&quot;</span>]
+
+_client = modelarmor_v1.ModelArmorClient(
+    client_options={<span class="st">&quot;api_endpoint&quot;</span>: f<span class="st">&quot;modelarmor.{LOCATION}.rep.googleapis.com&quot;</span>})
+_template = f<span class="st">&quot;projects/{PROJECT}/locations/{LOCATION}/templates/{TEMPLATE}&quot;</span></pre></div>
+
+
+<h4>Read the lane, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (two log reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND (jsonPayload.event="query" OR jsonPayload.event="stream")' \
+  --project "$PROJECT" --freshness 24h --limit 200 --format='value(jsonPayload.guard)' | sort | uniq -c
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="guard"' \
+  --project "$PROJECT" --freshness 7d --limit 3 --format='value(timestamp,jsonPayload.verdict,jsonPayload.reason)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (every row off; no guard line in a week)</span><span class="ro">read only</span></div><pre tabindex="0">     NN off</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every answer of the day carried the guard's verdict, and every verdict was <code>off</code>, which is the honest column for a lane that has not installed the template: not <code>pass</code>, which would claim a screening that did not happen. The two doors are in the code above, and the stream's held list is the part that costs something when the guard is on: the first token waits for the last, and the feature this lesson is about is traded for the screen. That trade is Module 4's to make.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Fallback</span><h3>A failure forced on a candidate: the ranker silent, the stream still served, the line in the log</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/demo_06_a_failure_forced_on_a_candidate_the_ranker_silent_the_stream_still_served_the_li.py" target="_blank" rel="noopener"><code>demo_06_a_failure_forced_on_a_candidate_the_ranker_silent_the_stream_still_served_the_li.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The stream's own rerank branch, a candidate whose ranker deadline is a millisecond, the citations and tokens that still arrive, the flag in done, and the line that names the cause.</p></div></div>
+
+<h4>Definition</h4>
+<p>The stream reranks on the same function as the query and reads the same mark: when the Ranking API does not answer inside <code>RERANK_TIMEOUT_S</code>, the pool by retrieval score stands in, every chunk is marked, and the handler puts <code>rerank_fallback 1</code> into the stages that <code>done</code> carries and the row logs. The caller sees citations in the retriever's order and tokens as usual; the log has one <code>rerank_fallback</code> line with the error's type. The way to see it without harming anyone is the candidate from lesson 2.3, a revision that takes no traffic with a deadline of one millisecond, asked on the stream this time; the undo removes the variable, because the live service does not set it. The same block reads the startup event the lane has never written, <code>telemetry_not_instrumented</code>, because a fallback that has never fired is worth one line of proof too.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/stream: the rerank branch and its flag, on its own clock</span><span class="ro">read only</span></div><pre tabindex="0">        <span class="kw">if</span> chunks:                                   <span class="cm"># a hit brought none; an empty pool has nothing to rank</span>
+            chunks = rerank(req.query, chunks, req.top_k, tenant_id=req.tenant_id)
+            <span class="kw">if</span> rerank_fell_back(chunks):
+                stages[<span class="st">&quot;rerank_fallback&quot;</span>] = <span class="nu">1</span>
+        stages[<span class="st">&quot;rerank_ms&quot;</span>] = _ms(tick)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - rerank_fell_back(): the mark the handler reads</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">rerank_fell_back</span>(chunks: list[dict]) -&gt; bool:
+    <span class="st">&quot;&quot;&quot;True when rerank() stood the pool in for the Ranking API: the handlers put stages[&#x27;rerank_fallback&#x27;] = 1 on
+    the row and in the answer, so a day of fallbacks is a count, not a hunch about worse answers.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> any(c.get(<span class="st">&quot;rerank_fallback&quot;</span>) <span class="kw">for</span> c <span class="kw">in</span> chunks)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/telemetry.py and main.py - content capture off by default, and the import that must never take the API down</span><span class="ro">read only</span></div><pre tabindex="0">os.environ.setdefault(<span class="st">&quot;OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT&quot;</span>,
+                      <span class="st">&quot;NO_CONTENT&quot;</span>)
+
+GoogleGenAiSdkInstrumentor().instrument()
+...
+    <span class="kw">import</span> telemetry  <span class="cm"># noqa: E402,F401</span>
+<span class="kw">except</span> Exception <span class="kw">as</span> _e:  <span class="cm"># noqa: BLE001</span>
+    log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;telemetry_not_instrumented&quot;</span>, <span class="st">&quot;error&quot;</span>: type(_e).__name__}))</pre></div>
+
+
+<h4>Do it: the ranker silent for one revision, the stream read, the line read, the undo</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; one stream to it; two log reads; the undo)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars RERANK_TIMEOUT_S=0.001 --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+curl -N -s -X POST "$CAND/v1/stream" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","top_k":3}' \
+  | python -c "
+import sys, json
+ev, n, text = None, {}, []
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith('event: '): ev = line[7:]; n[ev] = n.get(ev, 0) + 1
+    elif line.startswith('data: ') and ev == 'token': text.append(json.loads(line[6:])['t'])
+    elif line.startswith('data: ') and ev == 'done': s = json.loads(line[6:])['stages']; print('done.stages: rerank_fallback', s.get('rerank_fallback', 0), '| rerank_ms', s['rerank_ms'], '| pool', s['pool'], '| vector_chunks', s['vector_chunks'])
+print('events:', n, '| the answer:', ' '.join(''.join(text).split())[:70], '...')"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="rerank_fallback"' \
+  --project "$PROJECT" --freshness 10m --limit 2 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)'
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="telemetry_not_instrumented"' \
+  --project "$PROJECT" --freshness 7d --limit 1 --format='value(timestamp,jsonPayload.error)'
+gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate --remove-env-vars RERANK_TIMEOUT_S --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (a RetryError names the same deadline through a retry; the telemetry read prints nothing)</span><span class="ro">read only</span></div><pre tabindex="0">done.stages: rerank_fallback 1 | rerank_ms 1x | pool 20 | vector_chunks 20
+events: {'citation': 3, 'token': 3x, 'done': 1} | the answer: A confirmed employee in grade E3 must serve a notice period of ...
+2026-09-2xT1x:xx:xx.xxxxxxZ	acme	DeadlineExceeded</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The ranker had one millisecond, did not make it, and the stream did not notice in any way a caller could see: three citations came first, then the tokens, then <code>done</code>. Only <code>done.stages</code> said what happened, <code>rerank_fallback 1</code>, and the log named the error, which is the whole design: a worse order served on time, counted where a person will look. The telemetry read printed nothing because the instrumentation loaded on every revision the lane has run, and a line that is absent when it should be is as much a proof as one that is present. Then the variable came out and the tag went.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Table</span><h3>Every failure and what it degrades to</h3><p>Eight named fallbacks in the API, where each one lives, what stands in, what the caller sees, and where it is counted; and the three things that do not degrade.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Log event</th><th>Where, and when</th><th>What stands in</th><th>The caller sees</th><th>Counted</th></tr></thead>
+<tbody>
+<tr><td><code>routing_fallback</code></td><td data-label="Where">main.py <code>choose_model_for()</code>: the classifier failed, with <code>ROUTING</code> on</td><td data-label="What stands in">the generator model</td><td data-label="The caller sees">nothing; <code>model</code> is the default</td><td data-label="Counted">the log only</td></tr>
+<tr><td><code>tier_exhausted</code></td><td data-label="Where">generator.py: a 429 from a routed tier, on the stream only before the first token</td><td data-label="What stands in">the default model, called or streamed again</td><td data-label="The caller sees"><code>model</code> names the default</td><td data-label="Counted">the log; the row's model</td></tr>
+<tr><td><code>vector_search_fallback</code></td><td data-label="Where">retriever.py: the index raised (lesson 2.4)</td><td data-label="What stands in">Firestore's own vector index, same predicates</td><td data-label="The caller sees"><code>vector_chunks 0</code> under <code>retrieval_backend vector</code></td><td data-label="Counted">the log; <code>make smoke</code> refuses it</td></tr>
+<tr><td><code>rerank_fallback</code></td><td data-label="Where">retriever.py <code>rerank()</code>: the Ranking API past its deadline or in error (lesson 2.3, step 6 here)</td><td data-label="What stands in">the pool by retrieval score</td><td data-label="The caller sees"><code>rerank_fallback 1</code> in the stages; scores that are distances</td><td data-label="Counted">the row; the view sums <code>rerank_fallbacks</code></td></tr>
+<tr><td><code>semantic_cache_failed</code></td><td data-label="Where">main.py <code>_semantic_hit()</code>: the answer cache could not be read</td><td data-label="What stands in">a miss: retrieval and the model run</td><td data-label="The caller sees"><code>cache_hit none</code></td><td data-label="Counted">the log only</td></tr>
+<tr><td><code>semantic_cache_store_failed</code></td><td data-label="Where">main.py <code>_semantic_store()</code>: the answer could not be stored</td><td data-label="What stands in">nothing: the answer was already served</td><td data-label="The caller sees">nothing</td><td data-label="Counted">the log only</td></tr>
+<tr><td><code>budget_record_failed</code></td><td data-label="Where">main.py <code>_record()</code>: the month's counter could not be written</td><td data-label="What stands in">nothing: the row still carries the cost</td><td data-label="The caller sees">nothing</td><td data-label="Counted">the log; the breaker reads one answer short</td></tr>
+<tr><td><code>telemetry_not_instrumented</code></td><td data-label="Where">main.py at startup: the instrumentation did not load</td><td data-label="What stands in">answers without gen_ai spans</td><td data-label="The caller sees">nothing</td><td data-label="Counted">one log line per revision start</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three things do not degrade, on purpose. A prompt the guard blocks is a 400 before the stream starts, because a refusal dressed as an answer would hide the rate. A finished answer the guard blocks is one <code>error</code> event on the stream and a 502 on the query, after the row has said <code>blocked_response</code>. And a reply the generator cannot parse is a 502 on the query, never a refusal, which lesson 3.5 forced; on the stream there is no schema to fail, and a model that returns nothing simply ends the stream with <code>done</code> and no tokens. The managed stores' own fallbacks, <code>rag_engine_fallback</code> and <code>vertex_search_fallback</code>, take the same shape and belong to Module 7.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - choose_model_for(): a classifier failure is never an outage</span><span class="ro">read only</span></div><pre tabindex="0">        log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;routing_fallback&quot;</span>, <span class="st">&quot;error&quot;</span>: type(e).__name__}))
+        <span class="kw">return</span> settings.generator_model</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - _vertex_stream(): an exhausted tier before the first token, the default model instead</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">except</span> errors.APIError <span class="kw">as</span> e:
+        <span class="cm"># An exhausted routed tier before the first token: the default model streams instead (F45).</span>
+        <span class="kw">if</span> yielded <span class="kw">or</span> <span class="kw">not</span> _exhausted_tier(e, model):
+            <span class="kw">raise</span>
+        log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;tier_exhausted&quot;</span>, <span class="st">&quot;tenant&quot;</span>: tenant_id, <span class="st">&quot;model&quot;</span>: model,
+                                <span class="st">&quot;fallback&quot;</span>: settings.generator_model}))
+        <span class="kw">yield</span> <span class="kw">from</span> _vertex_stream(prompt, packed, tenant_id, settings.generator_model)
+        <span class="kw">return</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - _semantic_hit(): a cache that fails is a miss and a warning</span><span class="ro">read only</span></div><pre tabindex="0">        log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;semantic_cache_failed&quot;</span>, <span class="st">&quot;tenant&quot;</span>: req.tenant_id, <span class="st">&quot;error&quot;</span>: type(e).__name__}))
+        <span class="kw">return</span> <span class="kw">None</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - _record(): a counter that fails fails quietly</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_record</span>(usd: float) -&gt; <span class="kw">None</span>:
+    <span class="st">&quot;&quot;&quot;The month&#x27;s counter (budget.py). Never in the answer&#x27;s way: a counter that fails fails quietly.&quot;&quot;&quot;</span>
+    <span class="kw">try</span>:
+        record(_fs(), usd)
+    <span class="kw">except</span> Exception <span class="kw">as</span> e:  <span class="cm"># noqa: BLE001</span>
+        log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;budget_record_failed&quot;</span>, <span class="st">&quot;error&quot;</span>: type(e).__name__}))</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Nothing ran here; the table is the map. Read it as one rule applied eight times: every place the request depends on something outside the container has a stand-in that serves, a name in the log, and, where the answer's quality changed, a count on the row. The two blocks and the 502 are the places where serving would be the wrong thing to do, and each says so to the caller instead.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What a stream costs, what its row says, and who reads it</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_7/demo_08_what_a_stream_costs_what_its_row_says_and_who_reads_it.py" target="_blank" rel="noopener"><code>demo_08_what_a_stream_costs_what_its_row_says_and_who_reads_it.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The rupee line, the rows by surface, the UI's own reader of the same events, and the two clocks a product manager will ask about.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Stream</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A cited answer</td><td data-label="Costs">the same tokens as the query's, priced on the row by <code>cost.price()</code>; the connection itself is Cloud Run time, billed by the request's duration</td><td data-label="On your lane">step 3, under a rupee</td></tr>
+<tr><td>The citations</td><td data-label="Costs">nothing extra: they are the packed list the prompt already paid for</td><td data-label="On your lane">five events, no tokens</td></tr>
+<tr><td>The empty pool</td><td data-label="Costs">nothing: no model, no tokens</td><td data-label="On your lane">step 4</td></tr>
+<tr><td>A cache hit</td><td data-label="Costs">nothing: the stored answer as one token, backend <code>cache</code></td><td data-label="On your lane">not on this lane; <code>SEMANTIC_CACHE</code> off</td></tr>
+<tr><td>The guard, on</td><td data-label="Costs">two Model Armor calls a question, and the first token delayed to the last</td><td data-label="On your lane">Module 4</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle; one stream at the generator's rate</td><td data-label="On your lane">step 6, then reverted</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The rows by surface, and the reader in the UI</h4>
+<p><code>make usage</code> groups the rows by the surface that wrote them, and a stream row is a query row with <code>event: stream</code>: the UI's chat page labels its streams <code>brain: ui</code>, and a request from a notebook or curl that names no brain is recorded as <code>ui</code> too, so the surface table counts the event, not who sent it. The UI reads the events with an iterator of a dozen lines, the same three names, and renders the sources as the citation events arrive and the answer as the tokens do, which is lesson 3.8's page. The two clocks worth keeping apart when someone asks whether the product is fast: the time to the first token, which is what the reader of a chat feels and which no row records, and <code>latency_ms</code>, which is when the model stopped. Step 3 measured both; a slow first token with a fast <code>done</code> points at retrieval and the ranker, the reverse at a long answer.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/frontend/chat.py - stream_answer(): the UI&#x27;s reader of the same three events</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">stream_answer</span>(query: str, tenant_id: str):
+    <span class="st">&quot;&quot;&quot;Yield (event_name, payload) from rag-api&#x27;s SSE: citation -&gt; token -&gt; done.&quot;&quot;&quot;</span>
+    <span class="kw">with</span> requests.post(
+        f<span class="st">&quot;{RAG_API_URL}/v1/stream&quot;</span>,
+        json={<span class="st">&quot;query&quot;</span>: query, <span class="st">&quot;tenant_id&quot;</span>: tenant_id, <span class="st">&quot;top_k&quot;</span>: <span class="nu">5</span>, <span class="st">&quot;brain&quot;</span>: <span class="st">&quot;ui&quot;</span>},
+        headers=_headers(), stream=<span class="kw">True</span>, timeout=<span class="nu">120</span>,
+    ) <span class="kw">as</span> resp:
+        resp.raise_for_status()
+        event = <span class="kw">None</span>
+        <span class="kw">for</span> line <span class="kw">in</span> resp.iter_lines(decode_unicode=<span class="kw">True</span>):
+            <span class="kw">if</span> <span class="kw">not</span> line:
+                <span class="kw">continue</span>
+            <span class="kw">if</span> line.startswith(<span class="st">&quot;event: &quot;</span>):
+                event = line[<span class="nu">7</span>:].strip()
+            <span class="kw">elif</span> line.startswith(<span class="st">&quot;data: &quot;</span>):
+                <span class="kw">yield</span> event, json.loads(line[<span class="nu">6</span>:])</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/usage_rows.py - the table by surface</span><span class="ro">read only</span></div><pre tabindex="0">    show(<span class="st">&quot;by surface&quot;</span>, group(rows, (<span class="st">&quot;event&quot;</span>,)), (<span class="st">&quot;event&quot;</span>,))</pre></div>
+
+
+<h4>Do it: the day by surface, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one log read)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make usage PROJECT=$PROJECT HOURS=24 | sed -n '/^by surface/,/^$/p'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts; the stream row is this lesson's)</span><span class="ro">read only</span></div><pre tabindex="0">by surface
+event                  answers    tok_in  tok_out       USD       INR  p95 ms  unans
+------------------------------------------------------------------------------------
+query                       NN     xxxxx     xxxx    0.0xxx      x.xx    4xxx   0.xx
+stream                       4      xxxx      xxx    0.0xxx      x.xx    4xxx   0.25</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The day's rows split by surface, and the stream rows were this lesson's: four of them, one unanswerable, priced like any query's, because a stream changes when the caller gets the answer and not what it costs. The UI's reader is the same dozen lines you wrote in step 3, which is why lesson 3.8 can render a cited answer as it streams without knowing anything about the model.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The citations come before the first token</td><td data-label="The check">step 3</td><td data-label="Pass looks like">first citation before first token, both before done</td></tr>
+<tr><td>2</td><td data-label="Claim">A stream cites the packed set; a query cites what the model used</td><td data-label="The check">step 3, the last lines</td><td data-label="Pass looks like">5 citation events; 3 citations on the query</td></tr>
+<tr><td>3</td><td data-label="Claim">done carries the envelope and the same stages as a query</td><td data-label="The check">step 3</td><td data-label="Pass looks like">tokens, model, backend, cache_hit, prompt; a stages block with the three clocks</td></tr>
+<tr><td>4</td><td data-label="Claim">An empty pool is one token and no model</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>events: {'token': 1, 'done': 1}</code>, <code>backend none</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Stream rows carry the same columns as query rows</td><td data-label="The check">step 4, the log read</td><td data-label="Pass looks like">answerable, backend, tokens, pool and guard on each row</td></tr>
+<tr><td>6</td><td data-label="Claim">The guard is off, honestly</td><td data-label="The check">step 5</td><td data-label="Pass looks like">every row <code>off</code>; no guard line</td></tr>
+<tr><td>7</td><td data-label="Claim">A silent ranker leaves the stream served and flagged</td><td data-label="The check">step 6</td><td data-label="Pass looks like">citations and tokens delivered; <code>rerank_fallback 1</code>; a <code>DeadlineExceeded</code> line</td></tr>
+<tr><td>8</td><td data-label="Claim">The tracing has loaded on every revision</td><td data-label="The check">step 6, the second read</td><td data-label="Pass looks like">nothing printed</td></tr>
+<tr><td>9</td><td data-label="Claim">The variable and the tag are gone</td><td data-label="The check">step 6, the undo</td><td data-label="Pass looks like">one revision at 100 percent on the next describe</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. A candidate revision took no traffic, answered one stream with its ranker silenced, and lost its variable before the tag was dropped. The streams you ran are usage rows with <code>event: stream</code>, one of them unanswerable, and the transcript sits at <code>/tmp/stream63.txt</code>. Lesson 3.8 puts a screen in front of all of this: the upload, the versions list, and the chat that renders these events as they arrive.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Generation &middot; Lesson 3.7 Stream answers and handle failures &middot; v5.0</p><p>Next: Lesson 3.8 Complete the Streamlit upload-to-answer journey.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var SAMPLES = {"normal": "event: citation\ndata: {\"n\": 1, \"chunk_id\": \"acme:hr_policy_2026#NP-03\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"NP-03 — Notice period\\nA confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs\\nfrom the date the resignation is acknowledged in writing. Unused earned leave may not be\\nset off against the notice period.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: citation\ndata: {\"n\": 2, \"chunk_id\": \"acme:hr_policy_2026#PB-02\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"PB-02 — Probation\\nNew joiners serve six months on probation at grade E2. During probation the notice\\nperiod is 15 days for either side. Probation may be extended once, by up to three\\nmonths, with written reasons.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: token\ndata: {\"t\": \"NP-03 \"}\n\nevent: token\ndata: {\"t\": \"— \"}\n\nevent: token\ndata: {\"t\": \"Notice \"}\n\nevent: token\ndata: {\"t\": \"period \"}\n\nevent: token\ndata: {\"t\": \"A \"}\n\nevent: token\ndata: {\"t\": \"confirmed \"}\n\nevent: token\ndata: {\"t\": \"employee \"}\n\nevent: token\ndata: {\"t\": \"at \"}\n\nevent: token\ndata: {\"t\": \"grade \"}\n\nevent: token\ndata: {\"t\": \"E3 \"}\n\nevent: token\ndata: {\"t\": \"or \"}\n\nevent: token\ndata: {\"t\": \"above \"}\n\nevent: token\ndata: {\"t\": \"serves \"}\n\nevent: token\ndata: {\"t\": \"a \"}\n\nevent: token\ndata: {\"t\": \"notice \"}\n\nevent: token\ndata: {\"t\": \"period \"}\n\nevent: token\ndata: {\"t\": \"of \"}\n\nevent: token\ndata: {\"t\": \"60 \"}\n\nevent: token\ndata: {\"t\": \"days. \"}\n\nevent: token\ndata: {\"t\": \"Notice \"}\n\nevent: token\ndata: {\"t\": \"runs \"}\n\nevent: token\ndata: {\"t\": \"from \"}\n\nevent: token\ndata: {\"t\": \"the \"}\n\nevent: token\ndata: {\"t\": \"date \"}\n\nevent: token\ndata: {\"t\": \"the \"}\n\nevent: token\ndata: {\"t\": \"resignation \"}\n\nevent: token\ndata: {\"t\": \"is \"}\n\nevent: token\ndata: {\"t\": \"acknowledged \"}\n\nevent: token\ndata: {\"t\": \"in \"}\n\nevent: token\ndata: {\"t\": \"writing. \"}\n\nevent: token\ndata: {\"t\": \"Unused \"}\n\nevent: token\ndata: {\"t\": \"earned \"}\n\nevent: token\ndata: {\"t\": \"leave \"}\n\nevent: token\ndata: {\"t\": \"may \"}\n\nevent: token\ndata: {\"t\": \"not \"}\n\nevent: token\ndata: {\"t\": \"be \"}\n\nevent: token\ndata: {\"t\": \"set \"}\n\nevent: token\ndata: {\"t\": \"off \"}\n\nevent: token\ndata: {\"t\": \"against \"}\n\nevent: token\ndata: {\"t\": \"the \"}\n\nevent: token\ndata: {\"t\": \"notice \"}\n\nevent: token\ndata: {\"t\": \"period. \"}\n\nevent: token\ndata: {\"t\": \"[1].\"}\n\nevent: done\ndata: {\"tokens_in\": 2000, \"tokens_out\": 250, \"cached_tokens\": 0, \"latency_ms\": 900, \"stages\": {\"policy_fallback\": 0, \"retrieval_backend\": \"vector\", \"retrieve_ms\": 180, \"pool\": 20, \"graph_chunks\": 0, \"managed_chunks\": 0, \"vector_chunks\": 20, \"rerank_ms\": 110, \"generate_ms\": 560}, \"cache_hit\": \"none\", \"model\": \"gemini-3.6-flash\", \"backend\": \"vertex\", \"prompt\": \"documind-rag@v3\"}\n\n", "empty": "event: token\ndata: {\"t\": \"The corpus holds nothing near this question: no passage of this tenant's current documents was retrieved, so there is nothing to answer from and nothing to cite. Check that the document you expect is ingested and current, or ask with the words it uses.\"}\n\nevent: done\ndata: {\"tokens_in\": 0, \"tokens_out\": 0, \"cached_tokens\": 0, \"latency_ms\": 180, \"stages\": {\"policy_fallback\": 0, \"retrieval_backend\": \"vector\", \"retrieve_ms\": 180, \"pool\": 0, \"graph_chunks\": 0, \"managed_chunks\": 0, \"vector_chunks\": 0, \"rerank_ms\": 0, \"generate_ms\": 0}, \"cache_hit\": \"none\", \"model\": \"gemini-3.6-flash\", \"backend\": \"none\", \"prompt\": \"documind-rag@v3\"}\n\n", "cache": "event: citation\ndata: {\"n\": 1, \"chunk_id\": \"acme:hr_policy_2026#NP-03\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"NP-03 — Notice period\\nA confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs\\nfrom the date the resignation is acknowledged in writing. Unused earned leave may not be\\nset off against the notice period.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: citation\ndata: {\"n\": 2, \"chunk_id\": \"acme:hr_policy_2026#PB-02\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"PB-02 — Probation\\nNew joiners serve six months on probation at grade E2. During probation the notice\\nperiod is 15 days for either side. Probation may be extended once, by up to three\\nmonths, with written reasons.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: token\ndata: {\"t\": \"NP-03 — Notice period A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs from the date the resignation is acknowledged in writing. Unused earned leave may not be set off against the notice period. [1].\"}\n\nevent: done\ndata: {\"tokens_in\": 0, \"tokens_out\": 0, \"cached_tokens\": 0, \"latency_ms\": 180, \"stages\": {\"policy_fallback\": 0, \"retrieval_backend\": \"vector\", \"retrieve_ms\": 180, \"pool\": 0, \"graph_chunks\": 0, \"managed_chunks\": 0, \"vector_chunks\": 0, \"rerank_ms\": 0, \"generate_ms\": 0}, \"cache_hit\": \"semantic\", \"model\": \"gemini-3.6-flash\", \"backend\": \"cache\", \"prompt\": \"documind-rag@v3\"}\n\n", "blocked": "event: citation\ndata: {\"n\": 1, \"chunk_id\": \"acme:hr_policy_2026#NP-03\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"NP-03 — Notice period\\nA confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs\\nfrom the date the resignation is acknowledged in writing. Unused earned leave may not be\\nset off against the notice period.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: citation\ndata: {\"n\": 2, \"chunk_id\": \"acme:hr_policy_2026#PB-02\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"PB-02 — Probation\\nNew joiners serve six months on probation at grade E2. During probation the notice\\nperiod is 15 days for either side. Probation may be extended once, by up to three\\nmonths, with written reasons.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: error\ndata: {\"error\": \"the guard blocked the response\"}\n\nevent: done\ndata: {\"tokens_in\": 2000, \"tokens_out\": 250, \"cached_tokens\": 0, \"latency_ms\": 900, \"stages\": {\"policy_fallback\": 0, \"retrieval_backend\": \"vector\", \"retrieve_ms\": 180, \"pool\": 20, \"graph_chunks\": 0, \"managed_chunks\": 0, \"vector_chunks\": 20, \"rerank_ms\": 110, \"generate_ms\": 560}, \"cache_hit\": \"none\", \"model\": \"gemini-3.6-flash\", \"backend\": \"vertex\", \"prompt\": \"documind-rag@v3\"}\n\n", "fallback": "event: citation\ndata: {\"n\": 1, \"chunk_id\": \"acme:hr_policy_2026#NP-03\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"NP-03 — Notice period\\nA confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs\\nfrom the date the resignation is acknowledged in writing. Unused earned leave may not be\\nset off against the notice period.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: citation\ndata: {\"n\": 2, \"chunk_id\": \"acme:hr_policy_2026#PB-02\", \"source\": \"gs://uploads/acme/hr_policy_2026.md\", \"page\": 1, \"quote\": \"PB-02 — Probation\\nNew joiners serve six months on probation at grade E2. During probation the notice\\nperiod is 15 days for either side. Probation may be extended once, by up to three\\nmonths, with written reasons.\", \"kind\": \"text\", \"media_url\": null, \"start\": null, \"end\": null, \"effective_from\": null}\n\nevent: token\ndata: {\"t\": \"NP-03 \"}\n\nevent: token\ndata: {\"t\": \"— \"}\n\nevent: token\ndata: {\"t\": \"Notice \"}\n\nevent: token\ndata: {\"t\": \"period \"}\n\nevent: token\ndata: {\"t\": \"A \"}\n\nevent: token\ndata: {\"t\": \"confirmed \"}\n\nevent: token\ndata: {\"t\": \"employee \"}\n\nevent: token\ndata: {\"t\": \"at \"}\n\nevent: token\ndata: {\"t\": \"grade \"}\n\nevent: token\ndata: {\"t\": \"E3 \"}\n\nevent: token\ndata: {\"t\": \"or \"}\n\nevent: token\ndata: {\"t\": \"above \"}\n\nevent: token\ndata: {\"t\": \"serves \"}\n\nevent: token\ndata: {\"t\": \"a \"}\n\nevent: token\ndata: {\"t\": \"notice \"}\n\nevent: token\ndata: {\"t\": \"period \"}\n\nevent: token\ndata: {\"t\": \"of \"}\n\nevent: token\ndata: {\"t\": \"60 \"}\n\nevent: token\ndata: {\"t\": \"days. \"}\n\nevent: token\ndata: {\"t\": \"Notice \"}\n\nevent: token\ndata: {\"t\": \"runs \"}\n\nevent: token\ndata: {\"t\": \"from \"}\n\nevent: token\ndata: {\"t\": \"the \"}\n\nevent: token\ndata: {\"t\": \"date \"}\n\nevent: token\ndata: {\"t\": \"the \"}\n\nevent: token\ndata: {\"t\": \"resignation \"}\n\nevent: token\ndata: {\"t\": \"is \"}\n\nevent: token\ndata: {\"t\": \"acknowledged \"}\n\nevent: token\ndata: {\"t\": \"in \"}\n\nevent: token\ndata: {\"t\": \"writing. \"}\n\nevent: token\ndata: {\"t\": \"Unused \"}\n\nevent: token\ndata: {\"t\": \"earned \"}\n\nevent: token\ndata: {\"t\": \"leave \"}\n\nevent: token\ndata: {\"t\": \"may \"}\n\nevent: token\ndata: {\"t\": \"not \"}\n\nevent: token\ndata: {\"t\": \"be \"}\n\nevent: token\ndata: {\"t\": \"set \"}\n\nevent: token\ndata: {\"t\": \"off \"}\n\nevent: token\ndata: {\"t\": \"against \"}\n\nevent: token\ndata: {\"t\": \"the \"}\n\nevent: token\ndata: {\"t\": \"notice \"}\n\nevent: token\ndata: {\"t\": \"period. \"}\n\nevent: token\ndata: {\"t\": \"[1].\"}\n\nevent: done\ndata: {\"tokens_in\": 2000, \"tokens_out\": 250, \"cached_tokens\": 0, \"latency_ms\": 900, \"stages\": {\"policy_fallback\": 0, \"retrieval_backend\": \"vector\", \"retrieve_ms\": 180, \"pool\": 20, \"graph_chunks\": 0, \"managed_chunks\": 0, \"vector_chunks\": 20, \"rerank_ms\": 110, \"generate_ms\": 560, \"rerank_fallback\": 1}, \"cache_hit\": \"none\", \"model\": \"gemini-3.6-flash\", \"backend\": \"vertex\", \"prompt\": \"documind-rag@v3\"}\n\n"}, EVENTS = ["routing_fallback", "tier_exhausted", "vector_search_fallback", "rerank_fallback", "semantic_cache_failed", "semantic_cache_store_failed", "budget_record_failed", "telemetry_not_instrumented"];
+  var root = document.getElementById('reader'); if (!root) return;
+  var ta = document.getElementById('sr-text'), caseSel = document.getElementById('sr-case'), meta = document.getElementById('sr-meta'), out = document.getElementById('sr-out');
+  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function step(title, body, cls){ return '<div class="sr-step' + (cls ? ' ' + cls : '') + '"><b>' + esc(title) + '</b>' + body + '</div>'; }
+  function has(o, k){ return o && o[k] !== undefined && o[k] !== null; }
+  function parse(text){                                                                  /* the UI's iterator: event line, data line */
+    var events = [], ev = null;
+    text.split(/\r?\n/).forEach(function(line){ line = line.trim(); if (!line) return;
+      if (line.indexOf('event: ') === 0) ev = line.slice(7).trim();
+      else if (line.indexOf('data: ') === 0) { var d; try { d = JSON.parse(line.slice(6)); } catch (e) { events.push({ev: ev || '?', bad: line.slice(6, 70)}); return; } events.push({ev: ev || '?', d: d}); ev = null; } });
+    return events;
+  }
+  function render(){
+    var events = parse(ta.value), cits = [], tokens = [], done = null, err = null, bad = 0, order = [];
+    events.forEach(function(e){ if (e.bad) { bad++; return; } order.push(e.ev); if (e.ev === 'citation') cits.push(e.d); else if (e.ev === 'token') tokens.push(String(e.d.t === undefined ? '' : e.d.t)); else if (e.ev === 'done') done = e.d; else if (e.ev === 'error') err = e.d; });
+    meta.textContent = events.length ? events.length + ' events: ' + cits.length + ' citation, ' + tokens.length + ' token, ' + (err ? '1 error, ' : '') + (done ? '1 done' : 'no done') + (bad ? ', ' + bad + ' data lines not JSON' : '') : 'no events: paste a transcript, or pick a case';
+    if (!events.length) { out.innerHTML = ''; return; }
+    var steps = [];
+    var firstTok = order.indexOf('token'), lastCit = order.lastIndexOf('citation');
+    steps.push(step('1 · the order', (cits.length ? cits.length + ' citation event' + (cits.length === 1 ? '' : 's') + ' ' + (firstTok < 0 || lastCit < firstTok ? 'before the first token, from the packed set' : '<span class="flag">after a token: not a transcript main.py wrote</span>') : 'no citation events: nothing was packed') + (cits.length ? '<ul>' + cits.map(function(c){ return '<li>[' + esc(c.n) + '] <code>' + esc(c.chunk_id) + '</code> ' + esc(String(c.source || '').split('/').pop()) + ' · page ' + esc(c.page) + ' · kind ' + esc(c.kind) + (c.effective_from ? ' · effective from ' + esc(c.effective_from) : '') + (c.media_url ? ' · media' : '') + '</li>'; }).join('') + '</ul>' : '')));
+    var text = tokens.join('');
+    var body2;
+    if (err) body2 = '<span class="flag">event: error</span> instead of the tokens: the guard screened the finished answer and blocked it; the row was logged first with <code>guard: blocked_response</code>, and the caller sees ' + esc(JSON.stringify(err));
+    else if (tokens.length === 1 && done && done.backend === 'cache') body2 = 'one token, backend <code>cache</code>: the stored answer of an earlier near-enough question, with the citations it had; cost 0, <code>cache_hit semantic</code>';
+    else if (tokens.length === 1 && done && done.backend === 'none') body2 = 'one token, backend <code>none</code>: the empty pool, refused by the API without a model; the row says <code>answerable false</code>';
+    else body2 = tokens.length + ' token event' + (tokens.length === 1 ? '' : 's') + ', ' + text.length + ' characters, prose with [N] marks where N is the packed position';
+    steps.push(step('2 · the tokens', body2 + (text ? '<ul><li>' + esc(text.slice(0, 220)) + (text.length > 220 ? ' …' : '') + '</li></ul>' : ''), err ? 'stop' : ((tokens.length === 1 && done && (done.backend === 'cache' || done.backend === 'none')) ? 'flag' : '')));
+    if (!done) { steps.push(step('3 · done', 'no done event: the stream ended early, or the transcript is cut', 'flag')); out.innerHTML = steps.join(''); return; }
+    var s = done.stages || {}, L = [], flag = function(t){ L.push('<li class="flag">' + t + '</li>'); }, say = function(t){ L.push('<li>' + t + '</li>'); };
+    say('<code>tokens_in ' + esc(done.tokens_in) + '</code> · <code>tokens_out ' + esc(done.tokens_out) + '</code> (the answer and its thoughts) · <code>cached_tokens ' + esc(done.cached_tokens) + '</code> · <code>model ' + esc(done.model) + '</code> · <code>backend ' + esc(done.backend) + '</code> · <code>cache_hit ' + esc(done.cache_hit) + '</code> · <code>prompt ' + esc(done.prompt) + '</code> · the price is on the row, not here');
+    var pool = Number(s.pool) || 0;
+    if (pool === 0) say('pool 0: ' + (done.backend === 'cache' ? 'the answer cache served it' : 'nothing retrieved') + '; rerank and generate read 0 because they never ran');
+    else { say('the reranker saw ' + pool + ' candidates' + (has(s, 'vector_chunks') ? ', ' + s.vector_chunks + ' from the index' : ''));
+      if (s.retrieval_backend === 'vector' && Number(s.vector_chunks) === 0) flag('vector_chunks 0 under a vector backend: the Firestore rung answered, a vector_search_fallback line in the log');
+      if (Number(s.rerank_fallback) === 1) flag('rerank_fallback 1: the Ranking API did not answer inside its deadline; the pool by retrieval score stood in, a rerank_fallback line in the log, and the citations are in the retriever\'s order');
+      else if (has(s, 'rerank_ms')) say('the Ranking API ordered the pool in ' + s.rerank_ms + ' ms'); }
+    if (has(s, 'retrieve_ms') && has(s, 'rerank_ms') && has(s, 'generate_ms')) { var sum = Number(s.retrieve_ms) + Number(s.rerank_ms) + Number(s.generate_ms); say('retrieve ' + s.retrieve_ms + ' + rerank ' + s.rerank_ms + ' + generate ' + s.generate_ms + ' = ' + sum + ' of ' + esc(done.latency_ms) + ' ms; the first token came somewhere inside generate, which no field records'); }
+    if (Number(s.policy_fallback) === 1) say('policy_fallback 1: the tenant\'s data_region sent this request to the kit\'s index');
+    steps.push(step('3 · done', '<ul>' + L.join('') + '</ul>', L.some(function(x){ return x.indexOf('class="flag"') >= 0; }) ? 'flag' : ''));
+    steps.push(step('4 · what did not appear', 'no fallback is named in the events themselves; of the eight the API can log, only <code>rerank_fallback</code> and <code>vector_search_fallback</code> leave a trace in done.stages, the other six are log lines: ' + EVENTS.filter(function(e){ return e !== 'rerank_fallback' && e !== 'vector_search_fallback'; }).map(function(e){ return '<code>' + e + '</code>'; }).join(', ')));
+    out.innerHTML = steps.join('');
+  }
+  ta.addEventListener('input', render);
+  caseSel.addEventListener('change', function(){ if (SAMPLES[caseSel.value]) { ta.value = SAMPLES[caseSel.value]; render(); } caseSel.value = ''; });
+  ta.value = SAMPLES.normal;
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the graph is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Stated, never inferred.</strong> The graph says only what the documents say, so every edge can be checked against one passage. A model's world knowledge would be unfalsifiable here.</li>
+<li><strong>A wrong merge is worse than a duplicate.</strong> Two nodes for one thing cost a second hop. One node for two things sends the walk to the wrong clause. That is why the threshold is 0.92.</li>
+<li><strong>The chunk id on every node and edge.</strong> The graph points at evidence; it is not a store of facts. An answer reached through it cites the same passages as any other.</li>
+<li><strong>Stable ids from the name.</strong> The id is the SHA-1 of the canonical name, so a rebuild writes over the same documents instead of adding new ones.</li>
+<li><strong>The cache under the chunk's hash.</strong> A rerun pays only for chunks whose text has changed since their extraction.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The rules</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The dry run</td><td data-label="Costs">a Firestore read of acme's chunks</td><td data-label="On your lane">free</td></tr>
+<tr><td>The build</td><td data-label="Costs">eleven flash-lite calls and one embedding call</td><td data-label="On your lane">a few paise</td></tr>
+<tr><td>Read back, audit</td><td data-label="Costs">Firestore reads</td><td data-label="On your lane">free</td></tr>
+<tr><td>The rerun</td><td data-label="Costs">one embedding call; no extraction</td><td data-label="On your lane">under a paisa</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>Nothing rebuilds the graph when a document changes.</strong> The ingest worker never writes <code>graph_nodes</code> or <code>graph_edges</code>. After a reindex, nodes point at the retired version's chunk ids until <code>make graph</code> runs again. At query time <code>prefer_current()</code> drops those chunks, so the graph silently stops contributing.</li>
+<li><strong>The cache is keyed by chunk id, and a chunk id names the version.</strong> A re-issued document is extracted again in full, even though every unchanged chunk has the same hash. <code>graph.py</code>'s promise to pay only for new or changed chunks holds within a version, not across one.</li>
+<li><strong><code>load()</code> never removes anything.</strong> A build without <code>--rebuild</code> leaves every node and edge an earlier build wrote, including entities the documents no longer state. A withdrawn document's names stay in the graph.</li>
+<li><strong>An edge's confidence is stored and never read.</strong> The walk and the retriever treat an edge at 0.3 exactly like one at 0.95.</li>
+<li><strong>Nothing checks an extraction against its passage.</strong> <code>build_graph()</code> drops only dangling and self relations, so a name the passage does not contain becomes a node. Step 6's audit is the only check, and it is this page's, not the kit's.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim"><code>normalise()</code> folds suffixes and case</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>normalise('ACME Pvt. Ltd.') = 'acme'</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Dangling and self relations are dropped</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>2 relations dropped</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The dry run sends nothing</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>current text chunks for tenant 'acme' from 'hr_policy_2026.md'</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The build</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>graph_extracted</code> with every chunk fresh; the <code>graph_built</code> line</td></tr>
+<tr><td>5</td><td data-label="Claim">The counts in Firestore</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>tenant acme: N nodes, M edges</code>, as the build said</td></tr>
+<tr><td>6</td><td data-label="Claim">One edge with its source chunk</td><td data-label="The check">step 5</td><td data-label="Pass looks like">the edge, <code>stated in ...</code> with its clause, both names <code>yes</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The extraction audited</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>entity names are in the passage as written</code>, none missing</td></tr>
+<tr><td>8</td><td data-label="Claim">The rerun extracts nothing</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>"fresh": 0</code>, and the same counts</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>acme's graph now holds the handbook's clauses: its nodes and edges in <code>graph_nodes</code> and <code>graph_edges</code>, and eleven cached extractions in <code>graph_extractions</code>. Nothing serves from it yet, because <code>RETRIEVAL_GRAPH</code> is off on the lane. Lesson 7.2 compares the Firestore and Spanner paths through it, and puts the walk in front of the dense pool on a candidate.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 7 Graph and multimodal &middot; Lesson 7.1 Build graph evidence from source documents &middot; v5.0</p><p>Next: Lesson 7.2 Compare Firestore and Spanner graph paths.</p></div>

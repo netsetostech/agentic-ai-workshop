@@ -1,0 +1,84 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.2</div>
+<h1>Separate offline checks, live scoring and LLM judgment: <span>the gate on every push, the gate on a deployment, and the judge that explains but never decides</span></h1>
+<p>Lesson 4.1 made the golden set sound. This lesson runs the three instruments that use it, and keeps them apart on purpose. The offline gate checks the set on every push, with no credentials. The live gate sends every row to the deployed API, as a roster member and again as an outsider, and blocks a release on %%N_THRESHOLDS%% thresholds and %%N_REQ%% required rows. The judge has Gemini read the lane's answers with the context they cite, and it never blocks anything. You will read CI's verdict on the kit you run, run the live gate and take its report apart, and run the judge beside it.</p>
+<div class="hero-chips"><div class="hero-chip">make eval: every push</div><div class="hero-chip">make eval-live: %%N_THRESHOLDS%% thresholds</div><div class="hero-chip">member and outsider</div><div class="hero-chip">exit 0, 1 or 2</div><div class="hero-chip">make judge: grounded 0 or 1</div><div class="hero-chip">the gate decides</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three instruments, three questions, and why only one may block</a></li>
+<li><a href="#s2">The words: offline half, live half, threshold, required row, two identities, exit code, report, candidate, judge, groundedness</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The offline half: on every push, and CI's verdict on the commit you run</a></li>
+<li><a href="#s4">The live half: every row, two identities, nine rates, three exit codes</a></li>
+<li><a href="#s5">The judge: the lane's own answers, read with the context they cite</a></li>
+<li><a href="#s6">Where the gate and the judge disagree: read the row</a></li>
+<li><a href="#s7">The judge's other two modes: trajectories now, pairwise in lesson 4.4</a></li>
+<li><a href="#s8">How each instrument lied before it was fixed, and what a run costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why an evaluation needs three instruments that fail for different reasons, what each one can and cannot see, and why only the deterministic one may block a release. Then you will prove it on your lane: CI's green run on the commit you cloned, a live gate run with its report taken apart, the judge's scores, and the rows where the two disagree.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three instruments, three questions, and why only one may block</h3><p>One judges the golden set, one judges a deployment, and one explains what the deployment said.</p></div></div>
+
+<p><strong>Each instrument answers a different question.</strong> The offline gate asks whether the golden set is sound. It reads files, needs no credentials and takes seconds, so it runs on every push. It never sees an answer. The live gate asks whether a deployment answers the set well enough to release. It sends every row to <code>/v1/query</code>, scores each reply with fixed string rules and exits 0, 1 or 2. It needs a deployment and two identities, takes minutes and costs rupees, so it runs before a release. The judge asks whether each answer is supported by the context it cites, and does what was asked. It is Gemini reading the lane's own answers, through Vertex AI Evaluation.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Instrument</th><th>It asks</th><th>It needs</th><th>It runs</th><th>It can block</th></tr></thead>
+<tbody>
+<tr><td><strong>Offline gate</strong>, <code>make eval</code></td><td data-label="It asks">is the golden set sound?</td><td data-label="It needs">the kit's files</td><td data-label="It runs">on every push; seconds; free</td><td data-label="It can block">yes: exit 1</td></tr>
+<tr><td><strong>Live gate</strong>, <code>make eval-live</code></td><td data-label="It asks">does this deployment clear %%N_THRESHOLDS%% thresholds and %%N_REQ%% required rows?</td><td data-label="It needs">a deployment, a member and an outsider</td><td data-label="It runs">before a release; minutes; rupees</td><td data-label="It can block">yes: exit 1, or 2 for a leak</td></tr>
+<tr><td><strong>Judge</strong>, <code>make judge</code></td><td data-label="It asks">is each answer grounded in what it cites, and does it do what was asked?</td><td data-label="It needs">a deployment and Vertex AI Evaluation</td><td data-label="It runs">when you want to know why; minutes; rupees</td><td data-label="It can block">never</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>Only the deterministic instrument may block.</strong> The live gate gives the same verdict for the same replies, every time. The judge is a model. Its score depends on its prompt template, the model behind the service and the context it is shown. The kit's first judged runs scored the lane 0.25 grounded, for reasons that were all about the judge's inputs. So the judge's scores go into an Experiments run named for the revision it judged, and the gate still decides. The judge's own last line says it: where they disagree, read the row.</p>
+
+<p><strong>The live gate is strict in specific ways.</strong> Every row is sent, answerable or not; the first version scored only answerable rows and silently skipped every refusal. A 5xx or a malformed body is a failed request, never a refusal. Each rate has its own denominator. <code>must_contain_rate</code> divides by the rows answered and <code>correct_rate</code> by every answerable row, so a model that answers little cannot look accurate. A leak exits 2 whatever the rates say, and a required row that fails blocks on its own. Isolation is judged twice: by markers in every reply, and by an outsider who must be refused on every isolation row.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127951;</div><div>
+<p><strong>A Test match.</strong> Before play, the match referee inspects the pitch and the balls: is the equipment fit for a fair game? That needs no players. During play, the umpire rules by the laws of the game: out or not out, no opinion, and the decision stands. The commentators say who played well and why, and they notice things the laws never ask about. They are worth hearing, but they never change the scorecard. The offline gate is the referee's inspection, the live gate is the umpire, and the judge is the commentary box.</p></div></div>
+
+<h4>The threshold board: what the live gate would say about a run you design</h4>
+<p>Each chip is a golden row. Pick one and choose what the API replies to it, or start from a preset. The board scores the run the way <code>live()</code> does: %%N_THRESHOLDS%% rates, each over its own rows, the required rows, and the exit code with the gate's own closing sentence.</p>
+
+<div class="diagram tb" id="board">
+<div class="dg-title">Threshold board - run_eval.py's thresholds, required rows and exit codes, over the kit's %%N_ROWS%% rows</div>
+<div class="tb-presets" id="tb-presets"></div>
+<div id="tb-grid"></div>
+<div class="tb-box" id="tb-pick"></div>
+<label class="tb-l">The outsider, asked every isolation row<select id="tb-outsider"><option value="0">refused every time: HTTP 403</option><option value="1">let in once</option></select></label>
+<div class="tb-box" id="tb-score"></div>
+<div class="tb-box" id="tb-verdict" aria-live="polite"></div>
+<p class="dg-cap">The arithmetic is the aggregate half of <code>live()</code> in <code>run_eval.py</code>, ported. For each of the %%N_PRESETS%% presets, the build ran the kit's own <code>live()</code> against a stub that replies to every row the way the preset says, and the board had to match its scores, failed thresholds, required rows, exit code and closing sentence.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the board is not</div>
+<p>It calls no API. Each choice stands for a reply the live half could get, scored the way <code>live()</code> scores it. Latency, cache hits and quote support are printed by the gate but are not thresholds, so the board leaves them out. Try <em>answers everything</em> and <em>refuses everything</em>: two opposite models, both blocked, by different thresholds.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: offline half, live half, threshold, required row, two identities, exit code, report, candidate, judge, groundedness</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Offline half</strong></td><td data-label="Meaning"><code>run_eval.py</code> with no arguments: falsifiable, anchors, coverage, over the committed files. No network.</td><td data-label="On your lane"><code>make eval</code>; the last step of CI's dry run</td></tr>
+<tr><td><strong>Live half</strong></td><td data-label="Meaning"><code>run_eval.py --api-url</code>: every row sent to <code>/v1/query</code> with <code>top_k</code> 6, every reply scored.</td><td data-label="On your lane"><code>make eval-live</code>, about ten minutes</td></tr>
+<tr><td><strong>Threshold</strong></td><td data-label="Meaning">A rate and the least it may be. A threshold with no rows behind it is printed and not judged, which matters for a run scoped to one document.</td><td data-label="On your lane">%%N_THRESHOLDS%%, from <code>request_success_rate</code> 1.00 to <code>correct_rate</code> %%CORRECT_MIN%%</td></tr>
+<tr><td><strong>Required row</strong></td><td data-label="Meaning">A row listed in <code>required.json</code>. Live, if it errors or fails, the run is blocked whatever the rates say.</td><td data-label="On your lane">%%N_REQ%% rows</td></tr>
+<tr><td><strong>The two identities</strong></td><td data-label="Meaning">The member, <code>documind-ui-sa</code>, on all three rosters, asks every row. The outsider, <code>documind-outsider-sa</code>, may call the service and is on no roster; it asks every isolation row and must get 403.</td><td data-label="On your lane">two tokens, minted by <code>make eval-live</code></td></tr>
+<tr><td><strong>Exit code</strong></td><td data-label="Meaning">0: every judged threshold holds and every required row passes. 1: anything else fails. 2: a marker fired.</td><td data-label="On your lane">printed with its reason</td></tr>
+<tr><td><strong>Report</strong></td><td data-label="Meaning"><code>REPORT=</code> writes the scores and every row's verdict, latency, stages and cache hit to JSON.</td><td data-label="On your lane"><code>evals/reports/lesson72.json</code>, ignored by git</td></tr>
+<tr><td><strong>Candidate</strong></td><td data-label="Meaning">A Cloud Run revision of the API that takes no traffic, reached at its own tagged URL. The release path runs the live gate on it before a person moves traffic.</td><td data-label="On your lane"><code>https://candidate---documind-api-NUMBER...</code>, in lesson 4.4</td></tr>
+<tr><td><strong>Judge</strong></td><td data-label="Meaning"><code>judge.py</code>: the lane's answers, scored by a Gemini autorater in Vertex AI Evaluation, bring-your-own responses. It never gates.</td><td data-label="On your lane"><code>make judge</code>, from its own venv</td></tr>
+<tr><td><strong>Groundedness</strong></td><td data-label="Meaning">1 when every part of the answer is attributable to the context in the prompt, 0 otherwise. Its mean is the share judged grounded.</td><td data-label="On your lane">by shape, for the answerable shapes</td></tr>
+<tr><td><strong>Instruction following</strong></td><td data-label="Meaning">The judge's second metric in SDK 2.1.0, scored 1 to 5. Earlier SDKs called its predecessor FULFILLMENT.</td><td data-label="On your lane"><code>instruction_following/mean</code></td></tr>
+<tr><td><strong>Experiments run</strong></td><td data-label="Meaning">Where the judge's scores are kept: experiment <code>documind-eval</code>, one run per invocation, named for the revision's <code>GIT_SHA</code>, the time and the judge's template hash.</td><td data-label="On your lane">a name ending <code>-t%%TEMPLATE_HASH%%</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the live gate <em>scores</em> and the judge <em>rates</em>. A score comes from a rule you can read, and the same reply always gets it. A rating comes from a model reading the reply, and a new template, a new judge model or a new context changes it. Scores gate a release. Ratings tell you where to look.</p>

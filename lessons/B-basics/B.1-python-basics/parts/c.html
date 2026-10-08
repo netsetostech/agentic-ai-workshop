@@ -1,0 +1,114 @@
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; HTTP</span><h3>One HTTP call: a server on your laptop, and urllib</h3><p>A request and a response with both ends written by you; the status codes the kit tests for; then the kit's own call, and the token it carries.</p></div></div>
+
+<p>An HTTP <strong>request</strong> is a method (<code>GET</code> to read, <code>POST</code> to send something), a URL, a set of headers and, for a POST, a body. The <strong>response</strong> is a status code, its own headers and a body. Everything else is one of those: the ID token is a header, the question is the body. <code>127.0.0.1</code> is the loopback address, your own machine, and a server bound to it can be called only from that machine, so nothing in this step leaves your laptop.</p>
+
+<p>The cell below starts a stand-in API in a background thread, with <code>http.server</code> from the standard library and three routes: <code>GET /health</code>; <code>POST /v1/query</code>, which refuses a request that has no bearer token; and a 404 for anything else. Then it calls the server four times with <code>urllib.request</code>, the way the kit's smoke test calls the real API: health, a question with a token (the eval gate's request body for row lk-01), the same question with no token, and a path that does not exist. The server keeps its own log, so you see each call from both ends.</p>
+
+%%CELL_HTTP%%
+%%OUT_HTTP%%
+
+<p>Four things in that output are most of what this course needs from HTTP. The <code>200</code>s carry JSON bodies that <code>json.loads</code> turns straight into dicts. The server read your body as a dict too, and the <code>Content-Type</code> header is how it knew to expect JSON. The <code>401</code> and the <code>404</code> are answers, not crashes: urllib raises <code>HTTPError</code> for any 4xx or 5xx, and Python's documentation describes that exception as a response as well, with the status in <code>e.code</code> and the body readable from it, which is why <code>call()</code> catches it and returns both. And <code>http.server</code> is for exactly this kind of test: its documentation says it is not recommended for production, and rag-api runs FastAPI under gunicorn instead.</p>
+
+<p>One line in the cell is not in the kit: the opener built with an empty <code>ProxyHandler</code>. <code>urlopen</code> sends a request through any proxy your shell's <code>HTTP_PROXY</code> names, which many company laptops set, and a proxy cannot reach your laptop's <code>127.0.0.1</code>. The opener calls the server directly, whatever the shell says.</p>
+
+<h4>The kit's call, and the token it carries</h4>
+<p>The smoke test that lesson 0.4 runs against your lane is built from the same parts, and its docstring says so:</p>
+
+@@smoke_doc@@
+@@smoke_call@@
+
+<p>Set the two side by side. The kit's <code>call()</code> builds a <code>Request</code>, adds the bearer token and the JSON content type, opens it with a %%SMOKE_TIMEOUT%%-second timeout, and turns an <code>HTTPError</code> into a status and a body instead of a crash. That is your <code>call()</code>, with one more branch at the end for a call that got no answer at all; step 7 adds the same branch. The token is the part your stand-in faked. On a lane it is a Google-signed ID token, and the smoke test asks gcloud for one: minted as the UI's service account, for the API's own URL, with the account's email inside.</p>
+
+@@smoke_token@@
+
+<p>The image carries the one-line version of your first call as well. The container's health check, which Docker runs inside it, opens <code>/health</code> with urllib, and the line after it starts the server that answers:</p>
+
+@@dockerfile_tail@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You ran both ends of an HTTP call on one laptop. The client sent a method, a path, headers and a JSON body; the server read them and answered with a status and a JSON body; and the two refusals came back as data you could print, not as a crashed program. That is the smoke test's <code>call()</code>, minus a real token, and the next step makes two such calls at once.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Async</span><h3>Two calls at once: asyncio.gather and asyncio.to_thread</h3><p>Why waiting is the expensive part of a call, why <code>async def</code> alone changes nothing, and how the kit keeps a blocking call off its event loop.</p></div></div>
+
+<p>A call to the API, or to Gemini, is mostly waiting: the request goes out, the other side works, the answer comes back, and your program does nothing in between. Two calls made one after the other wait twice. <strong>asyncio</strong> lets one program wait on both at once. A function written <code>async def</code> is a coroutine; inside it, <code>await</code> marks each place where it waits; and the event loop that <code>asyncio.run()</code> starts runs another coroutine while one waits. <code>asyncio.gather()</code> runs several and returns their results as a list, in the order you passed them, not the order they finished.</p>
+
+<p>There is one catch, and the cell below is built to show it. The loop can switch only at an <code>await</code>, and urllib is synchronous: it never awaits, so while it waits it holds the whole thread, loop and all. <code>asyncio.to_thread()</code> is the way out. It runs an ordinary blocking function in a separate thread and gives the loop something to await, which is what Python's documentation says it is for. The cell's server takes half a second over every answer, a stand-in for a slow model, and notes whether a request arrived while another was still being served.</p>
+
+%%CELL_ASYNC%%
+%%OUT_ASYNC%%
+
+<p>The first two runs took the same time, and the server never had both requests at once: putting a blocking call inside <code>async def</code> changes how it is written, not how it behaves. Only the third run overlapped, and it finished in about %%WAITS_TOGETHER%% wait instead of %%WAITS_APART%% because the two waits happened together. All three returned <code>['a', 'b']</code> in that order, which for <code>gather</code> is a promise, not luck.</p>
+
+<h4>asyncio in the kit</h4>
+<p>The kit's services run on event loops. rag-api's last Dockerfile line, in step 5, starts gunicorn with %%RAG_WORKERS%% uvicorn workers: %%RAG_WORKERS%% processes, each with an event loop that serves many requests at once. So the kit follows the two rules your cell just proved. First, a plain script that needs an async library enters the loop with <code>asyncio.run()</code>, the way the MCP smoke test (Module 5) calls an async client:</p>
+
+@@mcp_async@@
+
+<p>Second, on a loop, a blocking call goes to a thread. When the chat service's door needs to know whose question it is holding, it asks the roster, and the roster is a Firestore query that holds its thread until Firestore answers:</p>
+
+@@tenant_for@@
+
+<p>So the door never calls it on the loop. It awaits it in a thread, and the loop goes on serving every other request in that worker meanwhile:</p>
+
+@@chat_thread@@
+
+<p>And where two pieces of work should overlap inside one request, the chat service starts the second as a task of its own. Every turn the door hands to the chat brain also runs the routed Desk's shadow hook, which does nothing unless the tenant has the Desk in shadow mode, and then decides what the Desk would have done and logs it without touching the answer (lesson 10.4). <code>asyncio.create_task</code> starts the hook beside the turn, the <code>finally</code> makes the request wait for both, and <code>_quietly</code> makes sure the hook can never fail the turn:</p>
+
+@@chat_pass@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You timed the same two calls three ways and saw that only threads waiting together save time, however the code is spelled. The kit's services live on event loops, so they do the same: a script enters the loop with <code>asyncio.run()</code>, a blocking roster read goes to <code>asyncio.to_thread()</code>, and a side task runs beside the turn with <code>create_task</code> and is awaited before the request ends.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>A call the kit would trust: one retry, a timeout, a checked body</h3><p>Three ways a real service lets a caller down, and the kit's rule for each, run against a server that misbehaves on purpose.</p></div></div>
+
+<p>The call in step 5 assumed the server answers, answers once and answers well. A real service can be briefly overloaded, can hang, or can answer <code>200</code> with an empty body. The kit's eval gate has a rule for each: give every call a timeout; retry a 5xx, a timeout or a transport error once, after a pause, and never a 4xx; and count a 200 as a failed request until its body has the right shape. The last two date from 12 September 2026, the day its docstring says the gate "learned to fail". The cell below gives a stand-in server three routes that misbehave on purpose and calls each one under those rules.</p>
+
+%%CELL_PROD%%
+%%OUT_PROD%%
+
+<p>The blip cost one retry and the caller never saw it. The hang cost two timeouts and came back as data, status 0 and the exception's name, instead of freezing the program. The empty 200 was the most dangerous of the three: its status said success, and only the shape check said it was not an answer.</p>
+
+<h4>The kit's rules, in its own words</h4>
+
+@@eval_ask@@
+
+<p>The docstring gives the reason in a line: "one retry separates a blip from an outage, more would hide one." With three or five retries the hang above would have taken much longer and still failed, and a real outage would have looked like a slow day. A 4xx is not retried at all: it says the request itself was refused, and sending it again changes nothing.</p>
+
+@@validate_body@@
+
+<p>The kit's shared tool layer, which every agent brain calls to search the documents, uses the <code>requests</code> library instead of urllib. It keeps the timeout (<code>RAG_TIMEOUT_S</code>, %%RAG_TIMEOUT%% seconds unless it is set) and, like the cell's <code>get()</code>, returns a failure as data, so the agent can explain it instead of the turn dying on an exception. It does not retry, and it mints a fresh ID token for every call, for a reason its docstring gives:</p>
+
+@@tools_retrieve@@
+@@tools_token@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You gave a call the three things the kit never leaves out: a timeout, so a hang ends; one retry, so a blip passes and an outage still shows; and a check of the body, so a 200 has to earn the word "answer". Every HTTP call the later modules make, from the smoke test to the agents' tools, is built on these rules.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one cell above, each with the line that proves it on your laptop.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">You are in the venv</td><td data-label="The check">the first cell in step 3</td><td data-label="Pass looks like"><code>running from a venv: True</code>, and numpy %%NUMPY_PIN%% and google-genai %%GENAI_PIN%% from its <code>site-packages</code></td></tr>
+<tr><td>1</td><td data-label="Claim">A venv is a folder you can delete</td><td data-label="The check">the throwaway cell in step 3</td><td data-label="Pass looks like"><code>numpy importable False</code> inside it, then <code>exists False</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The kit pins every line, and pins shared libraries alike</td><td data-label="The check">the dry run's two checks in step 3, or the explorer in step 1</td><td data-label="Pass looks like"><code>%%N_SERVICES%% files, all deps pinned</code>; <code>%%N_SHARED%% shared packages agree across %%N_PIN_FILES%% files</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A JSONL file round-trips</td><td data-label="The check">the cell in step 4</td><td data-label="Pass looks like"><code>read back: 4 rows, equal to what was written: True</code>, and line 1 the kit's own line 1</td></tr>
+<tr><td>4</td><td data-label="Claim">A broken line is caught, with its place</td><td data-label="The check">the same cell</td><td data-label="Pass looks like"><code>Expecting ',' delimiter (line 1, column %%JSON_COL%%)</code></td></tr>
+<tr><td>5</td><td data-label="Claim">One HTTP call, from your laptop</td><td data-label="The check">the cell in step 5</td><td data-label="Pass looks like"><code>GET /health</code> answered <code>200 {"status": "ok"}</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Refusals are status codes, not crashes</td><td data-label="The check">the same cell</td><td data-label="Pass looks like"><code>401</code> with no token, <code>404</code> for a path that does not exist</td></tr>
+<tr><td>7</td><td data-label="Claim">async def alone does not overlap</td><td data-label="The check">the cell in step 6</td><td data-label="Pass looks like"><code>gather over blocking calls</code>: about %%WAITS_APART%% waits, in flight at once <code>False</code></td></tr>
+<tr><td>8</td><td data-label="Claim">to_thread does</td><td data-label="The check">the same cell</td><td data-label="Pass looks like"><code>gather over asyncio.to_thread</code>: about %%WAITS_TOGETHER%% wait, in flight at once <code>True</code></td></tr>
+<tr><td>9</td><td data-label="Claim">One retry, a timeout, a checked 200</td><td data-label="The check">the cell in step 7</td><td data-label="Pass looks like"><code>/flaky</code> an answer after 2 asks; <code>/hang</code> <code>TimeoutError</code> after 2; <code>/empty</code> not an answer</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your laptop</div>
+<p>One new folder, <code>~/basics-b1</code>, holding <code>golden_sample.jsonl</code>: %%JSONL_BYTES%% bytes, four rows. The throwaway venv was made and deleted inside its cell, and the three servers listened on <code>127.0.0.1</code> only while their cells ran. Nothing was installed beyond the setup block's two libraries, nothing left your machine, and nothing cost anything. Lesson B.2 uses the same <code>~/basics-venv</code> to count a sentence's tokens and price them, and to compare two embeddings; those cells call Gemini, so they need your project from lesson 0.1 and the sign-in from the second half of the setup section.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Basics &middot; Lesson B.1 Run Python the way the kit does: venvs, JSON and HTTP calls &middot; v5.0</p><p>Next: Lesson B.2 Turn text into tokens and embeddings.</p></div>

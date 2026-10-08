@@ -1,0 +1,72 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 5 &middot; MCP and agents &middot; Lesson 5.3</div>
+<h1>Deploy MCP and verify authorized access: <span>three doors, one deputy, and the gate</span></h1>
+<p>Lesson 5.2 ran the kit's MCP server on your machine. This lesson puts it behind Cloud Run and checks who gets through. Three doors stand in front of a tenant's documents. Cloud Run lets in only the accounts bound as invokers. The server accepts only a token minted for its own address, with an email in it. The roster decides which tenant's documents that email may read. Behind the doors, the server fetches from rag-api as its own account, which every golden roster lists. You read the door as the kit writes it down, deploy it with the kit's own target, and run the module's gate. Then you call once at each door, and read the two logs that show who asked and who was served.</p>
+<div class="hero-chips"><div class="hero-chip">roles/run.invoker</div><div class="hero-chip">SELF_URL</div><div class="hero-chip">the roster</div><div class="hero-chip">make smoke-mcp</div><div class="hero-chip">another tenant refused</div><div class="hero-chip">documind-mcp-sa</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three doors and a deputy</a></li>
+<li><a href="#s2">The words: invoker, audience, roster, named tenant, deputy, caller graph, gate</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The door, as the kit writes it down</a></li>
+<li><a href="#s4">Deploy, and read it back</a></li>
+<li><a href="#s5">The gate: make smoke-mcp</a></li>
+<li><a href="#s6">One call at each door, and both sides of the answer</a></li>
+<li><a href="#s7">Why access is split this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn which door refuses which caller, what each refusal looks like, and why the server's roster check is the one that guards the tenants. Then you will prove it: <code>make smoke-mcp</code> green, the outsider refused when it names acme, and every door answering the caller it is there for.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three doors and a deputy</h3><p>Who may knock, who is named, whose documents, and who fetches them.</p></div></div>
+
+<p><strong>The first door is Cloud Run's.</strong> <code>documind-mcp</code> is deployed with no unauthenticated calls, so Cloud Run checks every request's token before the server's code runs. With no token, or one it cannot verify for this address, the request never arrives. <code>roles/run.invoker</code> is bound on the service for three accounts only, per the kit's caller graph. <code>documind-ui-sa</code> is for the operators' smoke tests, and <code>documind-agent-sa</code> is the A2A peer. <code>documind-outsider-sa</code> is the eval gate's outsider, let in on purpose, so that its refusal comes from the roster and not from the network.</p>
+
+<p><strong>The second door is the server's token check.</strong> Cloud Run has proved the token was minted for the service. The server checks again that the audience is its own <code>SELF_URL</code>, and that the token carries a verified email. A token without an email names nobody, and a tool call that carries one is a tool error.</p>
+
+<p><strong>The third door is the roster.</strong> The email must be on the tenant's roster in Firestore. With no tenant named, the server takes the caller's own. A named tenant is accepted only if the roster already lists the caller on it. The outsider is on no roster, so when it names acme it is refused: another tenant's documents, refused by the roster.</p>
+
+<p><strong>Behind the doors, a deputy.</strong> The server then calls rag-api through the one <code>retrieve()</code>, as <code>documind-mcp-sa</code>, and does not pass on who asked. <code>make roster</code> puts <code>documind-mcp-sa</code> on all three golden tenants, so rag-api's own roster check always passes it. rag-api's row therefore names the deputy, not the person or agent who asked. The server's roster check is what keeps a caller out of another tenant's documents, and the server's own log line is the only record of who asked.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127970;</div><div>
+<p><strong>An office tower.</strong> The security desk lets in only people with a visitor pass issued for this building. Reception checks that the pass has a name on it. The floor's register checks that the company on that floor expects the visitor. Behind the desk, the tower's own runner fetches files from the records room. The records room sees the runner's badge, which opens every floor's shelves, and never the visitor's. So the floor register is what keeps a visitor away from another company's files, and the runner's logbook is the only place the visitor's name is written.</p></div></div>
+
+<h4>Which door stops it</h4>
+<p>Choose a caller, a tool and a tenant to name. The panel shows each door in turn, whether it let the call through, the answer, and what rag-api sees.</p>
+
+<div class="diagram pc" id="dr">
+<div class="dg-title">A call to documind-mcp - Cloud Run, the token check, the roster, and the deputy behind them</div>
+<div class="pc-box"><b class="h">The call</b>
+<div class="pc-in"><label>Caller<select id="dr-who"></select></label><label>Tool<select id="dr-tool"></select></label><label>Tenant named<select id="dr-ten"></select></label></div>
+<div class="fs-grid" id="dr-out" aria-live="polite"></div></div>
+<p class="dg-cap">The %%N_OUT%% answers come from the kit's <code>server.py</code>, run on localhost at build time with the roster from <code>roster_plan</code>. Cloud Run's two statuses come from a local stand-in that refuses as Cloud Run does: 403 without a token, and 401 for a token minted for another address.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the kit's rules on a stand-in lane. Your lane's documents, and any change you have made to a roster, decide your answers.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: invoker, audience, roster, named tenant, deputy, caller graph, gate</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Invoker</strong></td><td data-label="Meaning">An account allowed to call a Cloud Run service, through <code>roles/run.invoker</code>.</td><td data-label="On your lane">ui-sa, agent-sa and outsider-sa, on <code>documind-mcp</code></td></tr>
+<tr><td><strong>Unauthenticated calls</strong></td><td data-label="Meaning">Requests Cloud Run lets through without a token.</td><td data-label="On your lane">off: <code>--no-allow-unauthenticated</code></td></tr>
+<tr><td><strong>Audience</strong></td><td data-label="Meaning">The address a token was minted for.</td><td data-label="On your lane"><code>SELF_URL</code>, the service's run.app address</td></tr>
+<tr><td><strong>Verified email</strong></td><td data-label="Meaning">The identity inside a Google ID token minted with <code>--include-email</code>.</td><td data-label="On your lane">what the roster is keyed on</td></tr>
+<tr><td><strong>Roster</strong></td><td data-label="Meaning">A tenant's members, in Firestore.</td><td data-label="On your lane">ui-sa on acme, zeta and globex; agent-sa on acme</td></tr>
+<tr><td><strong>Named tenant</strong></td><td data-label="Meaning">The <code>tenant</code> argument a caller may pass, checked against the roster.</td><td data-label="On your lane">the outsider naming acme</td></tr>
+<tr><td><strong>Deputy</strong></td><td data-label="Meaning">A service that acts for its callers under its own account.</td><td data-label="On your lane"><code>documind-mcp-sa</code>, calling rag-api</td></tr>
+<tr><td><strong>Caller graph</strong></td><td data-label="Meaning">Who may invoke whom, written in <code>terraform/sa.tf</code> and checked by <code>tools/check_authz.py</code>.</td><td data-label="On your lane"><code>documind-mcp</code> &larr; ui, agent, outsider</td></tr>
+<tr><td><strong>Ingress</strong></td><td data-label="Meaning">Where requests may come from.</td><td data-label="On your lane"><code>all</code>: the boundary is identity, not the network</td></tr>
+<tr><td><strong>The gate</strong></td><td data-label="Meaning">The module's smoke test for the MCP server.</td><td data-label="On your lane"><code>make smoke-mcp</code>: four checks</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: IAM decides who may reach the server, and the server decides whose documents they may read.</p>

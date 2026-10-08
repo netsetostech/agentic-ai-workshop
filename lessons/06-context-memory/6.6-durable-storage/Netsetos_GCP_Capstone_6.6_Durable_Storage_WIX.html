@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 6.6 Configure and inspect durable conversation storage - the tables, one row per thread, and what every turn adds | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.pc-in{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 12px;margin:6px 0;}
+.pc-in label{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.pc-in select{font:inherit;font-size:16px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.pc-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.55;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.pc-box b.h{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
+.fs-grid{display:grid;grid-template-columns:minmax(0,13em) minmax(0,1fr);gap:4px 10px;font-size:12.5px;}
+.fs-grid b{color:var(--navy);font-weight:600;}
+.fs-grid .big{font-family:var(--mono);color:var(--teal-dark);font-weight:600;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.6</div>
+<h1>Configure and inspect durable conversation storage: <span>the tables, one row per thread, and what every turn adds</span></h1>
+<p>Lesson 6.5 showed that your lane's conversations live in <code>PostgresSaver</code> on Cloud SQL. This lesson opens that storage. Terraform made an instance, a database, a user and a secret; the service mounts them; a one-off job made the tables. Each turn then writes a checkpoint row per step and, for the conversation itself, the whole list of messages again at every new version. You count what a turn writes on the kit's own code, and read the configuration your lane runs. You connect to the database the way the service does, through the Cloud SQL connector, and list the tables and one row per thread. On the way you find which brain's conversations are not there at all.</p>
+<div class="hero-chips"><div class="hero-chip">Cloud SQL</div><div class="hero-chip">PostgresSaver</div><div class="hero-chip">setup() as a job</div><div class="hero-chip">checkpoints</div><div class="hero-chip">checkpoint_blobs</div><div class="hero-chip">one row per thread</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What holds a conversation</a></li>
+<li><a href="#s2">The words: instance, DSN, connector, migration, checkpoint, blob, write, thread</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">What a turn writes</a></li>
+<li><a href="#s4">What your lane runs</a></li>
+<li><a href="#s5">The tables, and one row per thread</a></li>
+<li><a href="#s6">One thread, step by step</a></li>
+<li><a href="#s7">Why storage is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the four pieces that make a conversation outlive an instance, the four tables <code>PostgresSaver</code> keeps, and why a conversation's storage grows faster than the conversation. Then you will prove it: the checkpoints and versions two turns write, your lane's instance, secret and setup job, the checkpoint tables with one row per thread, and one thread's rows in order.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What holds a conversation</h3><p>Four pieces, four tables, and one store that is not there.</p></div></div>
+
+<p><strong>Four pieces.</strong> A conversation outlives an instance only if something outside the instance holds it. On your lane that is a Cloud SQL for PostgreSQL instance, <code>documind-checkpoint</code>: the smallest tier, one zone, 10 GB, no backups. Terraform gives it a database, <code>documind</code>, and a user, <code>chat</code>. It writes the connection string, the DSN, into a Secret Manager secret. The chat service mounts the secret as <code>CHECKPOINT_DSN</code> and the instance as a socket, so the password is never in its image or the repository. The instance has a public address and no authorized networks, so nothing on the internet can open a connection. The Cloud SQL connector checks an identity with IAM, and opens the connection for it.</p>
+
+<p><strong>Tables made once, by a job.</strong> <code>PostgresSaver</code> needs its tables before the first turn. <code>setup()</code> creates them, and it is safe to run twice, which makes it tempting to run at start-up. The kit does not: <code>setup()</code> takes exclusive locks, and several instances racing to run it fail at random. So <code>migrate.py</code> runs it as a Cloud Run job. Version 3.1.2 applies 10 migrations: four tables, three indexes, two column changes, and one that does nothing but keep the count right. The service opens one connection pool per instance at start-up, of one to four connections, and never calls <code>setup()</code>.</p>
+
+<p><strong>Four tables.</strong> <code>checkpoints</code> holds a row per step of every turn, keyed by the thread id. <code>checkpoint_blobs</code> holds the values of the graph's channels, a row per new version. <code>checkpoint_writes</code> holds what each step wrote. <code>checkpoint_migrations</code> holds a row per migration applied. The conversation itself is the <code>messages</code> channel, and every new version of it is stored whole: the list of all messages so far, again. A turn with one tool call adds four messages, so four new versions, each longer than the last.</p>
+
+<p><strong>What is not there.</strong> The ADK brain asks for a database store too, on the same DSN. That needs SQLAlchemy, which google-adk installs only with its <code>db</code> extra, and the chat image installs google-adk without it. So the import fails, <code>brains.py</code> logs a warning, and ADK keeps its sessions in the instance's memory. That is what the memory checkpointer does, without the warning at start-up.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128451;</div><div>
+<p><strong>A sub-registrar's record room.</strong> The deeds are not kept at a clerk's desk. They go to the record room, which outlives every shift. The room has no street door; head office issues keys to named staff. The shelves were built once, by a contractor, before the first deed arrived, not by each clerk on their first morning, which is how one corner gets two sets of shelves. This record room also files a full photocopy of the file after every entry, so the shelves fill much faster than the files grow. One counter never sends its files to the room at all. Its clerk keeps them in a drawer, and they are gone when the shift ends.</p></div></div>
+
+<h4>What keeping every version costs</h4>
+<p>Choose how long a conversation runs, its tool calls, and how many conversations a day your tenants hold. The panel counts the checkpoint rows and versions of messages one conversation leaves. It compares the bytes those versions take with the latest version alone, and how they grow against the instance's 10 GB disk.</p>
+
+<div class="diagram pc" id="ds">
+<div class="dg-title">Messages kept by PostgresSaver - one conversation, then a period</div>
+<div class="pc-box"><b class="h">The conversations</b>
+<div class="pc-in"><label>Turns in a conversation<select id="ds-turns"></select></label><label>Tool calls per turn<select id="ds-tools"></select></label><label>Conversations a day<select id="ds-day"></select></label><label>Kept for<select id="ds-days"></select></label></div>
+<div class="fs-grid" id="ds-out" aria-live="polite"></div></div>
+<p class="dg-cap">A turn with k tool calls writes 3 + 2k checkpoints and 2 + 2k versions of messages, as step 3 counts them on the kit's <code>brains.py</code>. Each message adds what it added there: a question 215 bytes, a tool call 314, five passages 1,759, an answer 261. Only the messages are counted; the other channels and the writes add more rows.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It counts what <code>PostgresSaver</code> keeps of the messages, not what Cloud SQL bills. The instance costs roughly Rs 700 to 850 a month whether it holds one conversation or ten thousand, and its disk is 10 GB.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: instance, DSN, connector, migration, checkpoint, blob, write, thread</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Instance</strong></td><td data-label="Meaning">A Cloud SQL server: engine, tier, zone and disk.</td><td data-label="On your lane"><code>documind-checkpoint</code>: POSTGRES_16, db-f1-micro, zonal, 10 GB</td></tr>
+<tr><td><strong>DSN</strong></td><td data-label="Meaning">The connection string: user, password, database, socket.</td><td data-label="On your lane">the secret <code>documind-checkpoint-dsn</code>, read by the service as <code>CHECKPOINT_DSN</code></td></tr>
+<tr><td><strong>Cloud SQL connector</strong></td><td data-label="Meaning">Opens a connection for an identity IAM allows, with no authorized network.</td><td data-label="On your lane"><code>--add-cloudsql-instances</code> on the service; the Python connector in your shell</td></tr>
+<tr><td><strong>Migration</strong></td><td data-label="Meaning">One change to the schema, applied once and recorded.</td><td data-label="On your lane">10 in langgraph-checkpoint-postgres 3.1.2</td></tr>
+<tr><td><strong>Setup job</strong></td><td data-label="Meaning">The Cloud Run job that runs <code>migrate.py</code>.</td><td data-label="On your lane"><code>documind-checkpoint-setup</code></td></tr>
+<tr><td><strong>checkpoints</strong></td><td data-label="Meaning">A row per step, keyed by thread and checkpoint id.</td><td data-label="On your lane">3 for a turn with no tool, 5 with one tool call</td></tr>
+<tr><td><strong>checkpoint_blobs</strong></td><td data-label="Meaning">A row per new version of a channel's value.</td><td data-label="On your lane">the whole messages list, at every version</td></tr>
+<tr><td><strong>checkpoint_writes</strong></td><td data-label="Meaning">A row per value a step wrote to a channel.</td><td data-label="On your lane">the new message, and where the graph goes next</td></tr>
+<tr><td><strong>Thread</strong></td><td data-label="Meaning">The key a conversation's rows share.</td><td data-label="On your lane"><code>tenant:person:session</code></td></tr>
+<tr><td><strong>ADK session store</strong></td><td data-label="Meaning">Where the ADK brain keeps its conversations.</td><td data-label="On your lane">an instance's memory: the image has no SQLAlchemy</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a checkpoint is a moment, and a blob is a value at that moment. Checkpoints share a blob while the value does not change.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_6/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_6/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_6/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code> and <code>REGION</code>. You need <code>~/graph-venv</code> from lesson 5.4. Step 3's first cell adds the Cloud SQL connector to it, with the chat image's pins, and makes it if it is missing. Your account must be able to read the DSN secret and connect to the instance, and a project owner can. Steps 5 and 6 read the tables and write nothing. Nothing on your lane changes.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; One thread</span><h3>What a turn writes</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_6/demo_03_what_a_turn_writes.py" target="_blank" rel="noopener"><code>demo_03_what_a_turn_writes.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Two turns of the kit's LangChain brain, their checkpoints and versions counted, then the ADK brain given the lane's DSN.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell runs two turns of the kit's LangChain brain on one thread, against <code>InMemorySaver</code>. It has the interface <code>PostgresSaver</code> implements, one checkpoint per step and one stored value per new version, held in memory instead of Postgres. The first turn asks the brain to remember a word, and the model answers at once. The second asks about gratuity, and the model calls <code>retrieve</code>, which stands in with five passages. After each turn the cell counts the checkpoints and the new versions of messages. Then it prints every version, with its length and size. Last, it gives the ADK brain the lane's DSN, in a venv that has google-adk and no SQLAlchemy, as the chat image does.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/chat/brains.py - the ADK brain asks for a database store, and falls back to memory</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">_sessions</span>():
+        <span class="st">&quot;&quot;&quot;ADK keeps its own sessions. On the same Cloud SQL when there is one, in memory otherwise.&quot;&quot;&quot;</span>
+        dsn = os.environ.get(<span class="st">&quot;CHECKPOINT_DSN&quot;</span>, <span class="st">&quot;&quot;</span>)
+        <span class="kw">if</span> dsn.startswith(<span class="st">&quot;postgresql://&quot;</span>):
+            <span class="kw">try</span>:
+                <span class="kw">from</span> google.adk.sessions <span class="kw">import</span> DatabaseSessionService
+                <span class="kw">return</span> DatabaseSessionService(db_url=dsn.replace(<span class="st">&quot;postgresql://&quot;</span>, <span class="st">&quot;postgresql+psycopg://&quot;</span>, <span class="nu">1</span>))
+            <span class="kw">except</span> Exception <span class="kw">as</span> exc:                          <span class="cm"># noqa: BLE001</span>
+                logger.warning(<span class="st">&quot;ADK DatabaseSessionService unavailable (%s); using memory&quot;</span>, exc)
+        <span class="kw">from</span> google.adk.sessions <span class="kw">import</span> InMemorySessionService
+        <span class="kw">return</span> InMemorySessionService()</pre></div>
+
+
+<h4>Do it: the venv</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (lesson 5.4's venv, with the Cloud SQL connector added)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">[ -x ~/graph-venv/bin/python ] || python -m venv ~/graph-venv   # lesson 5.4's venv, made here if it is missing
+~/graph-venv/bin/pip install -q "langchain==1.4.0" "langchain-core==1.6.2" "requests==2.34.2" "google-auth==2.57.1" "google-adk==2.8.0" \
+  "cloud-sql-python-connector[pg8000]==1.22.0" "pg8000==1.31.5"   # the chat image's pins, and the Cloud SQL connector
+~/graph-venv/bin/python -c 'import google.cloud.sql.connector as c, pg8000; print("graph-venv ok: connector", c.__version__)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected </span><span class="ro">read only</span></div><pre tabindex="0">graph-venv ok: connector 1.22.0</pre></div>
+
+
+<h4>Do it: two turns</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (two turns, their checkpoints and versions counted; no model, no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">~/graph-venv/bin/python - &lt;&lt;'PY'
+import logging, os, sys, warnings
+warnings.filterwarnings("ignore")
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s", stream=sys.stdout)
+sys.path[:0] = [".", "services/chat"]
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
+import shared.documind_tools as dt
+import brains
+QUOTE = ("Gratuity shall be payable to an employee on the termination of his employment after he has rendered "
+         "continuous service for not less than five years, on his superannuation, or on his retirement or resignation.")
+dt.retrieve = lambda query, **kw: {"answerable": True, "confidence": "high", "citations": [   # five passages, no network
+    {"chunk_id": f"acme:payment_of_gratuity_act_1972#{4 + i}", "quote": QUOTE, "score": 0.9} for i in range(5)]}
+class Script(FakeMessagesListChatModel):           # a model that says what it is told
+    def bind_tools(self, tools, **kw): return self
+saver = InMemorySaver()                            # PostgresSaver's interface: a row per checkpoint, a blob per new version
+thread = {"configurable": {"thread_id": "acme:you@example.com:lesson112"}}
+def turn(question, tool):                          # one turn of the kit's LangChain brain, with or without retrieve
+    said = [AIMessage("", tool_calls=[{"name": "retrieve", "args": {"query": question}, "id": "c1"}])] if tool else []
+    brains.LangChainBrain(saver, llm=Script(responses=said + [AIMessage("Five years of continuous service [1].")])).answer(
+        question, config=thread, context={"tenant_id": "acme", "brain": "langchain"})
+def kept():                                        # the thread's checkpoints, and each version of messages they stored
+    cps, versions = list(saver.list(thread))[::-1], {}
+    for c in cps:
+        v = c.checkpoint["channel_versions"].get("messages")
+        if v and v not in versions:
+            msgs = c.checkpoint["channel_values"]["messages"]
+            versions[v] = (len(msgs), len(saver.serde.dumps_typed(msgs)[1]))
+    return cps, versions
+done = (0, 0)
+for question, tool in (("Remember this word for me: tamarind.", False), ("After how many years is gratuity payable?", True)):
+    turn(question, tool)
+    cps, versions = kept()
+    print(f"a turn {'with retrieve' if tool else 'with no tool':14} +{len(cps) - done[0]} checkpoints, +{len(versions) - done[1]} versions of messages")
+    done = (len(cps), len(versions))
+print("the messages channel, every version kept:")
+for i, (n, size) in enumerate(versions.values(), 1):
+    print(f"   version {i}  {n} message{'s' if n &gt; 1 else ' '}  {size:&gt;6,} bytes")
+sizes = [size for _, size in versions.values()]
+print(f"   {sum(sizes):,} bytes kept, for a conversation whose latest version is {sizes[-1]:,} bytes")
+print("the ADK brain, given the lane's DSN, with google-adk and no SQLAlchemy - as the chat image has them:")
+os.environ["CHECKPOINT_DSN"] = "postgresql://chat:PASSWORD@/documind?host=/cloudsql/PROJECT:REGION:documind-checkpoint"
+print(f"   it keeps its sessions in {type(brains.AdkBrain._sessions()).__name__}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell run on the kit's own brains.py, with google-adk 2.8.0 and no SQLAlchemy; the sizes are the installed LangChain's)</span><span class="ro">read only</span></div><pre tabindex="0">a turn with no tool   +3 checkpoints, +2 versions of messages
+a turn with retrieve  +5 checkpoints, +4 versions of messages
+the messages channel, every version kept:
+   version 1  1 message      211 bytes
+   version 2  2 messages     472 bytes
+   version 3  3 messages     687 bytes
+   version 4  4 messages   1,001 bytes
+   version 5  5 messages   2,760 bytes
+   version 6  6 messages   3,021 bytes
+   8,152 bytes kept, for a conversation whose latest version is 3,021 bytes
+the ADK brain, given the lane's DSN, with google-adk and no SQLAlchemy - as the chat image has them:
+WARNING documind.chat.brains: ADK DatabaseSessionService unavailable (The 'sqlalchemy' package is required to use this feature. Please install it by running: pip install google-adk[db]); using memory
+   it keeps its sessions in InMemorySessionService</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The first turn wrote three checkpoints and two versions of messages: the question, then the answer. The second wrote five and four, because the tool call and its result are messages too. Every version holds the whole list. So the last one, 3,021 bytes, is the conversation, and 8,152 bytes, all six versions, is what the table keeps. The five passages <code>retrieve()</code> returned are by far the largest message, and every later version stores them again.</p>
+<p>The ADK brain logged its warning and chose memory. The chat image does the same with the same DSN, because it installs google-adk without SQLAlchemy.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Configure</span><h3>What your lane runs</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_6/demo_04_what_your_lane_runs.py" target="_blank" rel="noopener"><code>demo_04_what_your_lane_runs.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The instance, the secret and the setup job, read from your project.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell reads the four pieces from your project. It shows the instance's engine, tier, zone, disk, backups and network. Then its databases and users, and the DSN secret's versions, never its value. It compares the setup job with the service: the image each runs, and when the job last ran. Last, it searches 30 days of the chat service's log for the ADK brain's fallback warning.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>terraform/cloudsql.tf - the instance: the cheapest Cloud SQL there is, reached only through the connector</span><span class="ro">read only</span></div><pre tabindex="0">resource <span class="st">&quot;google_sql_database_instance&quot;</span> <span class="st">&quot;checkpoint&quot;</span> {
+  name                = <span class="st">&quot;documind-checkpoint&quot;</span>
+  database_version    = <span class="st">&quot;POSTGRES_16&quot;</span>
+  region              = var.region
+  deletion_protection = false
+
+  settings {
+    <span class="cm"># PostgreSQL 16 defaults to Enterprise Plus; shared-core tiers require Enterprise.</span>
+    edition           = <span class="st">&quot;ENTERPRISE&quot;</span>
+    tier              = <span class="st">&quot;db-f1-micro&quot;</span>
+    availability_type = <span class="st">&quot;ZONAL&quot;</span>
+    disk_size         = <span class="nu">10</span>
+    ip_configuration {
+      ipv4_enabled = true <span class="cm"># reached only through the connector; no authorized_networks, on purpose</span>
+    }
+    backup_configuration {
+      enabled = false <span class="cm"># checkpoints, not customer documents</span>
+    }
+  }
+}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/migrate.py - the tables are made once, by a job, never at start-up</span><span class="ro">read only</span></div><pre tabindex="0">`PostgresSaver.setup()` <span class="kw">is</span> idempotent, which makes it tempting to call at startup. Do <span class="kw">not</span>:
+its migrations take ACCESS EXCLUSIVE locks <span class="kw">and</span> insert into a primary-keyed
+checkpoint_migrations table, so N instances racing on a scale-out produce a deploy that
+fails at random <span class="kw">and</span> succeeds on retry. So this <span class="kw">is</span> a JOB, run one time after `make up`
+(commands/lesson-<span class="nu">12.8</span>.sh creates <span class="kw">and</span> executes it) <span class="kw">and</span> again only when the checkpointer
+library <span class="kw">is</span> upgraded:
+...
+dsn = os.environ.get(<span class="st">&quot;CHECKPOINT_DSN&quot;</span>, <span class="st">&quot;&quot;</span>)
+<span class="kw">if</span> <span class="kw">not</span> dsn <span class="kw">or</span> dsn == <span class="st">&quot;memory&quot;</span>:
+    sys.exit(<span class="st">&quot;CHECKPOINT_DSN must be a Postgres DSN (terraform/cloudsql.tf writes it to Secret Manager)&quot;</span>)
+
+<span class="kw">with</span> PostgresSaver.from_conn_string(dsn) <span class="kw">as</span> saver:
+    saver.setup()
+print(<span class="st">&quot;checkpoint tables ready&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/agent.py - one pool per instance, opened at start-up, and no setup()</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">from</span> langgraph.checkpoint.postgres <span class="kw">import</span> PostgresSaver
+    <span class="kw">from</span> psycopg.rows <span class="kw">import</span> dict_row
+    <span class="kw">from</span> psycopg_pool <span class="kw">import</span> ConnectionPool
+
+    <span class="cm"># Cloud Run reaches Cloud SQL over a unix socket; the DSN carries host=/cloudsql/... (8.5).</span>
+    <span class="cm"># autocommit, prepare_threshold=0 and dict_row are what the checkpointer requires of psycopg.</span>
+    pool = stack.enter_context(ConnectionPool(
+        CHECKPOINT_DSN, min_size=<span class="nu">1</span>, max_size=<span class="nu">4</span>, open=<span class="kw">True</span>,
+        kwargs={<span class="st">&quot;autocommit&quot;</span>: <span class="kw">True</span>, <span class="st">&quot;prepare_threshold&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;row_factory&quot;</span>: dict_row}))
+    <span class="kw">return</span> PostgresSaver(pool)      <span class="cm"># setup() deliberately absent - see migrate.py</span></pre></div>
+
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (what holds the conversations on your lane)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, subprocess
+def gc(*args):
+    r = subprocess.run(["gcloud", *args, "--project", os.environ["PROJECT"], "--format", "json"], capture_output=True, text=True)
+    return json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+i = gc("sql", "instances", "describe", "documind-checkpoint")
+s, ip = i["settings"], i["settings"].get("ipConfiguration", {})
+print(f"  instance      {i['name']}: {i['databaseVersion']}, {s['tier']}, {s['availabilityType'].lower()}, {s['dataDiskSizeGb']} GB")
+print(f"  backups       {'on' if s.get('backupConfiguration', {}).get('enabled') else 'off'}")
+print(f"  network       public IP {'on' if ip.get('ipv4Enabled') else 'off'}, {len(ip.get('authorizedNetworks', []))} authorized networks")
+print(f"  databases     {', '.join(d['name'] for d in gc('sql', 'databases', 'list', '--instance', i['name']))}")
+print(f"  users         {', '.join(u['name'] for u in gc('sql', 'users', 'list', '--instance', i['name']))}")
+v = gc("secrets", "versions", "list", "documind-checkpoint-dsn") or []
+print(f"  the DSN       secret documind-checkpoint-dsn, {len(v)} version(s), the latest {v[0]['state'].lower() if v else 'missing'}")
+tag = lambda image: image.rsplit(":", 1)[-1][:12]
+job = gc("run", "jobs", "describe", "documind-checkpoint-setup", "--region", os.environ["REGION"])
+svc = gc("run", "services", "describe", "documind-chat", "--region", os.environ["REGION"])
+if job and svc:
+    ran = (gc("run", "jobs", "executions", "list", "--job", "documind-checkpoint-setup", "--region", os.environ["REGION"], "--limit", "1") or [{}])[0]
+    ji, si = job["spec"]["template"]["spec"]["template"]["spec"]["containers"][0]["image"], svc["spec"]["template"]["spec"]["containers"][0]["image"]
+    print(f"  setup job     last run {ran.get('metadata', {}).get('creationTimestamp', 'never')[:16]}, succeeded {ran.get('status', {}).get('succeededCount', 0)}")
+    print(f"  images        job chat:{tag(ji)}, service chat:{tag(si)} - {'the same' if ji == si else 'DIFFERENT'}")
+else:
+    print(f"  setup job     not found beside documind-chat in {os.environ['REGION']}")
+adk = subprocess.run(["gcloud", "logging", "read", 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-chat" '
+                      'AND textPayload:"DatabaseSessionService unavailable"', "--project", os.environ["PROJECT"], "--freshness", "30d",
+                      "--limit", "1", "--format", "value(textPayload)"], capture_output=True, text=True).stdout.strip()
+print("  ADK sessions  " + ("in memory: " + adk[:62] if adk else "no fallback warning in 30 days of the log"))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (from a fake gcloud; the image tags and the time are invented)</span><span class="ro">read only</span></div><pre tabindex="0">  instance      documind-checkpoint: POSTGRES_16, db-f1-micro, zonal, 10 GB
+  backups       off
+  network       public IP on, 0 authorized networks
+  databases     postgres, documind
+  users         chat, postgres
+  the DSN       secret documind-checkpoint-dsn, 1 version(s), the latest enabled
+  setup job     last run 2026-09-12T10:41, succeeded 1
+  images        job chat:3f9c2a1d0b7e, service chat:8e41d7c2f5a9 - DIFFERENT
+  ADK sessions  in memory: ADK DatabaseSessionService unavailable (The 'sqlalchemy' packa</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The instance is what Terraform asked for: POSTGRES_16 on db-f1-micro, one zone, 10 GB, no backups, and a public address with no authorized networks. The database and user are <code>documind</code> and <code>chat</code>; <code>postgres</code> is Cloud SQL's own. The secret holds the DSN, and nothing printed it.</p>
+<p>The setup job runs on every deploy of the chat service, but the deploy script creates it only when it is missing, so it keeps the image it was first created with. If its image differs from the service's, as here, every later run applied the old library's migrations. A newer checkpointer in the service would never get its own. The ADK line is step 3's warning, logged by your service on an ADK turn: those conversations were never in this database.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Inspect</span><h3>The tables, and one row per thread</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_6/demo_05_the_tables_and_one_row_per_thread.py" target="_blank" rel="noopener"><code>demo_05_the_tables_and_one_row_per_thread.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A connection through the Cloud SQL connector, as the <code>chat</code> user, reading only.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell connects the way the service does, through the Cloud SQL connector, as the <code>chat</code> user. It reads the DSN from the secret into memory, never onto the screen, and opens the connection with the Cloud SQL Python Connector and the pg8000 driver. Your account's IAM decides whether it may connect, and no network is opened to the internet. Then it lists the tables and their rows, the migrations <code>setup()</code> has applied, and one row per thread. Each row shows the tenant, person, session, checkpoints, the last step, and when it ran.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the tables, their rows, and one row per thread)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">~/graph-venv/bin/python - &lt;&lt;'PY'
+import os, subprocess
+from urllib.parse import unquote, urlparse
+from google.cloud.sql.connector import Connector
+gc = lambda *a: subprocess.run(["gcloud", *a, "--project", os.environ["PROJECT"]], capture_output=True, text=True, check=True).stdout.strip()
+dsn = urlparse(gc("secrets", "versions", "access", "latest", "--secret", "documind-checkpoint-dsn"))   # the password stays in memory
+instance = gc("sql", "instances", "describe", "documind-checkpoint", "--format", "value(connectionName)")
+with Connector() as connector:
+    db = connector.connect(instance, "pg8000", user=dsn.username, password=unquote(dsn.password), db=dsn.path.lstrip("/"))
+    cur = db.cursor()
+    def q(sql, *args):
+        cur.execute(sql, args)                  # a tuple, empty or not: pg8000 takes len() of it, and None has none
+        return cur.fetchall()
+    tables = [t for (t,) in q("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name")]
+    print(f"{instance}, database {dsn.path.lstrip('/')}, as {dsn.username}: {len(tables)} tables")
+    for t in tables:
+        print(f"  {t:22} {q(f'SELECT count(*) FROM {t}')[0][0]:&gt;6,} rows")
+    print(f"setup() has applied migrations 0 to {q('SELECT max(v) FROM checkpoint_migrations')[0][0]}")
+    print("one row per thread, the latest first:")
+    for thread, n, step, ts in q("SELECT thread_id, count(*), max((metadata-&gt;&gt;'step')::int), max(checkpoint-&gt;&gt;'ts') "
+                                 "FROM checkpoints GROUP BY thread_id ORDER BY 4 DESC LIMIT 12"):
+        tenant, person, session = thread.split(":", 2)
+        print(f"  {tenant:5} {person.split('@')[0][:15]:15} {session[:18]:18} {n:&gt;3} checkpoints  step {step:&gt;2}  {ts[:16]}")
+    if "sessions" not in tables:
+        print("no ADK tables: the ADK brain's sessions are not in this database")
+    db.close()
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (from a stand-in database: threads the kit's brains wrote at build time, as your lane's lessons did, counted the way the tables count them; the times are invented)</span><span class="ro">read only</span></div><pre tabindex="0">documind-ai-YOUR-ID:asia-south1:documind-checkpoint, database documind, as chat: 4 tables
+  checkpoint_blobs           35 rows
+  checkpoint_migrations      10 rows
+  checkpoint_writes          37 rows
+  checkpoints                29 rows
+setup() has applied migrations 0 to 9
+one row per thread, the latest first:
+  acme  documind-ui-sa  lesson111-4242-b     8 checkpoints  step  6  2026-09-23T10:03
+  acme  documind-ui-sa  lesson111-4242       6 checkpoints  step  4  2026-09-23T10:02
+  acme  documind-ui-sa  smoke-langgraph      5 checkpoints  step  3  2026-09-23T09:16
+  acme  documind-ui-sa  smoke-langchain      5 checkpoints  step  3  2026-09-23T09:15
+  acme  documind-ui-sa  lesson103            5 checkpoints  step  3  2026-09-23T08:41
+no ADK tables: the ADK brain's sessions are not in this database</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four tables, the ones <code>setup()</code> made, and migrations 0 to 9: the job ran. One row per thread is this lesson's proof. Each is a conversation from your earlier lessons: the gate's two agent threads, lesson 5.5's turn, and lesson 6.5's two sessions. A thread with one tool turn has five checkpoints. Lesson 6.5's session B, one turn without a tool and one with, has eight, and its step count ran on across both turns.</p>
+<p>There is no <code>smoke-adk</code> thread and no ADK table. The ADK brain's conversations were in an instance's memory, and they are gone.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; One thread</span><h3>One thread, step by step</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_6/demo_06_one_thread_step_by_step.py" target="_blank" rel="noopener"><code>demo_06_one_thread_step_by_step.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The latest thread's checkpoints in order, and the size of every version of its messages.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell takes the latest thread and lists its checkpoints in order. For each it shows the step, whether the step took input or ran the loop, and whether the messages changed. Where they changed, it prints the size of the version that step stored.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the latest thread, step by step)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">~/graph-venv/bin/python - &lt;&lt;'PY'
+import os, subprocess
+from urllib.parse import unquote, urlparse
+from google.cloud.sql.connector import Connector
+gc = lambda *a: subprocess.run(["gcloud", *a, "--project", os.environ["PROJECT"]], capture_output=True, text=True, check=True).stdout.strip()
+dsn = urlparse(gc("secrets", "versions", "access", "latest", "--secret", "documind-checkpoint-dsn"))   # the password stays in memory
+instance = gc("sql", "instances", "describe", "documind-checkpoint", "--format", "value(connectionName)")
+with Connector() as connector:
+    db = connector.connect(instance, "pg8000", user=dsn.username, password=unquote(dsn.password), db=dsn.path.lstrip("/"))
+    cur = db.cursor()
+    def q(sql, *args):
+        cur.execute(sql, args)                  # a tuple, empty or not: pg8000 takes len() of it, and None has none
+        return cur.fetchall()
+    (thread,) = q("SELECT thread_id FROM checkpoints GROUP BY thread_id ORDER BY max(checkpoint-&gt;&gt;'ts') DESC LIMIT 1")[0]
+    size = dict(q("SELECT version, length(blob) FROM checkpoint_blobs WHERE thread_id = %s AND channel = 'messages'", thread))
+    print(f"the latest thread, session {thread.split(':', 2)[2]}: its checkpoints in order")
+    seen = []
+    for step, source, version in q("SELECT (metadata-&gt;&gt;'step')::int, metadata-&gt;&gt;'source', checkpoint-&gt;'channel_versions'-&gt;&gt;'messages' "
+                                   "FROM checkpoints WHERE thread_id = %s ORDER BY checkpoint_id", thread):
+        new = version is not None and version not in seen
+        seen += [version] if new else []
+        print(f"  step {step:&gt;2}  {source:5}  " + (f"messages, version {len(seen)}: {size[version]:&gt;6,} bytes" if new else "messages unchanged"))
+    print(f"every version kept: {sum(size.values()):,} bytes; the latest alone: {size[max(size)]:,} bytes")
+    db.close()
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (from the same stand-in; your latest thread, sizes and versions will differ)</span><span class="ro">read only</span></div><pre tabindex="0">the latest thread, session lesson111-4242-b: its checkpoints in order
+  step -1  input  messages unchanged
+  step  0  loop   messages, version 1:    175 bytes
+  step  1  loop   messages, version 2:    412 bytes
+  step  2  input  messages unchanged
+  step  3  loop   messages, version 3:    586 bytes
+  step  4  loop   messages, version 4:    866 bytes
+  step  5  loop   messages, version 5:  2,325 bytes
+  step  6  loop   messages, version 6:  2,562 bytes
+every version kept: 6,926 bytes; the latest alone: 2,562 bytes</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Each turn opens with an input checkpoint, where the messages have not changed yet. Then every step that adds a message stores the whole list again. The sizes climb by the size of each new message, and the big jump is the five passages. The total is the sum of every version, several times the latest. That is the cost of keeping every version, and step 1's panel scales it to your tenants.</p></div>
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why storage is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Only a database outlives the instance.</strong> <code>cloudsql.tf</code> gives the reasons. <code>InMemorySaver</code> dies with the process, and <code>SqliteSaver</code> is a file on one instance. Only a database survives a deploy, a scale-to-zero and an instance dying.</li>
+<li><strong>The DSN is a secret, not a setting.</strong> It is mounted by <code>--set-secrets</code> and readable by the chat service's account, so the image and the repository never hold the password.</li>
+<li><strong>No authorized networks.</strong> The connector checks an identity with IAM, so nothing on the internet can open a connection. Your shell's connector in step 5 went through the same check.</li>
+<li><strong><code>setup()</code> is a job.</strong> Exclusive locks and a keyed migrations table make a start-up <code>setup()</code> race across instances. A job runs it once, and the service never does.</li>
+<li><strong>Every version is kept.</strong> Because each version is stored whole, a thread can be read back at any step. The price is tables that grow faster than the conversations.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>What a turn writes</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>What your lane runs</td><td data-label="Costs">describes, and one log read</td><td data-label="On your lane">free</td></tr>
+<tr><td>The tables, and one thread</td><td data-label="Costs">two short connections, reading only</td><td data-label="On your lane">free</td></tr>
+<tr><td>The instance itself</td><td data-label="Costs">db-f1-micro, one zone, 10 GB, no backups, all month</td><td data-label="On your lane">roughly Rs 700 to 850 a month, per <code>cloudsql.tf</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>ADK's conversations are not durable.</strong> <code>brains.py</code> says the ADK brain uses <code>DatabaseSessionService</code> on the same Cloud SQL. The image installs google-adk without its <code>db</code> extra, so SQLAlchemy is missing, and the ADK brain keeps its sessions in memory, with only a warning.</li>
+<li><strong>The setup job keeps its first image.</strong> The deploy script creates the job only when it is missing, then executes it. A newer checkpointer library in the service never has its migrations applied.</li>
+<li><strong>Nothing prunes a thread's versions.</strong> Every version of messages stays, so storage grows with the square of a conversation's length. The package ships <code>ShallowPostgresSaver</code>, which keeps only the latest checkpoint, and the kit does not use it.</li>
+<li><strong>No backups.</strong> <code>backup_configuration</code> is off, so losing the instance loses every conversation.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A turn writes a checkpoint per step</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>+3 checkpoints</code> with no tool, <code>+5</code> with retrieve</td></tr>
+<tr><td>2</td><td data-label="Claim">Every version of messages is stored whole</td><td data-label="The check">step 3</td><td data-label="Pass looks like">six versions, <code>8,152 bytes kept</code>, the latest <code>3,021</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The ADK brain cannot open a database store</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>using memory</code>, and <code>InMemorySessionService</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The instance is what Terraform asked for</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>POSTGRES_16, db-f1-micro, zonal, 10 GB</code>, <code>backups off</code>, <code>0 authorized networks</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The setup job runs the service's image</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>the same</code>; <code>DIFFERENT</code> is the gap above</td></tr>
+<tr><td>6</td><td data-label="Claim">The checkpoint tables exist</td><td data-label="The check">step 5</td><td data-label="Pass looks like">four tables, <code>migrations 0 to 9</code></td></tr>
+<tr><td>7</td><td data-label="Claim">One row per thread</td><td data-label="The check">step 5</td><td data-label="Pass looks like">a line per session from your earlier lessons, and no ADK table</td></tr>
+<tr><td>8</td><td data-label="Claim">A thread's versions grow</td><td data-label="The check">step 6</td><td data-label="Pass looks like">sizes climbing, and <code>every version kept</code> several times <code>the latest alone</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing. The cells read your project and the database, and wrote nothing. <code>~/graph-venv</code> has the Cloud SQL connector. Lesson 6.7 redeploys the chat service, checks that a conversation continues, and checks that another person finds nothing.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.6 Configure and inspect durable conversation storage &middot; v5.0</p><p>Next: Lesson 6.7 Verify restart recovery and session isolation.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var root = document.getElementById('ds'); if (!root) return;
+var INC = {"H": 215, "C": 314, "T": 1759, "A": 261}, O = {"turns": [1, 5, 10, 20, 40], "tools": [0, 1, 2], "day": [50, 200, 1000], "days": [30, 90, 365]}, $ = function(id){ return document.getElementById(id); };
+function model(turns, tools, perDay, days){ var pattern = [INC.H], i, t, cum = 0, total = 0;
+for (i = 0; i < tools; i++) { pattern.push(INC.C, INC.T); } pattern.push(INC.A);
+for (t = 0; t < turns; t++) { for (i = 0; i < pattern.length; i++) { cum += pattern[i]; total += cum; } }
+return {ck: turns * (3 + 2 * tools), ver: turns * (2 + 2 * tools), all: total, latest: cum, gb: perDay * days * total / 1e9}; }
+function n(x){ return Math.round(x).toLocaleString('en-IN'); }
+function kb(x){ return x < 1e3 ? n(x) + ' bytes' : x < 1e6 ? n(x / 1e3) + ' KB' : (x / 1e6).toFixed(1) + ' MB'; }
+function gb(x){ return x < 1 ? n(x * 1000) + ' MB' : x < 100 ? x.toFixed(1) + ' GB' : n(x) + ' GB'; }
+function disk(x, days){ if (x < 10) { return x * 10 < 1 ? 'under 1 per cent' : Math.round(x * 10) + ' per cent'; }
+var d = Math.ceil(10 / (x / days)); return d <= 1 ? 'full within a day' : 'full in ' + n(d) + ' days'; }
+function el(tag, cls, text){ var e = document.createElement(tag); if (cls) { e.className = cls; } e.textContent = text; return e; }
+function render(){ var v = {}; ['turns', 'tools', 'day', 'days'].forEach(function(k){ v[k] = +$('ds-' + k).value; });
+var m = model(v.turns, v.tools, v.day, v.days), out = $('ds-out');
+var rows = [['Checkpoint rows, one conversation', n(m.ck)], ['Versions of messages kept', n(m.ver)],
+['Every version, one conversation', kb(m.all)], ['The latest version alone', kb(m.latest)],
+['Keeping every version costs', (m.all / m.latest).toFixed(1) + ' times the latest'],
+['Messages kept after ' + v.days + ' days', gb(m.gb)], ['Against the 10 GB disk', disk(m.gb, v.days)]];
+out.textContent = '';
+rows.forEach(function(r, i){ out.appendChild(el('b', '', r[0])); out.appendChild(el('span', i === 4 || i === 6 ? 'big' : '', r[1])); }); }
+['turns', 'tools', 'day', 'days'].forEach(function(k){ var s = $('ds-' + k);
+O[k].forEach(function(x){ var o = el('option', '', k === 'days' ? x + ' days' : n(x)); o.value = x; s.appendChild(o); });
+s.value = {turns: 10, tools: 1, day: 200, days: 90}[k]; s.addEventListener('change', render); });
+render();
+})();
+</script>
+</body>
+</html>

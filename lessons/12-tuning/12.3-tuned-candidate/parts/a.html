@@ -1,0 +1,92 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 12 &middot; Tuning &middot; Lesson 12.3</div>
+<h1>Compare the tuned candidate with an uncontaminated baseline: <span>one change, a clean test, a verdict and a delta</span></h1>
+<p>Lesson 12.2 left a tuned endpoint. This lesson puts it behind the API on a candidate revision that takes no traffic, and compares that revision with the live one on the same questions, in the same hour. The method is lesson 4.4's. What is new is what can contaminate the comparison when the candidate is a tuned model, and how the price of its answers is counted.</p>
+<p>In this lesson you prove that the candidate differs from the live revision only by its model and that model's price base. You check that no cache and no training row can hand the candidate an answer it did not earn. Then you run the gate on both revisions, ask the pairwise judge which answers are better, and read the rupee delta off the usage rows, at the price Google bills.</p>
+<div class="hero-chips"><div class="hero-chip">make candidate</div><div class="hero-chip">RAG_MODEL_BASE</div><div class="hero-chip">exclude_golden</div><div class="hero-chip">answer_cache</div><div class="hero-chip">the gate on both</div><div class="hero-chip">API_B=</div><div class="hero-chip">win rate</div><div class="hero-chip">make usage</div><div class="hero-chip">1.5 &times; base</div><div class="hero-chip">--remove-tags</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What makes a tuned comparison uncontaminated</a></li>
+<li><a href="#s2">The words: baseline, candidate, one change, RAG_MODEL_BASE, contamination, the answer cache, the chapter's gate, the pairwise verdict, the rupee delta, the tenant pin</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">What the kit does with a tuned candidate</a></li>
+<li><a href="#s4">The candidate, audited</a></li>
+<li><a href="#s5">The gate on both revisions</a></li>
+<li><a href="#s6">The verdict and the delta</a></li>
+<li><a href="#s7">Optional: the v3 candidate, and the gate on it</a></li>
+<li><a href="#s8">Optional: one question, two models</a></li>
+<li><a href="#s9">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the four ways a comparison with a tuned model can be contaminated, and how to rule each one out on your lane. You will learn why the model and its price base are one change, and why the usage rows understate what the tuned model costs. Then you will prove it on your lane: the pairwise verdict, and the rupee delta.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What makes a tuned comparison uncontaminated</h3><p>Lesson 4.4's method, and the four things a tuned model adds to it.</p></div></div>
+
+<p><strong>The comparison, as lesson 4.4 made it.</strong> The baseline is the revision serving today. The candidate is the same image with the same settings and one value changed, taking no traffic, reachable at its own tagged URL. Both answer the same golden rows in the same hour. The gate runs on both, the pairwise judge reads both answers to each question, and the usage rows price both. Any difference then belongs to the one value.</p>
+
+<p><strong>What a tuned model adds.</strong> Four things can make that comparison lie, and each has a check:</p>
+<ol>
+<li><strong>One change is two settings.</strong> The usage rows price a tuned endpoint at <code>RAG_MODEL_BASE</code>'s rates, so the model and its price base move together. Leave the base out and it stays at the Makefile's <code>gemini-3.6-flash</code>: the tuned endpoint's answers are then logged at flash's rates.</li>
+<li><strong>The test must be unseen.</strong> A tuned model has read its training file. If golden rows, or the chunks they are scored against, were in that file, the gate would measure memory. <code>exclude_golden</code> dropped %%N_DROP%% rows from v2, touching %%N_DROPPED_IDS%% golden rows. The audit checks the file the endpoint was tuned on against today's golden set.</li>
+<li><strong>No cache may answer for the candidate.</strong> The answer cache returns a stored answer for a near-enough earlier question of the same tenant. Its test checks the corpus, the scope and the expiry, and never the model. With the cache on, the candidate could be served <code>gemini-3.6-flash</code>'s stored answer to a golden question, which every eval run asks, and be scored as if it were its own. <code>make candidate</code> writes <code>SEMANTIC_CACHE=off</code> unless you say otherwise.</li>
+<li><strong>The same input price.</strong> A context cache belongs to one model. The live revision can read acme's, and the tuned endpoint cannot. Cached tokens cost a tenth, so the baseline would look cheaper than it is next to the candidate.</li>
+</ol>
+<p>Then the price itself. From Gemini 3 onward, Google prices a tuned endpoint's predictions at 1.5 times its base's. The usage rows log the base rate (<code>cost.py</code>), so the delta must add the 1.5.</p>
+
+<p><strong>The two proofs.</strong> The pairwise verdict is two win rates, the candidate's and the baseline's; a tie counts for neither. The rupee delta is the live revision's cost per answer minus the candidate's at Google's price, from the usage rows these runs leave.</p>
+<p><strong>Who decides.</strong> The gate decides whether the candidate may ship, and this chapter's gate is that the tuned candidate passes <code>make eval-live</code>. The judge says which answers are better where the two differ. The delta says what the difference is worth.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127979;</div><div>
+<p><strong>A coaching class's claim, checked by the principal.</strong> The coaching class says its student will write as well as the school topper, for a quarter of the fees. The principal checks before believing it. Both sit the same paper in the same hour, in the same hall. The student never saw this paper during coaching. Nobody slips the topper's old answer sheet into the student's desk. And the fee compared is what the class actually charges, not the one in its brochure.</p>
+<p>Then an examiner marks both scripts against the answer key, and the student must pass. A second examiner reads the two answers to each question side by side, and picks the better one or calls it even. The accountant works out the saving.</p>
+<p>The student is the tuned candidate and the topper is the baseline. The paper is the golden set, and seeing it in coaching is contamination through the training file. The old answer sheet is the answer cache, and the brochure fee is the base rate the usage rows log. The first examiner is the gate, the second is the pairwise judge, and the saving is the rupee delta.</p></div></div>
+
+<h4>Make a candidate, and see what the comparison would be worth</h4>
+<p>Choose how the candidate is made and what the live revision runs. The first box shows the settings that would differ, and whether anything could contaminate the comparison. The second shows the price of an answer on each revision, as the usage rows log it and as Google bills it, and the delta at the volume you pick.</p>
+
+<div class="diagram pc" id="tc">
+<div class="dg-title">make candidate's settings, the four contaminations, and cost.price()</div>
+<div class="tc-cols">
+<div class="pc-box"><b class="h">The candidate you make</b>
+<div class="pc-in"><label>RAG_MODEL_BASE<select id="tc-base">%%BASE_OPTIONS%%</select></label>
+<label>SEMANTIC_CACHE, live<select id="tc-cl">%%CL_OPTIONS%%</select></label>
+<label>SEMANTIC_CACHE, candidate<select id="tc-cc">%%CC_OPTIONS%%</select></label>
+<label>GENERATOR_LOCATION<select id="tc-loc">%%LOC_OPTIONS%%</select></label>
+<label>The training file<select id="tc-file">%%FILE_OPTIONS%%</select></label></div>
+<div class="tc-out" id="tc-audit" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The price of the difference</b>
+<div class="pc-in"><label>Answers<select id="tc-vol">%%VOL_OPTIONS%%</select></label></div>
+<div class="tc-out" id="tc-money" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The rules are the kit's: <code>make candidate</code>'s eleven settings, parsed from the Makefile, and <code>cost.price()</code>, ported and compared with the kit's own on all %%N_CHECKED%% combinations. The tokens are this page's averages: 7,400 in for both revisions, 210 out on flash and 140 on the tuned endpoint. The 1.5 is Google's, checked on 24 September 2026.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It takes the live revision's settings to be the Makefile's defaults. Step 4's audit reads your live revision's real settings, and any that differ from the defaults show up there as extra lines.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: baseline, candidate, one change, RAG_MODEL_BASE, contamination, the answer cache, the chapter's gate, the pairwise verdict, the rupee delta, the tenant pin</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>The baseline</strong></td><td data-label="Meaning">The revision serving all the traffic.</td><td data-label="On your lane"><code>gemini-3.6-flash</code></td></tr>
+<tr><td><strong>The candidate</strong></td><td data-label="Meaning">A revision with the tuned endpoint as its model, no traffic, and its own tagged URL.</td><td data-label="On your lane"><code>https://candidate---documind-api-NUMBER.asia-south1.run.app</code></td></tr>
+<tr><td><strong>One change</strong></td><td data-label="Meaning">The settings that differ between the two revisions. Here, the model and its price base.</td><td data-label="On your lane"><code>GENERATOR_MODEL</code>, <code>RAG_MODEL_BASE</code></td></tr>
+<tr><td><strong><code>RAG_MODEL_BASE</code></strong></td><td data-label="Meaning">The base a tuned endpoint is priced at on its usage rows.</td><td data-label="On your lane"><code>gemini-3.1-flash-lite</code></td></tr>
+<tr><td><strong>Contamination</strong></td><td data-label="Meaning">Anything that lets a revision score an answer it did not produce, or lets the training file hold the test.</td><td data-label="On your lane">four checks, in step 4</td></tr>
+<tr><td><strong>The answer cache</strong></td><td data-label="Meaning">Stored answers to near-enough earlier questions of a tenant, kept 24 hours. Its test never reads the model.</td><td data-label="On your lane"><code>SEMANTIC_CACHE=off</code> on both</td></tr>
+<tr><td><strong>The chapter's gate</strong></td><td data-label="Meaning"><code>make eval-live</code> on the candidate: every golden row, every threshold.</td><td data-label="On your lane"><code>All thresholds met.</code></td></tr>
+<tr><td><strong>The pairwise verdict</strong></td><td data-label="Meaning">The judge's choice on each row: the candidate, the baseline, or a tie. It is reported as two win rates.</td><td data-label="On your lane">%%N_GOLD%% rows, in an Experiments run</td></tr>
+<tr><td><strong>The rupee delta</strong></td><td data-label="Meaning">The live revision's cost per answer, minus the candidate's at Google's price.</td><td data-label="On your lane">from the last two hours of usage rows</td></tr>
+<tr><td><strong>The tenant pin</strong></td><td data-label="Meaning"><code>tenant_settings/{tenant}.generator_model</code>: one tenant's model, used before the service's.</td><td data-label="On your lane">no <code>make</code> target writes it</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the gate decides and the judge explains, as <code>judge.py</code>'s last line says. A candidate that fails the gate does not ship, whatever the judge prefers. A candidate that passes may still give the worse answer where the two differ, and the win rates say how often.</p>

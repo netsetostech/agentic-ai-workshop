@@ -1,0 +1,109 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Alerts</span><h3>The alert the dead-letter queue never had</h3><p>What pages you today, the policy that should, planned and applied through the kit, and a drill that trips it.</p></div></div>
+
+<h4>Definition</h4>
+<p>The first cell reads your lane's alerting. It lists the log-based metrics, then each alert policy through the Monitoring API, with the metric and the service or subscription it watches. It ends on the question this lesson asks: does anything read <code>ingest-dlq-sub</code>?</p>
+
+<h4>Do it: what pages you today</h4>
+%%CELL_ALERTS%%
+%%OUT_ALERTS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A lane made up before this kit version has %%N_LANE_POLICIES%% policies. They watch latency, the unanswerable rate, failed ingests, and two GPU services left warm. None watches the dead-letter queue. An upload the worker refuses twelve times lands there, and nobody knows until someone runs <code>make dlq</code>.</p></div>
+
+<h4>The policy</h4>
+@@dlq@@
+<p>The policy watches <code>num_undelivered_messages</code> on <code>ingest-dlq-sub</code>, a gauge Pub/Sub samples once a minute. Above zero for a minute opens an incident, which goes to the same channels as every other policy: your admins' email, and PagerDuty when a key is set.</p>
+<p>It is applied the kit's reviewed way:</p>
+<ul>
+<li><strong><code>make plan</code></strong> writes a saved plan, and refuses any plan that deletes or replaces something. So pass the flags you gave <code>make up</code>: <code>ADMIN_EMAILS</code>, and <code>RECONCILE_JOB=true</code> if you declared the nightly job.</li>
+<li><strong>The first line of <code>make up</code></strong> then applies exactly that plan, without the builds and deploys the rest of <code>make up</code> runs.</li>
+</ul>
+
+<h4>Do it: plan and apply</h4>
+%%CELL_PLAN%%
+%%OUT_PLAN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One to add, nothing to change, nothing to destroy.</p>
+<ul>
+<li>If your plan lists more, your lane is behind the kit. Read each addition before applying, or run <code>make up</code> as the kit intends.</li>
+<li>If <code>make plan</code> stops with <code>Plan blocked</code>, a flag differs from the one your <code>make up</code> used. Fix the flag, never the check.</li>
+</ul></div>
+
+<h4>Do it: the drill</h4>
+<p>A drill proves the alert end to end without waiting an hour for a poison upload. The cell publishes one message straight to the dead-letter topic, labelled <code>drill=13.2</code>. After five minutes it reads the gauge the policy reads, a sample a minute, and the policy itself.</p>
+%%CELL_DRILL%%
+%%OUT_DRILL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The gauge went from 0 to 1 when the message landed, and stayed above zero. The condition holds, so the policy opened an incident:</p>
+<ul>
+<li>in the console, Monitoring &gt; Alerting lists it as open, under <code>Ingest dead-letter queue holds messages</code>;</li>
+<li>the email goes to the addresses in your <code>ALERT_EMAILS</code>.</li>
+</ul>
+<p>That is the second proof: an alert tripped by the dead-letter queue. <code>make poison</code> takes the real path to the same incident: a zero-byte upload, refused twelve times over about an hour, then the dead-letter queue.</p></div>
+
+<h4>Do it: drain the drill message</h4>
+<p>The drill message must not stay in the queue, and a real message must not be thrown away with it. The cell pulls without acknowledging, acknowledges only the messages labelled <code>drill=13.2</code>, and leaves anything else for <code>make dlq</code>.</p>
+%%CELL_DRAIN%%
+%%OUT_DRAIN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One message pulled, one acknowledged. Once the next samples read zero, the condition stops holding and the incident closes.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the readers differ, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>One row shape.</strong> <code>usage_row()</code>'s own docstring calls it the one shape every observability consumer reads. <code>tenant_daily</code>, <code>make usage</code> and the metrics read the same fields, which is what makes reconciling possible at all.</li>
+<li><strong>Two stores, two jobs.</strong> Cloud Logging has the rows the moment they are written, for thirty days: that is <code>make usage</code>'s store. BigQuery keeps a queryable copy for months: that is the view's store.</li>
+<li><strong>Money adds up, and percentiles do not.</strong> Reconcile answers, refusals, tokens and rupees exactly, and read the latency quantiles side by side.</li>
+<li><strong>Alerts follow failures the course has met.</strong> Each policy names one, including this lesson's: the dead-letter queue nobody read.</li>
+<li><strong>A drill tests the whole chain.</strong> The gauge, the policy, the incident and the channel, without waiting for a real failure.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The readers</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>Four questions</td><td data-label="Costs">four answers; the refusal is billed for its tokens too</td><td data-label="On your lane">about a rupee</td></tr>
+<tr><td>The reconcile</td><td data-label="Costs">Cloud Logging reads, and one BigQuery query over a day's rows</td><td data-label="On your lane">inside BigQuery's free monthly query allowance</td></tr>
+<tr><td>The policy</td><td data-label="Costs">Monitoring bills alerting per condition and per time series read; this is one condition on one gauge</td><td data-label="On your lane">check the current rate on the Monitoring pricing page</td></tr>
+<tr><td>The drill and the drain</td><td data-label="Costs">one Pub/Sub message, one pull, one acknowledgement</td><td data-label="On your lane">inside Pub/Sub's free monthly allowance</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>Media rows never reach BigQuery.</strong> The sink copies <code>query</code>, <code>stream</code>, <code>chat</code> and the Desk's four events, never <code>media</code>. <code>tenant_daily</code>'s WHERE reads <code>media</code>, and its comment promises media spend per tenant, but no media row ever arrives. <code>make usage</code> counts them, so a day with images disagrees by exactly their rupees.</li>
+<li><strong>A chat turn's own model calls are in no report.</strong> The chat service's turn row prices them, in <code>cost_usd</code>, but neither report reads that row. The retrievals the brains make are counted, on rag-api's rows labelled with the brain; the agent's own Gemini calls are not. Lesson 11.6 takes this up.</li>
+<li><strong>The answer does not carry its price.</strong> A Vertex answer's <code>cost_usd</code> is <code>None</code>. Only the row is priced, so a caller cannot see what an answer cost.</li>
+<li><strong>The admin console shows no rupees.</strong> Its Cost tab is still a stub that points to a lesson of the notebook course. Its Usage tab's "p95 latency" is the median of the view's p95 rows, not a p95 of the answers.</li>
+<li><strong>The sink's table has a table lifetime, not a partition lifetime.</strong> The dataset sets <code>default_table_expiration_ms</code> (90 days) and no <code>default_partition_expiration_ms</code>. BigQuery gives a new table the table lifetime, so the table the sink creates is set to expire whole, 90 days after it was made, rather than day by day. Check yours: <code>bq show --format=prettyjson "$PROJECT:documind_observability.run_googleapis_com_stdout" | grep -i expiration</code>.</li>
+<li><strong>Three of <code>quota.tf</code>'s alerts are still intents.</strong> Its map lists %%N_INTENTS%% alerts, and <code>alerts.tf</code> declares two: <code>unanswerable_rate</code>, and <code>dlq_depth</code> since this lesson. <code>guardrail_blocks</code>, <code>cache_hit_low</code> and <code>burn_rate</code> are declared by nothing.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Which reader reads which event</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>media</code>: the view and <code>make usage</code>; <code>chat</code>: the sink only</td></tr>
+<tr><td>2</td><td data-label="Claim">Four rows written</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>4 answers from documind-api in the last 1 h</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The price is on the row, not the answer</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>cost_usd None</code>; USD and INR in <code>make usage</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The view equals <code>make usage</code>, group by group</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>equal</code> on every group, then <code>RECONCILED</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Rupees per tenant equal</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>tenant_daily Rs</code> and <code>make usage's grouping Rs</code> the same, <code>equal</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Nothing watched the dead-letter queue</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>reads the dead-letter queue (ingest-dlq-sub): NOTHING</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The policy applied</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>Plan: 1 to add, 0 to change, 0 to destroy</code>, then <code>Apply complete!</code></td></tr>
+<tr><td>8</td><td data-label="Claim">An alert tripped by the dead-letter queue</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>the condition holds</code>, an open incident in Monitoring &gt; Alerting, then <code>acknowledged 1 drill message(s)</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Four questions were asked, three for acme and one for zeta, and their rows are in Cloud Logging and in <code>tenant_daily</code>. The dead-letter policy from <code>alerts.tf</code> is now on your lane, and will page your admins the next time an upload reaches the dead-letter queue. The drill message was acknowledged, and the incident closed. Lesson 11.6 exercises the controls those rupees feed: model routing, the budget and the shutdown.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 11 Project &middot; Lesson 11.5 Reconcile usage events, reports and alerts &middot; v5.0</p><p>Next: Lesson 11.6 Exercise model routing, budgets and shutdown controls.</p></div>

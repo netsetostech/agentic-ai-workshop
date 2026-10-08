@@ -1,0 +1,94 @@
+name: checks
+
+# Every pull request and every push to main: the lesson pages against the kit, and the kit's offline checks.
+# No Google credential, no cost. The heavy kit validation (terraform validate, the image builds) runs in the
+# learner repository after each publish, in its documind-dryrun workflow.
+#
+# PUBLISH_DENY (a repository secret, optional): your lane's project id and number, comma-separated, so the page
+# checker and the publish scan refuse them too. Unset, the built-in patterns still apply.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pages-and-kit:
+    runs-on: ubuntu-latest
+    env:
+      PUBLISH_DENY: ${{ secrets.PUBLISH_DENY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # What the kit code the checks load imports: the answer contract is pydantic (shared/documind_schemas.py),
+      # the tool layer calls requests, judge.py reads pandas, fetch_real.py reads pypdf. The rest is stdlib.
+      - name: What the checks import
+        run: pip install pydantic pandas pypdf requests
+
+      - name: Pages - every excerpt verbatim in deploy/, every make target real, no quizzes, nothing private
+        run: python pagekit/check_lesson.py
+
+      - name: Pages - the responsive audit (phone widths, the embed, touch)
+        run: python pagekit/audit_pages.py
+
+      - name: Every Python file compiles
+        run: python -m compileall -q deploy pagekit tools lessons
+
+      - name: Lesson demos - source coverage and offline execution contracts
+        run: |
+          python -m pip install --no-deps -e deploy/workshop_demos/setup
+          python tools/build_workshop_demos.py --check
+          python tools/check_workshop_demos.py
+          python -m unittest discover -s tools/tests
+          python deploy/workshop_demos/tests/run_tests.py
+
+      - name: Kit - offline regressions
+        run: |
+          python -m unittest discover -s deploy/commands/tests
+          python -m unittest discover -s deploy/operators/tests
+          python -m unittest discover -s deploy/evals/tests
+
+      # The chat brains (workshop lessons 5.1, 5.4, 5.5 and 5.7) need the chat image's own pins - LangChain, LangGraph,
+      # google-adk - which the step above does not install. They get a venv of their own, so the shared interpreter
+      # stays what the checks import, and DOCUMIND_REQUIRE_LIBS=1 makes a missing pin a failure, not a skip.
+      # test_chat_limits.py's library half is the brains under a turn's limits (lessons 5.5 and 5.7);
+      # test_cases.py's is the Desk's chat door and case routes (lesson 5.6); test_desk.py's the router and the
+      # desk graph (lesson 10.4); test_gchat.py's the Google Chat bridge and the Desk's delegation rules (10.4).
+      - name: Kit - the chat brains, in the chat image's pins
+        working-directory: deploy
+        run: |
+          python -m venv /tmp/chat-venv
+          /tmp/chat-venv/bin/pip install -q -r services/chat/requirements.txt
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_chat_brains.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_chat_limits.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_cases.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_desk.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_gchat.py -v
+
+      # It judges the golden set, not the model: every assertion could still fail, every must_retrieve anchor
+      # resolves, the isolation rows are still there.
+      - name: Kit - the eval gate, offline half
+        run: python deploy/evals/run_eval.py
+
+      - name: Kit - offline gates (authorization, lifecycle, retrieval, one retrieve(), the real corpus, the Rs 0 lane)
+        run: |
+          python tools/check_authz.py
+          python tools/check_lifecycle.py
+          python tools/check_retrieval.py
+          python tools/check_one_retrieval.py
+          python tools/check_real_corpus.py
+          python tools/check_local_lane.py
+
+      - name: Kit - deploy/INDEX.md is current
+        run: python tools/kit_index.py --check
+
+      - name: Kit - nothing private in what a publish would send
+        run: python tools/publish_learner.py --check

@@ -1,0 +1,99 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.3</div>
+<h1>Read a transformer block, with layer normalization: <span>six words, two heads, one block in numpy</span></h1>
+<p>Gemini, the model family that writes DocuMind's answers, is built from transformer blocks, and every token the kit sends it passes through every one of them. This page builds one block in numpy on a six-word sentence, a part at a time, so that each part is a few lines you can read and a matrix you can check: the words as vectors, one attention head and its weights, two heads joined, the residual path, layer normalization and the feed-forward step. You will watch a head's weights add up to 1 in every row, every word leave layer normalization at mean 0 and variance 1, and the block hand back six vectors of eight numbers, ready for the next block. Then you will see where the kit meets the same design: in the token counts it plans every call around.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_TOKENS%% tokens, %%D_MODEL%% numbers each</div><div class="hero-chip">2 heads of 4</div><div class="hero-chip">every row adds up to 1</div><div class="hero-chip">mean 0, variance 1</div><div class="hero-chip">%%N_LEARNED%% numbers to learn</div><div class="hero-chip">numpy only, Rs 0</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a transformer block does</a></li>
+<li><a href="#s2">The words: query, key, value, head, residual, layer norm</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">Six words, eight numbers each</a></li>
+<li><a href="#s4">One head: queries, keys, values and the weights</a></li>
+<li><a href="#s5">Two heads, joined, and what a head may see</a></li>
+<li><a href="#s6">The residual path: add the input back</a></li>
+<li><a href="#s7">Layer normalization: mean 0, variance 1, then a scale and a shift</a></li>
+<li><a href="#s8">The block, assembled</a></li>
+<li><a href="#s9">Where the kit meets the block: tokens and their ceilings</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will build one transformer block in numpy on the sentence <em>the employee serves ninety days notice</em>: the words as vectors, one attention head and the table of weights it computes, two heads joined, the residual path, layer normalization (each word's eight numbers checked at mean 0 and variance 1) and the feed-forward step, assembled in two orders. Then you will read where DocuMind's kit meets the design: the token ceilings of its embedding requests and the token budget of its prompts.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a transformer block does</h3><p>Six vectors in, six vectors out, and the one step in between where the words look at each other.</p></div></div>
+
+<p><strong>A block takes vectors and returns vectors of the same shape.</strong> A model reads text as tokens, and each token as a vector of numbers (lesson B.2). A transformer block takes the vectors of a whole sequence at once, six of them for a six-word sentence, and hands back six vectors of the same size. A model is a stack of these blocks, each with weights of its own, the output of one being the input of the next. What changes on the way up is what the numbers carry. Going in, the vector for <em>employee</em> says only "employee, second word"; coming out of a block, it also carries something of the words around it, such as who does what.</p>
+
+<p><strong>Attention is the only step where words meet.</strong> Inside the block, three weight matrices turn each word's vector into three smaller ones: a <em>query</em>, what the word is looking for; a <em>key</em>, what it offers to be found by; and a <em>value</em>, what it hands over when it is found. Every query is compared with every key by a dot product, each row of scores becomes shares that add up to 1 (the softmax), and each word receives the share-weighted sum of all the values. One set of the three matrices is a <em>head</em>. A block runs several heads side by side, each free to look for something different, and joins what they return. Every other step in the block works on each word alone.</p>
+
+<p><strong>Two plain-looking parts make a deep stack work.</strong> The <em>residual path</em> adds each step's input back to its output, so a word keeps what it was and gains what it found. <em>Layer normalization</em> then moves each word's numbers to a mean of 0 and a variance of 1, followed by a learned scale and shift, so every step receives numbers on the same scale, whatever the step before it did. The last part, the <em>feed-forward</em> step, is a small two-layer network applied to every word on its own.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128101;</div><div>
+<p><strong>A stand-up meeting.</strong> Six engineers stand in a circle. Each writes the question on their mind on a card (the query), wears a badge saying what they can speak to (the key), and holds their notes (the value). Everyone reads every badge, splits their attention, all of it and no more, by how well each badge answers their card, and copies that share of each colleague's notes into a notebook. Two rounds run at once with different cards: one asks "who spoke just before me?", the other "whose work does mine fit with?". Those are two heads.</p>
+<p>Nobody tears out their own pages: what they heard is written beside what they had (the residual path). Before the next meeting everyone rewrites their notebook to one standard size, so the colleague who writes large does not drown out the one who writes small (layer normalization). Then each one thinks alone for a minute over what they now have (the feed-forward step). The next meeting is the next block.</p></div></div>
+
+<h4>The block, part by part</h4>
+<div class="diagram"><div class="dg-title">One transformer block, in the order the 2017 paper draws it</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><div class="fs-n">1</div><div><b>In: X, 6 &times; 8.</b> Each word's vector plus its position's: six rows, eight numbers each.</div></div><div class="fs-branch"><b>Step 3</b> builds X.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">2</div><div><b>Multi-head attention.</b> Two heads read X side by side; their outputs are joined and multiplied by W<sub>O</sub>, back to 6 &times; 8.</div></div><div class="fs-branch"><b>Steps 4 and 5.</b> The only part where one word reads another.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">3</div><div><b>Add.</b> X + attention(X): the input comes back around the attention.</div></div><div class="fs-branch"><b>Step 6.</b> The residual path.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">4</div><div><b>Layer norm.</b> Each word's eight numbers to mean 0 and variance 1, then a scale γ and a shift β.</div></div><div class="fs-branch"><b>Step 7.</b> One word at a time.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">5</div><div><b>Feed-forward.</b> The same small network on every word: eight numbers out to 32 and back to eight.</div></div><div class="fs-branch"><b>Step 8.</b> Each word alone.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">6</div><div><b>Add, then layer norm, again.</b> The residual path around the feed-forward step, and a second norm.</div></div><div class="fs-branch"><b>Step 8.</b> The same wrapping as parts 3 and 4.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">7</div><div><b>Out: Y, 6 &times; 8.</b> The same shape as X, so the next block reads Y exactly as this one read X.</div></div><div class="fs-branch"><b>A model</b> is this block, stacked, each copy with weights of its own.</div></div>
+</div>
+<p class="dg-cap">The order is the one in the 2017 paper that introduced the design (Vaswani and others, <em>Attention Is All You Need</em>): each sub-layer, then add, then norm. GPT-2 and most models since move each norm to the front of its sub-layer and add one more at the very top; step 8 builds both orders from the same parts.</p></div>
+
+<h4>Try it: the toy sentence's attention, head by head</h4>
+<p>The explorer shows the weights this page's cells compute for the sentence <em>the employee serves ninety days notice</em>, one table per head. A row is a word asking, a column the word it looks at, and each row's six shares add up to 1. Head 1 looks one word back, and reads only the position numbers. Head 2 looks for the word each word fits with, and reads only the meaning numbers: a thing looks for the action, the action for the person, the amount for the time. The second switch applies the causal mask a GPT-style model uses, under which a word may look only at itself and the words before it.</p>
+
+<div class="diagram ax" id="ax">
+<div class="dg-title">Attention explorer - the real weights from steps 4 and 5</div>
+<div class="ax-controls">
+<label class="ax-l">Head <select id="ax-head"><option value="1">Head 1: one word back</option><option value="2">Head 2: the word it fits with</option></select></label>
+<label class="ax-l">Mask <select id="ax-mask"><option value="none">None, as in an encoder</option><option value="causal">Causal, as in a decoder</option></select></label>
+</div>
+<div class="ax-scroll" tabindex="0"><div class="ax-grid" id="ax-grid"></div></div>
+<p class="ax-sum" id="ax-sum" aria-live="polite"></p>
+<p class="dg-cap">Darker is a larger share. A hatched cell is masked: its score is set to minus infinity before the softmax, so the rest of the row shares the whole 1. Pick a word on the left to read its row in full. Every number here is one that step 4 or step 5 prints.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">Hand-written weights, not trained ones</div>
+<p>Every weight in this block was written by hand, so that each head does one thing you can name. A trained model learns its weights from text; its heads are rarely this tidy, and there are many more of them. What carries over is the arithmetic, which is exactly the same.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: query, key, value, head, residual, layer norm</h3><p>Thirteen words, each with the value it takes in this page's block.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In this page's block</th></tr></thead>
+<tbody>
+<tr><td><strong>Token</strong></td><td data-label="Meaning">The unit a model reads: a word, a piece of a word, a punctuation mark (lesson B.2).</td><td data-label="In this page's block">One word is one token: %%N_TOKENS%% tokens.</td></tr>
+<tr><td><strong>Vector</strong>, d<sub>model</sub></td><td data-label="Meaning">The numbers a token is carried as, through every block. Their count is the model's width.</td><td data-label="In this page's block">%%D_MODEL%% numbers: 4 for the word, 4 for its position.</td></tr>
+<tr><td><strong>Position signal</strong></td><td data-label="Meaning">Numbers added to each token's vector to say where it stands, because attention on its own ignores order.</td><td data-label="In this page's block">Columns 4 to 7: two sine waves, turning 45 and 90 degrees a word.</td></tr>
+<tr><td><strong>Query, key, value</strong></td><td data-label="Meaning">Three projections of each token's vector, by W<sub>Q</sub>, W<sub>K</sub> and W<sub>V</sub>: what it looks for, what it is found by, what it hands over.</td><td data-label="In this page's block">4 numbers each, from 8 &times; 4 matrices.</td></tr>
+<tr><td><strong>Score</strong></td><td data-label="Meaning">A query's dot product with a key, divided by √d<sub>k</sub>, the square root of how many numbers each of them has.</td><td data-label="In this page's block">d<sub>k</sub> = 4, so every dot product is halved.</td></tr>
+<tr><td><strong>Softmax</strong>, attention weights</td><td data-label="Meaning">e to each score in a row, over the row's total: shares that add up to 1. The table of them is the head's weights.</td><td data-label="In this page's block">6 &times; 6 per head. Head 1: <em>employee</em> gives %%H1_EMPLOYEE_THE%% to <em>the</em>.</td></tr>
+<tr><td><strong>Head</strong></td><td data-label="Meaning">One W<sub>Q</sub>, W<sub>K</sub> and W<sub>V</sub>, with its own table of weights.</td><td data-label="In this page's block">2 heads: one word back, and the word it fits with.</td></tr>
+<tr><td><strong>Concatenation</strong>, W<sub>O</sub></td><td data-label="Meaning">The heads' outputs side by side, then one more matrix back to the block's width.</td><td data-label="In this page's block">6 &times; 8, then an 8 &times; 8 W<sub>O</sub>.</td></tr>
+<tr><td><strong>Mask</strong></td><td data-label="Meaning">Which words a word may attend to: all of them in an encoder (BERT-style); itself and earlier words only in a decoder (GPT-style).</td><td data-label="In this page's block">The causal mask sets every later word's score to minus infinity.</td></tr>
+<tr><td><strong>Residual path</strong></td><td data-label="Meaning">A step's input added back to its output: x + sublayer(x).</td><td data-label="In this page's block">Every word stays close to itself: cos(X, H) at least %%COS_XH_MIN%%.</td></tr>
+<tr><td><strong>Layer normalization</strong></td><td data-label="Meaning">Per token: subtract the mean of its numbers, divide by their standard deviation (with a small ε added to the variance), then scale by γ and shift by β, both learned.</td><td data-label="In this page's block">Mean 0.000000, variance %%LN_VAR_MIN%% to %%LN_VAR_MAX%%, with ε = 0.00001.</td></tr>
+<tr><td><strong>Feed-forward step</strong></td><td data-label="Meaning">Two weight matrices with a ReLU between them, applied to each token alone.</td><td data-label="In this page's block">8 &rarr; 32 &rarr; 8.</td></tr>
+<tr><td><strong>Block</strong></td><td data-label="Meaning">Attention and the feed-forward step, each wrapped in a residual path and a norm. The same shape out as in.</td><td data-label="In this page's block">6 &times; 8 in, 6 &times; 8 out, %%N_LEARNED%% numbers to learn.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three of these come from lesson B.2: the token, the vector and the dot product. The rest is the machinery between them. Lesson B.4 and lesson B.5 put it to work, as an encoder that reads a whole text at once and as a decoder that writes one token after another.</p>
+

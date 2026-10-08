@@ -1,0 +1,83 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>tok</code>. You need <code>~/graph-venv</code> from lesson 5.4. Step 3 adds google-adk and the Gemini client to it, and makes it if it is missing. The chat service must be running in your region, from lesson 5.1's step 3. Step 4 asks one question through each brain, and step 6 asks it three more times from your machine. Run steps 4 to 6 in the same shell, in order. Nothing changes on your lane.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Two adapters</span><h3>Two adapters over one tool, side by side</h3><p>The kit's LangChain brain and the kit's ADK brain, each with a model that says what it is told, against a rag-api on your machine that notes what it is sent.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell builds the kit's <code>LangChainBrain</code> and <code>AdkBrain</code>, each with a scripted model. A stand-in rag-api on your machine notes the tenant, the brain and the assertion header of every request, and answers. The cell prints five things:</p>
+<ol>
+<li><strong>What each model is shown</strong> for <code>retrieve</code>: the arguments, the required ones starred, and the declaration's size. A third line, <code>raw</code>, is what ADK would show for the shared <code>retrieve()</code> wrapped as it is. Then each brain's tools.</li>
+<li><strong>One <code>retrieve()</code> through each adapter.</strong> The ADK model writes <code>tenant_id</code> "globex" and <code>assertion</code> "anything", arguments it was never shown. The cell prints what rag-api received, which keys the model read back, and the number each citation carries.</li>
+<li><strong>Four calls that go wrong:</strong> a blocked name, an argument of the wrong type, a tier the tool does not know, and a call with its required argument missing.</li>
+<li><strong>Where ADK keeps sessions</strong> when no database is configured, and its cap on model calls.</li>
+<li><strong>The turn's limits, wired three ways.</strong> A model that asks for a tool on every call, under a <code>Meter</code> capped at 2, through each agent brain. Then one turn with one tool call through <code>create_agent</code> twice, with the kit's middleware and with <code>ModelCallLimitMiddleware</code>, counting the graph's nodes and the checkpoints the turn saves.</li>
+</ol>
+<p>The LangGraph brain uses the same <code>tools.py</code> as the LangChain brain, so its schema, its results and its failures are the same. Its guard is the refuse node from lesson 5.4. <code>commands/tests/test_chat_brains.py</code> runs the same comparison across all three agent brains in CI, in the chat image's pins.</p>
+
+<h4>The code</h4>
+@@lctool@@
+@@fortools@@
+@@adktool@@
+@@refusals@@
+@@sessions@@
+@@wiring@@
+@@adkcb@@
+
+<h4>Do it: the venv</h4>
+%%CELL_VENV%%
+%%OUT_VENV%%
+
+<h4>Do it: side by side</h4>
+%%CELL_ADAPT%%
+%%OUT_ADAPT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both models were shown the same three arguments: LangChain's declaration in %%LC_CHARS%% characters, ADK's in %%ADK_CHARS%%, because each framework writes declarations its own way. The <code>raw</code> line is what <code>for_adk()</code> replaces: seven arguments, two of them required, in %%RAW_CHARS%% characters, carried by every model call. Both requests reached rag-api for acme, with no assertion header. The ADK model's globex and "anything" went nowhere: <code>for_adk()</code>'s <code>retrieve</code> has no argument for them, so ADK dropped them, and the tenant came from <code>REQUEST</code>. Both models read the same three keys, and the one citation carried <code>n</code> 1, the number the answer cites it by.</p>
+<p>Then the four failures. Both brains turned all four into error results, which the model read, and <code>refusals</code> named each one. In ADK, <code>for_adk()</code> checked the arguments with the <code>@tool</code>'s own schema, so the wrong type was refused by the rule LangChain applies. <code>tool_failed</code> turned that refusal, the unknown tier and the unknown name into error results, and <code>mark_error</code> marked ADK's own answer to the missing argument, which comes with no status. The words differ, because each framework writes its own; the contract is the same. Anything else still ends the turn in every brain, the token mint from lesson 5.5 among it: <code>tool_failed</code> passes on only a name ADK does not hold and a <code>ToolException</code>.</p>
+<p>Last, the limits. All three brains stopped the looping model after its second call, with the same sentence, though each checks the Meter at a different place: a middleware, a node, a callback. The LangChain brain's graph still has only its <code>model</code> and <code>tools</code> nodes, and a turn with a tool saves 5 checkpoints. With <code>ModelCallLimitMiddleware</code> the graph gains two nodes, and the same turn saves 9. That is why the kit wraps the model call instead: lesson 6.6 counts these checkpoints.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Four brains</span><h3>Four brains on /health, and the module's gate</h3><p>The list the service promises, then one answer from each brain, then the outsider refused.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>/health</code> returns the four names in <code>BRAINS</code>, a constant in <code>brains.py</code>, and one <code>limits</code> block for all four. It builds no brain and imports no framework. Each brain is built on its first turn, and a framework the image lacks is a 501 then. <code>make smoke-chat</code> is Module 5's gate. It reads <code>/health</code> and asks one question through each brain as <code>documind-ui-sa</code>, a member of acme. For each answer it checks that <code>retrieve</code> was among the tool calls and that the answer does not say retrieval was unavailable. Each answer must carry its <code>limits</code>: no stop, the model calls within the cap, and, for an agent brain, a cost above Rs 0. From every brain it also wants citations. An agent brain's citations must be numbered 1 to k, and every <code>[n]</code> in its answer must name one of them. The direct brain's <code>[n]</code> is a place in rag-api's packed context, and its citations are only the sources the model quoted, so its markers are not checked. Each run asks in new sessions. Then it asks as the outsider and expects the roster's 403. The cell first saves the time, for step 5.</p>
+
+<h4>The code</h4>
+@@health@@
+
+<h4>Do it</h4>
+%%CELL_SMOKE%%
+%%OUT_SMOKE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>/health</code> listed four brains and the limits every turn on them runs under: the first half of the proof. That list is a promise. The four answers are the check: each brain was built, called <code>retrieve()</code> and answered from the corpus. The first turn of each agent brain was the slow one, because it imported its framework. Each agent brain made two model calls and reported their cost; the direct brain made none of its own. The outsider was refused by the roster before any brain ran.</p>
+<p>A brain fails the gate if it answers with no citation. An agent brain also fails if it cites an <code>[n]</code> it did not return. The <code>FAIL</code> line shows the numbers, the citations and the markers it found. Each run of the gate starts new sessions, so running it again asks the same first question, and no conversation grows.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Four cost lines</span><h3>Four cost lines, from rag-api's rows and the chat rows</h3><p>One row per retrieval and one per turn, added up by brain.</p></div></div>
+
+<h4>Definition</h4>
+<p>Each <code>retrieve()</code> leaves one row in rag-api's log. The row holds the brain that asked, the tokens rag-api spent, and the cost at its model's rate. Each chat turn leaves one row in the chat service's log: the brain, its own model calls, their tokens and their cost, at the same rates. The cell reads both kinds of row since step 4, adds them up by brain, and prints each line whole. A line's whole can differ from the same turn's rupees in step 4's smoke line by Rs 0.0001: the response rounds the turn's rupees once, to four places, while each row keeps its dollars to six places and the cell adds the two. <code>make usage</code> draws rag-api's half of the same table over whole hours. The cell saves the four lines to <code>~/lesson104_lines.json</code>.</p>
+
+<h4>Do it</h4>
+%%CELL_LINES%%
+%%OUT_LINES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four lines, one <code>retrieve()</code> each. rag-api's half is within a few paise across the brains: every brain asked rag-api the same question, and rag-api did the same work each time. The direct brain returned that answer. The agent brains paid for it too, and their adapter dropped it. The chat rows' half is where the brains differ: the direct brain made no model call of its own, and each agent brain made two, the ADK brain's the larger. That is the second half of the proof: four cost lines from the rows.</p>
+<p>A line with 0 retrievals means that brain made no <code>retrieve()</code>. A line with 2 means its model searched twice. With the answer cache on (Module 6), a repeated question is a hit: cost 0, and backend <code>cache</code>.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The loops</span><h3>The loop, call by call</h3><p>The kit's three agent brains on your machine, asking the same question, each model call counted.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat row adds up a turn's model calls. The cell takes one turn apart. It builds the kit's three agent brains on your machine from the same <code>brains.py</code> the image runs: the same model, system prompt, tools and limits. It asks the same question once through each brain, through your rag-api, as <code>documind-ui-sa</code>, each with a <code>Meter</code> of its own. Then it reads the usage each framework keeps for each call: LangChain on every <code>AIMessage</code>, ADK on the session's events. Thinking is counted as output, as Vertex AI bills it. Under each brain it prints the Meter's totals, which is what the chat row would record, priced by <code>shared/prices.py</code> at <code>cost.py</code>'s rate for gemini-3.6-flash.</p>
+
+<h4>Do it</h4>
+%%CELL_OWN%%
+%%OUT_OWN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Each agent brain made two model calls: one to ask for <code>retrieve</code>, one to answer from what came back. The second call carries everything the first did, plus the tool result, so it is the larger. The ADK brain's calls are still larger than LangChain's, though both show the same arguments and read the same result. ADK declares the same tools in more characters, %%ADK_CHARS%% against %%LC_CHARS%% for <code>retrieve</code>, and adds a line of its own to the system instruction. Your run can show a third reason: the ADK brain sets no thinking level, and the LangChain brains set it to low.</p>
+<p>The Meter's totals are the calls added up, in each brain, whichever seam it was charged at. Each agent brain costs its retrieval plus its own loop, and the direct brain costs its retrieval alone. The loop is the price of the harness, and it is paid on every turn.</p></div>

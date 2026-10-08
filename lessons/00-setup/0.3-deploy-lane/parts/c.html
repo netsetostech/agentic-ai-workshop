@@ -1,0 +1,173 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; make plan, read verbatim</span><h3>make plan: a saved plan, checked before you apply it</h3><p>What the target passes, what <code>infrastructure.py</code> refuses, and the plan that lists every resource.</p></div></div>
+
+<p><code>make plan</code> is one line in the Makefile. It hands <code>commands/infrastructure.py</code> your project and region and a list of Terraform variables: the switches, the managed stores, the embedding, the budget. The critical values, the project, the region, the billing account and the three of the CI trust, are not on that list, and a <code>--var</code> that names one is refused. They come from the inputs file <code>prepare</code> saved in step 3, passed last so that nothing set in a shell can override them.</p>
+@@mk_plan@@
+@@mk_extra_vars@@
+@@agents_vars@@
+
+<p><code>plan()</code> does five things in order: it unselects any older plan, so a failed run can never leave yesterday's plan ready to apply; it reads the project, billing and trust again; it writes a new plan to a file with a unique name; it checks that file; and only then records it as the selected plan, with a hash of the file and the state's serial number, so that <code>make up</code> can tell whether anything moved in between.</p>
+@@infra_plan@@
+
+<p>The check reads Terraform's machine-readable plan, not the text you scroll through. It refuses an incomplete plan, inputs that differ from the confirmed ones, any change to the existing CI trust, and any delete: a replacement is a delete followed by a create, so it is refused too. On a blank project nothing exists to delete, and the check passes. It earns its place on every plan after this one.</p>
+@@infra_inspect@@
+
+<p>Run it now. Terraform prints the whole plan, one block per resource, so the block keeps a copy in <code>~/plan.log</code> and then prints only the lines that summarize it.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make plan PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" 2&gt;&amp;1 | tee "$HOME/plan.log"
+grep -E '^(PASS|CI trust|STOP|Plan:)|Reviewed plan|Review the' "$HOME/plan.log"</pre></div>
+<p>The kit's files declare %%N_RESOURCES%% resource instances for this lane (step 5, with one address in <code>ADMIN_EMAILS</code>), so Terraform's summary should be <code>Plan: %%N_RESOURCES%% to add, 0 to change, 0 to destroy.</code> It sits between the two <code>PASS</code> lines <code>infrastructure.py</code> prints: the saved inputs before the plan, the passed check after it.</p>
+%%REC_PLAN%%
+
+<h4>Every resource, counted from the saved plan</h4>
+<p>The plan file is binary; Terraform turns it into JSON on request. The cell below counts what the plan would create, by type, in the same format as the count this page made from the kit's files, so the two can be read side by side. Run it before <code>make up</code>: the apply consumes the selection record that names the file.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, after make plan and before make up</span><button class="cp" type="button">copy</button></div><pre tabindex="0">PLAN="$(python -c "import json; print(json.load(open('terraform/runbook-selected-plan.json'))['plan'])")"
+terraform -chdir=terraform show -json "$PLAN" &gt; "$HOME/plan.json" &amp;&amp; echo "saved plan: $(basename "$PLAN")"
+python - &lt;&lt;'PY'
+import json, os, warnings; warnings.filterwarnings("ignore", category=UserWarning)
+from collections import Counter
+plan = json.load(open(os.path.expanduser("~/plan.json"), encoding="utf-8"))
+changes = [rc for rc in plan["resource_changes"] if rc["mode"] == "managed"]
+print("actions:", dict(Counter("/".join(rc["change"]["actions"]) for rc in changes)))
+types = Counter(rc["type"] for rc in changes if rc["change"]["actions"] != ["no-op"])
+for t, n in sorted(types.items(), key=lambda x: (-x[1], x[0])):
+    print(f"{n:4d}  {t}")
+print(f"{sum(types.values()):4d}  in all")
+PY</pre></div>
+%%REC_PLAN_TYPES%%
+%%OUT_TYPES%%
+<p>Every line of the two should match: %%N_TYPES%% resource types, %%N_RESOURCES%% instances, and only <code>create</code> among the actions. A count that differs means the plan read a file or a variable differently from the way this page assumed; find which before the apply, not after it. To read the plan itself, <code>terraform -chdir=terraform show "$PLAN" | less</code> prints it as text; on a later plan, the words to search for are <em>must be replaced</em> and <em>will be destroyed</em>.</p>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; make up, read verbatim</span><h3>make up: apply that plan, then build, deploy and seed</h3><p>One apply of the checked file, then %%N_UP_WORD%% more targets, in order.</p></div></div>
+
+<p><code>make up</code> never makes a plan to apply. Its first line applies the plan <code>make plan</code> selected, after checking it twice more: the file's hash, the backend, the inputs and the state's serial must all be what they were when the plan was checked. If anything moved, it stops and asks for a new plan. Then it removes the selection record, so the same file can never be applied twice.</p>
+@@mk_up@@
+@@infra_apply@@
+
+<p>The second line runs %%N_UP_WORD%% targets in one make, so the first one to fail stops the rest:</p>
+%%UP_TABLE%%
+
+<p>The build is Cloud Build, one image per service, each tagged with the kit's commit. Every service but the UI builds from the whole kit with one config and its own Dockerfile, because most of them import the kit's <code>shared/</code> folder; the UI is self-contained and builds from its own folder. %%BUILT_TWICE%% also carry a build of their own inside their DEPLOY block, so a first <code>make up</code> builds those two images twice.</p>
+@@mk_build@@
+@@cloudbuild@@
+
+<p>The deploy step is the reason the kit has no second copy of its deploy flags: it cuts the block between <code># ---- DEPLOY ----</code> and the next marker out of each script and runs it as it is, in the order the services must come up. The worker comes first, because the push subscription Terraform made already points at its address.</p>
+@@mk_services@@
+@@deploy_loop@@
+
+<p>Now run it. It takes a long time: Cloud SQL, the GKE cluster and the deployed index each take minutes to create, and the builds run one after another. Run it inside <code>tmux</code> if your shell has it, so that a closed browser tab or a dropped connection does not stop an apply halfway; an interrupted apply needs a new plan. <code>time</code> reports how long it took.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">tmux new -s up        <span class="cm"># optional: reattach with tmux attach -t up; the variables below are still exported inside it</span>
+time make up PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" 2&gt;&amp;1 | tee "$HOME/up.log"
+tail -n 25 "$HOME/up.log"</pre></div>
+%%REC_UP%%
+
+<div class="box box-amber"><div class="box-title">If make up stops</div>
+<p><strong>A plan refused as stale</strong> (<em>The saved plan is stale; create a new plan</em>, or <em>The selected plan is missing or changed</em>): the state, the inputs or the file changed since <code>make plan</code>. Run step 6 again, read the new plan, then <code>make up</code>. <strong>An apply that failed halfway</strong>: keep the state as it is. Terraform has recorded everything it created, so the next <code>make plan</code> lists only what is still missing; read it, then <code>make up</code>. Never delete the state or <code>terraform/.terraform</code> to "start clean": the next apply would try to create everything again over resources that exist. <strong>A build that stops at</strong> <code>storage.objects.get</code> with a 403 naming the Compute Engine default account: Cloud Build runs as that account when the kit names none, and in an organization created on or after 3 May 2024 it is created without the broad role older projects gave it. Grant it exactly what a build needs (the block below), and wait a few minutes for IAM to apply the grants. The apply had already finished by then and its plan is used up, so run <code>make plan</code> (it reports no changes) and <code>make up</code>, which applies nothing and carries on from the build. <strong>A drift line</strong> after the apply means the plan after it is not empty: a resource the provider reads back differently from how it was written. It does not stop <code>make up</code>, but it is a definition to fix before the next apply repeats it. <strong>A <code>bq-views</code> failure</strong> naming a table or a field that does not exist: the view reads the log sink's table, and the kit's own comment on the target (below) says that table is typed by the rows the API has logged. Every service is deployed by then; run <code>make bq-views</code> again once the API has answered a question (lesson 0.4's smoke asks the first one), then <code>make vector-status</code>, the one step left.</p></div>
+@@mk_bq_views@@
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, only if the build stopped on that 403</span><button class="cp" type="button">copy</button></div><pre tabindex="0">BUILDER="serviceAccount:$NUMBER-compute@developer.gserviceaccount.com"   <span class="cm"># the account the 403 named, if it named another</span>
+gcloud storage buckets add-iam-policy-binding "gs://${PROJECT}_cloudbuild" --member="$BUILDER" --role=roles/storage.objectViewer --format=none
+gcloud artifacts repositories add-iam-policy-binding documind --location="$REGION" --project="$PROJECT" --member="$BUILDER" --role=roles/artifactregistry.writer --format=none
+gcloud projects add-iam-policy-binding "$PROJECT" --member="$BUILDER" --role=roles/logging.logWriter --condition=None --format=none</pre></div>
+<p>Three narrow grants: read access to its own source bucket only, push access to the <code>documind</code> repository, and log writing. Not Editor, and not <code>roles/cloudbuild.builds.builder</code> on the project: either would let every build read, write and delete every object in every bucket, the uploads of customer documents included.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; The live lane</span><h3>%%N_SERVICES_CAP%% services, and the account each runs as</h3><p>The first proof: the services are up, and each runs as the account step 4 said it would.</p></div></div>
+
+<p>Cloud Run keeps the account a service runs as on the service itself. Listing the services with that one field beside the name is the whole check: %%N_SERVICES%% rows, each with its own account, matching the table in step 4.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services list --project "$PROJECT" --region "$REGION" \
+  --format='table(metadata.name:label=SERVICE, spec.template.spec.serviceAccountName:label=RUNS_AS)'
+gcloud run services list --project "$PROJECT" --region "$REGION" --format='value(metadata.name)' | wc -l</pre></div>
+%%REC_SERVICES%%
+<p>A service missing from the list was not deployed: <code>~/up.log</code> shows which DEPLOY block stopped, and the services after it in the order (%%SERVICE_NAMES%%) are missing too, because the loop stops at the first failure. A service running as the Compute Engine default account would mean a script lost its <code>--service-account</code> flag; none of the %%N_SCRIPTS_WORD%% does today. Besides the services, the lane now has two Cloud Run jobs: <code>documind-off</code>, from <code>terraform/off.tf</code>, and <code>documind-checkpoint-setup</code>, which the chat service's script creates and runs to prepare its database.</p>
+
+<h4>The shard size the service chose</h4>
+<p>Step 5 left one fact open: the deployed index's machine follows the index's shard size, and the kit lets the service choose it. Read both from the live lane; step 10 prices the row that matches.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">IDX=$(terraform -chdir=terraform output -raw vector_index_name); EP=$(terraform -chdir=terraform output -raw vector_index_endpoint)
+gcloud ai indexes describe "$(basename "$IDX")" --region="$REGION" --project="$PROJECT" --format='value(metadata.config.shardSize)'
+gcloud ai index-endpoints describe "$(basename "$EP")" --region="$REGION" --project="$PROJECT" \
+  --format='value(deployedIndexes[0].dedicatedResources.machineSpec.machineType,deployedIndexes[0].dedicatedResources.minReplicaCount)'</pre></div>
+%%REC_SHARD%%
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; The live lane</span><h3>The UI behind IAP, and the roster behind the UI</h3><p>Who gets in, who is turned away at the door, and who gets in but sees nothing.</p></div></div>
+
+<p>The UI's script puts IAP on the service itself: the <code>run.app</code> address is the front door, and nothing reaches the container without passing IAP. Two grants finish the job. IAP's service agent may invoke the service, since it is now the only caller; and each address in <code>ADMIN_EMAILS</code> may pass IAP. Being let in is still not membership: the roster decides what a person sees.</p>
+@@ui_deploy@@
+@@ui_iap@@
+
+<p>So a visitor meets up to three checks, and each kind of visitor stops at a different one:</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Visitor</th><th>Where they stop</th><th>What they see</th></tr></thead>
+<tbody>
+<tr><td>Not signed in</td><td data-label="Where they stop">IAP</td><td data-label="What they see">a redirect to Google's sign-in, before any of DocuMind's code runs</td></tr>
+<tr><td>Signed in, not in <code>ADMIN_EMAILS</code></td><td data-label="Where they stop">IAP</td><td data-label="What they see">IAP's own refusal page; the container never sees the request</td></tr>
+<tr><td>Let in by IAP, on no roster</td><td data-label="Where they stop">the UI's roster lookup</td><td data-label="What they see">the message in <code>chat_page()</code> below, and nothing else</td></tr>
+<tr><td>On a roster</td><td data-label="Where they stop">nowhere</td><td data-label="What they see">DocuMind, with their address and <em>Tenant: acme</em> in the sidebar</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+@@chat_gate@@
+
+<p>The first two rows can be checked from the shell. A request with no sign-in should come back as a redirect to Google's accounts page (the block cuts the redirect at its query string, which carries the OAuth client's id), and IAP's policy on the service should list your address with the accessor role.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://documind-ui-$NUMBER.$REGION.run.app/" | cut -d'?' -f1
+gcloud iap web get-iam-policy --resource-type=cloud-run --service=documind-ui --region="$REGION" --project="$PROJECT"</pre></div>
+%%REC_UI_CURL%%
+%%REC_IAP%%
+
+<p>The last two rows need a browser. Open the address the first line below prints, sign in as yourself, and look at the sidebar. Then open it in a private window and sign in with a Google account that is not in <code>ADMIN_EMAILS</code>.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">echo "https://documind-ui-$NUMBER.$REGION.run.app"</pre></div>
+%%REC_UI_VIEW%%
+<p>A sign-in that fails before IAP's refusal page, with Google's <em>Access blocked</em> or an OAuth error, is the sign-in screen from step 3, not the lane: a project without an organization needs its own OAuth client, and while that client's consent screen is in testing it admits only the test users it lists.</p>
+
+<h4>The roster make up wrote</h4>
+<p><code>make roster</code> ran inside <code>make up</code>, after the indexes were ready. It puts every member of <code>MEMBERS</code>, which defaults to <code>ADMIN_EMAILS</code>, on <code>TENANT</code>'s roster; the UI's, the MCP server's and the chat service's accounts on all three golden tenants, because each calls the API as itself; the A2A peer's on acme only; and it records where each tenant's text may be held. Lesson 1.1 reads these documents in Firestore, and lesson 4.6 follows one request through every check that reads them.</p>
+@@mk_roster@@
+@@roster_plan@@
+<p>Its dry run prints the plan and writes nothing, so it can be read before it is trusted. This one was computed from <code>commands/lane.py</code> when this page was built, with your placeholders:</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/lane.py --project "$PROJECT" roster --tenant acme --members "$ADMIN_EMAILS" --dry-run
+make roster PROJECT="$PROJECT"         <span class="cm"># the same writes make up made; running it again changes nothing</span></pre></div>
+%%OUT_ROSTER_DRY%%
+%%REC_ROSTER%%
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; The bill</span><h3>What bills by the hour, in rupees</h3><p>Five kinds of resource cost money every hour they exist, whether anyone asks the lane a question or not.</p></div></div>
+
+<p>Most of the lane bills for what you do with it: a page parsed, a token generated, a gigabyte stored, a message delivered. A few things bill for existing. The kit says which, in its own words, in three places:</p>
+@@readme_bills@@
+@@spanner_cost@@
+@@cloudsql_cost@@
+<p>The cluster and the connector complete the list. The cluster is a regional Standard one, so its management fee is not covered by GKE's free-tier credit, and its node is an ordinary Compute Engine machine. The connector keeps at least %%CONN_MIN_WORD%% small machines running so that the services can reach the VPC.</p>
+@@gke_pool@@
+@@network_conn@@
+@@gke_readme@@
+
+<p>The table prices each line as lesson 0.1 does: the declaration's size times Google's list price for Mumbai (<code>asia-south1</code>, where the course's lane runs its services and where <code>spanner.tf</code> keeps the graph), read from Google's pricing pages on 7 October 2026, at the kit's rate of Rs %%USD_INR%% to the dollar from <code>shared/prices.py</code>. Of the kit's own figures above, the cluster fee matches; Cloud SQL comes to $%%SQL_MONTH%% a month for each instance at these prices, above the roughly $%%SQL_LO%%-%%SQL_HI%% that <code>cloudsql.tf</code>'s comment gives. The Vector Search row has %%N_SHARDS_WORD%% machines because the service chose the shard size: step 8's output says which line is yours.</p>
+%%COST_TABLE%%
+
+<p>What is not in the table matters as much. The %%N_SERVICES_WORD%% Cloud Run services cost nothing while idle at their default floor of zero instances; <code>MIN_INSTANCES=1</code>, the kit's setting for a session day, would floor %%MIN_FLOORED%% at one instance each. Firestore, the buckets, BigQuery, Pub/Sub, Secret Manager, Document AI, Gemini and the managed stores bill per use or per gigabyte stored, so they cost little until something is ingested or asked. <code>make off</code> floors the UI and the GPU services to zero but leaves every row of the table running; only <code>make down</code> and deleting the project remove them. Lesson 0.4 turns these rows into what a day of a lane left up costs, and switches it off.</p>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Twelve checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The project is ready for a plan</td><td data-label="The check"><code>make preflight</code> in step 3</td><td data-label="Pass looks like">every line <code>ok</code>, then <em>preflight clean</em></td></tr>
+<tr><td>2</td><td data-label="Claim">The state is yours</td><td data-label="The check">the same preflight</td><td data-label="Pass looks like"><code>ok    state bucket gs://documind-ai-YOUR-ID-tfstate</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The CI trust names your repository</td><td data-label="The check"><code>prepare</code> in step 3</td><td data-label="Pass looks like"><code>CI trust:</code> your repository, its id, <code>refs/heads/main</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The plan lists every resource</td><td data-label="The check"><code>make plan</code> in step 6</td><td data-label="Pass looks like"><code>Plan: %%N_RESOURCES%% to add, 0 to change, 0 to destroy.</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The plan matches the kit's files</td><td data-label="The check">the count by type in step 6</td><td data-label="Pass looks like">%%N_TYPES%% types, every count equal to the computed one, only <code>create</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The guard checked it</td><td data-label="The check">the same <code>make plan</code></td><td data-label="Pass looks like"><code>PASS: no deletes/replacements or existing CI trust changes.</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The apply left nothing to change</td><td data-label="The check"><code>make up</code>'s drift line in step 7</td><td data-label="Pass looks like"><code>&gt;&gt; no drift: the plan after apply is empty</code></td></tr>
+<tr><td>8</td><td data-label="Claim">%%N_SERVICES_CAP%% services, each as its own account</td><td data-label="The check"><code>gcloud run services list</code> in step 8</td><td data-label="Pass looks like">%%N_SERVICES%% rows, each <code>RUNS_AS</code> the account in step 4's table</td></tr>
+<tr><td>9</td><td data-label="Claim">You know your largest hourly row</td><td data-label="The check">the shard size in step 8</td><td data-label="Pass looks like">a shard size and its machine, matching one line of step 10's Vector Search row</td></tr>
+<tr><td>10</td><td data-label="Claim">The UI is behind IAP</td><td data-label="The check">the <code>curl</code> in step 9</td><td data-label="Pass looks like"><code>302</code> to <code>accounts.google.com</code></td></tr>
+<tr><td>11</td><td data-label="Claim">Only <code>ADMIN_EMAILS</code> may pass</td><td data-label="The check">IAP's policy in step 9, then a stranger's sign-in</td><td data-label="Pass looks like">your address under <code>roles/iap.httpsResourceAccessor</code>; the stranger turned away by IAP</td></tr>
+<tr><td>12</td><td data-label="Claim">The roster decides what you see</td><td data-label="The check"><code>make roster</code> and your own sign-in in step 9</td><td data-label="Pass looks like">%%N_ROSTER%% lines of the form <code>... is on acme</code>, three <code>data_region</code> lines; <em>Tenant: acme</em> in your sidebar</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Everything: the project went from blank to a running lane. %%N_APIS%% APIs are on. The state bucket you made yourself holds Terraform's record of %%N_RESOURCES%% resources: %%N_SA%% accounts with their roles, %%N_BUCKETS_WORD%% buckets, Firestore with %%N_FS_INDEXES%% indexes and %%N_TTL_WORD%% TTL fields, Vector Search with its deployed index, %%N_SQL_WORD%% Cloud SQL instances, Spanner, %%BQ_DATASETS%% in BigQuery, a GKE cluster, the network, the alerts and the budget. Artifact Registry holds %%N_SERVICES_WORD%% images; Cloud Run runs %%N_SERVICES_WORD%% services and two jobs. Firestore holds the roster's %%N_ROSTER%% memberships and three data-region policies; RAG Engine holds empty corpora for %%MANAGED_TENANTS%%. On your machine, <code>terraform/</code> is connected to the state and holds the saved inputs and the applied plan file. From the end of the apply, the rows of step 10 bill every hour. Lesson 0.4 proves the lane end to end, breaks it once on purpose, and switches it off.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 0 Setup &middot; Lesson 0.3 Understand the project, identities and resource map, and deploy the lane &middot; v5.0</p><p>Next: Lesson 0.4 Prove the lane, break it once, and switch it off.</p></div>

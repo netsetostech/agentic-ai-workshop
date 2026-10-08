@@ -1,0 +1,52 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the peer is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>A peer knows one URL.</strong> The peer reads <code>MCP_URL</code> and nothing else, and <code>check_authz.py</code> fails if it learns a second.</li>
+<li><strong>IAM is the peer's only door.</strong> It has no verifier and no roster, so Cloud Run's invokers must be exactly the callers the caller graph allows: ui-sa and chat-sa, never the outsider.</li>
+<li><strong>One roster.</strong> A peer scoped to one tenant needs no tenant argument, and a request naming another tenant is refused by the server, not by the peer's code.</li>
+<li><strong>A token per tool call.</strong> The header provider runs on every call, so an ID token, which lasts an hour, is never used past its life.</li>
+<li><strong>No kit inside.</strong> The image copies only <code>services/agent</code>, so the peer depends on the lane's public surface, as another team's agent would.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The permissions</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The card</td><td data-label="Costs">two requests, no model</td><td data-label="On your lane">free</td></tr>
+<tr><td>The gate</td><td data-label="Costs">two answered tasks (one retrieval), and one task stopped at the door</td><td data-label="On your lane">a rupee or two</td></tr>
+<tr><td>One task, traced</td><td data-label="Costs">a few model calls, one retrieval, two log reads</td><td data-label="On your lane">under a rupee</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, or in the pinned ADK the image installs, and the build asserts it, so this box changes when they do.</p>
+<ul>
+<li><strong>The card lists no tools.</strong> ADK builds the card once, at start-up, by listing the tools without a request. <code>McpToolset</code> mints the peer's token only for a request, so Cloud Run refuses the tokenless listing, and the card says <code>model</code>. <code>make smoke-agent</code> checks the card's address, not its skills.</li>
+<li><strong>Nothing records who asked the peer.</strong> <code>agent.py</code> logs its start-up and nothing else. A2A carries no identity, and the lane sees <code>documind-agent-sa</code>. Every admitted caller reads acme's documents, and no log says which one did.</li>
+<li><strong>The gate it names does not exist.</strong> <code>agent.py</code> says <code>tools/check_auth_wiring.py</code> fails the build on a kit import, and there is no such file. The Dockerfile's COPY is what keeps the kit out, and a kit import would surface only as a crash at start-up.</li>
+<li><strong>The history carries raw results to the caller.</strong> Every tool call and its full result go back in the task, with the service account's email in the zeta refusal's text.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The peer runs as its own account, and knows one URL</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>runs as documind-agent-sa</code> ... <code>knows one URL: MCP_URL</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Two callers, one roster</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>documind-ui-sa, documind-chat-sa</code>; <code>the rosters it is on: acme</code></td></tr>
+<tr><td>3</td><td data-label="Claim">No kit inside</td><td data-label="The check">step 3</td><td data-label="Pass looks like">no <code>shared</code> among the imports; <code>services/agent/</code> copied</td></tr>
+<tr><td>4</td><td data-label="Claim">The card refused without a token</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>the card without a token: HTTP 403</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The card read with one</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>documind_peer</code>, <code>JSONRPC, A2A 1.0</code>, <code>skills: model</code></td></tr>
+<tr><td>6</td><td data-label="Claim"><code>message/send</code> completes</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>[PASS] task answered  state=completed</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The peer's scope, and its door</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>zeta refused by the roster</code>; <code>outsider refused at the door  status=403</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The lane never sees the caller</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>caller documind-agent-sa</code>, <code>user documind-mcp-sa</code>, and no <code>documind-ui-sa</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing is configured. The peer answered your tasks, and <code>documind-mcp</code> and rag-api logged them as <code>documind-agent-sa</code> and <code>documind-mcp-sa</code>. Lesson 10.7 hands one question from the ADK brain to this peer as a bounded tool, and stops loops and deadlocks between agents.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 10 Agent patterns &middot; Lesson 10.6 Trace the implemented A2A peer and its permissions &middot; v5.0</p><p>Next: Lesson 10.7 Hand one question to the A2A peer, and stop loops and deadlocks.</p></div>

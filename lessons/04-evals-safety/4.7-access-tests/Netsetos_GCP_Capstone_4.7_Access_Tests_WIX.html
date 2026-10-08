@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 4.7 Test valid access, denied access and cross-tenant requests - the door, a 401 and a 403 side by side, the isolation rows, and a residency policy that overrules a pin | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.am-grid{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));gap:4px;margin:0 0 8px;}
+.am-grid span{font-family:var(--mono);font-size:11.5px;min-width:0;overflow-wrap:anywhere;padding:4px 6px;}
+.am-grid .hd{color:var(--slate);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;}
+.am-grid button{font-family:var(--mono);font-size:12px;min-height:44px;border-radius:8px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--navy);}
+.am-grid button.ok{background:#ecfdf5;border-color:#a7f3d0;color:#065f46;}.am-grid button.no{background:#fef2f2;border-color:#fca5a5;color:#991b1b;}.am-grid button.door{background:#f1f5f9;border-color:#cbd5e1;color:#475569;}
+.am-grid button.sel{outline:2px solid var(--navy);outline-offset:1px;}
+.am-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.55;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.am-box b.h{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
+.rp-in{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 12px;margin:6px 0;}
+.rp-in label{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.rp-in select{font:inherit;font-size:16px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.rp-out{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;color:var(--navy);margin:6px 0 0;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.7</div>
+<h1>Test valid access, denied access and cross-tenant requests: <span>the door, a 401 and a 403 side by side, the isolation rows, and a residency policy that overrules a pin</span></h1>
+<p>Lesson 4.6 traced how a request becomes an identity and a tenant. This lesson tests it. You send four requests side by side and get the door's refusal, a 401, a 403 and an answer. You ask every isolation row twice: as the outsider, who must be refused each time, and as a member, whose answers must never carry another tenant's marker. Then you pin a tenant that must keep its text in India to a store outside India, and read the usage row that shows the policy won.</p>
+<div class="hero-chips"><div class="hero-chip">no token: the door</div><div class="hero-chip">401: who</div><div class="hero-chip">403: whether</div><div class="hero-chip">11 isolation rows</div><div class="hero-chip">data_region: in or any</div><div class="hero-chip">policy_fallback 1</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Four answers a request can get, and the walls between tenants</a></li>
+<li><a href="#s2">The words: the door, 401, 403, outsider, isolation row, the two walls, data_region, pin, policy_fallback</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The refusal ladder: the door, a 401 and a 403 side by side</a></li>
+<li><a href="#s4">Cross-tenant: every isolation row, as the outsider and as a member</a></li>
+<li><a href="#s5">Residency: each tenant's data_region, and the rule that applies it</a></li>
+<li><a href="#s6">The policy against a pin: a tenant kept in India, pinned to a store outside it</a></li>
+<li><a href="#s7">The kit's own tests of the same refusals</a></li>
+<li><a href="#s8">Why the tests are shaped this way, and what they cost</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what each refusal means and where it comes from, why a test suite must assert refusals and not only answers, and how the kit keeps one tenant's text away from another and inside the region its policy names. Then you will prove it on your lane: a 401 and a 403 side by side, the outsider refused on every isolation row, a member's answers free of every other tenant's marker, and a residency policy overruling a pin.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Four answers a request can get, and the walls between tenants</h3><p>Each refusal comes from a different check, and a test is only useful if it can tell them apart.</p></div></div>
+
+<p><strong>A request can get four answers, and each means something different.</strong> A refusal at the door comes from Cloud Run itself, before any kit code runs: the caller brought no token, or an account the service does not admit. A 401 from the API means a token reached it but proved nobody: no email, the wrong audience, a forged assertion. A 403 from the API means the API knows exactly who is asking, and that identity is not on the tenant's roster. A 200 means all three checks passed. A test that only checks for the 200 cannot tell an open service from a closed one, which is why the kit's smoke test asserts a refusal too.</p>
+
+<p><strong>Two walls stand between tenants.</strong> The first is the roster: an identity may ask only for the tenants whose rosters list it. The second is the retrieval filter: every vector query is restricted on <code>tenant_id</code>, and the Firestore rung carries the same equality, so even an identity on two rosters gets only the named tenant's chunks. The isolation rows test both walls. The outsider asks each one and must be refused. A member asks each one, and the answer must not carry the marker that only another tenant's documents hold.</p>
+
+<p><strong>The outsider is a fixture built to fail in one place.</strong> IAM admits it, with <code>roles/run.invoker</code> on the API, and no roster lists it. So its refusal has to come from the roster, as a 403, and never from the network. A 401 or a door refusal for the outsider would mean the test proved nothing about the roster. It is never admitted to the A2A peer, which has no roster of its own to refuse it with.</p>
+
+<p><strong>Residency is a third wall: where a tenant's text may be held.</strong> <code>tenant_settings/{tenant}.data_region</code> says <code>in</code>, meaning the kit's own rows in India and nothing else, or <code>any</code>, meaning a managed store outside India may hold a copy. An absent policy means <code>in</code>. If a tenant marked <code>in</code> is pinned to a managed store, the API overrules the pin on every request. It serves from its own index instead, and writes <code>policy_fallback</code> 1 on the usage row. Only the operator writes either field.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127974;</div><div>
+<p><strong>A bank's locker hall.</strong> No card, and the guard at the gate turns you away: the door. A card that names nobody is refused at the counter: the 401. A known customer who has no locker in this branch is refused too, politely and by name: the 403. Inside, your key opens only your locker, even if you rent two: the retrieval filter. And some customers' valuables never leave the city vault, whatever a form elsewhere says: residency.</p></div></div>
+
+<h4>The test plan: every identity against every tenant, and where a tenant's text is searched</h4>
+<p>The matrix is what this lesson's tests should find. Each cell is one identity asking one tenant, and a tap shows its path through the door, the verifier and the roster. The panel below it applies a tenant's policy and pin the way the API does.</p>
+
+<div class="diagram am" id="access">
+<div class="dg-title">Access matrix and residency panel - the invoker list, make roster's plan, choose_for() and retrieval_backend_for()</div>
+<div class="am-grid" id="am-grid"></div>
+<div class="am-box" id="am-why" aria-live="polite"></div>
+<div class="am-box"><b class="h">Residency: which store answers one tenant</b>
+<div class="rp-in">
+<label>The tenant's data_region<select id="rp-policy"><option value="in">in</option><option value="any">any</option><option value="">absent</option></select></label>
+<label>The tenant's pin<select id="rp-pin"><option value="rag_engine">rag_engine</option><option value="vertex_search">vertex_search</option><option value="vector">vector</option><option value="firestore">firestore</option><option value="">no pin</option><option value="bogus">a typo</option></select></label>
+<label>The deployment's backend<select id="rp-dep"><option>vector</option><option>firestore</option></select></label>
+<label>The retrieval mode<select id="rp-mode"><option>dense</option><option>hybrid</option></select></label>
+</div>
+<p class="rp-out" id="rp-out" aria-live="polite"></p></div>
+<p class="dg-cap">The matrix is computed from the invoker list in <code>commands/lesson-12.2.sh</code> and the plan <code>make roster</code> writes. The residency panel ports the pin rule in <code>choose_for()</code> and all of <code>retrieval_backend_for()</code>. For all 72 combinations of its choices, the build ran the kit's own two functions, and the panel had to agree with each.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the matrix is not</div>
+<p>It is the plan, not your lane. Your rosters may list more people, and an operator can bind the invoker role more widely. The tests in steps 3 and 4 are what check the lane itself. The panel shows the store the API would search; it cannot tell you whether that store holds your documents.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: the door, 401, 403, outsider, isolation row, the two walls, data_region, pin, policy_fallback</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>The door's refusal</strong></td><td data-label="Meaning">Cloud Run refuses a request with no token, or from an account without <code>roles/run.invoker</code>, before the container runs. Google's own page, not the API's JSON.</td><td data-label="On your lane">401 or 403</td></tr>
+<tr><td><strong>401</strong></td><td data-label="Meaning">The API's <code>IapError</code>: a token reached it and proved nobody.</td><td data-label="On your lane"><code>the bearer token carries no verified email</code></td></tr>
+<tr><td><strong>403</strong></td><td data-label="Meaning">The API's roster check: a known identity, not on that tenant's roster.</td><td data-label="On your lane"><code>not a member of this tenant</code></td></tr>
+<tr><td><strong>The outsider</strong></td><td data-label="Meaning"><code>documind-outsider-sa</code>: admitted by IAM on the API, on no roster. Its refusal must be the roster's.</td><td data-label="On your lane"><code>otok</code> mints its token</td></tr>
+<tr><td><strong>Isolation row</strong></td><td data-label="Meaning">A golden row that asks one tenant for a fact another tenant holds, with the marker that must never appear.</td><td data-label="On your lane">11 rows, all required</td></tr>
+<tr><td><strong>The two walls</strong></td><td data-label="Meaning">The roster decides who may ask for a tenant. The retrieval filter keeps every search inside the named tenant.</td><td data-label="On your lane"><code>enforce_membership()</code>; <code>tenant_id</code> restricts</td></tr>
+<tr><td><strong>check_isolation()</strong></td><td data-label="Meaning">The live gate's isolation test: the outsider asks every isolation row and must get 403 every time. It is <code>isolation_403_rate</code>, and its threshold is 1.00.</td><td data-label="On your lane">lesson 4.2's run printed it</td></tr>
+<tr><td><strong>data_region</strong></td><td data-label="Meaning"><code>in</code>: the kit's own rows in India. <code>any</code>: a managed store outside India may hold a copy. Absent or unreadable means <code>in</code>.</td><td data-label="On your lane">acme any, zeta any, globex in, if <code>make roster</code> wrote them</td></tr>
+<tr><td><strong>Pin</strong></td><td data-label="Meaning"><code>tenant_settings/{tenant}.retrieval_backend</code>: which store answers one tenant. The API reads it once a minute.</td><td data-label="On your lane"><code>make tenant-backend</code></td></tr>
+<tr><td><strong>policy_fallback</strong></td><td data-label="Meaning">1 on the usage row when the policy overruled a pin to a managed store and the kit's own index answered.</td><td data-label="On your lane">step 6's row</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the roster and the filter guard against different mistakes. The roster stops the wrong identity from asking at all. The filter stops the right identity from reading the wrong tenant's chunks. Lesson 4.2's gate tests the first with the outsider; the member's answers in step 4 test the second.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>API</code>, <code>tok</code> and <code>otok</code>. Step 6 writes one setting, a tenant's pin, and clears it in the same cell. Everything else only reads or asks questions.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The ladder</span><h3>The refusal ladder: the door, a 401 and a 403 side by side</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/demo_03_the_refusal_ladder_the_door_a_401_and_a_403_side_by_side.py" target="_blank" rel="noopener"><code>demo_03_the_refusal_ladder_the_door_a_401_and_a_403_side_by_side.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The same question four times, with no token, a token that proves nobody, the outsider's token and a member's token.</p></div></div>
+
+<h4>Definition</h4>
+<p>Each rung fails a different check. With no token, Cloud Run refuses at the door and the API never sees the request. A token minted without <code>--include-email</code> passes the door, because Cloud Run needs only a valid token for the service. The API's bearer leg then refuses it, because it names nobody: that is the 401. The outsider's token passes the door and the verifier, and the roster refuses it: that is the 403. The member's token passes all three and gets an answer. The cell prints each status beside the body's first characters, so the two refusals the API writes are on the screen together.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/auth.py - who is a 401, whether is a 403</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">except</span> iap.IapError <span class="kw">as</span> e:
+        <span class="cm"># 401, not 403: we do not know who this is. This also fails closed on a</span>
+        <span class="cm"># missing IAP_AUDIENCE - verifying without an audience accepts a token</span>
+        <span class="cm"># minted for ANY service.</span>
+        <span class="kw">raise</span> HTTPException(<span class="nu">401</span>, str(e))
+
+
+<span class="kw">def</span> <span class="fn">enforce_membership</span>(email: str, tenant_id: str) -&gt; <span class="kw">None</span>:
+    <span class="st">&quot;&quot;&quot;403 on mismatch - a real authorisation check, not a header comparison.
+
+    One roster, read one way: shared/tenancy.py, the same document the frontend
+    and the chat service consult, so a membership change lands everywhere at once.
+    &quot;&quot;&quot;</span>
+    <span class="kw">if</span> <span class="kw">not</span> is_member(email, tenant_id):
+        <span class="kw">raise</span> HTTPException(<span class="nu">403</span>, <span class="st">&quot;not a member of this tenant&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/sa.tf - the outsider: an account IAM admits and no roster lists</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The eval gate&#x27;s OUTSIDER (4.8&#x27;s run_eval.check_isolation, and the last check of every smoke</span>
+<span class="cm"># test): an account IAM admits - roles/run.invoker on the services that put a ROSTER between the</span>
+<span class="cm"># door and the data, bound per service since 12 September 2026 (the caller graph below) - that</span>
+<span class="cm"># sits on no roster, so a refusal comes from the roster and not from the network. A fixture, not</span>
+<span class="cm"># a service. A service account that plays this part cannot also run a service, which is how the</span>
+<span class="cm"># chat service&#x27;s first live smoke (2026-09-09) found every retrieve refused, as designed. It is</span>
+<span class="cm"># never admitted to the peer (documind-agent): the peer has no roster to refuse it with.</span>
+resource <span class="st">&quot;google_service_account&quot;</span> <span class="st">&quot;outsider&quot;</span> {
+  account_id   = <span class="st">&quot;documind-outsider-sa&quot;</span>
+  display_name = <span class="st">&quot;DocuMind eval outsider (IAM admits it, no roster does)&quot;</span>
+}</pre></div>
+
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (four requests to /v1/query; one is answered)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">TOKEN="$(tok "$API")" OUTSIDER="$(otok)" BARE="$(gcloud auth print-identity-token --audiences="$API" --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com")" \
+  python - &lt;&lt;'PY'
+import json, os, urllib.error, urllib.request
+body = json.dumps({"query": "What is the notice period for a confirmed E3?", "tenant_id": "acme", "top_k": 6}).encode()
+for label, token in [("no token", None), ("a token without its email", os.environ["BARE"]),
+                     ("the outsider's token", os.environ["OUTSIDER"]), ("documind-ui-sa's token", os.environ["TOKEN"])]:
+    req = urllib.request.Request(os.environ["API"] + "/v1/query", data=body, method="POST", headers={"Content-Type": "application/json"})
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            status, text = r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        status, text = e.code, e.read().decode(errors="replace")
+    shown = text[:66] if text.startswith("{") else "(Cloud Run's own page: the request never reached the API)"
+    print(f"  {label:26} {status}  {shown}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell against a local stub that answers as the API does; the door's code is 401 or 403, and your answer's words differ)</span><span class="ro">read only</span></div><pre tabindex="0">  no token                   403  (Cloud Run's own page: the request never reached the API)
+  a token without its email  401  {"detail":"the bearer token carries no verified email"}
+  the outsider's token       403  {"detail":"not a member of this tenant"}
+  documind-ui-sa's token     200  {"answer":"A confirmed employee at grade E3 or above serves a noti</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four requests, four checks. The first never reached the API: Cloud Run answered with its own page. The second reached the API with a genuine Google token and was refused as a 401, because a token without an email proves no identity. The third came from an account IAM admits, and the roster refused it as a 403 with the API's own sentence. That 403 is the outsider working as designed: the refusal came from the roster, the one place that decides tenants. The fourth was answered. The 401 and the 403 side by side are this lesson's first proof.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Cross-tenant</span><h3>Cross-tenant: every isolation row, as the outsider and as a member</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/demo_04_cross_tenant_every_isolation_row_as_the_outsider_and_as_a_member.py" target="_blank" rel="noopener"><code>demo_04_cross_tenant_every_isolation_row_as_the_outsider_and_as_a_member.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The roster wall with <code>check_isolation()</code>, then the filter wall with a member's answers.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell runs the live gate's own <code>check_isolation()</code> on the 11 isolation rows: the outsider asks each one, and anything but a 403 is printed as a failure. Those requests stop at the roster, so they cost no model call. Then it asks each row again as <code>documind-ui-sa</code>, which is on all three rosters, so the roster lets every question through. Now only the retrieval filter stands between the question and another tenant's chunks. The answer must not contain the row's marker, the figure or phrase that only another tenant's documents hold. <code>contains()</code> matches the figure on its own boundaries and in any spelling, so a leak written as <code>15 days' wages</code> is caught as surely as <code>fifteen days' wages</code>.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>evals/run_eval.py - check_isolation(): every isolation row, asked by the outsider, must be a 403</span><span class="ro">read only</span></div><pre tabindex="0">    rows = [r <span class="kw">for</span> r <span class="kw">in</span> golden <span class="kw">if</span> r[<span class="st">&quot;shape&quot;</span>] == <span class="st">&quot;isolation&quot;</span>]
+    got, bad = <span class="nu">0</span>, []
+    <span class="kw">for</span> row <span class="kw">in</span> rows:
+        status, _, _ = ask(api_url, row[<span class="st">&quot;question&quot;</span>], row[<span class="st">&quot;tenant&quot;</span>], outsider, outsider_token <span class="kw">or</span> token)
+        <span class="kw">if</span> status == <span class="nu">403</span>:
+            got += <span class="nu">1</span>
+        <span class="kw">else</span>:
+            bad.append(f<span class="st">&quot;{row[&#x27;id&#x27;]}: a non-member asking {row[&#x27;tenant&#x27;]} got &quot;</span>
+                       f<span class="st">&quot;{status}, expected 403&quot;</span>)
+    <span class="kw">return</span> (got / len(rows) <span class="kw">if</span> rows <span class="kw">else</span> <span class="nu">0.0</span>), bad</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - the tenant filter, on the vector query and on the Firestore rung</span><span class="ro">read only</span></div><pre tabindex="0">    restricts = [Namespace(name=<span class="st">&quot;tenant_id&quot;</span>, allow_tokens=[tenant_id])]
+    <span class="kw">if</span> settings.retrieval_current_only == <span class="st">&quot;on&quot;</span>:
+        restricts.append(Namespace(name=<span class="st">&quot;current&quot;</span>, allow_tokens=[<span class="st">&quot;true&quot;</span>]))   <span class="cm"># indexer.py&#x27;s third restrict</span>
+    <span class="kw">if</span> filters:
+        <span class="kw">for</span> k, v <span class="kw">in</span> filters.items():
+            restricts.append(Namespace(name=k, allow_tokens=[str(t) <span class="kw">for</span> t <span class="kw">in</span> v] <span class="kw">if</span> isinstance(v, list) <span class="kw">else</span> [str(v)]))
+...
+    query = _fs().collection(settings.chunks_collection).where(<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;==&quot;</span>, tenant_id)</pre></div>
+
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (11 outsider requests, then 11 member questions)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">TOKEN="$(tok "$API")" OUTSIDER="$(otok)" python - &lt;&lt;'PY'
+import os, sys; sys.path.insert(0, "evals")
+from run_eval import ask, check_isolation, contains, load_golden
+api, token = os.environ["API"], os.environ["TOKEN"]
+iso = [r for r in load_golden() if r["shape"] == "isolation"]
+rate, bad = check_isolation(api, iso, token, os.environ["OUTSIDER"])
+print(f"the outsider, on {len(iso)} isolation rows: 403 on {rate:.0%}", *bad, sep="\n  ")
+for r in iso:
+    status, body, _ = ask(api, r["question"], r["tenant"], "eval@documind.in", token)
+    leaked = [w for w in r["must_not_contain"] if contains(body.get("answer", ""), w)]
+    print(f"  {r['id']:6} as {r['tenant']:6} HTTP {status}  answerable {str(body.get('answerable')):5}  "
+          + (f"LEAKED {', '.join(leaked)}" if leaked else f"no {r['must_not_contain'][0]!r}"))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell against the same stub; your answers' words differ, and every line should still say no marker)</span><span class="ro">read only</span></div><pre tabindex="0">the outsider, on 11 isolation rows: 403 on 100%
+  iso-01 as zeta   HTTP 200  answerable True   no '40,000'
+  iso-02 as globex HTTP 200  answerable False  no '1,84,500'
+  iso-03 as globex HTTP 200  answerable False  no '15 June'
+  iso-04 as zeta   HTTP 200  answerable False  no '1,005'
+  iso-05 as zeta   HTTP 200  answerable False  no 'AAAPZ1234C'
+  iso-06 as globex HTTP 200  answerable False  no 'twenty-six weeks'
+  iso-07 as globex HTTP 200  answerable False  no "fifteen days' wages"
+  iso-08 as zeta   HTTP 200  answerable False  no 'recommendations of the Council'
+  iso-09 as zeta   HTTP 200  answerable False  no 'single point of contact'
+  iso-10 as globex HTTP 200  answerable False  no 'twice the rate of wages'
+  mm-04  as zeta   HTTP 200  answerable False  no '5.2 per cent'</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The outsider was refused on every isolation row, which is <code>isolation_403_rate</code> 100%, the value the live gate requires. The member got every question through the roster, and every answer came from the named tenant's own chunks. Zeta's travel cap came back as zeta's, and the rows that only another tenant could answer came back refused. No marker appeared in any answer. A marker here would be close to impossible given the filter, which is exactly why the live gate treats one as exit 2: if it happens, something far worse than a quality regression has gone wrong.</p></div>
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Residency</span><h3>Residency: each tenant's data_region, and the rule that applies it</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/demo_05_residency_each_tenant_s_data_region_and_the_rule_that_applies_it.py" target="_blank" rel="noopener"><code>demo_05_residency_each_tenant_s_data_region_and_the_rule_that_applies_it.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The policy's two values, the fail-closed reading, and where the API holds a pin against it.</p></div></div>
+
+<h4>Definition</h4>
+<p>A tenant's policy is one field of <code>tenant_settings/{tenant}</code>, the same document that holds its pin. <code>policy_of()</code> reads it strictly: <code>any</code> only when the field says exactly that, and <code>in</code> for anything else, including a missing field, an unknown value, a missing document or a failed read. <code>permits()</code> is the whole rule: <code>any</code> permits every store, and <code>in</code> permits only a store in an Indian region. None of the managed stores is in India today, since RAG Engine is in us-central1 and Vertex AI Search is global. The API applies the rule per request. The worker applies it when it decides whether to mirror a tenant's documents into those stores. <code>make roster</code> writes the demo's policies: acme and zeta <code>any</code>, globex <code>in</code>.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>shared/tenancy.py - policy_of() and permits(): absent is in, and in keeps text in India</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">policy_of</span>(doc: dict | <span class="kw">None</span>) -&gt; str:
+    <span class="st">&quot;&quot;&quot;The data_region a tenant_settings document declares - `in` unless it says `any`. The one normalisation both
+    readers use: a missing field, an unknown value or no document at all is `in`, never a guess.&quot;&quot;&quot;</span>
+    region = str((doc <span class="kw">or</span> {}).get(<span class="st">&quot;data_region&quot;</span>) <span class="kw">or</span> <span class="st">&quot;in&quot;</span>).strip().lower()
+    <span class="kw">return</span> region <span class="kw">if</span> region <span class="kw">in</span> DATA_REGIONS <span class="kw">else</span> <span class="st">&quot;in&quot;</span>
+
+
+<span class="kw">def</span> <span class="fn">permits</span>(policy: str, region: str | <span class="kw">None</span>) -&gt; bool:
+    <span class="st">&quot;&quot;&quot;May a store in `region` hold text under this policy? `any` permits every store; `in` permits a store inside
+    India only - none of the managed stores is there today (us-central1, global), and the rule is data, not code.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> policy == <span class="st">&quot;any&quot;</span>:
+        <span class="kw">return</span> <span class="kw">True</span>
+    <span class="kw">return</span> str(region <span class="kw">or</span> <span class="st">&quot;&quot;</span>).strip().lower().startswith(INDIA_REGION_PREFIXES)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - choose_for(): a tenant&#x27;s pin, unless the deployment cannot serve it</span><span class="ro">read only</span></div><pre tabindex="0">    pin = ts.get(<span class="st">&quot;retrieval_backend&quot;</span>)
+    retrieval = settings.retrieval_backend
+    <span class="kw">if</span> pin <span class="kw">and</span> pin != retrieval:
+        <span class="kw">if</span> pin <span class="kw">in</span> RETRIEVAL_BACKENDS <span class="kw">and</span> <span class="kw">not</span> (pin <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">and</span> settings.retrieval_mode == <span class="st">&quot;hybrid&quot;</span>):
+            retrieval = pin
+        <span class="kw">else</span>:
+            log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;retrieval_pin_ignored&quot;</span>, <span class="st">&quot;tenant&quot;</span>: req.tenant_id, <span class="st">&quot;retrieval_backend&quot;</span>: pin,
+                                    <span class="st">&quot;served&quot;</span>: retrieval, <span class="st">&quot;why&quot;</span>: f<span class="st">&quot;one of {&#x27;|&#x27;.join(RETRIEVAL_BACKENDS)}, and a managed store cannot fuse hybrid&quot;</span>}))
+    <span class="kw">return</span> backend, model, retrieval</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - retrieval_backend_for(): the policy overrules the pin, per request</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">retrieval_backend_for</span>(tenant_id: str, backend: str) -&gt; tuple[str, int]:
+    <span class="st">&quot;&quot;&quot;The backend that will serve, held against the tenant&#x27;s data_region (13 September 2026, evening): a managed
+    store (config.MANAGED_BACKENDS) for a tenant whose text may not leave India - `in`, which an absent policy also
+    means - is the kit&#x27;s own index instead, with policy_fallback=1 on the row: the deployment&#x27;s own backend when
+    that is one (vector, firestore), else Firestore, which holds every embedding the worker wrote. Never the store,
+    never a 500; the row says it happened, so a day of fallbacks is a count.&quot;&quot;&quot;</span>
+    ts = tenant_settings(tenant_id)
+    <span class="kw">if</span> backend <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">and</span> policy_of(ts) != <span class="st">&quot;any&quot;</span>:
+        own = settings.retrieval_backend <span class="kw">if</span> settings.retrieval_backend <span class="kw">not</span> <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">else</span> <span class="st">&quot;firestore&quot;</span>
+        <span class="kw">return</span> own, <span class="nu">1</span>
+    <span class="kw">return</span> backend, <span class="nu">0</span></pre></div>
+
+
+<h4>Do it: the three policies</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (each tenant's data_region; reads only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">for t in acme zeta globex; do make tenant-policy TENANT=$t; done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the values make roster writes; a tenant it never wrote prints in, because absent means in)</span><span class="ro">read only</span></div><pre tabindex="0">acme: data_region=any
+zeta: data_region=any
+globex: data_region=in</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Each line is one read of <code>tenant_settings</code>, normalised by the same <code>policy_of()</code> the API uses. Globex prints <code>in</code>: its text may be searched only in the kit's own rows. A tenant whose policy was never written also prints <code>in</code>, because the strict reading is the default. That is the property to check first on any residency control: what happens when nobody set it.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The policy against a pin</span><h3>The policy against a pin: a tenant kept in India, pinned to a store outside it</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/demo_06_the_policy_against_a_pin_a_tenant_kept_in_india_pinned_to_a_store_outside_it.py" target="_blank" rel="noopener"><code>demo_06_the_policy_against_a_pin_a_tenant_kept_in_india_pinned_to_a_store_outside_it.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A pin set, a minute's wait, one question, its usage row, and the pin cleared.</p></div></div>
+
+<p>The cell pins globex to <code>rag_engine</code>, a managed store in us-central1, then waits a minute, because the API reads each tenant's settings once a minute. It asks one of globex's own questions and reads the question's usage row: which backend served, and <code>policy_fallback</code>. Then it clears the pin. <code>RETRIEVAL_BACKEND</code> is given on each <code>make</code> line on purpose, because a value exported in your shell would otherwise win.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (a pin set, one question, its usage row, the pin cleared)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make tenant-backend TENANT=globex RETRIEVAL_BACKEND=rag_engine
+sleep 65                        # the API reads tenant_settings once a minute
+TOKEN="$(tok "$API")" python - &lt;&lt;'PY'
+import os, sys; sys.path.insert(0, "evals")
+from run_eval import ask
+status, body, _ = ask(os.environ["API"], "Who is a Data Fiduciary under the DPDP Act?", "globex", "eval@documind.in", os.environ["TOKEN"])
+print(f"globex asked: HTTP {status}, answerable {body.get('answerable')}")
+PY
+sleep 20
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="query" AND jsonPayload.tenant="globex"' \
+  --project "$PROJECT" --freshness=10m --limit 1 --format='value(jsonPayload.retrieval_backend,jsonPayload.policy_fallback)'
+make tenant-backend TENANT=globex RETRIEVAL_BACKEND=default</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected shape (the backend is your deployment's own: vector or firestore)</span><span class="ro">read only</span></div><pre tabindex="0">globex: retrieval_backend=rag_engine
+globex asked: HTTP 200, answerable True
+vector	1
+globex: retrieval_backend=default</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The pin said RAG Engine, and <code>choose_for()</code> took it, because the pin names a real backend and the mode is dense. <code>retrieval_backend_for()</code> then held it against globex's policy, <code>in</code>. It served the question from the deployment's own index instead, and the row recorded both facts: the backend that really served, and <code>policy_fallback</code> 1. No text went to us-central1, and no error reached the caller. A day of such fallbacks is a count on the usage rows, which is how an operator finds a pin that contradicts a policy. The pin is cleared, so globex is as it was.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; The kit's own tests</span><h3>The kit's own tests of the same refusals</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_7/demo_07_the_kit_s_own_tests_of_the_same_refusals.py" target="_blank" rel="noopener"><code>demo_07_the_kit_s_own_tests_of_the_same_refusals.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The smoke test's check 3b, and the chat service's check 4.</p></div></div>
+
+<p>The kit asserts these refusals itself, so a deploy that opened a door would fail its own smoke test. <code>smoke/smoke.py</code> sends its question again with no token and passes only on 401 or 403. <code>smoke/smoke_chat.py</code> asks the chat service as the outsider and passes only on a 403 from the roster, not a 401 from the verifier. The MCP server's smoke test does the same. The cell runs the API's smoke test and keeps two of its lines.</p>
+<div class="cw"><div class="ch-bar"><span>smoke/smoke.py - check 3b: the same question with no token must be refused</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="cm"># 3b. the same question with NO token: the door must refuse before the roster is even asked. 12.8: a smoke</span>
+    <span class="cm"># made only of &quot;does it work?&quot; cannot tell an open service from a closed one, so this line asserts a refusal.</span>
+    st, body = call(<span class="st">&quot;POST&quot;</span>, <span class="st">&quot;/v1/query&quot;</span>, <span class="kw">None</span>, body=q)
+    <span class="kw">if</span> st <span class="kw">in</span> (<span class="nu">401</span>, <span class="nu">403</span>):
+        ok(<span class="st">&quot;no token refused&quot;</span>, f<span class="st">&quot;status={st}&quot;</span>)
+    <span class="kw">else</span>:
+        bad(<span class="st">&quot;no token refused&quot;</span>, f<span class="st">&quot;status={st} - the service answered an anonymous caller&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>smoke/smoke_chat.py - check 4: the chat service refuses the outsider the same way</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="nu">4</span>. POST /v1/chat <span class="kw">as</span> the outsider  -&gt; <span class="nu">403</span> <span class="kw">from</span> the roster, <span class="kw">not</span> <span class="nu">401</span> <span class="kw">from</span> the verifier
+                                         (optional: DOCUMIND_OUTSIDER_SA, the eval gate&#x27;s identity)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the kit's smoke test, two of its lines)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">DOCUMIND_API_URL="$API" DOCUMIND_PROJECT="$PROJECT" DOCUMIND_TENANT=acme make smoke | grep -E "no token|pass ·"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected shape (the door's code is 401 or 403; N is the number of checks your lane runs)</span><span class="ro">read only</span></div><pre tabindex="0">  [PASS] no token refused  status=403
+  N pass · 0 fail</pre></div>
+
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the tests are shaped this way, and what they cost</h3><p>The design choices behind each test, from the kit's own comments.</p></div></div>
+
+<ul>
+<li><strong>A refusal is asserted, not assumed.</strong> A smoke test made only of "does it work?" passes on a service that answers everybody. Check 3b exists so a deploy that dropped <code>--no-allow-unauthenticated</code> fails.</li>
+<li><strong>The outsider is admitted by IAM on purpose.</strong> If IAM refused it, every isolation test would pass at the door and prove nothing about the roster. Its invoker role is bound per service, and never on the A2A peer, which has no roster. When it was granted project-wide, the outsider could read acme's documents through that peer.</li>
+<li><strong>The live gate's isolation threshold is the 403, not the marker.</strong> The filter makes a leaked marker close to impossible, so a test that waited for one would pass by luck. The leg that can really leak is identity to tenant, and the outsider tests exactly that.</li>
+<li><strong>Every residency default is the strict one.</strong> An absent policy, an unreadable one, an unknown value: all are <code>in</code>. An unknown pin, or a managed store under hybrid mode, is ignored with a log line, never a 500.</li>
+<li><strong>Only the operator writes a policy or a pin.</strong> A service that could widen its own tenant's region could move its text anywhere, the same reason no service writes the roster.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Test</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The ladder</td><td data-label="Costs">one answered question; the three refusals cost nothing</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The outsider on every isolation row</td><td data-label="Costs">11 requests refused at the roster, before retrieval</td><td data-label="On your lane">free</td></tr>
+<tr><td>The member on every isolation row</td><td data-label="Costs">11 questions; the refusals from an empty pool cost nothing</td><td data-label="On your lane">a few rupees</td></tr>
+<tr><td>The policy readout and the pin</td><td data-label="Costs">a few Firestore reads and writes, and one answered question</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The smoke test</td><td data-label="Costs">its question, answered once</td><td data-label="On your lane">under a rupee</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">No token never reaches the API</td><td data-label="The check">step 3, the first line</td><td data-label="Pass looks like">401 or 403, Cloud Run's own page</td></tr>
+<tr><td>2</td><td data-label="Claim">A token that names nobody is a 401</td><td data-label="The check">step 3, the second line</td><td data-label="Pass looks like"><code>401</code> <code>the bearer token carries no verified email</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A known identity off the roster is a 403</td><td data-label="The check">step 3, the third line</td><td data-label="Pass looks like"><code>403</code> <code>not a member of this tenant</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The outsider is refused on every isolation row</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>403 on 100%</code></td></tr>
+<tr><td>5</td><td data-label="Claim">No member's answer carries another tenant's marker</td><td data-label="The check">step 4</td><td data-label="Pass looks like">11 lines, each <code>no '...'</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Globex is kept in India</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>globex: data_region=in</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The policy overrules a pin</td><td data-label="The check">step 6</td><td data-label="Pass looks like">the row's backend is your own, and <code>1</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The kit's smoke test asserts the door</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>[PASS] no token refused</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Globex's pin was set and cleared in step 6, so <code>tenant_settings/globex</code> is as it was, apart from the time stamp of the last change. The usage rows of about fifteen answered questions, and the refused requests in the API's log. No roster, role or policy changed. Lesson 4.8 turns from who may read to what may be read: the PII scan on every document, Model Armor on both sides of the model, and the audit trail an operator can show.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.7 Test valid access, denied access and cross-tenant requests &middot; v5.0</p><p>Next: Lesson 4.8 Exercise DLP, guardrails and audit behavior.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var W = {"ids":[["you, signed in to the UI","person","you@example.com"],["a colleague on no roster, signed in","person","colleague@example.com"],["documind-ui-sa","sa","documind-ui-sa"],["documind-chat-sa","sa","documind-chat-sa"],["documind-mcp-sa","sa","documind-mcp-sa"],["documind-agent-sa","sa","documind-agent-sa"],["documind-outsider-sa","sa","documind-outsider-sa"]],"tenants":["acme","zeta","globex"],"matrix":[["200","403","403"],["403","403","403"],["200","200","200"],["200","200","200"],["200","200","200"],["door","door","door"],["403","403","403"]],"invokers":["documind-ui-sa","documind-chat-sa","documind-mcp-sa","documind-outsider-sa"],"roster":{"acme":["you@example.com","documind-ui-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com","documind-mcp-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com","documind-chat-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com","documind-agent-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com"],"zeta":["documind-ui-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com","documind-mcp-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com","documind-chat-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com"],"globex":["documind-ui-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com","documind-mcp-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com","documind-chat-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com"]},"rb":["vector","firestore","rag_engine","vertex_search"],"mb":["rag_engine","vertex_search"],"project":"documind-ai-YOUR-ID"};
+function serve(W, dep, mode, pin, policy){                      /* choose_for()'s pin rule, then retrieval_backend_for() */
+var r = dep, ignored = false, fb = 0;
+if (pin && pin !== dep) { if (W.rb.indexOf(pin) >= 0 && !(W.mb.indexOf(pin) >= 0 && mode === 'hybrid')) r = pin; else ignored = true; }
+if (W.mb.indexOf(r) >= 0 && policy !== 'any') { r = W.mb.indexOf(dep) < 0 ? dep : 'firestore'; fb = 1; }
+return {served: r, fallback: fb, ignored: ignored}; }
+var root = document.getElementById('access'); if (!root) return;
+var $ = function(id){ return document.getElementById(id); };
+var grid = $('am-grid'), why = $('am-why'), sel = null;
+var WHERE = {vector: 'the kit\'s Vector Search index, in your lane\'s region', firestore: 'the kit\'s Firestore rows, in your lane\'s region',
+rag_engine: 'RAG Engine, in us-central1', vertex_search: 'Vertex AI Search, in global'};
+function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function label(o){ return o === 'door' ? 'door' : o === '200' ? '200' : '403'; }
+function explain(i, t){
+var id = W.ids[i], o = W.matrix[i][t], tenant = W.tenants[t], person = id[1] === 'person', acct = person ? 'documind-ui-sa' : id[2];
+var mail = person ? id[2] : id[2] + '@' + W.project + '.iam.gserviceaccount.com';
+if (o === 'door') return '<b class="h">' + esc(id[0]) + ' asks ' + tenant + ': refused at the door</b><code>' + acct + '</code> holds no <code>roles/run.invoker</code> on documind-api, so Cloud Run answers 403 before the API runs. This account reaches the lane through the MCP server, which asks as itself.';
+var head = '<b class="h">' + esc(id[0]) + ' asks ' + tenant + ': HTTP ' + o + '</b>';
+var how = person ? 'The UI\'s own token passes the door, and the verifier takes the person from the forwarded assertion: <code>' + esc(mail) + '</code>. ' : '<code>' + acct + '</code> passes the door, and the verifier takes the account from its own token. ';
+return head + how + (o === '200' ? 'The roster <code>tenants/' + tenant + '/members</code> lists it, so the question is answered, and the usage row says so.'
+: 'The roster <code>tenants/' + tenant + '/members</code> does not list it: authenticated, not authorised, <code>not a member of this tenant</code>.');
+}
+function renderGrid(){
+grid.innerHTML = '<span class="hd">asks</span>' + W.tenants.map(function(t){ return '<span class="hd">' + t + '</span>'; }).join('')
++ W.ids.map(function(id, i){ return '<span>' + esc(id[0]) + '</span>' + W.tenants.map(function(t, j){ var o = W.matrix[i][j];
+return '<button type="button" data-c="' + i + ',' + j + '" class="' + (o === '200' ? 'ok' : o === 'door' ? 'door' : 'no') + (sel === i + ',' + j ? ' sel' : '') + '">' + label(o) + '</button>'; }).join(''); }).join('');
+why.innerHTML = sel ? explain(+sel.split(',')[0], +sel.split(',')[1]) : '<b class="h">Pick a cell</b>Each cell is one identity asking one tenant. Tap it for the path through the door, the verifier and the roster.';
+}
+grid.addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; sel = b.getAttribute('data-c'); renderGrid(); });
+var rin = ['rp-policy', 'rp-pin', 'rp-dep', 'rp-mode'], rout = $('rp-out');
+function renderRes(){
+var policy = $('rp-policy').value, pin = $('rp-pin').value, dep = $('rp-dep').value, mode = $('rp-mode').value;
+var s = serve(W, dep, mode, pin, policy);
+rout.textContent = (s.ignored ? 'the pin is ignored with a retrieval_pin_ignored line: ' + (W.rb.indexOf(pin) < 0 ? 'not a backend the API knows' : 'a managed store cannot fuse hybrid') + '\n' : '')
++ 'served from   ' + s.served + '\nsearched in   ' + WHERE[s.served] + '\npolicy_fallback ' + s.fallback + (s.fallback ? '   (the pin named a store outside India and the policy is in)' : '');
+}
+rin.forEach(function(id){ $(id).addEventListener('change', renderRes); });
+renderGrid(); renderRes();
+})();
+</script>
+</body>
+</html>

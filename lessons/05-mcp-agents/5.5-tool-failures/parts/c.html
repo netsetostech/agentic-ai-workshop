@@ -1,0 +1,81 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Diagnosis</span><h3>Reading a failure on the lane</h3><p>Where each signal lives, in the order to look.</p></div></div>
+
+<p>When a chat turn goes wrong in production, the evidence is spread across three services and several stores. Look in this order.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Look at</th><th>What it tells you</th><th>What it cannot</th></tr></thead>
+<tbody>
+<tr><td>The HTTP status</td><td data-label="What it tells you">401 or 403: the turn never started, so the problem is the token or the roster.</td><td data-label="What it cannot">anything about tools</td></tr>
+<tr><td>The answer's four keys</td><td data-label="What it tells you"><code>tool_calls</code>: what the model asked for. <code>refusals</code>: which of those came back as errors. <code>citations</code>: what this turn's searches returned, numbered from 1.</td><td data-label="What it cannot">why each error happened, or any payload error</td></tr>
+<tr><td>The answer's <code>limits</code></td><td data-label="What it tells you"><code>stopped_by</code>: whether a limit ended the turn, and which. The model calls against the cap, the rupees against the budget, and <code>tool_timeouts</code>.</td><td data-label="What it cannot">why the model kept asking</td></tr>
+<tr><td>The chat service's row</td><td data-label="What it tells you">The same two lists, the brain, the tenant and the time, one row per turn, with the turn's model calls, tokens, cost, <code>stopped_by</code> and <code>tool_timeouts</code>.</td><td data-label="What it cannot">the arguments</td></tr>
+<tr><td>The chat service's log lines</td><td data-label="What it tells you">The guard's refusals and the timer's line against each budget; the adapter's <code>rag-api query failed</code>.</td><td data-label="What it cannot">the arguments</td></tr>
+<tr><td>rag-api's rows</td><td data-label="What it tells you">One per retrieval: the pool, whether it was answerable, the time and the cost.</td><td data-label="What it cannot">the filter that emptied the pool</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three patterns cover most cases. <code>stopped_by</code> set means the turn hit a limit: the answer says it is incomplete, and asking again, or a narrower question, usually answers. <code>refusals</code> non-empty means the model asked for something it could not have: read the log line for the name. <code>refusals</code> empty with an answer that says it found nothing means either the corpus lacks it or the model narrowed the search. rag-api's row tells those apart: <code>pool 0</code> on a question you know the corpus answers points to an argument.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why failures are handled this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>401 is not 403.</strong> A 401 means the service does not know who is asking; a 403 means it knows and will not serve them. The difference is what you need when reading logs at three in the morning, and the kit keeps it deliberately.</li>
+<li><strong>Errors as data.</strong> An exception inside a tool would end the turn with nothing to say. A payload lets the model tell the person what failed, in their own words, and keeps the turn alive.</li>
+<li><strong>Refuse before dispatch.</strong> The guard checks the name before the tool runs, so a blocked tool never reaches its handler, not even to fail.</li>
+<li><strong>The tenant is not an argument.</strong> A model cannot be talked into another tenant's corpus, because no argument exists to carry it. The runtime supplies the tenant from the roster.</li>
+<li><strong>Budgets beside the tools.</strong> <code>BLOCKED</code> and <code>TIMEOUTS</code> sit next to the tool definitions, so adding a tool without a budget or a block decision shows up in review.</li>
+<li><strong>A cut call is data, and a stop is an answer.</strong> An abandoned call returns a payload error like a failed search, so the model can explain it. A stopped turn answers HTTP 200 with a sentence that says it is incomplete, and leaves its thread whole: a 500 would lose the turn, and an open tool call would break the next one.</li>
+<li><strong>A turn ends before the walls around it.</strong> The deadline is %%DEADLINE_S%% seconds. One retry's backoff, about 2 seconds, and the last tool's one-second floor bring the worst case to about 103 seconds, under the UI's 120, gunicorn's 120 and Cloud Run's 300. The kit's test checks that sum. The framework's own step limits stay, at %%BACKSTOP%% steps for the LangChain and LangGraph brains, as a backstop the Meter reaches first.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Five failures, the looping model, <code>make limits-check</code></td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td><code>make limits</code></td><td data-label="Costs">two <code>/health</code> reads</td><td data-label="On your lane">free</td></tr>
+<tr><td>The drill</td><td data-label="Costs">two revisions of the chat service, and eight turns: three stopped after one model call and one search, five answered</td><td data-label="On your lane">a few rupees</td></tr>
+<tr><td>The door</td><td data-label="Costs">two refusals before any model, one answered turn</td><td data-label="On your lane">a rupee or two</td></tr>
+<tr><td>The filter</td><td data-label="Costs">one answered retrieval; the empty pool is free</td><td data-label="On your lane">under a rupee</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>An abandoned call still runs, and is still billed.</strong> The turn stops waiting, but the call's thread runs on until its client gives up, and rag-api answers it and bills it. The turn's rupees do not count that answer.</li>
+<li><strong>The month's counter does not see the turn's own spend.</strong> The chat row now carries the turn's <code>cost_usd</code>, but <code>tenant_daily</code> and <code>make usage</code> count rag-api's rows only, so the agent's own model calls are outside the monthly figure. Lesson 11.6 takes this up.</li>
+<li><strong>The limits are the service's, not the tenant's.</strong> One setting on the chat service holds every tenant and every caller to the same %%MAX_CALLS%% calls, Rs %%BUDGET_INR%% and %%DEADLINE_S%% seconds.</li>
+<li><strong>The A2A peer has no cap of its own.</strong> Its <code>/health</code> names none, so ADK's default of 500 model calls a task applies to it.</li>
+<li><strong><code>refusals</code> mixes policy and mistakes.</strong> A blocked name, a bad argument, an unknown tool and an unknown tier all land in the same list, and nothing in the four keys says which is which.</li>
+<li><strong>The arguments are logged nowhere.</strong> The guard logs names and times. The chat row keeps names. rag-api's row has no filters. A bad <code>doc_type</code> shows only as <code>pool 0</code>.</li>
+<li><strong>The tool invites filters the corpus cannot honour.</strong> <code>retrieve</code>'s docstring offers policy, contract, invoice, form and research_paper, and the worker stamps every text upload <code>unknown</code>.</li>
+<li><strong>The token is minted outside the <code>try</code>.</strong> In the one <code>retrieve()</code>, a failure to mint the ID token raises instead of returning data. No brain catches it, by design: an error result is for a call the model got wrong, and a mint failure is the service's own. So the whole turn fails, in all four brains: a 500, with no answer.</li>
+</ul></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Twelve checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A blocked name is refused before dispatch</td><td data-label="The check">step 3, <code>blocked</code></td><td data-label="Pass looks like"><code>refusals ['delete_document']</code>, <code>WARNING refused ...</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A bad argument is an error result</td><td data-label="The check">step 3, <code>bad args</code></td><td data-label="Pass looks like"><code>result [error] Error invoking tool ...</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A timed-out tool is reported, not hung</td><td data-label="The check">step 3, <code>timed out</code></td><td data-label="Pass looks like"><code>0.5 s</code>, <code>result [success] {"error": "document search is unavailable" ...</code></td></tr>
+<tr><td>4</td><td data-label="Claim">A timeout is not a refusal</td><td data-label="The check">step 3, <code>timed out</code></td><td data-label="Pass looks like"><code>refusals []</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A slow tool is cut at its budget</td><td data-label="The check">step 3, <code>cut</code></td><td data-label="Pass looks like"><code>1.0 s</code>, <code>refusals []</code>, <code>tool_timeouts ['retrieve']</code>, and <code>WARNING retrieve took 1.00s (budget 1s)</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A looping turn stops, and the next one answers</td><td data-label="The check">step 4, the looping model</td><td data-label="Pass looks like"><code>stopped_by model_calls</code>, then <code>stopped_by None</code>, and <code>0 left open</code></td></tr>
+<tr><td>7</td><td data-label="Claim">Every agent brain keeps the limits</td><td data-label="The check">step 4, <code>make limits-check</code></td><td data-label="Pass looks like"><code>Ran %%N_TESTS%% tests</code>, <code>OK</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Your chat publishes its limits</td><td data-label="The check">step 4, <code>make limits</code></td><td data-label="Pass looks like"><code>%%MAX_CALLS%%</code> calls, <code>Rs %%BUDGET_INR%%</code>, <code>%%DEADLINE_S%% s</code>, <code>retrieve %%RETRIEVE_S%% s</code></td></tr>
+<tr><td>9</td><td data-label="Claim">A capped turn on your lane answers 200</td><td data-label="The check">step 4, the drill</td><td data-label="Pass looks like"><code>[PASS] brain langchain stopped  stopped_by=model_calls calls=1</code>, then <code>5 passed, 0 failed</code> twice</td></tr>
+<tr><td>10</td><td data-label="Claim">The roster refuses the outsider</td><td data-label="The check">step 5, the first line</td><td data-label="Pass looks like"><code>403</code> <code>not a member of any tenant</code></td></tr>
+<tr><td>11</td><td data-label="Claim">A token that names nobody is a 401</td><td data-label="The check">step 5, the second line</td><td data-label="Pass looks like"><code>401</code> <code>%%NO_EMAIL%%</code></td></tr>
+<tr><td>12</td><td data-label="Claim">A bad filter empties the pool</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>0 citations</code>, and <code>pool  0</code> on the row</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The chat service has two new revisions from the drill, and the last one runs with <code>CHAT_MAX_MODEL_CALLS</code> as it was before. Its log holds the drill's eight turns, three of them with <code>stopped_by model_calls</code> on their rows, and three requests from step 5: a 403, a 401 and one answered turn in session <code>lesson103</code>. rag-api has a row for each search: the drill's, the member's turn, and step 6's two retrievals, one of them an empty pool. Lesson 5.6 puts a door in front of every brain, for the questions the law hands to a person, and lesson 5.7 puts the same question through all four brains and compares their costs and traces.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 5 MCP and agents &middot; Lesson 5.5 Diagnose tool arguments, access failures and timeouts &middot; v5.0</p><p>Next: Lesson 5.6 Hand a question to the person the law names.</p></div>

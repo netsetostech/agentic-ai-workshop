@@ -1,0 +1,73 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.5</div>
+<h1>Distinguish agent state, conversation history and knowledge: <span>what one turn keeps, where each kind lives, and what forgets it</span></h1>
+<p>An agent seems to remember three kinds of thing, and they live in three different places. Agent state is what one turn builds: the question, the model's call for a tool, what the tool returned, the answer. Conversation history is that state, checkpointed after every step and read back on the next turn of the same thread. Knowledge is the tenant's corpus, which the agent never remembers: it looks it up, every time. You take one turn apart on the kit's own code. You start the chat service's checkpointer the way no deployment should, and read the line it logs when you do. Then you watch one conversation cross four brains and two sessions on your lane.</p>
+<div class="hero-chips"><div class="hero-chip">agent state</div><div class="hero-chip">thread id</div><div class="hero-chip">checkpointer</div><div class="hero-chip">CHECKPOINT_DSN=memory</div><div class="hero-chip">knowledge</div><div class="hero-chip">a quote in the history</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three kinds of memory</a></li>
+<li><a href="#s2">The words: state, checkpoint, checkpointer, thread, history, session, knowledge</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">One turn, taken apart</a></li>
+<li><a href="#s4">The memory checkpointer, and the line it logs</a></li>
+<li><a href="#s5">One conversation, four brains, two sessions</a></li>
+<li><a href="#s6">Which checkpointer your lane runs</a></li>
+<li><a href="#s7">Why memory is split this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn to tell the three apart by four questions: where it lives, what it is keyed by, how long it is kept, and who can read it. You will see why a tool result makes knowledge part of the history, and why the memory checkpointer is a valid setting that no deployment uses. Then you will prove it: one turn's messages and checkpoints, the warning line the chat service logs with <code>CHECKPOINT_DSN=memory</code>, a restart that forgets, and a conversation that follows the checkpointer's thread rather than the brain's name.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three kinds of memory</h3><p>One turn, one thread, one tenant.</p></div></div>
+
+<p><strong>State is one turn.</strong> When a question arrives, the brain builds a list of messages: the question, the model's request for a tool, the tool's result, the answer. That list is the agent's state, and in LangChain and LangGraph it is literally the graph's <code>messages</code>. After every step, the checkpointer writes a checkpoint of it, %%N_CK%% for a turn with one tool call. The system prompt is not in it. The brains send the prompt with every model call and never store it, so a changed prompt reaches old conversations too.</p>
+
+<p><strong>History is the thread.</strong> The checkpoints are kept under a thread id that the server builds from the verified identity: tenant, person, session. The next turn with the same three reads the latest checkpoint back, and the model sees the whole conversation so far. A new session is a new thread, and starts empty. What keeps the thread decides how long history lasts. On your lane it is <code>PostgresSaver</code> on Cloud SQL, shared by every instance. On a laptop it is a SQLite file. With <code>CHECKPOINT_DSN=memory</code> it is a dictionary inside one instance, and the service says so when it starts.</p>
+
+<p><strong>Knowledge is looked up.</strong> The tenant's documents live in rag-api's index, keyed by the tenant, and every conversation of every member reads the same corpus through <code>retrieve()</code>. The agent does not remember knowledge. But what <code>retrieve()</code> returned is a message in the state, so it is checkpointed like the rest. A copy of the knowledge sits in the history, as it was when it was fetched. When the corpus changes, the index changes and the copy does not.</p>
+
+<p><strong>Four brains, three stores.</strong> LangChain and LangGraph share the checkpointer and its thread, so either can continue the other's conversation. The ADK brain keeps its conversation in ADK's own session store, under the same thread id. On your lane that store is the instance's memory, because the image cannot open the database one; lesson 6.6 shows why. The direct brain keeps nothing: every turn stands alone.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127973;</div><div>
+<p><strong>A visit to a hospital's OPD.</strong> The doctor's notes during your consultation are the agent state: what you said, what the doctor looked up, what was decided, all on one sheet while you sit there. Your case paper is the conversation history. The hospital files it under your registration number, and the next doctor who opens it sees your last visit. Keep case papers only on one doctor's desk and they are gone when the shift ends, and the doctor in the next room never sees them. The formulary in the library is the knowledge. Every doctor looks things up there, for every patient. When the formulary is revised, old case papers still show the dose that was written then.</p></div></div>
+
+<h4>Where each thing lives</h4>
+<p>Choose something the agent seems to remember. The panel shows which kind it is, where it lives, what it is keyed by, how long it is kept, who reads it, and what <code>CHECKPOINT_DSN=memory</code> changes.</p>
+
+<div class="diagram pc" id="sm">
+<div class="dg-title">%%N_ITEMS%% things a DocuMind conversation holds - state, history, knowledge, or none of them</div>
+<div class="pc-box"><b class="h">The thing</b>
+<div class="pc-in"><label>What the agent seems to remember<select id="sm-f"></select></label></div>
+<span class="mk" id="sm-k"></span>
+<div class="fs-grid" id="sm-out" aria-live="polite"></div></div>
+<p class="dg-cap">Every value is read from the kit's <code>agent.py</code>, <code>brains.py</code> and the UI's <code>chat.py</code> at build time. The %%N_CK%% checkpoints a turn writes come from step 3's cell, run on the kit's <code>brains.py</code>.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows where things live, not what a model does with them. Whether a model searches again, or answers from a quote already in its history, is the model's choice. Step 3 shows only what the history holds.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: state, checkpoint, checkpointer, thread, history, session, knowledge</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Agent state</strong></td><td data-label="Meaning">The messages one turn builds, held by the graph while the turn runs.</td><td data-label="On your lane">the question, the tool call, the tool result, the answer</td></tr>
+<tr><td><strong>Checkpoint</strong></td><td data-label="Meaning">A snapshot of the state after one step.</td><td data-label="On your lane">%%N_CK%% for a turn with one tool call</td></tr>
+<tr><td><strong>Checkpointer</strong></td><td data-label="Meaning">What stores the checkpoints and reads the latest back.</td><td data-label="On your lane"><code>PostgresSaver</code> on Cloud SQL</td></tr>
+<tr><td><strong>Thread id</strong></td><td data-label="Meaning">The key a conversation's checkpoints are kept under, built by the server.</td><td data-label="On your lane"><code>tenant:person:session</code></td></tr>
+<tr><td><strong>Conversation history</strong></td><td data-label="Meaning">The checkpoints of one thread, read back on its next turn.</td><td data-label="On your lane">every earlier turn of the session, in LangChain and LangGraph</td></tr>
+<tr><td><strong>Session</strong></td><td data-label="Meaning">The name the caller gives a conversation, inside its own tenant and person.</td><td data-label="On your lane"><code>session_id</code> on <code>/v1/chat</code>; the UI makes one per browser session</td></tr>
+<tr><td><strong>ADK session</strong></td><td data-label="Meaning">The ADK brain's own history, kept by ADK's session service.</td><td data-label="On your lane">an instance's memory: the image cannot open ADK's database store</td></tr>
+<tr><td><strong>Knowledge</strong></td><td data-label="Meaning">The tenant's documents, looked up per question and never remembered.</td><td data-label="On your lane">rag-api's index for acme</td></tr>
+<tr><td><strong>CHECKPOINT_DSN</strong></td><td data-label="Meaning">The setting that picks the checkpointer, read once at start-up.</td><td data-label="On your lane">a Secret Manager secret holding a Postgres URL</td></tr>
+<tr><td><strong>memory</strong></td><td data-label="Meaning">The value that keeps conversations inside one instance, and logs a warning.</td><td data-label="On your lane">valid, and used by no deployment</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold. State is what one turn is building. History is what the checkpointer kept of earlier turns. Knowledge is what nobody keeps and everyone can look up.</p>

@@ -1,0 +1,70 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.7</div>
+<h1>Verify restart recovery and session isolation: <span>a conversation that outlives a redeploy, and a thread nobody else can read</span></h1>
+<p>Two properties make the chat service safe to put in front of people. A conversation must outlive the instance that held it, because Cloud Run replaces instances whenever the service scales to zero or you deploy. And a conversation must be readable by its own person alone, in their own tenant and session, whoever else knows its name. The kit builds both: the checkpointer lives outside the instance, and the server makes the thread id from the verified identity. A property you have not tried to break is only a claim. So you try to break both. You put the kit's own app in front of eight different callers. You redeploy your chat service between two turns. Then you ask, in the UI, for a word you never gave.</p>
+<div class="hero-chips"><div class="hero-chip">redeploy</div><div class="hero-chip">new revision</div><div class="hero-chip">tenant:person:session</div><div class="hero-chip">no tenant field</div><div class="hero-chip">TestClient</div><div class="hero-chip">you, in the UI</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Two properties, and how to watch them hold</a></li>
+<li><a href="#s2">The words: revision, instance, redeploy, durable, thread, isolation, bearer leg, assertion</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Isolation, on the kit's own app</a></li>
+<li><a href="#s4">A conversation across a redeploy</a></li>
+<li><a href="#s5">Another person finds nothing</a></li>
+<li><a href="#s6">The rows behind both</a></li>
+<li><a href="#s7">Why the properties hold, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn which part of the kit makes each property true, and how to test a property by trying to break it. Then you will prove both: eight callers against the kit's own app, a word that survives a redeploy of your chat service and a word the ADK brain forgets. You will also find nothing when you ask in the UI, and see the rows that show why.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Two properties, and how to watch them hold</h3><p>Durability is about the instance. Isolation is about the key.</p></div></div>
+
+<p><strong>Durability is about the instance.</strong> Cloud Run runs your service as instances of a revision. It adds instances when traffic grows and removes them when it falls. It stops the last one when nobody calls, since the chat service's minimum is zero, and it starts a new revision on every deploy. Anything an instance keeps in its own memory ends with it. The LangChain and LangGraph brains keep the conversation in <code>PostgresSaver</code>, outside every instance, so a new instance reads the thread where the old one left it. The ADK brain keeps its sessions in the instance's memory on this image, as lesson 6.6 found, and loses them.</p>
+
+<p><strong>Isolation is about the key.</strong> The request carries a question, a session name and a brain. It has no field for a tenant or a person, and a field it does not have is ignored if you send it. The person comes from the verified token or the forwarded assertion, and the tenant from the roster. The server joins tenant, person and session into the thread id. A colleague who knows your session name reaches a different thread, because their email is in it. So does a member of another tenant. A session name with a colon, which could split the id, is refused before it gets that far.</p>
+
+<p><strong>Verifying means trying to break it.</strong> The test is to create the conditions that would break a property and watch it hold. Replace the instances between two turns, ask as someone else, name another tenant, send a session name with a colon. Some callers cannot be made on your lane, so you run the kit's app under a test client for them. The restart cannot be faked, so you redeploy your lane.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128273;</div><div>
+<p><strong>A bank's lockers.</strong> Each customer's lockers are numbered in their own series, so two customers can both have a locker 113. The staff open the one registered to the person in front of them, checked against their ID card. A note on the form saying "I belong to the other branch" changes nothing, because the register says which branch you belong to. The lockers are in the vault, not behind a teller's counter, so a change of shift or a renovation leaves them where they were. One counter keeps its customers' things in a drawer instead, and they are gone when that counter closes.</p></div></div>
+
+<h4>Who finds the word</h4>
+<p>Alice gave a word in session <code>lesson113</code>. Choose who asks for it next, where the conversation is kept, what happens between the two turns, and which brain answers. The panel shows the status, the thread the question reaches, and what it finds.</p>
+
+<div class="diagram pc" id="ri">
+<div class="dg-title">The second turn of alice's conversation - the door, the thread id and the store</div>
+<div class="pc-box"><b class="h">The second turn</b>
+<div class="pc-in"><label>Who asks<select id="ri-req"></select></label><label>The store<select id="ri-store"></select></label><label>Between the turns<select id="ri-between"></select></label><label>The brain<select id="ri-brain"></select></label></div>
+<div class="fs-grid" id="ri-out" aria-live="polite"></div></div>
+<p class="dg-cap">The statuses and texts are the kit's own, from step 3's run of its chat app. The rule is checked against that run, and against the page's own copy of it for all %%N_CASES%% choices.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It follows the kit's rules, not a model's words. On your lane the model answers in its own way. What the panel predicts is whether the history it is sent contains the word.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: revision, instance, redeploy, durable, thread, isolation, bearer leg, assertion</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Revision</strong></td><td data-label="Meaning">A fixed version of a Cloud Run service: its image and settings.</td><td data-label="On your lane">a new one on every deploy or settings change</td></tr>
+<tr><td><strong>Instance</strong></td><td data-label="Meaning">A running container of a revision.</td><td data-label="On your lane">none to ten; the chat service scales to zero</td></tr>
+<tr><td><strong>Restart</strong></td><td data-label="Meaning">An instance stops, and a new one starts in its place.</td><td data-label="On your lane">after every quiet spell, since the minimum is zero</td></tr>
+<tr><td><strong>Redeploy</strong></td><td data-label="Meaning">A new revision takes the traffic, and every old instance is replaced.</td><td data-label="On your lane">step 4's settings change</td></tr>
+<tr><td><strong>Durable</strong></td><td data-label="Meaning">Kept outside the instance, so it outlives it.</td><td data-label="On your lane">LangChain and LangGraph threads, yes; ADK sessions, no</td></tr>
+<tr><td><strong>Thread id</strong></td><td data-label="Meaning">The key of a conversation, built by the server.</td><td data-label="On your lane"><code>tenant:person:session</code></td></tr>
+<tr><td><strong>Isolation</strong></td><td data-label="Meaning">Only the thread's own tenant, person and session reach it.</td><td data-label="On your lane">a colleague or another tenant reaches a different thread</td></tr>
+<tr><td><strong>Bearer leg</strong></td><td data-label="Meaning">A caller with an ID token and no person behind it.</td><td data-label="On your lane"><code>documind-ui-sa</code> from your shell: one person to the service</td></tr>
+<tr><td><strong>Assertion</strong></td><td data-label="Meaning">IAP's signed statement of who the person is, forwarded by the UI.</td><td data-label="On your lane">you, in the UI</td></tr>
+<tr><td><strong>TestClient</strong></td><td data-label="Meaning">Runs a FastAPI app in-process, with its start-up and its routes.</td><td data-label="On your lane">the kit's <code>agent.py</code>, in step 3</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: durability decides whether the thread is still there, and isolation decides whose thread a question reaches. A turn needs both to find its own history.</p>

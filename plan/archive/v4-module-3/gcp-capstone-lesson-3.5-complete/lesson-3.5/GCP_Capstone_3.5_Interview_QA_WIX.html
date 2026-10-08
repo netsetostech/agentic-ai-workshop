@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>3.5 Interview Q&A &mdash; Ingest, re-issue, undo, poison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner"><div class="hero-crumb">Module 3 &middot; Ingest &middot; Interview Q&amp;A 3.5</div><h1>Interview Q&amp;A: <span>Ingest, re-issue, undo, poison</span></h1><p>Ten questions an interviewer asks someone who claims to have operated a document pipeline in production, answered the way a senior engineer answers: the mechanism, the failure it prevents, the number, and what you would say if pushed.</p></div></div>
+
+<div class="content">
+
+<p>Interviewers probing this topic are not testing whether you know what a Pub/Sub dead-letter topic is. They are testing whether you have <em>run</em> a lifecycle and read its lines: what you look at when a re-issue prints the wrong counts, what a 400 buys you that a 500 does not, why a job that repairs storage must never repair a person's decision, and what an operation costs before you run it. The best answers name a log line, a number and the file the number comes from. DocuMind's numbers are used below because they are real; substitute your own system's when you have them.</p>
+
+<span class="kicker">Conceptual &middot; Q1</span>
+<h3>What does "an update costs what changed" mean operationally, and what line proves it?</h3>
+<p>It means the pipeline identifies content at three grains and only pays at the finest one. A source is an object path; a version is the sha256 of the bytes; a chunk is the sha256 of its whitespace-collapsed text plus a locator that survives an edit above it. When a document is re-issued under the same name, the worker matches every new chunk against the current rows of that source by <code>chunk_hash</code> and by the embedding stamp (model, version, task type), copies the vector on a hit and embeds only the misses. The proof is one log line: <code>ingest_ok</code> with <code>reused</code>, <code>embedded</code> and <code>retired</code>. For a 283-chunk handbook with one clause changed, DocuMind's line reads <code>reused=281 embedded=2 retired=283</code> - the preamble and the changed clause were embedded, 281 vectors were copied, and the old version's 283 rows were flagged.</p>
+<p>If pushed on why the number matters when two embeddings cost less than a paisa: because the same rule is what makes a chunker choice a business decision. Fixed windows over the whole document reused none of 92 windows after one inserted line; chunking by section reused 281 of 283. And because a Terraform variable, <code>EMBEDDING_VERSION</code>, is stamped on every row, an embedding-model upgrade reuses nothing - visibly and on purpose.</p>
+
+<span class="kicker">Conceptual &middot; Q2</span>
+<h3>A worker behind a push subscription can answer 200, 400 or 500. What does each tell Pub/Sub, and how do you choose?</h3>
+<p>A 200 acknowledges: the message is done and will never be delivered again. A non-2xx nacks: Pub/Sub redelivers with backoff until the subscription's <code>max_delivery_attempts</code> is exhausted, then forwards the message to the dead-letter topic. The choice is about whether a retry can change the outcome. A message the worker can never parse - a zero-byte object, a record with no tenant prefix - fails identically every time, so DocuMind answers 400, logs <code>ingest_poison</code> with the validation error, and lets the retry ceiling carry it to the DLQ where a person reads it. A transient failure - Document AI unavailable, a Firestore timeout - answers 500 after releasing the claim, so the retry can take the claim and succeed. And a duplicate, a stale generation, a queued document or a withdrawn source answers 200, because those are successes: retrying them would achieve nothing and would hide the fact in a retry loop.</p>
+<p>The number to know is the ceiling and why it is what it is. DocuMind's subscription allows twelve attempts with backoff from 10 s to 600 s, not five, because a corpus upload lands thirty objects at once, the worker takes one request per instance, and Cloud Run's cold-start refusals count as attempts; five attempts sent a healthy document to the DLQ on the first live load. The consequence you must be able to state: a poisoned message takes about an hour to appear in <code>make dlq</code>.</p>
+
+<span class="kicker">Conceptual &middot; Q3</span>
+<h3>Why is a document withdrawn by a person a different state from a document deleted from the bucket, and why does the nightly job treat them differently?</h3>
+<p>Because one is storage absence and the other is a decision, and a job may repair the first but never the second. When an object leaves the bucket nothing fires - deletions have no trigger - so the nightly reconcile is the only thing that notices; it retires the rows (a flag with a 30-day expiry, never a delete) and writes <code>retired</code> on the ledger row. If the object comes back, the walk plans a re-ingest and the worker's own undo path reactivates the rows: the system healed itself, which is right, because the object's absence was the whole reason. A person running <code>make retire</code> leaves the object in place on purpose. If that row also said <code>retired</code>, the next night's walk would read "retired but back in the bucket" and resurrect what the person took down - which is exactly what DocuMind's first planner did on 12 September 2026. So the row says <code>withdrawn</code>, the plan reports <em>withdrawn, object kept</em> and does nothing, the same bytes uploaded again are acked as <code>ingest_withdrawn</code>, the undo refuses (<code>reactivate_withdrawn</code>), and only <code>make restore</code> clears it. If pushed: this is the same principle as the DPDP Act's distinction between data you lost and data you were told to stop using - the second must not come back because a backup was restored.</p>
+
+<span class="kicker">Practical &middot; Q4</span>
+<h3>A re-issue you expected to print reused=281 embedded=2 printed reused=0 embedded=283. Walk me through what you check.</h3>
+<p>In order of likelihood. First, the object name: the carry-over reads the current rows <em>of this source</em>, so a file uploaded as <code>hr_policy_2026_v2.md</code> instead of under the old name is a new source with nothing to reuse - <code>make reindex NAME=</code> exists for exactly this. Second, the embedding stamp: <code>held_vectors</code> rejects a row whose <code>embedding_model</code>, <code>embedding_version</code> or <code>embedding_task_type</code> differs from the worker's, so a worker redeployed with a new <code>EMBEDDING_VERSION</code>, or rows written before the <code>RETRIEVAL_DOCUMENT</code> stamp existed, reuse nothing by design; <code>make sources</code> shows the stamp per row. Third, the chunker: if the document lost its <code>## </code> headings, it fell from section chunking to fixed windows, every window moved, and every hash changed - <code>chunks</code> on the line would also have changed from 283 to about 92. Fourth, the text itself: a mirror re-fetched with a different provenance header, or a PDF re-parsed by a different Document AI processor after a <code>RESIDENCY</code> change, produces different chunk texts. The check that settles it in a minute is offline and free: chunk both versions with <code>shared/documind_corpus.chunk_document</code> and count the shared hashes, which is what the module's practice lab does before spending a rupee.</p>
+
+<span class="kicker">Practical &middot; Q5</span>
+<h3>Ten minutes after a poison upload the DLQ is empty. What do you check, and when do you stop worrying?</h3>
+<p>First the worker's line: <code>gcloud logging read</code> for <code>ingest_poison</code> with the error text - if it is there, the worker did its part and the question is only Pub/Sub's timing. Then the subscription: <code>gcloud pubsub subscriptions describe documind-ingest-push</code> must show a dead-letter policy naming the DLQ topic and the attempt ceiling, and the project's Pub/Sub service agent must hold <code>pubsub.publisher</code> on the DLQ topic and <code>pubsub.subscriber</code> on the push subscription - two grants that fail silently when missing, both declared in <code>eventarc.tf</code>. Then the arithmetic: twelve attempts with exponential backoff from 10 s capped at 600 s is roughly 10 + 20 + 40 + 80 + 160 + 320 + five times 600 seconds, about an hour, so at ten minutes the message is on its fourth or fifth delivery and nothing is wrong. I stop worrying when the line is there and the policy is there; I start again if the row has not appeared ninety minutes after the line. And I read the row with a pull that does not ack, so the next person sees it too, then drain with <code>--auto-ack</code> once it is understood. The stale comment I would fix while I am there is the Makefile's <em>make dlq in a few minutes</em>, written when the ceiling was five.</p>
+
+<span class="kicker">Practical &middot; Q6</span>
+<h3>The nightly reconcile reports drift 1 every night, and the alert fired after the second night. How do you find the object?</h3>
+<p>The job prints one line per action before <code>reconcile_done</code>, so I read its log under <code>resource.type="cloud_run_job"</code> for <code>documind-reconcile</code> and look for the action lines: <code>{"reconcile": "reingest", "name": ..., "why": "not in the ledger"}</code> or <code>"retire"</code> or <code>"backfill"</code>. A <code>reingest</code> that repeats nightly for the same name is the signature of an object the worker cannot index: the walk rewrites it onto itself, the worker refuses or fails it, and tomorrow it is still not in the ledger. The commonest cause on DocuMind is a zero-byte object left behind by <code>make poison</code>, which the worker answers 400 to every night and which fills the DLQ each time; the fix is to delete the object, because nothing on the lane deletes and the walk cannot repair a file that can never be parsed. The other cause is a document that throws - <code>ingest_failed</code> in the worker's log with the error, and <code>documents/{doc_key}.error</code> carrying the same text; that is fixed by fixing the cause and re-uploading, since the next delivery may retake a <code>failed</code> claim. If pushed on why the policy waits two nights: one night's drift is a lost event the walk just repaired; drift that survives a run is a lane nobody is reconciling.</p>
+
+<span class="kicker">Practical &middot; Q7</span>
+<h3>You must re-issue a 400-page contract. What happens on the push path, and how do you follow it to the end?</h3>
+<p>The push handler counts the PDF's pages off its page tree with pypdf before any OCR is paid for; over <code>MAX_INLINE_PAGES</code> (250) it writes <code>ingest_batch/{doc_key}</code> with the object, generation and type, sets the claim to <code>queued</code>, logs <code>ingest_queued_batch</code> with a <code>consumer</code> field, starts the batch job if the worker knows its name, and acks. The consumer is a Cloud Run job on the same image with a 7,200 s timeout that takes each queued claim in a transaction, fetches the bytes by generation and runs the same <code>index_document()</code> with <code>lane=batch</code>; an hourly schedule backstops the start. To follow it: <code>make queued</code> lists the queue; the <code>ingest_ok</code> line comes from the <em>job's</em> log, not the service's, so <code>make reindex</code> - which polls the service's log - reports <em>no ingest line in 5 min</em> and exits 1 while the document is being indexed correctly; read <code>resource.labels.job_name="documind-ingest-batch"</code> for <code>batch_run</code> and the line with <code>lane=batch</code>. Two honest details if pushed: the same bytes as an indexed version never reach the page count at all (they lose the claim and are acked as a duplicate), and the ceiling is a constant in <code>main.py</code>, so changing it is an image build and a deploy, not an environment flag.</p>
+
+<span class="kicker">System design &middot; Q8</span>
+<h3>Design the undo window for a customer who wants ninety-day reversibility and DPDP erasure on request. Where do the two pull against each other?</h3>
+<p>Reversibility is a retention number and a state machine. The number is one Terraform variable, <code>retention_days</code>, read by the worker (which stamps <code>expire_at</code> on every retired row), by the TTL policy on <code>chunks.expire_at</code> (the only deleter on the lane), by <code>reactivate()</code> (which refuses an undo older than the window) and by the reconcile; setting it to 90 changes all four at once, and the audit bucket's own five-year retention lock is separate. The undo is verified: the rows still on disk are counted against the claim's chunk count and the retire stamp against the window, so a partial undo is refused and the bytes are ingested fresh rather than leaving a source with no current version. Erasure pulls the other way: "retire, never delete" keeps a withdrawn document's text on disk for the whole window, and a data-principal's request under the DPDP Act may not wait ninety days. The design answer is to keep the two on different fields: <code>make retire</code> for a business withdrawal (the tombstone, the window, the free undo), and for a legal erasure a documented path that sets <code>expire_at</code> to now on the withdrawn rows so the same policy removes them within a day - <code>make purge APPLY=1</code> is the manual twin - plus the managed-store mirror's delete (which the policy never refuses, because it is the direction the policy wants) and an audit event recording who asked. What I would not do is add a delete call to the worker: the whole guarantee rests on a single declared deleter.</p>
+
+<span class="kicker">System design &middot; Q9</span>
+<h3>A Mumbai customer will load 5,000 documents a night with residency in India. Size the lane and name what changes from the course's deployment.</h3>
+<p>Start from what the lane already does under load: a push subscription with an OIDC token, a worker at concurrency 1 scaling to 30, a 600 s request ceiling matching the ack deadline, twelve delivery attempts because cold-start refusals count, a DLQ, and a batch job for anything over 250 pages. Residency changes two things: <code>RESIDENCY=india</code> selects the Enterprise OCR processor in <code>asia-south1</code> (the Layout Parser runs only in <code>us</code>), and the tenant's <code>data_region</code> is set to <code>in</code> so the managed mirror never copies text out (<code>mirror_policy_skipped</code>); the Firestore rows, the uploads bucket and the audit bucket are already in the India region. The bill is per page: OCR at $1.50 per 1,000 pages, so 5,000 documents at 40 pages is 200,000 pages, $300, about Rs 25,500 a night, against embeddings in the low hundreds of rupees - the parser is the cost line, so I would keep the pypdf page count before OCR and the batch hand-off exactly as they are. Throughput: at roughly a second a page and one document per instance, 30 instances clear a 40-page document every 40 s, about 2,700 documents an hour; a 5,000-document night fits in two hours inline, and the remainder queues rather than fails. What I would change: raise <code>--max-instances</code> against the Document AI quota rather than against Cloud Run, keep the 12-attempt ceiling, and schedule the reconcile after the load window, not before it, so the night's drift measures the load. What I would not change is the tenant prefix as the isolation key.</p>
+
+<span class="kicker">Trade-off &middot; Q10</span>
+<h3>Carry-over by chunk hash means an embedding-model upgrade reuses nothing. Is the stamp worth it, and how would you ship the upgrade?</h3>
+<p>It is worth it, because the alternative is silent corruption. A vector made by <code>text-embedding-005</code> with the <code>RETRIEVAL_DOCUMENT</code> task is not comparable to one made by a different model or task, and DocuMind learned this the hard way: rows embedded without a task type defaulted to the query task, retrieval quietly degraded while every count looked healthy, and the repair (<code>reconcile.py --backfill-vectors</code>) had to find them by the missing stamp. So the stamp - model, version, task type, 768 dimensions - is checked on every reuse, and an upgrade that flips <code>EMBEDDING_VERSION</code> reuses zero vectors by design; the cost of that honesty is one full re-embed, which for DocuMind's 2,757 chunks is about Rs 7, and even for a corpus a thousand times larger is a few thousand rupees against Document AI's pages, which an embedding upgrade never has to pay again because the text is already parsed. How to ship it: not in place. Embed the new version into a second index behind a candidate revision, run the scoped live gate and the ablation against the old one, promote by name, and let the old rows retire through the same 30-day window as any other version - the re-embed target the kit's own roadmap (<code>INDEXING.md</code>, section 8) lists and has not built yet. If pushed on the trade-off in one line: pay a known rupee amount once, or pay in answers you cannot see going wrong.</p>
+
+<div class="box box-teal"><div class="box-title">How to prepare</div>
+<p>Run lesson 3.5's eight drills on your own lane once, and keep the log lines - an answer with <code>reused=281 embedded=2 retired=283</code> in it is worth ten with "it reuses embeddings".<br>Know the five numbers cold: 250 pages, 12 attempts, 30 days, 400 writes a batch, 768 dimensions - and the file each one lives in.<br>Have one story of a thing that went wrong (the resurrected withdrawal, the five-attempt DLQ, the missing task type) and what line found it.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Ingest &middot; Interview Q&amp;A 3.5 Ingest, re-issue, undo, poison &middot; v4.0</p><p>Next: Module 4 Retrieval - four places to search, and who chooses</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+</body>
+</html>

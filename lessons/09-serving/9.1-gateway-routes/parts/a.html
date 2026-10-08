@@ -1,0 +1,94 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 9 &middot; Serving &middot; Lesson 9.1</div>
+<h1>Trace and authorize gateway routes: <span>one door, a hook that re-routes, a token per backend, a cost per answer</span></h1>
+<p>The gateway is one door in front of every model DocuMind can use: Gemini on the global endpoint, and the self-hosted models the next lessons deploy. It is a Cloud Run service behind IAM, and the caller's ID token is its only key. Every request passes a hook that decides whether its text may leave. Restricted text goes to the self-hosted model, with no fallback to Gemini, and confidential text is masked. Every completion carries a cost header, which the API writes on its usage row.</p>
+<p>In this lesson you trace the hook's decisions offline, with the gateway image's own Presidio, and see which texts it re-routes and which it lets through. You see how the gateway calls a self-hosted backend with a token of its own. Then you deploy the gateway, run its smoke test, and send it three requests: one for its cost header, one PAN it re-routes, and the smoke test's PAN, which it does not.</p>
+<div class="hero-chips"><div class="hero-chip">make deploy-gateway</div><div class="hero-chip">--no-allow-unauthenticated</div><div class="hero-chip">config.yaml</div><div class="hero-chip">documind-sensitive</div><div class="hero-chip">classify_tier</div><div class="hero-chip">Presidio</div><div class="hero-chip">pre_call hook</div><div class="hero-chip">token_proxy.py</div><div class="hero-chip">x-litellm-response-cost</div><div class="hero-chip">ROUTER_ENFORCE</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">One door for every model</a></li>
+<li><a href="#s2">The words: the gateway, the door, a route, a fallback, the sensitive route, the hook, the tiers, Presidio, the token proxy, the cost header</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The hook's decisions, traced</a></li>
+<li><a href="#s4">The token the proxy sends</a></li>
+<li><a href="#s5">The gateway, deployed and smoke-tested</a></li>
+<li><a href="#s6">A PAN re-routed, and the cost header</a></li>
+<li><a href="#s7">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how the gateway decides who may call it, which model answers a request, and what that answer costs. You will learn how its classifier and hook decide whether text may leave, and where they fall short with the image's own Presidio. Then you will prove it on your lane: a PAN re-routed, and the cost header on a completion.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>One door for every model</h3><p>IAM at the door, routes behind it, a hook in between, a token per backend, a price on every answer.</p></div></div>
+
+<p><strong>The door.</strong> The gateway is LiteLLM (<code>services/litellm</code>), a Cloud Run service like every other on the lane. <code>make deploy-gateway</code> deploys it with <code>--no-allow-unauthenticated</code>, and lets two accounts invoke it: the API's and the UI's. The caller's Google ID token is the key. There is no master key, because a master key would make every caller's ID token an invalid virtual key (<code>config.yaml</code>'s own words). The API reaches models through the gateway only when its <code>MODEL_BACKEND</code> is <code>gateway</code>; on your lane it is still <code>vertex</code>.</p>
+
+<p><strong>The routes.</strong> <code>config.yaml</code> names the model groups:</p>
+<ul>
+<li><strong>Managed:</strong> <code>documind-general</code>, which is <code>gemini-3.6-flash</code> on the global endpoint, and <code>documind-reasoning</code>, which is <code>gemini-3.1-pro-preview</code>.</li>
+<li><strong>Self-hosted:</strong> <code>documind-slm</code> and <code>documind-sensitive</code>, the small model on a Cloud Run GPU, which lesson 9.2 deploys.</li>
+<li><strong>Optional:</strong> <code>documind-inference</code> (vLLM) and <code>documind-gke</code>, which lesson 9.3 inspects.</li>
+</ul>
+<p>When a self-hosted backend is cold, scaled to zero or not deployed, the router hands the request down a chain of fallbacks that ends at Gemini. <code>documind-sensitive</code> has no fallback. Its point is that the text does not leave: a cold GPU means a slow answer or an error, never Gemini.</p>
+
+<p><strong>The hook.</strong> Before LiteLLM sends a request anywhere, a pre-call hook (<code>documind_router.py</code>) classifies all of its text, the question and any retrieved context, with <code>documind_classifier.py</code>. There are three tiers:</p>
+<ul>
+<li><strong>RESTRICTED</strong> (a PAN, an Aadhaar number, an SSN, a card number): the request goes to <code>documind-sensitive</code>.</li>
+<li><strong>CONFIDENTIAL</strong> (an email address or a phone number): Presidio masks every entity it finds, and the request goes to <code>documind-general</code>.</li>
+<li><strong>PUBLIC:</strong> the request keeps the model it asked for.</li>
+</ul>
+<p>RESTRICTED takes two layers: a pattern must match, and then Presidio, a PII detector, must confirm it with any entity it scores at 0.7 or more. <code>ROUTER_ENFORCE=0</code> is shadow mode, which classifies and logs but moves nothing.</p>
+
+<p><strong>The token proxy.</strong> LiteLLM reads a backend's key once, at startup, and a Cloud Run ID token lasts an hour. So the self-hosted routes point at a small proxy inside the gateway's container. It drops the caller's <code>Authorization</code> header and forwards each request with an ID token of its own for the backend's URL. That token is minted as the gateway's account, cached per backend, and replaced five minutes before the hour.</p>
+
+<p><strong>The cost header.</strong> Every completion carries <code>x-litellm-response-cost</code>: the answer's tokens at the per-token rates <code>config.yaml</code> gives the route that answered, a fallback included. When the API goes through the gateway, it writes that figure on its usage row.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128230;</div><div>
+<p><strong>A company's dispatch counter in Nariman Point.</strong> Every outgoing packet passes one counter, and you show your staff card to reach it; nobody holds a master pass. The clerk reads each label before choosing the courier. A label with an Aadhaar or PAN on it goes by the company's own van, never an outside courier, even when the van is late. A letter with an email address gets its personal details blacked out, then goes by the national courier. Everything else goes by the courier you asked for, and if a private courier is not running today, the national one takes it.</p>
+<p>The van waits in another building, and the clerk carries the company's own pass there, renewed every hour; your card never leaves the counter. Every dispatch slip shows the charge. The catch is the clerk's rulebook: it knows American ID formats and not Indian ones, so a label with only a PAN on it goes out by the outside courier. And the black marker covers dates and figures too.</p>
+<p>The counter is the gateway and the staff card is the ID token. The clerk is the hook, and the rulebook is Presidio. The company's van is the sensitive route, the national courier is Gemini, the pass is the token proxy's token, and the slip is the cost header.</p></div></div>
+
+<h4>Where would this request go?</h4>
+<p>Pick a request's text, the model it asks for, the shadow-mode switch, and whether the self-hosted model is deployed. The first box shows how the classifier reads the text. The second shows where the hook sends it, the chain of fallbacks, and what answers.</p>
+
+<div class="diagram pc" id="gr">
+<div class="dg-title">The classifier, the hook, and config.yaml's routes</div>
+<div class="pc-in"><label>The request's text<select id="gr-text">%%TEXT_OPTIONS%%</select></label>
+<label>The model it asks for<select id="gr-model">%%MODEL_OPTIONS%%</select></label>
+<label>ROUTER_ENFORCE<select id="gr-enforce">%%ENFORCE_OPTIONS%%</select></label>
+<label>The self-hosted model<select id="gr-slm">%%SLM_OPTIONS%%</select></label></div>
+<div class="gr-cols">
+<div class="pc-box"><b class="h">The classifier</b><div class="gr-out" id="gr-class" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The route</b><div class="gr-out" id="gr-route" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The patterns, the Presidio scores and the tiers are the kit's classifier's, computed with the gateway image's pins (Presidio 2.2.364 and <code>en_core_web_lg</code>) when this page was built. The routing is the kit's hook and <code>config.yaml</code>'s fallback chains, ported and compared with the kit's own on all %%N_CHECKED%% combinations.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It offers five texts, each classified when the page was built, because Presidio does not run in a browser. Step 3 runs the classifier itself, on any text you give it.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: the gateway, the door, a route, a fallback, the sensitive route, the hook, the tiers, Presidio, the token proxy, the cost header</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>The gateway</strong></td><td data-label="Meaning">LiteLLM on Cloud Run: one door in front of every model.</td><td data-label="On your lane"><code>documind-gateway</code>, CPU only, scale to zero</td></tr>
+<tr><td><strong>The door</strong></td><td data-label="Meaning">Cloud Run IAM: a Google ID token for the gateway's URL, from an account allowed to invoke it. No master key.</td><td data-label="On your lane">the API's and the UI's accounts</td></tr>
+<tr><td><strong>A route</strong></td><td data-label="Meaning">A model group in <code>config.yaml</code>: a backend, and its price per token.</td><td data-label="On your lane">six: two managed, four self-hosted</td></tr>
+<tr><td><strong>A fallback</strong></td><td data-label="Meaning">Where the router sends a request when its route's backend does not answer.</td><td data-label="On your lane">every chain ends at <code>documind-general</code></td></tr>
+<tr><td><strong>The sensitive route</strong></td><td data-label="Meaning"><code>documind-sensitive</code>: the self-hosted model, with no fallback.</td><td data-label="On your lane">no backend until lesson 9.2</td></tr>
+<tr><td><strong>The hook</strong></td><td data-label="Meaning">The pre-call guardrail (<code>documind_router.py</code>): it classifies a request and may change its model or mask its text.</td><td data-label="On your lane"><code>ROUTER_ENFORCE=1</code></td></tr>
+<tr><td><strong>The tiers</strong></td><td data-label="Meaning">RESTRICTED goes to the sensitive route, CONFIDENTIAL is masked and sent to Gemini, PUBLIC goes where it asked.</td><td data-label="On your lane"><code>classify_tier()</code></td></tr>
+<tr><td><strong>Presidio</strong></td><td data-label="Meaning">Microsoft's PII detector, with a spaCy language model: the classifier's second layer, and the mask.</td><td data-label="On your lane">2.2.364, <code>en_core_web_lg</code>, %%N_RECOG%% recognizers</td></tr>
+<tr><td><strong>The token proxy</strong></td><td data-label="Meaning">A process in the gateway's container that calls a self-hosted backend with the gateway's own ID token.</td><td data-label="On your lane"><code>127.0.0.1:8090</code></td></tr>
+<tr><td><strong>The cost header</strong></td><td data-label="Meaning"><code>x-litellm-response-cost</code>: the answer's tokens at the rates of the route that answered.</td><td data-label="On your lane">on every completion</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the door decides who may call the gateway, and the hook decides where their text may go. The door is Cloud Run IAM, checked before LiteLLM sees the request. The hook runs inside LiteLLM, on the request's text.</p>

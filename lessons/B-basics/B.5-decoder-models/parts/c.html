@@ -1,0 +1,88 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The kit</span><h3>What the kit sends Gemini, and why no temperature</h3><p>The client, the model, the one generate_content call and its config; what Google's pages say about the knobs it leaves out; and how its thinking is priced.</p></div></div>
+
+<h4>Definition</h4>
+<p>You have not cloned the kit yet (that is lesson 0.2), so this step reads it here, verbatim. DocuMind's API writes every answer with one function, <code>_call()</code> in <code>services/rag-api/generator.py</code>: one <code>generate_content</code> on a client built for the <code>global</code> location, with the model from <code>config.py</code> (<code>%%MODEL%%</code> unless a deploy sets another) and a config of four settings: JSON as the reply's type, <code>ModelDraft</code> as its schema, <code>max_output_tokens</code> at %%CAP%%, and thinking level LOW. A tenant's context cache joins them when one is live. What is not there is the point of this step: no temperature, no top-p, no top-k, no seed. The prompt is the system rules, the packed clauses and the question, in one text part; a packed figure adds its image.</p>
+
+<h4>The code</h4>
+@@client@@
+@@config_model@@
+@@call@@
+@@schema@@
+@@system@@
+@@prompt_line@@
+<p>Read the comment in <code>_call()</code>. Its first half is the knobs: the model ignores all three, so passing one would only make the code look as if it controlled something. Its second half is the thinking: the kit asks for a level, not a budget of zero, because Gemini 3 thinking cannot be switched off. The streamed answer, further down the same file, asks for the same LOW.</p>
+
+<div class="box box-amber"><div class="box-title">What Google's documentation says (checked 7 October 2026)</div>
+<ul>
+<li><strong>%%MODEL%%, the kit's model.</strong> Its <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-6-flash" target="_blank" rel="noopener">model page</a> says it does not support custom values for temperature, top-k and top-p: a custom value is ignored, not refused. Frequency and presence penalties are stricter: a custom value there throws an error. The model's <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-6-flash" target="_blank" rel="noopener">developer's guide</a> says to control output determinism with the thinking level or a structured JSON schema instead.</li>
+<li><strong>The earlier Gemini 3 models.</strong> The Gemini API's <a href="https://ai.google.dev/gemini-api/docs/gemini-3" target="_blank" rel="noopener">Gemini 3 guide</a> strongly recommends keeping temperature at its default of 1.0, because the models' reasoning is optimised for that setting, and warns that setting it below 1.0 may cause looping or degraded performance, particularly on complex maths and reasoning.</li>
+<li><strong>Thinking.</strong> %%MODEL%% takes MINIMAL, LOW, MEDIUM or HIGH, and MEDIUM is its default. The Gemini 3 guide adds that MINIMAL does not guarantee that thinking is off, and that one request cannot carry both <code>thinking_level</code> and the older <code>thinking_budget</code>. The Gemini API's <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener">price list</a> labels its output price "including thinking tokens".</li>
+</ul>
+<p>So "Gemini 3 ignores temperature" is exact for the model the kit calls, and a simplification for the others, where Google advises against changing it rather than ignoring it.</p></div>
+
+<p><strong>Why would a lower temperature hurt?</strong> Google's guide gives its reason in one line: the reasoning is tuned for the default. Step 4 showed what a lower temperature does: it moves probability onto the likeliest token, and at 0 the loop always takes it. A loop that always takes the likeliest next token is known to fall into repeating itself on long outputs, and a model that writes many thought tokens before every answer runs its loop far longer than the answer you see. That fits the looping the guide warns about. For %%MODEL%% Google has gone one step further and stopped honouring the setting at all; its pages give no reason beyond naming the two levers to use instead. The kit uses both: thinking level LOW, and a schema that fixes the answer's shape.</p>
+
+<h4>Thinking, priced</h4>
+<p>Thought tokens are billed as output, and the kit counts them that way: <code>_usage()</code> adds <code>thoughts_token_count</code> to <code>candidates_token_count</code> for every attempt, and the price list in <code>shared/prices.py</code> charges output at USD %%USD_OUT%% per million tokens on <code>%%MODEL%%</code>, against USD %%USD_IN%% for input. At the kit's Rs %%USD_INR%% to the dollar, that is Rs %%INR_PER_K_OUT%% per 1,000 output tokens, thinking included, and Rs %%INR_PER_K_IN%% per 1,000 input tokens: a thought token costs %%RATIO%% times what a prompt token costs. The cap bounds it: the thinking and the answer share the same %%CAP%% output tokens, at most Rs %%INR_CAP%% a call. When a long think crowds the answer out and the reply is cut off, <code>generate()</code> asks once more with %%CAP3%%, at most Rs %%INR_CAP3%% more, and bills both attempts.</p>
+@@usage@@
+@@retry@@
+@@config_cap@@
+@@prices@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read every setting the kit sends Gemini, and the ones it leaves out on purpose. The two live cells that follow use exactly these: the same client on <code>global</code>, the same model, the same schema copied from <code>shared/documind_schemas.py</code>, the same thinking level and cap, the prompt <code>generate()</code> builds, and the prices from <code>shared/prices.py</code>. The build ran both cells against a stand-in client to check that the config they send is <code>_call()</code>'s, setting for setting; only Gemini's answers are missing until you run them.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Variance</span><h3>Gemini, five times: count the distinct answers</h3><p>The generator's own prompt for one golden question, sent five times with the kit's config; the distinct answers and the right figure counted, and the five calls priced.</p></div></div>
+
+<h4>Definition</h4>
+<p>This is the lesson's proof, on the real model. The prompt is the one <code>generate()</code> builds when retrieval hands it a single clause: the rules from step 6, the handbook's clause NP-03 as <code>[Source 1]</code>, and the question of golden row <code>lk-06</code>, whose check is that the answer states 60. The config is <code>_call()</code>'s, setting for setting. The cell asks five times, prints each answer, and counts two things: distinct answers (the exact text, with runs of spaces collapsed), and answers that state 60 by the boundary rule <code>run_eval.py</code> uses, where the figure must stand on its own, so "160" does not count (unlike <code>run_eval.py</code>, the cell does not read "sixty" as 60). The prompt is about %%EST_LK06%% tokens by the kit's own estimate (four characters a token); the cell prints what the five calls cost, and they cannot cost more than Rs %%CEIL_FIVE%% in output even if every call ran to the cap.</p>
+@@golden_lk06@@
+
+<div class="box box-amber"><div class="box-title">Before you run it</div>
+<p>This cell and the one in step 8 call Gemini on your own Google Cloud project, so they need lesson 0.1's project and the setup's second block (the sign-in and <code>PROJECT</code>). If you have not made the project yet, read the author's recorded output below, go on to lesson 0.1, and come back: the cells will wait.</p></div>
+%%CELL_FIVE%%
+%%OUT_FIVE%%
+
+<div class="wjh"><div class="wjh-title">How to read it</div>
+<p>Read the two counts together. More than one distinct answer with every answer stating 60 is variance in wording: the model drew different tokens around the same figure, as the toy did at temperature 1.0, and a reader loses nothing. An answer that drops the figure, or states another, is the variance that matters, and it is what the golden set's <code>must_contain</code> check exists to catch. The five calls were independent: nothing one run wrote could steer the next, and the schema held all five to the same shape (an answer, citations, a confidence and the answerable flag). Your counts may differ from the recorded ones. That difference is the subject of this lesson, and lesson 3.1 measures it properly, with more runs, on the kit's own generator.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Thinking</span><h3>Two thinking levels: thought tokens and rupees</h3><p>One golden question that needs two clauses, asked at the kit's level and at the deepest, with the thought tokens read off the usage and priced from the kit's list.</p></div></div>
+
+<h4>Definition</h4>
+<p>Golden row <code>jn-01</code> joins two clauses: probation's notice (PB-02) and leave on exit (LV-07), and its check is that the answer says 15 days and that leave cannot be encashed. The prompt is again <code>generate()</code>'s, with both clauses packed, about %%EST_JN01%% tokens by the kit's estimate. The cell sends it at <code>LOW</code>, the kit's level, and at <code>HIGH</code>, and gives both the %%CAP3%%-token room that <code>generate()</code> gives its one retry, so that a long think at HIGH is not cut off. For each level it prints the thought tokens, the answer tokens, the prompt tokens, the finish reason, the cost at the kit's prices and the answer. Two calls: at most Rs %%CEIL_THINK%% in output, even if both ran to the cap.</p>
+@@golden_jn01@@
+%%CELL_THINK%%
+%%OUT_THINK%%
+
+<div class="wjh"><div class="wjh-title">How to read it</div>
+<p>The thought tokens are the part of each bill you pay for and never read. They are charged at the output rate, the same as the answer, so a level that thinks more costs more even when the answer it leads to is the same length. Then compare the two answers against the row's check: if LOW already said 15 days and that leave cannot be encashed during probation, the extra thinking at HIGH bought nothing on this question, and the kit runs every answer at LOW. One call per level is one sample, and thought counts vary from run to run like everything else the loop writes; lesson 3.1 asks each level five times.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eleven checks, each one cell or excerpt above, each with what proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Softmax makes probabilities</td><td data-label="The check">the cell in step 3</td><td data-label="Pass looks like">total %%TOTAL%%; 60 at %%P60%%; greedy picks <code>'60'</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A seed fixes the draws</td><td data-label="The check">step 3's two seed 1 lines</td><td data-label="Pass looks like">the same ten picks, twice</td></tr>
+<tr><td>3</td><td data-label="Claim">Sampling follows the probabilities</td><td data-label="The check">step 3's 10,000 draws</td><td data-label="Pass looks like">every share within %%MAXDEV%% of its probability</td></tr>
+<tr><td>4</td><td data-label="Claim">Temperature sharpens and flattens</td><td data-label="The check">the table in step 4</td><td data-label="Pass looks like">60 at %%P60_T05%% at 0.5 and %%P60_T15%% at 1.5; seven candidates left at every temperature above 0</td></tr>
+<tr><td>5</td><td data-label="Claim">Top-k and top-p cut the tail</td><td data-label="The check">the table in step 4</td><td data-label="Pass looks like">2 left at top-k 2 and at top-p 0.90; 3 at top-p 0.95</td></tr>
+<tr><td>6</td><td data-label="Claim">Greedy repeats itself</td><td data-label="The check">the loop in step 5</td><td data-label="Pass looks like"><code>distinct 1 of 5</code> at T=0</td></tr>
+<tr><td>7</td><td data-label="Claim">Distinct answers rise with temperature</td><td data-label="The check">the loop in step 5</td><td data-label="Pass looks like">%%D_T10%%, %%D_T15%% and %%D_T20%% of 5 at 1.0, 1.5 and 2.0; another figure from 1.5 on</td></tr>
+<tr><td>8</td><td data-label="Claim">The cap cuts an answer off</td><td data-label="The check">the last line in step 5</td><td data-label="Pass looks like"><code>('60 days', 'MAX_TOKENS')</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The kit sends no sampling knobs</td><td data-label="The check"><code>_call()</code> in step 6</td><td data-label="Pass looks like">no temperature, top-p, top-k or seed; thinking level LOW; cap %%CAP%%</td></tr>
+<tr><td>10</td><td data-label="Claim">One prompt, five answers, counted</td><td data-label="The check">the cell in step 7</td><td data-label="Pass looks like">five <code>run</code> lines, how many are distinct, how many state 60, and the rupees</td></tr>
+<tr><td>11</td><td data-label="Claim">Thinking is billed as output</td><td data-label="The check">the cell in step 8</td><td data-label="Pass looks like">thought tokens at LOW and at HIGH, each line priced, and HIGH's difference in rupees</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your laptop</div>
+<p>Nothing that lasts. The setup's venv, <code>~/basics-venv</code>, holds numpy and google-genai, and the offline cells in steps 3 to 5 only printed. If you ran steps 7 and 8, your project made seven calls to <code>%%MODEL%%</code>, five and then two, billed at the rupee figures the cells printed, and each call was independent of the others: nothing carries from one call to the next, which is why five calls can disagree. Lesson 0.1 is next: the billing account, the budget alert and the project those paid cells need, if you have not made them yet.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Basics &middot; Lesson B.5 Generate with GPT-style models: decoding and run-to-run variance &middot; v5.0</p><p>Next: Lesson 0.1 Set up the Google Cloud billing account, budget and project.</p></div>

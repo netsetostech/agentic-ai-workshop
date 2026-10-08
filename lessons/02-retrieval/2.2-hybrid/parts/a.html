@@ -1,0 +1,80 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 2 &middot; Retrieval &middot; Lesson 2.2</div>
+<h1>Compare dense and hybrid retrieval: <span>two legs through one index, one fusion rule, and an ablation that measures instead of arguing</span></h1>
+<p>Lesson 2.1 reproduced the API's pool by hand: one vector, one index, the tenant restrict. This lesson adds the second leg. Every datapoint already carries a sparse vector (lesson 1.3); the index can search by it, fuse the two lists by rank rather than by score, and hand back one pool; a deployment setting turns that on; and a harness measures each choice on the golden set with no model in the loop. You will rank acme's own rows with two sparse rulers and see one find the right clause first while the other buries it, fetch the same question three ways from the index, fuse two of the lists yourself with the kit's function and match the server's order, run the ablation and read recall, MRR and p95 per arm, then turn hybrid on for a candidate revision that takes no traffic and compare its answers with the live dense ones.</p>
+<div class="hero-chips"><div class="hero-chip">Dense: meaning</div><div class="hero-chip">Sparse: spellings</div><div class="hero-chip">RRF, alpha 0.7, k 60</div><div class="hero-chip">HybridQuery, server-side</div><div class="hero-chip">make ablate</div><div class="hero-chip">RETRIEVAL_MODE, on a candidate</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a second leg adds, and how two lists become one</a></li>
+<li><a href="#s2">The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The lane runs dense, and two sparse rulers over its own rows</a></li>
+<li><a href="#s4">Three ways through the index: dense, sparse only, fused</a></li>
+<li><a href="#s5">RRF by hand: the kit's rule reproduces the server's order</a></li>
+<li><a href="#s6">The ablation: one knob per arm, no model in the loop</a></li>
+<li><a href="#s7">The knob: hybrid on a candidate that takes no traffic, compared, then removed</a></li>
+<li><a href="#s8">What hybrid costs, where it cannot go, and what the harness does not measure</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the sparse leg of hybrid retrieval is made of, why two ranked lists are merged by position with Reciprocal Rank Fusion rather than by score, and why a sparse leg is only as good as its weights. Then you will prove it on your lane: rank acme's rows with the index's ruler and the ablation's, ask the index dense, sparse-only and fused, reproduce the fused order with <code>rrf_fuse()</code>, run <code>make ablate</code>, and judge <code>RETRIEVAL_MODE=hybrid</code> on a candidate revision before it serves anyone.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a second leg adds, and how two lists become one</h3><p>Meaning and spellings are found by different rulers, fused by rank, and only as good as their weights.</p></div></div>
+
+<p><strong>Retrieval finds evidence two ways, and each is blind where the other sees.</strong> The dense leg turns the question and every chunk into 768 numbers from a model that has read a great deal of text, so "quit" lands near "resign" and a question about senior staff finds a clause about grade E3. It is weak exactly where a token means nothing outside this corpus: an invoice number, a clause code, a product name is just a rare string to it. The sparse leg counts the words themselves. "INV-2026-0412" matches "INV-2026-0412" and nothing else, and it will never know that "quit" and "resign" are the same request. Hybrid retrieval runs both legs and merges the two ranked lists into one pool.</p>
+
+<p><strong>The merge goes by rank, not by score.</strong> A dense distance and a sparse dot product live on different scales, so adding them would let one leg drown the other. Reciprocal Rank Fusion ignores the scores: each list gives an id 1 / (k + rank) points, the dense list's points are multiplied by alpha and the sparse list's by 1 - alpha, the points are summed and the ids sorted. With k at 60, being first rather than second is worth a little; being on a list rather than absent is worth a lot. The kit's <code>rrf_fuse()</code>, the ablation's <code>rrf()</code> and the index's <code>rrf_ranking_alpha</code> are three spellings of this one rule, and the API sends alpha 0.7.</p>
+
+<p><strong>A sparse leg is only as good as its weights.</strong> The index's sparse leg weights a word by how often it appears in the chunk, 1 for the first time and 0.5 for each repeat, and every word counts: "the" as much as "invoice". A long Act page with sixty occurrences of "the" and "of" therefore outscores the one invoice that carries the number you asked for. The ablation's sparse leg is BM25, which does two more things: it weights a word by how rare it is across the corpus, so "inv-2026-0412" counts and "the" barely does, and it discounts long chunks. On acme's corpus that is the difference between finding the invoice first and finding it around rank one thousand. This is the finding steps 3 and 4 confirm on your lane, and it is why the question "is hybrid better?" has to be answered as "which hybrid, and measured how".</p>
+
+<div class="analogy"><div class="analogy-icon">&#128218;</div><div>
+<p><strong>Two clerks and a chair.</strong> A records room with two clerks. The first has read every file and brings the pages that mean what you asked. The second works from a concordance and brings every page that carries your exact words, and if you let him count every "the", he brings the longest pages first. The chair never compares the clerks' confidence. She takes each clerk's ranked stack, gives a page 1 / (60 + position) points for where it sits in each stack, trusts the first clerk 70 to 30, and reads the totals. A page both clerks brought rises. A page only the second clerk brought, at 30 percent, cannot outscore anything in the first clerk's top twenty, and that arithmetic is in step 5.</p></div></div>
+
+<h4>The fusion bench: two sparse rulers and one rule, on acme's real questions</h4>
+<p>Pick a golden question. Leg A is what the index's sparse leg computes for it: the kit's encoder on the question and on every chunk of acme's corpus, scored by dot product, as the index scores a sparse vector. Leg B is the ablation's leg, BM25, over the same chunks. The anchor is the golden row's clause or document, and each leg says where it ranked it. The table underneath fuses two lists with the RRF rule at the alpha and k you set: list 2 is leg A, and list 1 is your dense order from step 4 once you paste it, with leg B standing in until then.</p>
+
+<div class="diagram fb" id="bench">
+<div class="dg-title">Fusion bench - the index's sparse leg, the ablation's, and Reciprocal Rank Fusion</div>
+<div class="fb-controls">
+<label class="fb-l">Golden question <select id="fb-q">%%BENCH_OPTIONS%%</select></label>
+<label class="fb-l">alpha, the dense leg's weight: <span id="fb-alpha-v">0.70</span> <input type="range" id="fb-alpha" min="0" max="1" step="0.05" value="0.7"></label>
+<label class="fb-l">k, the damping: <span id="fb-k-v">60</span> <input type="range" id="fb-k" min="1" max="100" step="1" value="60"></label>
+<label class="fb-l fb-wide">Your dense order from step 4, one line per chunk as the cell prints it (locator, then source)<textarea id="fb-dense" rows="4" placeholder="NP-03 hr_policy_2026.md&#10;LV-07 hr_policy_2026.md&#10;..."></textarea></label>
+</div>
+<p class="fb-rank" id="fb-meta" aria-live="polite"></p>
+<div class="fb-legs" id="fb-legs"></div>
+<div class="fb-fused" id="fb-fused" aria-live="polite"></div>
+<p class="dg-cap">Computed when this page was built by the kit's own code: <code>shared/sparse_encoder.py</code> for leg A, BM25Okapi with rank_bm25's constants (k1 1.5, b 0.75) for leg B, over the %%CHUNKS%% chunks the kit's chunker cuts from acme's %%DOCS%% markdown mirrors. Your lane's Act chunks came through Document AI and differ; the ranks in step 3 are yours. The fusion is the rule in <code>rrf_fuse()</code>, character for character, in JavaScript.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the bench is not</div>
+<p>It has no dense leg of its own, because that needs the model and your lane; step 4 gives you the list to paste. Until then, list 1 is leg B, which makes the RRF table a demonstration of the rule on two rankers that disagree, not of what the API fuses. Move alpha from 0.7 towards 0 on the invoice question and watch which ruler's first choice wins the fused top: that is the whole meaning of alpha.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</h3><p>Twelve words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Dense leg</strong></td><td data-label="Meaning"><code>find_neighbors()</code> with the question's 768-number vector under the query profile; the index compares by dot product with every datapoint's dense vector.</td><td data-label="On your lane">Step 4's first list; the API's whole pool while <code>RETRIEVAL_MODE</code> is dense.</td></tr>
+<tr><td><strong>Sparse leg, the index's</strong></td><td data-label="Meaning">The hashed word-count vector on every datapoint (lesson 1.3), scored by dot product with the question's. No rarity weight, no length discount.</td><td data-label="On your lane">Step 4's alpha-0 list; step 3's first ruler.</td></tr>
+<tr><td><strong>TF weight</strong></td><td data-label="Meaning">1 + 0.5 (n - 1) for a word seen n times in a text; every word counts, including "the".</td><td data-label="On your lane"><code>sparse_encode()</code>, run in step 3.</td></tr>
+<tr><td><strong>IDF</strong></td><td data-label="Meaning">The log of how rare a word is across the corpus. BM25 multiplies by it; the index's leg has nothing like it.</td><td data-label="On your lane">Why step 3's second ruler finds the invoice.</td></tr>
+<tr><td><strong>BM25</strong></td><td data-label="Meaning">The ablation's sparse leg: IDF times a saturating term count times a length discount (k1 1.5, b 0.75), built in-process from the rows' text.</td><td data-label="On your lane"><code>Lane.hybrid()</code> in step 6; <code>rank_bm25</code> from the setup box.</td></tr>
+<tr><td><strong>RRF</strong></td><td data-label="Meaning">score(id) = alpha / (k + rank in the dense list) + (1 - alpha) / (k + rank in the sparse list); an id absent from a list gets nothing from it; sort by score.</td><td data-label="On your lane"><code>rrf_fuse()</code> in hybrid.py, <code>rrf()</code> in ablate.py, <code>rrf_ranking_alpha</code> on the index.</td></tr>
+<tr><td><strong>alpha</strong></td><td data-label="Meaning">The dense leg's weight: 1 is dense only, 0 sparse only. The API sends 0.7; the ablation defaults to 0.7; <code>rrf_fuse()</code> defaults to 0.5.</td><td data-label="On your lane">Steps 4 and 5.</td></tr>
+<tr><td><strong>k</strong></td><td data-label="Meaning">60 in every fuser here. It flattens the difference between neighbouring ranks so that presence on a list matters more than position.</td><td data-label="On your lane">The bench's second slider.</td></tr>
+<tr><td><strong>Arm</strong></td><td data-label="Meaning">One retrieval recipe with one knob moved: dense 5 with no reranker; dense 20 then rerank to 5, which is the lane; dense 50 then rerank; hybrid 20 then rerank.</td><td data-label="On your lane"><code>make ablate</code>, one line per arm.</td></tr>
+<tr><td><strong>recall@k, MRR</strong></td><td data-label="Meaning">Recall: the share of a row's anchors found in the top k, an anchor being a clause code or a document name matched in a chunk's source and text. MRR: 1 over the rank of the first anchor hit, averaged.</td><td data-label="On your lane">The table's <code>recall@5</code> and <code>mrr</code> columns.</td></tr>
+<tr><td><strong>p95, ceiling</strong></td><td data-label="Meaning">p95: the latency under which 95 percent of an arm's rows finished. Ceiling: <code>recall@depth</code>, what the reranker could at most surface; if the 20 and 50 arms agree, depth is not the knob.</td><td data-label="On your lane">The first and last columns.</td></tr>
+<tr><td><strong>Candidate revision</strong></td><td data-label="Meaning">A revision of <code>documind-api</code> that takes no traffic and answers on a tag URL; where a switch is judged before it serves anyone.</td><td data-label="On your lane">Step 7, then removed.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words carry the lesson's finding: the index's sparse leg and BM25 are both "sparse", and they are not the same ruler. Keep them apart when someone says the ablation proved hybrid does nothing: it proved that about one of them.</p>
+

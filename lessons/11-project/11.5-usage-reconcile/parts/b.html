@@ -1,0 +1,90 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>ME</code> set, and <code>bq</code> (Cloud Shell has it).</p>
+<ul>
+<li><strong>The kit at this lesson's version.</strong> <code>grep -c 'alert_policy" "dlq_depth"' terraform/alerts.tf</code> prints <code>1</code>.</li>
+<li><strong>Terraform's state, for step 6's plan.</strong> Run it in the checkout where <code>make up</code> ran, with the flags you gave <code>make up</code>.</li>
+<li><strong>The drill</strong> puts one labelled message in the dead-letter queue, and then removes it.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The readers, as the kit writes them down</h3><p>Which services and events each one reads, over what window, and the one policy that reads the dead-letter queue.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell reads the four readers' files and prints each reader's filter:</p>
+<ul>
+<li><code>sink.tf</code>'s filter, with the two events it copies only on a condition;</li>
+<li><code>tenant_daily.sql</code>'s WHERE and GROUP BY;</li>
+<li><code>usage_rows.py</code>'s <code>gcloud</code> filter and its limits;</li>
+<li>the <code>documind/queries</code> metric in <code>alerts.tf</code>.</li>
+</ul>
+<p>Then it lists, for each event, the readers that read it, and the event the Desk's own view, <code>desk_daily.sql</code>, reads; the policies <code>alerts.tf</code> declares, and those the Desk keeps in <code>desk_alerts.tf</code>; and the one that reads <code>ingest-dlq-sub</code>. Nothing is called.</p>
+
+<h4>The code</h4>
+@@sink@@
+@@view@@
+@@tool@@
+
+<h4>Do it</h4>
+%%CELL_READERS%%
+%%OUT_READERS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong><code>query</code> and <code>stream</code> rows are read by all four readers.</strong> On a day with only those, the reports can agree exactly.</li>
+<li><strong><code>media</code> is read by the view and by <code>make usage</code>,</strong> but the sink never copies it. The view's WHERE names a row that never arrives.</li>
+<li><strong><code>chat</code> is copied by the sink</strong> and read by nothing after it.</li>
+<li><strong>The Desk's four events are copied too,</strong> and none of the other three readers reads them. A sensitive <code>desk_shadow</code> row and rag-api's <code>desk_gate</code> rows stay in Cloud Logging: each can sit beside a <code>chat</code> row of the same turn, which names the person. The Desk's own view, <code>desk_daily</code>, reads <code>desk</code> (lesson 10.4).</li>
+</ul>
+<p>Both rupee columns use 85 rupees to the dollar. The Desk's policies sit in their own file, the router's three only on a lane planned with <code>DESK_ROUTER_ALERTS=true</code> and the gate check's failed share only with <code>DESK_GATE_ALERTS=true</code>, so <code>alerts.tf</code>'s list is the one this lesson counts. The last line is this lesson's kit change: <code>alerts.tf</code> now declares a policy on <code>ingest-dlq-sub</code> (its excerpt is in step 6). Your lane gets it only when you apply it.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Rows</span><h3>Four questions, four rows</h3><p>Three for acme and one for zeta, answered by the live revision, then <code>make usage</code> over the last hour.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell asks four golden questions as <code>documind-ui-sa</code>:</p>
+<ul>
+<li>lk-01 and lk-06, for acme;</li>
+<li>rf-01, for acme, which the corpus cannot answer;</li>
+<li>iso-01, for zeta.</li>
+</ul>
+<p>Each answer writes one usage row. The cell prints what the answer itself carries: answered or refused, tokens in and out, and <code>cost_usd</code>. Then <code>make usage</code> groups the last hour's rows five ways (by tenant, model and backend, brain, surface, and retrieval store) and shows where the time went.</p>
+
+<h4>Do it</h4>
+%%CELL_ASK%%
+%%OUT_ASK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>cost_usd</code> is <code>None</code> on all four answers: a Vertex answer carries its tokens but not its price. The price is worked out when the row is written, by <code>usage_row()</code> from <code>cost.py</code>'s rates, and it exists only on the row.</p>
+<p><code>make usage</code> shows the price:</p>
+<ul>
+<li>acme's three answers, one of them the refusal. A refusal still costs tokens, so rf-01's row counts in the rupees and in acme's unanswerable rate of 0.33;</li>
+<li>zeta's one answer, served by <code>firestore</code>. zeta has no pin, so the lane's default store answered it.</li>
+</ul>
+<p>If you asked other questions in the last hour, they are in these tables too.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; Reconcile</span><h3>Reconcile the view with make usage</h3><p>The same Indian day, grouped the view's way by <code>make usage</code>'s own code, compared group by group.</p></div></div>
+
+<h4>Definition</h4>
+<p>The sink copies each row into BigQuery within a minute or two, and <code>tenant_daily</code> reads it from there. The cell:</p>
+<ol>
+<li>reads today's rows from Cloud Logging, from 00:00 IST, with <code>make usage</code>'s own filter;</li>
+<li>groups them with <code>usage_rows.group()</code> on the view's seven keys;</li>
+<li>asks BigQuery for <code>tenant_daily</code>'s rows for today, <code>CURRENT_DATE('Asia/Kolkata')</code>;</li>
+<li>compares each group: answers, refusals, tokens in and out, and rupees;</li>
+<li>prints, per tenant, the rupees each side adds up to, and any media rows, which only <code>make usage</code> counts.</li>
+</ol>
+<p>If <code>bq</code> says <code>tenant_daily</code> does not exist, run <code>make bq-views</code> once. It needs one answer on the lane first, and step 4 gave it four.</p>
+
+<h4>Do it</h4>
+%%CELL_RECON%%
+%%OUT_RECON%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Today has two groups, acme through the index and zeta through Firestore, and both are equal in every additive column. The rupees match to the paisa because both sides round the same sum the same way: the view with <code>ROUND(SUM(cost_usd) * 85, 2)</code>, the tool with <code>round(usd * 85, 2)</code>.</p>
+<p>That is the first proof: <code>tenant_daily</code>'s rupees equal <code>make usage</code>'s for the same day.</p>
+<p>The window is what made it exact. Two other runs could differ, and each difference would be a cause, not an error:</p>
+<ul>
+<li><code>make usage HOURS=24</code> may include yesterday evening's rows, which the view files under yesterday;</li>
+<li>a Media Studio image would appear in <code>make usage</code> and never in the view.</li>
+</ul></div>

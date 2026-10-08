@@ -1,0 +1,56 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why two paths, what each costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Firestore first, because it is already there.</strong> The graph sits beside the chunks, in a database billed per operation. There is nothing to provision, nothing billed by the hour, and the tenant's predicate is on every read.</li>
+<li><strong>Spanner for the shape of the data.</strong> The walk is one GQL statement in one snapshot, however many hops. Edges are interleaved in their source node, and <code>tenant_id</code> comes first in every key. So a tenant's subgraph is stored together, and deleting a tenant cascades to its edges: DPDP erasure as a property of the schema, not a batch job.</li>
+<li><strong>Seeding by meaning, for the words people use.</strong> A question rarely contains the handbook's own name for a thing. A vector per name, and one embedding call per question, close that gap.</li>
+<li><strong>A threshold, because nearest is not the same as near.</strong> The five nearest names always exist. 0.4 decides which are close enough, so a question about nothing in the graph seeds nothing and <code>auto</code> stays dense.</li>
+<li><strong>Exact distance, no vector index.</strong> <code>spanner.tf</code> gives the reason: <code>COSINE_DISTANCE</code> over a few thousand nodes is enough, and an approximate index needs tuning that a lab cannot judge.</li>
+<li><strong>The walk goes first; the reranker decides.</strong> The walk's chunks join the pool at score 1.0. A wrong seed spends pool places, and the reranker still orders the whole pool.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The seeders and the tests</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>A Firestore walk</td><td data-label="Costs">one read per node of the tenant to seed, then the hop's queries</td><td data-label="On your lane">%%N_NODES%% reads and a few more on the handbook's graph: free</td></tr>
+<tr><td>The Spanner build</td><td data-label="Costs">two embedding calls; the extractions are cached</td><td data-label="On your lane">under a paisa</td></tr>
+<tr><td>A Spanner walk</td><td data-label="Costs">one embedding call for the question; the distance scan runs inside the instance</td><td data-label="On your lane">under a paisa a question</td></tr>
+<tr><td>The Spanner instance</td><td data-label="Costs">provisioned, Enterprise edition, 100 processing units, billed by the hour from <code>make up</code>, whether or not anything reads it</td><td data-label="On your lane">price it for regional-asia-south1 on Google's Spanner pricing page; <code>make down</code> removes it. A free-trial instance (90 days, 10 GB, one per project, Spanner Graph included) is the Rs 0 route, created by hand</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">two revisions that take no traffic, and two flash answers</td><td data-label="On your lane">a rupee or two</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong><code>make candidate</code> cannot set the threshold.</strong> It writes <code>RETRIEVAL_GRAPH</code> and <code>GRAPH_BACKEND</code>, but no make target and no deploy script passes <code>GRAPH_SEED_DISTANCE</code>, <code>GRAPH_SEED_K</code>, <code>GRAPH_HOPS</code> or <code>GRAPH_CAP</code>. <code>graph.py</code>'s comment says the threshold is set from <code>--ask</code>'s numbers; today that takes a gcloud line, as in step 6.</li>
+<li><strong>On Spanner, a name in the question does not count by itself.</strong> The API seeds by distance only. <code>SpannerGraph.seed()</code>, which runs the containment query in SQL, is reached by nothing on the lane. A question that names a node exactly still seeds nothing if its embedding is farther than 0.4 from that name.</li>
+<li><strong>The usage row does not say which store walked.</strong> It carries <code>retrieval_graph</code> and <code>graph_chunks</code>, not <code>graph_backend</code>. Rows from a Spanner candidate and a Firestore revision look the same in BigQuery; only <code>/version</code>, one revision at a time, tells them apart.</li>
+<li><strong><code>SpannerGraph.load()</code> writes the whole graph in one commit.</strong> Spanner refuses more than 80,000 mutations in a commit, counted per column written: 7 for a node row and 6 for an edge row. The handbook's graph is %%MUTATIONS%%. A tenant's graph past about %%FIT%% nodes, with as many edges, needs batching that the kit does not do. <code>FirestoreGraph.load()</code> commits every 400 writes.</li>
+<li><strong>Firestore's seed reads every node, for every question.</strong> Its docstring says production would keep a name-token index. There is none, so the reads grow with the graph: %%N_NODES%% on the handbook's, thousands on a whole corpus.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Containment needs a stored name</td><td data-label="The check">step 3</td><td data-label="Pass looks like">the CFO question: <code>seeds by containment: none</code></td></tr>
+<tr><td>2</td><td data-label="Claim"><code>auto</code> needs a relational word</td><td data-label="The check">step 3</td><td data-label="Pass looks like">"What does the CFO approve?": <code>auto: vector</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The Spanner walk passes the kit's tests</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>Ran %%N_TESTS%% tests</code>, then <code>OK</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The Firestore walk</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>"seeds": []</code> without the word; <code>"CFO"</code> and FIN-02's chunk id with it</td></tr>
+<tr><td>5</td><td data-label="Claim">The graph in Spanner</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>"backend": "spanner"</code> and <code>"fresh": 0</code>; every node <code>with a 768-number vector</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Seeded by meaning</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>"seeded_by": "meaning"</code>, a name with <code>"seeded": true</code>, FIN-02's chunk id in <code>chunk_ids</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The walk in front of the pool</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>the walk put 0</code> from Firestore and more than 0 from Spanner; <code>the word CFO: not in the question, in the answer</code></td></tr>
+<tr><td>8</td><td data-label="Claim"><code>/version</code> reports the store</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>graph_backend=spanner</code> on the candidate; after the undo, 100 on the live revision</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>acme's graph now lives in Spanner as well: %%N_NODES%% nodes, each with a vector, and %%N_EDGES%% edges, in the instance that was already billing. The API's template is back to <code>RETRIEVAL_GRAPH</code> off and <code>GRAPH_BACKEND</code> firestore, the candidate tag is gone, and the live revision never changed. Lesson 7.3 turns from the graph to the managed stores: RAG Engine and Vertex AI Search as mirrors of the kit's index, and the data-region policy that decides which tenants they may serve.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 7 Graph and multimodal &middot; Lesson 7.2 Compare Firestore and Spanner graph paths &middot; v5.0</p><p>Next: Lesson 7.3 Configure and query managed retrieval mirrors.</p></div>

@@ -1,0 +1,100 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code> and <code>NUMBER</code> set by the setup above.</p>
+<ul>
+<li><strong>The checkout where <code>make up</code> ran.</strong> <code>make deploy-gateway</code> reads the gateway's database URL from Terraform's state; anywhere else it stops at <code>terraform output</code>. The database itself already exists, because Terraform declares it with the rest of the lane.</li>
+<li><strong>About 750 MB for <code>~/gw-venv</code>.</strong> Step 3 installs the gateway image's Presidio and its 400 MB spaCy model once. Cloud Shell's home directory has room.</li>
+<li><strong>No self-hosted model yet.</strong> Lesson 9.2 deploys it. Until then the sensitive route has no backend, which is how its missing fallback shows.</li>
+<li><strong>What the lesson changes.</strong> It deploys <code>documind-gateway</code>, which scales to zero, stores its image in Artifact Registry, and lets two accounts invoke it. It also creates <code>~/gw-venv</code> and asks Gemini a handful of short questions.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The hook's decisions, traced</h3><p>The classifier's own test cases and four requests, run with the gateway image's Presidio. Offline.</p></div></div>
+
+<h4>Definition</h4>
+<p>The first cell makes a venv with the Presidio pins from the gateway's <code>requirements.txt</code>, and the spaCy model its <code>Dockerfile</code> downloads. The second imports the gateway's own classifier and hook, with LiteLLM's base class stood in, and prints three things:</p>
+<ol>
+<li>the recognizers Presidio loads for English;</li>
+<li>the classifier's own test cases, a list in <code>documind_classifier.py</code> that nothing runs;</li>
+<li>the hook's decision on four requests for <code>documind-general</code>, and what the last one would send to Gemini.</li>
+</ol>
+
+<h4>The code</h4>
+@@classify@@
+@@hook@@
+
+<h4>Do it</h4>
+%%CELL_VENV%%
+%%OUT_VENV%%
+%%CELL_TRACE%%
+%%OUT_TRACE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Presidio loads %%N_RECOG%% recognizers, and none of them is Indian.</strong> There are American ones (SSN, ITIN, passport, driving licence, bank account) and none for a PAN or an Aadhaar number.</li>
+<li><strong>%%N_FAIL%% of the classifier's own five test cases fail.</strong> The Aadhaar number, the SSN and the PAN all come back PUBLIC. Their patterns match, but Presidio confirms nothing at 0.7, so the tier falls through to PUBLIC.</li>
+<li><strong>The smoke test's own request, a bare PAN, is PUBLIC.</strong> It goes where it asked: <code>documind-general</code>, which is Gemini.</li>
+<li><strong>The same PAN with a date is RESTRICTED.</strong> Presidio scored the date at 0.85, and the rule "any entity at 0.7" confirmed a pattern the date has nothing to do with. That request goes to <code>documind-sensitive</code>.</li>
+<li><strong>An email address in the context makes a request CONFIDENTIAL, and the mask removes the answer.</strong> Every entity Presidio finds is replaced, whatever its score: the 60 days, the grade E3 (read as a US driving licence) and the file name. Gemini is asked for the notice period with the notice period taken out.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The token the proxy sends</h3><p>gcp_id_token.py with the metadata server stood in, and the headers the proxy drops. Offline.</p></div></div>
+
+<h4>Definition</h4>
+<p>The token proxy replaces the caller's credentials with the gateway's own:</p>
+@@proxy@@
+<p>It gets that token from <code>get_id_token()</code>, which keeps one token per backend:</p>
+@@token@@
+<p>The cell stands in the metadata server with a counter, moves a clock, and asks for tokens four times. Then it prints the headers the proxy drops.</p>
+
+<h4>Do it</h4>
+%%CELL_KEYS%%
+%%OUT_KEYS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>One token per backend.</strong> It is minted on the first call, reused for 55 minutes, and minted again five minutes before the hour. The vLLM engine's URL gets its own token; its <code>/v1</code> suffix is stripped first.</li>
+<li><strong>The caller's token never reaches the backend.</strong> The proxy drops the <code>Authorization</code> header with the hop-by-hop ones, and adds a token minted as the gateway's account. The backend's own IAM then decides: each self-hosted service grants the gateway's account <code>run.invoker</code> when it is deployed.</li>
+</ul></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>The gateway, deployed and smoke-tested</h3><p>make deploy-gateway, then the kit's smoke test: the door, JSON, the cost header, the PAN and the fallback.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make deploy-gateway</code> builds the image from <code>services/litellm</code> and deploys it behind IAM:</p>
+@@door@@
+<p>The first build downloads the 400 MB spaCy model into the image, so it takes several minutes. <code>make smoke-gateway</code> then runs six checks as the UI's account.</p>
+
+<h4>Do it</h4>
+%%CELL_DEPLOY%%
+%%OUT_DEPLOY%%
+%%CELL_SMOKE%%
+%%OUT_SMOKE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The door works.</strong> With no token, Cloud Run answered 403 before LiteLLM saw anything. With the UI account's token, the gateway answered.</li>
+<li><strong><code>documind-general</code> answered in JSON,</strong> and the response carried the cost header.</li>
+<li><strong><code>documind-slm</code>'s backend is not deployed yet, so its fallback answered:</strong> Gemini.</li>
+<li><strong>The PAN check passed, but read what it printed:</strong> served by <code>gemini-3.6-flash</code>. The check has two branches, and both pass:</li>
+</ul>
+@@smokepan@@
+<p>Step 3 showed why the PAN went to Gemini.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>A PAN re-routed, and the cost header</h3><p>Three requests for documind-general: no personal data, the smoke test's bare PAN, and a PAN with a date.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell mints the UI account's token for the gateway, as the smoke test does, and reads <code>config.yaml</code>'s rates. Then it sends three requests, and prints for each the status, the model that answered, the tokens and the cost header. When the API goes through the gateway, it prices the answer from that header:</p>
+@@cost@@
+
+<h4>Do it</h4>
+%%CELL_ROUTE%%
+%%OUT_ROUTE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The cost header on a completion.</strong> <code>x-litellm-response-cost</code> was %%COST%% USD for %%TIN%% tokens in and %%TOUT%% out: <code>config.yaml</code>'s <code>documind-general</code> rates times the usage. On your lane the token counts are Gemini's own. That is the first proof.</li>
+<li><strong>The bare PAN was answered by Gemini:</strong> the hook did not re-route it (step 3).</li>
+<li><strong>The PAN with a date was re-routed.</strong> The hook sent it to <code>documind-sensitive</code>, whose backend is not deployed until lesson 9.2 and which has no fallback. So the gateway returned an error, not a Gemini answer. That is the second proof: a PAN re-routed. The stand-in's error is a 500; on your lane it is whatever LiteLLM returns for a backend that does not exist. After lesson 9.2, the same request is answered by the small model.</li>
+</ul></div>

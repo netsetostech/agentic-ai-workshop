@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 1.2 Parse documents and compare chunk boundaries - pages, sections, and the cut that decides retrieval | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.bx-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 16px;margin-bottom:10px;}
+.bx-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;}
+.bx-l select,.bx-l input[type=text]{font:inherit;font-size:var(--small-size);padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);}
+.bx-l input[type=range]{width:100%;}
+.bx-sum{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal);margin:6px 0 8px;}
+.bx-out{display:flex;flex-wrap:wrap;gap:8px;}
+.bx-chunk{flex:1 1 220px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.45;color:var(--slate);}
+.bx-chunk b{display:block;font-family:var(--mono);font-size:var(--kicker-size);color:var(--navy);margin-bottom:4px;}
+.bx-chunk.hit{border:2px solid var(--teal);background:var(--teal-light);}
+.bx-chunk mark{background:#fde68a;color:#1f2937;padding:0 2px;border-radius:2px;}
+.bx-chunk .ov{background:#e0f2fe;}
+/* the road each file takes: landscape above the 640px rung, portrait below it, never a shrunken landscape */
+.pr-dg svg text{font-family:inherit;}
+.pr-wide{--svg-min:600px;overflow-x:auto;overscroll-behavior-x:contain;min-width:0;}
+.pr-wide svg{display:block;width:100%;min-width:var(--svg-min);max-width:760px;height:auto;margin:0 auto;}
+.pr-tall{display:none;}
+.pr-tall svg{display:block;width:100%;max-width:440px;height:auto;margin:0 auto;}
+@media (max-width:640px){.pr-wide{display:none;}.pr-tall{display:block;}}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 1 &middot; RAG foundation &middot; Lesson 1.2</div>
+<h1>Parse, then chunk: <span>pages, sections, and the boundaries that decide retrieval</span></h1>
+<p>Before a document can be searched it has to be read, and before it can be cited it has to be cut into pieces small enough to compare with a question. This lesson opens the two steps that do that in DocuMind: the parser that turns a PDF into pages of text through Document AI, and the chunker that turns text into addressed pieces. You will count pages, cut a handbook into clauses, cut an Act into page windows, and compare the pieces two different parsers make of the same document on your own lane.</p>
+<div class="hero-chips"><div class="hero-chip">Document AI by residency</div><div class="hero-chip">15-page slices</div><div class="hero-chip">Pages counted first</div><div class="hero-chip">One chunk per clause</div><div class="hero-chip">2,000-character windows</div><div class="hero-chip">67 versus 65</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What parsing and chunking are</a></li>
+<li><a href="#s2">The words: page, slice, section, window, locator</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Parse: Document AI, chosen by residency</a></li>
+<li><a href="#s4">Count pages first: slices, and the 250-page line</a></li>
+<li><a href="#s5">Chunk by section: the handbook becomes 283 clauses</a></li>
+<li><a href="#s6">Chunk by window: an Act becomes page windows</a></li>
+<li><a href="#s7">Compare the boundaries: two parsers, one document</a></li>
+<li><a href="#s8">One chunker in two places, and what parsing bills</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a file becomes text (parsing, with Document AI for PDFs and no processor at all for Markdown) and how text becomes addressed pieces (chunking, one chunk per clause where a document has headings, page windows where it does not). Then you will prove it on your lane: count the pages, cut the documents yourself, read the worker's pieces back from Firestore, and see why the same Act became 67 pieces on the lane and 65 on your laptop.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What parsing and chunking are</h3><p>Two small steps between "a file" and "a piece a question can find", and why the cut decides the answer.</p></div></div>
+
+<p><strong>Parsing</strong> is reading. A PDF is a drawing of a page: shapes and positions, sometimes with a hidden text layer, sometimes only pixels. Parsing turns it into plain text, page by page, so that "page 7" still means something afterwards. A Markdown file needs no parsing at all; it is already text. DocuMind sends PDFs and images to Document AI, Google's document reader, and reads text files directly.</p>
+
+<p><strong>Chunking</strong> is cutting. A question is a sentence or two; a document is thousands of sentences. Retrieval works by comparing the question with pieces of similar size, so the text is cut into chunks of a few hundred words, and every chunk gets an address, its <em>locator</em>, so that a citation can point back to it. The cut matters more than it looks: a clause split across two chunks is a clause the question may never find whole, and a chunk that contains three unrelated clauses is a chunk that answers three questions badly.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128240;</div><div>
+<p><strong>A newspaper and a scrapbook.</strong> Parsing is the newspaper arriving as pages of print instead of a photograph of the page. Chunking is cutting the articles out for a scrapbook. Cut along the article boundaries and every clipping makes sense on its own; cut every page into equal squares and most clippings start mid-sentence and end mid-sentence. DocuMind cuts along the boundaries when the document has them (headings) and falls back to squares of a fixed size, with an overlap, when it does not (an Act's running text). The locator is the label on the clipping: "Notice period, clause NP-03" or "page 7, second square".</p></div></div>
+
+<h4>Which reader each file gets</h4>
+<p>Before anything is cut, the worker decides how to read the file, and the file's type decides. Two checks come first and cost nothing: an object outside a tenant folder is refused, and bytes the lane has seen before are not parsed or embedded again. Text is read as it is. A PDF has its pages counted first, for free: over 250 it waits for the batch lane, otherwise it goes to Document AI fifteen pages at a time, and a scan takes the same road because Document AI reads the page images. A picture or a recording cannot be cut like text, so Gemini describes it, and that description is the chunk. Every chunk is scanned for personal data before anything is indexed.</p>
+
+<div class="diagram pr-dg">
+<div class="dg-title">From upload to chunks: the road each kind of file takes</div>
+<div class="pr-wide"><svg viewBox="0 0 680 962" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="prwT prwD"><title id="prwT">The road each kind of file takes, from upload to chunks</title><desc id="prwD">An upload outside a tenant folder is refused and bytes seen before need no new work. Markdown and text are read directly. A PDF of 250 pages or fewer goes to Document AI in 15-page slices; a bigger one waits for the batch lane; a scanned PDF is read from its page images. An image gets a Gemini caption and a video or recording timed Gemini segments. Text is cut by headings or by page windows, every chunk is scanned for personal data, then embedded and written.</desc><defs><marker id="prwA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#475569"/></marker></defs><rect x="180" y="40" width="320" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="192" y="59" font-size="13" font-weight="500" fill="#0f1729">Upload lands in the bucket</text><text x="192" y="75" font-size="11" fill="#475569">uploads bucket, tenant/file</text><line x1="340" y1="84" x2="340" y2="104" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="180" y="106" width="320" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="192" y="125" font-size="13" font-weight="500" fill="#0f1729">Check the path</text><text x="192" y="141" font-size="11" fill="#475569">a tenant folder is required</text><line x1="500" y1="128" x2="518" y2="128" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="520" y="106" width="120" height="44" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="532" y="125" font-size="13" font-weight="500" fill="#0f1729">Refused</text><text x="532" y="141" font-size="11" fill="#475569">no tenant folder</text><line x1="340" y1="150" x2="340" y2="170" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="180" y="172" width="320" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="192" y="191" font-size="13" font-weight="500" fill="#0f1729">Fingerprint the bytes</text><text x="192" y="207" font-size="11" fill="#475569">SHA-256 names the version</text><line x1="500" y1="194" x2="518" y2="194" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="520" y="172" width="120" height="44" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="532" y="191" font-size="13" font-weight="500" fill="#0f1729">No new work</text><text x="532" y="207" font-size="11" fill="#475569">bytes seen before</text><line x1="340" y1="216" x2="340" y2="236" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="180" y="238" width="320" height="36" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="192" y="261" font-size="13" font-weight="500" fill="#0f1729">Route by file type</text><path d="M340 274 V288 H52 V602" fill="none" stroke="#475569" stroke-width="1.5"/><line x1="52" y1="322" x2="62" y2="322" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="64" y="300" width="150" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="76" y="319" font-size="13" font-weight="500" fill="#0f1729">Markdown, text</text><text x="76" y="335" font-size="11" fill="#475569">.md, .txt</text><line x1="214" y1="322" x2="232" y2="322" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="234" y="300" width="186" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="246" y="319" font-size="13" font-weight="500" fill="#0f1729">Read directly</text><text x="246" y="335" font-size="11" fill="#475569">no parser, no cost</text><line x1="420" y1="322" x2="438" y2="322" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="440" y="300" width="200" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="452" y="319" font-size="12" font-family="JetBrains Mono,monospace" fill="#0f1729">hr_policy_2026.md</text><text x="452" y="335" font-size="11" fill="#475569">283 clause chunks</text><line x1="52" y1="378" x2="62" y2="378" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="64" y="356" width="150" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="76" y="375" font-size="13" font-weight="500" fill="#0f1729">Normal PDF</text><text x="76" y="391" font-size="11" fill="#475569">250 pages or fewer</text><line x1="214" y1="378" x2="232" y2="378" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="234" y="356" width="186" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="246" y="375" font-size="13" font-weight="500" fill="#0f1729">Document AI</text><text x="246" y="391" font-size="11" fill="#475569">in 15-page slices</text><line x1="420" y1="378" x2="438" y2="378" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="440" y="356" width="200" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="452" y="375" font-size="12" font-family="JetBrains Mono,monospace" fill="#0f1729">code_on_wages_2019.pdf</text><text x="452" y="391" font-size="11" fill="#475569">29 pages: 2 slices</text><line x1="52" y1="434" x2="62" y2="434" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="64" y="412" width="150" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="76" y="431" font-size="13" font-weight="500" fill="#0f1729">Big PDF</text><text x="76" y="447" font-size="11" fill="#475569">over 250 pages</text><line x1="214" y1="434" x2="232" y2="434" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="234" y="412" width="186" height="44" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="246" y="431" font-size="13" font-weight="500" fill="#0f1729">Batch lane</text><text x="246" y="447" font-size="11" fill="#475569">queued, parsed later</text><line x1="420" y1="434" x2="438" y2="434" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="440" y="412" width="200" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="452" y="431" font-size="12" font-family="JetBrains Mono,monospace" fill="#0f1729">270-page bundle</text><text x="452" y="447" font-size="11" fill="#475569">lesson 1.5's joined PDF waits</text><line x1="52" y1="490" x2="62" y2="490" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="64" y="468" width="150" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="76" y="487" font-size="13" font-weight="500" fill="#0f1729">Scanned PDF</text><text x="76" y="503" font-size="11" fill="#475569">no text layer</text><line x1="214" y1="490" x2="232" y2="490" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="234" y="468" width="186" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="246" y="487" font-size="13" font-weight="500" fill="#0f1729">Document AI</text><text x="246" y="503" font-size="11" fill="#475569">reads the page images</text><line x1="420" y1="490" x2="438" y2="490" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="440" y="468" width="200" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="452" y="487" font-size="12" font-family="JetBrains Mono,monospace" fill="#0f1729">posh_act_2013.pdf</text><text x="452" y="503" font-size="11" fill="#475569">13 pages: 1 slice</text><line x1="52" y1="546" x2="62" y2="546" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="64" y="524" width="150" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="76" y="543" font-size="13" font-weight="500" fill="#0f1729">Image</text><text x="76" y="559" font-size="11" fill="#475569">.png, .jpg</text><line x1="214" y1="546" x2="232" y2="546" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="234" y="524" width="186" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="246" y="543" font-size="13" font-weight="500" fill="#0f1729">Gemini caption</text><text x="246" y="559" font-size="11" fill="#475569">the picture becomes text</text><line x1="420" y1="546" x2="438" y2="546" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="440" y="524" width="200" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="452" y="543" font-size="12" font-family="JetBrains Mono,monospace" fill="#0f1729">inv_2026_0412.png</text><text x="452" y="559" font-size="11" fill="#475569">1 figure chunk</text><line x1="52" y1="602" x2="62" y2="602" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="64" y="580" width="150" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="76" y="599" font-size="13" font-weight="500" fill="#0f1729">Video, audio</text><text x="76" y="615" font-size="11" fill="#475569">.mp4, .mp3</text><line x1="214" y1="602" x2="232" y2="602" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="234" y="580" width="186" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="246" y="599" font-size="13" font-weight="500" fill="#0f1729">Gemini segments</text><text x="246" y="615" font-size="11" fill="#475569">timed, start and end</text><line x1="420" y1="602" x2="438" y2="602" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="440" y="580" width="200" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="452" y="599" font-size="12" font-family="JetBrains Mono,monospace" fill="#0f1729">townhall_2026_q1.mp4</text><text x="452" y="615" font-size="11" fill="#475569">cited as [Clip N, mm:ss]</text><rect x="52" y="644" width="588" height="88" rx="8" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="4 4"/><text x="64" y="664" font-size="13" font-weight="500" fill="#0f1729">Text from Markdown and PDFs is cut into chunks</text><rect x="64" y="676" width="276" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="76" y="695" font-size="13" font-weight="500" fill="#0f1729">Has ## headings</text><text x="76" y="711" font-size="11" fill="#475569">one chunk per clause: NP-03</text><rect x="356" y="676" width="272" height="44" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="368" y="695" font-size="13" font-weight="500" fill="#0f1729">No headings</text><text x="368" y="711" font-size="11" fill="#475569">2,000-char windows per page: p9-0</text><line x1="340" y1="732" x2="340" y2="750" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="180" y="752" width="320" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="192" y="771" font-size="13" font-weight="500" fill="#0f1729">Personal-data scan (DLP)</text><text x="192" y="787" font-size="11" fill="#475569">every chunk, before indexing</text><line x1="340" y1="796" x2="340" y2="816" stroke="#475569" stroke-width="1.5" marker-end="url(#prwA)"/><rect x="180" y="818" width="320" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="192" y="837" font-size="13" font-weight="500" fill="#0f1729">Embed and write</text><text x="192" y="853" font-size="11" fill="#475569">Firestore rows + Vector Search</text><rect x="40" y="878" width="600" height="44" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="52" y="897" font-size="13" font-weight="500" fill="#0f1729">Which Document AI? Set once by RESIDENCY</text><text x="52" y="913" font-size="11" fill="#475569">india: OCR in Mumbai, text only · us: Layout Parser, headings and tables · make up: us</text><rect x="40" y="934" width="14" height="14" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="62" y="946" font-size="11" fill="#475569">how the file is read and cut</text><rect x="320" y="934" width="14" height="14" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="342" y="946" font-size="11" fill="#475569">stops or waits here</text></svg></div>
+<div class="pr-tall"><svg viewBox="0 0 360 1004" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="prtT prtD"><title id="prtT">The road each kind of file takes, from upload to chunks</title><desc id="prtD">An upload outside a tenant folder is refused and bytes seen before need no new work. Markdown and text are read directly. A PDF of 250 pages or fewer goes to Document AI in 15-page slices; a bigger one waits for the batch lane; a scanned PDF is read from its page images. An image gets a Gemini caption and a video or recording timed Gemini segments. Text is cut by headings or by page windows, every chunk is scanned for personal data, then embedded and written.</desc><defs><marker id="prtA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#475569"/></marker></defs><rect x="12" y="12" width="336" height="40" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="24" y="29" font-size="13" font-weight="500" fill="#0f1729">Upload lands in the bucket</text><text x="24" y="45" font-size="11" fill="#475569">uploads bucket, tenant/file</text><line x1="118" y1="52" x2="118" y2="68" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="12" y="70" width="212" height="40" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="24" y="87" font-size="13" font-weight="500" fill="#0f1729">Check the path</text><text x="24" y="103" font-size="11" fill="#475569">a tenant folder is required</text><line x1="224" y1="90" x2="234" y2="90" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="236" y="70" width="112" height="40" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="248" y="87" font-size="13" font-weight="500" fill="#0f1729">Refused</text><text x="248" y="103" font-size="11" fill="#475569">no tenant folder</text><line x1="118" y1="110" x2="118" y2="126" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="12" y="128" width="212" height="40" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="24" y="145" font-size="13" font-weight="500" fill="#0f1729">Fingerprint the bytes</text><text x="24" y="161" font-size="11" fill="#475569">SHA-256 names the version</text><line x1="224" y1="148" x2="234" y2="148" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="236" y="128" width="112" height="40" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="248" y="145" font-size="13" font-weight="500" fill="#0f1729">No new work</text><text x="248" y="161" font-size="11" fill="#475569">bytes seen before</text><line x1="118" y1="168" x2="118" y2="184" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="12" y="186" width="336" height="34" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="24" y="208" font-size="13" font-weight="500" fill="#0f1729">Route by file type</text><path d="M180 220 V228 H12 V595" fill="none" stroke="#475569" stroke-width="1.5"/><line x1="12" y1="265" x2="22" y2="265" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="24" y="236" width="324" height="58" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="36" y="254" font-size="13" font-weight="500" fill="#0f1729">Markdown, text (.md, .txt)</text><text x="36" y="270" font-size="11" fill="#475569">Read directly: no parser, no cost</text><text x="36" y="286" font-size="11" fill="#475569">hr_policy_2026.md → 283 clause chunks</text><line x1="12" y1="331" x2="22" y2="331" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="24" y="302" width="324" height="58" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="36" y="320" font-size="13" font-weight="500" fill="#0f1729">Normal PDF (250 pages or fewer)</text><text x="36" y="336" font-size="11" fill="#475569">Document AI: in 15-page slices</text><text x="36" y="352" font-size="11" fill="#475569">code_on_wages_2019.pdf → 29 pages: 2 slices</text><line x1="12" y1="397" x2="22" y2="397" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="24" y="368" width="324" height="58" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="36" y="386" font-size="13" font-weight="500" fill="#0f1729">Big PDF (over 250 pages)</text><text x="36" y="402" font-size="11" fill="#475569">Batch lane: queued, parsed later</text><text x="36" y="418" font-size="11" fill="#475569">270-page bundle → lesson 1.5's joined PDF waits</text><line x1="12" y1="463" x2="22" y2="463" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="24" y="434" width="324" height="58" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="36" y="452" font-size="13" font-weight="500" fill="#0f1729">Scanned PDF (no text layer)</text><text x="36" y="468" font-size="11" fill="#475569">Document AI: reads the page images</text><text x="36" y="484" font-size="11" fill="#475569">posh_act_2013.pdf → 13 pages: 1 slice</text><line x1="12" y1="529" x2="22" y2="529" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="24" y="500" width="324" height="58" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="36" y="518" font-size="13" font-weight="500" fill="#0f1729">Image (.png, .jpg)</text><text x="36" y="534" font-size="11" fill="#475569">Gemini caption: the picture becomes text</text><text x="36" y="550" font-size="11" fill="#475569">inv_2026_0412.png → 1 figure chunk</text><line x1="12" y1="595" x2="22" y2="595" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="24" y="566" width="324" height="58" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="36" y="584" font-size="13" font-weight="500" fill="#0f1729">Video, audio (.mp4, .mp3)</text><text x="36" y="600" font-size="11" fill="#475569">Gemini segments: timed, start and end</text><text x="36" y="616" font-size="11" fill="#475569">townhall_2026_q1.mp4 → cited as [Clip N, mm:ss]</text><rect x="12" y="644" width="336" height="124" rx="8" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="4 4"/><text x="24" y="663" font-size="13" font-weight="500" fill="#0f1729">Text from Markdown and PDFs is cut</text><rect x="24" y="674" width="312" height="38" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="36" y="690" font-size="13" font-weight="500" fill="#0f1729">Has ## headings</text><text x="36" y="706" font-size="11" fill="#475569">one chunk per clause: NP-03</text><rect x="24" y="720" width="312" height="38" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="36" y="736" font-size="13" font-weight="500" fill="#0f1729">No headings</text><text x="36" y="752" font-size="11" fill="#475569">2,000-char windows per page: p9-0</text><line x1="180" y1="768" x2="180" y2="786" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="12" y="788" width="336" height="40" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="24" y="805" font-size="13" font-weight="500" fill="#0f1729">Personal-data scan (DLP)</text><text x="24" y="821" font-size="11" fill="#475569">every chunk, before indexing</text><line x1="180" y1="828" x2="180" y2="846" stroke="#475569" stroke-width="1.5" marker-end="url(#prtA)"/><rect x="12" y="848" width="336" height="40" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="24" y="865" font-size="13" font-weight="500" fill="#0f1729">Embed and write</text><text x="24" y="881" font-size="11" fill="#475569">Firestore rows + Vector Search</text><rect x="12" y="904" width="336" height="58" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1"/><text x="24" y="922" font-size="13" font-weight="500" fill="#0f1729">Which Document AI? Set by RESIDENCY</text><text x="24" y="938" font-size="11" fill="#475569">india: OCR in Mumbai, text only</text><text x="24" y="954" font-size="11" fill="#475569">us: Layout Parser, headings and tables (make up)</text><rect x="12" y="976" width="14" height="14" rx="6" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><text x="32" y="987" font-size="11" fill="#475569">how the file is read and cut</text><rect x="190" y="976" width="14" height="14" rx="6" fill="#fff7ed" stroke="#c2410c" stroke-width="1" stroke-dasharray="4 3"/><text x="210" y="987" font-size="11" fill="#475569">stops or waits here</text></svg></div>
+<p class="dg-cap">The examples are the kit's own files with their real page counts; the 270-page bundle is the two Acts lesson 1.5 joins, and the video is lesson 7.5's. Step 3 opens the parser; steps 5 and 6 are the two cutting rules.</p>
+</div>
+
+<h4>Try the cut yourself</h4>
+<p>The explorer below runs the kit's own cutting rules on two small samples: a handbook with headings and a page of an Act without. Switch the rule, drag the window size, and watch where the boundaries fall. Then type a word and see which piece would have to be retrieved to answer a question about it. The lane cuts at 2,000 characters with a 200-character overlap; the slider is scaled down so the samples show more than one cut.</p>
+
+<div class="diagram bx" id="explorer">
+<div class="dg-title">Chunk boundary explorer - the kit's two rules on two samples</div>
+<div class="bx-controls">
+<label class="bx-l">Sample <select id="bx-sample"><option value="hb">Handbook (has ## headings)</option><option value="act">An Act's page (running text)</option></select></label>
+<label class="bx-l">Rule <select id="bx-rule"><option value="auto">As the kit decides (headings if present, else windows)</option><option value="win">Windows only</option></select></label>
+<label class="bx-l">Window <input type="range" id="bx-size" min="120" max="700" step="10" value="320"> <span id="bx-size-v">320</span> characters</label>
+<label class="bx-l">Overlap <input type="range" id="bx-ov" min="0" max="120" step="10" value="30"> <span id="bx-ov-v">30</span></label>
+<label class="bx-l">Find <input type="text" id="bx-q" placeholder="e.g. probation" maxlength="40"></label>
+</div>
+<p class="bx-sum" id="bx-sum"></p>
+<div class="bx-out" id="bx-out" aria-live="polite"></div>
+<p class="dg-cap">Each block is one chunk; its label is the locator the kit would give it. In section mode a clause is one chunk however long or short it is. In window mode the cut prefers a sentence end in the second half of the window, and the next window starts <em>overlap</em> characters earlier, so a sentence on the seam appears in both. The highlighted block is the one that contains your word.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>It is the two rules, not the whole worker: no Document AI, no page counting, no hashes. Its window sizes are small so the samples show several cuts. The rules themselves are the ones you will read in step 5 and step 6, character for character.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: page, slice, section, window, locator</h3><p>Six words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Page</strong></td><td data-label="Meaning">One page of a PDF as Document AI read it. The worker joins pages with a form-feed character so the chunker can tell where one ends. A Markdown file has no pages unless it carries form feeds; the corpus's mirrors of the Acts do.</td><td data-label="On your lane">The Code on Wages is 29 pages; the CGST Act is 236; the handbook has none.</td></tr>
+<tr><td><strong>Slice</strong></td><td data-label="Meaning">A batch of at most 15 pages sent to Document AI in one online request, because that is the online limit. A 29-page PDF is two requests.</td><td data-label="On your lane">The corpus's 1,065 pages across the three tenants are 79 requests.</td></tr>
+<tr><td><strong>Section</strong></td><td data-label="Meaning">A block of a Markdown document under a <code>## </code> heading. Where a document has them, each section is one chunk.</td><td data-label="On your lane">The handbook has 282 headings and one preamble: 283 chunks.</td></tr>
+<tr><td><strong>Window</strong></td><td data-label="Meaning">A fixed-size cut of running text: 2,000 characters, ending on a sentence when one is nearby, with the next window starting 200 characters earlier.</td><td data-label="On your lane">The Code on Wages became 67 windows on the lane.</td></tr>
+<tr><td><strong>Locator</strong></td><td data-label="Meaning">The chunk's address inside its document: the clause code for a section (<code>NP-03</code>), <code>preamble</code> for text above the first heading, page and window for running text (<code>p7-0</code> is the first window on page 7).</td><td data-label="On your lane">Every <code>chunks</code> row carries one; a citation shows the page it implies.</td></tr>
+<tr><td><strong>Residency</strong></td><td data-label="Meaning">Which Document AI processor the worker calls: Enterprise OCR in Mumbai, or Layout Parser in the United States. One setting, <code>RESIDENCY</code>, chosen for where the customer's documents may travel, not for quality.</td><td data-label="On your lane">Read it off the worker in step 3.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words are contracts from lesson 1.1 seen from the other side. The <em>locator</em> is the page-and-section contract; the chunker is what writes it. The <em>page</em> is why a citation can say "p. 7": the parser preserved it. Everything else on this page is mechanism.</p>
+
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Parse</span><h3>Parse: Document AI, chosen by residency</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/demo_03_parse_document_ai_chosen_by_residency.py" target="_blank" rel="noopener"><code>demo_03_parse_document_ai_chosen_by_residency.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>What reads a PDF, why one setting picks the reader, and how to see which reader your lane has.</p></div></div>
+
+<h4>Definition</h4>
+<p>The worker never reads a PDF itself. It sends the bytes to one Document AI processor and gets back pages of text. Which processor exists is decided once, by <code>RESIDENCY</code>: <code>india</code> creates an Enterprise OCR processor in Mumbai, <code>us</code> creates a Layout Parser in the United States. The Layout Parser understands headings, tables and reading order; the OCR processor returns text with layout boxes and no structure. The comment in the code says why that is not a quality decision: if a customer's contract says its documents stay in India, the processor in <code>us</code> is not available, whatever it would have given you. Text files skip all of this - a Markdown handbook is decoded and used as it is.</p>
+
+<h4>See it in the UI</h4>
+<p>Look at the <em>document</em> column of the Versions table. Every <code>.pdf</code> row went through Document AI; every <code>.md</code> row did not. Both kinds end up with a chunk count, and nothing downstream can tell them apart, which is the point of parsing: after it, everything is text. One row to look for is <code>acme/posh_act_2013.pdf</code>, a scanned Gazette with no text layer; if it is in your table with a chunk count, your processor can read a scan.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/parser.py - the processor map and the online limit</span><span class="ro">read only</span></div><pre tabindex="0">RESIDENCY = os.environ.get(<span class="st">"RESIDENCY"</span>, <span class="st">"india"</span>)     <span class="cm"># india | us</span>
+
+<span class="cm"># Layout Parser gives you document STRUCTURE - headings, tables, reading order -</span>
+<span class="cm"># and it runs in `us` only. Enterprise OCR runs in asia-south1 and gives you</span>
+<span class="cm"># text plus layout boxes, no semantic structure.</span>
+<span class="cm">#</span>
+<span class="cm"># For a DPDP deployment that is not a trade-off you get to make on quality</span>
+<span class="cm"># grounds: if the document carries personal data of people in India and the</span>
+<span class="cm"># customer's contract says it stays in India, the processor that runs in `us`</span>
+<span class="cm"># is not available to you, whatever it would have given you.</span>
+PROCESSORS = {
+    <span class="st">"india"</span>: {<span class="st">"location"</span>: <span class="st">"asia-south1"</span>, <span class="st">"type"</span>: <span class="st">"OCR_PROCESSOR"</span>},
+    <span class="st">"us"</span>:    {<span class="st">"location"</span>: <span class="st">"us"</span>,          <span class="st">"type"</span>: <span class="st">"LAYOUT_PARSER_PROCESSOR"</span>},
+}
+<span class="cm"># ...</span>
+ONLINE_PAGE_LIMIT = <span class="nu">15</span></pre></div>
+
+<p>Note the default: the code says <code>india</code>, but the Makefile deploys with <code>RESIDENCY ?= us</code> unless you override it, and the Terraform in <code>docai.tf</code> creates whichever processor the same variable names. On a default <code>make up</code>, therefore, your lane has a Layout Parser in <code>us</code>. The page says both so that what you read off your lane in a moment makes sense.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/parser.py - parse()</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">parse</span>(project_id: str, processor_id: str, content: bytes,
+          mime_type: str) -&gt; tuple[str, int]:
+    <span class="cm">"""Return (text with a form feed between pages, page_count)."""</span>
+    client, name = _client_and_name(project_id, processor_id)
+    <span class="kw">if</span> mime_type == <span class="st">"application/pdf"</span>:
+        reader = PdfReader(io.BytesIO(content))
+        <span class="kw">if</span> len(reader.pages) &gt; ONLINE_PAGE_LIMIT:
+            pages: list[str] = []
+            <span class="kw">for</span> first <span class="kw">in</span> range(<span class="nu">0</span>, len(reader.pages), ONLINE_PAGE_LIMIT):
+                writer = PdfWriter()
+                <span class="kw">for</span> page <span class="kw">in</span> reader.pages[first:first + ONLINE_PAGE_LIMIT]:
+                    writer.add_page(page)
+                buf = io.BytesIO()
+                writer.write(buf)
+                pages.extend(_process(client, name, buf.getvalue(), mime_type))
+            <span class="kw">return</span> <span class="st">"\f"</span>.join(pages), len(pages)
+    pages = _process(client, name, content, mime_type)
+    <span class="kw">return</span> <span class="st">"\f"</span>.join(pages), len(pages)</pre></div>
+
+<p>Read the shape of the return value: one string with a form feed (<code>\f</code>) between pages, and the page count. That form feed is the whole reason a citation can name a page: the chunker in step 6 cuts at it and never lets a window cross it.</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _parse()</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_parse</span>(content: bytes, content_type: str) -&gt; tuple[str, int]:
+    <span class="cm">"""(text, pages). Plain text needs no processor; everything else goes to Doc AI."""</span>
+    <span class="kw">if</span> content_type.startswith(<span class="st">"text/"</span>):
+        text = content.decode(<span class="st">"utf-8"</span>, <span class="st">"replace"</span>)
+        <span class="kw">return</span> text, max(<span class="nu">1</span>, text.count(<span class="st">"\f"</span>) + <span class="nu">1</span>)
+    <span class="kw">if</span> <span class="kw">not</span> PROCESSOR_ID:
+        <span class="kw">raise</span> RuntimeError(<span class="st">"DOCAI_PROCESSOR_ID is not set (deploy/terraform/docai.tf outputs it)"</span>)
+    <span class="kw">return</span> parse(PROJECT, PROCESSOR_ID, content, content_type)</pre></div>
+
+<h4>Call it: which reader does your lane have?</h4>
+<p>Two read-only calls. The first prints the worker's environment, where the residency and the processor id live. The second asks the Document AI API to list the processors in each of the two possible locations; exactly one location will list <code>documind-parser</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services describe documind-ingest --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep -E 'RESIDENCY|DOCAI_PROCESSOR_ID'
+
+for LOC in us asia-south1; do
+  echo "== $LOC =="
+  curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    "https://$LOC-documentai.googleapis.com/v1/projects/$NUMBER/locations/$LOC/processors" \
+    | python -c "import json,sys; j=json.load(sys.stdin); [print(p['displayName'], p['type'], p['state']) for p in j.get('processors', [])] or print('(none)')"
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected, on a default make up</span><span class="ro">read only</span></div><pre tabindex="0">{'name': 'RESIDENCY', 'value': 'us'}
+{'name': 'DOCAI_PROCESSOR_ID', 'value': 'a1b2c3d4e5f6a7b8'}
+== us ==
+documind-parser LAYOUT_PARSER_PROCESSOR ENABLED
+== asia-south1 ==
+(none)</pre></div>
+
+<p>A lane deployed with <code>RESIDENCY=india</code> prints the mirror image: <code>OCR_PROCESSOR</code> under <code>asia-south1</code> and nothing under <code>us</code>. Either way there is exactly one processor, and the worker's environment names it.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You found the one machine that reads every PDF on your lane, and the one setting that chose it. Nothing about the worker's code changes between the two choices; the processor map and the Terraform read the same word. That is what "chosen by residency rather than by preference" means in the parser's first line.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Pages</span><h3>Count pages first: slices, and the 250-page line</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/demo_04_count_pages_first_slices_and_the_250_page_line.py" target="_blank" rel="noopener"><code>demo_04_count_pages_first_slices_and_the_250_page_line.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The worker counts a PDF's pages before it pays to read one, and two numbers hang on that count.</p></div></div>
+
+<h4>Definition</h4>
+<p>Reading a PDF's page count is free: the page tree is in the file, and pypdf reads it without rendering anything. The worker does that first, because two decisions need only the number. A file over 250 pages, <code>MAX_INLINE_PAGES</code>, cannot finish inside one push request, so it is handed to the batch lane (lesson 1.5). A file under that line is sent to Document AI in slices of 15 pages, because 15 is the online request limit; a 29-page Act is two requests, a 236-page Act is sixteen. Nothing in the corpus crosses 250: the CGST Act, at 236 pages, is the largest.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _pdf_pages()</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_pdf_pages</span>(content: bytes) -&gt; int | <span class="kw">None</span>:
+    <span class="cm"># ...</span>
+    <span class="kw">try</span>:
+        <span class="kw">return</span> len(PdfReader(io.BytesIO(content)).pages)
+    <span class="kw">except</span> Exception:  <span class="cm"># noqa: BLE001 - a count is a hint for routing, never a verdict on the document</span>
+        <span class="kw">return</span> <span class="kw">None</span></pre></div>
+
+<h4>Do it: count the corpus, Rs 0</h4>
+<p>The same count, on the PDFs in your kit folder, with the same library. The cell prints pages and slices per PDF, then the totals and what one parse of the whole corpus would cost at each processor's list price - the rates as the course reads them on the pricing page, to re-verify before quoting.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import glob, math, os
+from pypdf import PdfReader
+LIMIT, INLINE, USD_INR = 15, 250, 85
+OCR_USD, LAYOUT_USD = 1.50, 10.00            # per 1,000 pages, list price as read on the pricing page - re-verify
+total = calls = 0
+for path in sorted(glob.glob("evals/corpus/*/*.pdf")):
+    n = len(PdfReader(path).pages)
+    s = math.ceil(n / LIMIT)
+    total += n; calls += s
+    lane = "BATCH LANE" if n &gt; INLINE else "inline"
+    print(f"{path[13:]:48} pages={n:4} slices={s:3} {lane}")
+print(f"\n{total} pages in {calls} Document AI requests")
+print(f"one full parse: OCR Rs {total/1000*OCR_USD*USD_INR:,.0f}   Layout Parser Rs {total/1000*LAYOUT_USD*USD_INR:,.0f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (trimmed)</span><span class="ro">read only</span></div><pre tabindex="0">acme/cgst_act_2017.pdf                           pages= 236 slices= 16 inline
+acme/code_on_social_security_2020.pdf            pages= 116 slices=  8 inline
+acme/code_on_wages_2019.pdf                      pages=  29 slices=  2 inline
+acme/maternity_benefit_amendment_act_2017.pdf    pages=   4 slices=  1 inline
+acme/posh_act_2013.pdf                           pages=  13 slices=  1 inline
+...
+zeta/osh_code_2020.pdf                           pages=  86 slices=  6 inline
+
+1065 pages in 79 Document AI requests
+one full parse: OCR Rs 136   Layout Parser Rs 905</pre></div>
+
+<h4>Prove it on the lane: one small PDF, four pages</h4>
+<p>The amendment Act is four pages and globex does not hold it, so ingesting it there is a fresh source, one Document AI request, and a few paise. Then read the worker's line for it, which carries the page count as <code>pages</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (costs about four pages of Document AI)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ingest-one PROJECT=$PROJECT TENANT=globex FILE=evals/corpus/acme/maternity_benefit_amendment_act_2017.pdf
+
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-ingest" AND jsonPayload.event="ingest_ok" AND jsonPayload.tenant="globex"' \
+  --project "$PROJECT" --limit 1 --format='value(jsonPayload.doc_key,jsonPayload.pages,jsonPayload.chunks,jsonPayload.embedded)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">globex_e7a1c0...    4    5    5</pre></div>
+
+<p>Four pages, five chunks: the count is pypdf's, the chunks are Document AI's text cut per page. Your chunk count may differ by one, because the two readers do not always agree on where a line ends, which is exactly what step 7 is about.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The worker learned the page count for free, decided the file was small enough for the push lane, sent it to Document AI in one slice, and wrote <code>pages: 4</code> on its log line. The same field on the CGST Act's line reads 236 and sixteen requests were made for it; over 250 and the line would have been <code>ingest_queued_batch</code> instead.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Sections</span><h3>Chunk by section: the handbook becomes 283 clauses</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/demo_05_chunk_by_section_the_handbook_becomes_283_clauses.py" target="_blank" rel="noopener"><code>demo_05_chunk_by_section_the_handbook_becomes_283_clauses.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The first rule of the chunker, and why a clause is the right size for a policy question.</p></div></div>
+
+<h4>Definition</h4>
+<p>A Markdown document with <code>## </code> headings is cut at the headings: one chunk per section, whatever its length, with the heading's clause code as the locator (<code>NP-03</code>) or, when a heading carries no code, the section's ordinal (<code>s1</code>). Text above the first heading is the <code>preamble</code>. A section longer than a window is windowed within itself and its pieces are numbered (<code>NP-03-1</code>). A question about the notice period is answered by one chunk that is exactly the notice-period clause, which is why the handbook's answers cite so precisely.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _chunk(), the section rule</span><span class="ro">read only</span></div><pre tabindex="0">_SECTION = re.compile(r<span class="st">"^## +(.+?) *$"</span>, re.M)
+_CODE = re.compile(r<span class="st">"^([A-Z][A-Z0-9]{0,7}(?:-[A-Z0-9]{1,6}){1,2})\b"</span>)   <span class="cm"># NP-03, IT-SEC-04, MSA-04, GEN-014</span>
+<span class="cm"># ...</span>
+    text = re.sub(r<span class="st">"\A\s*&lt;!--.*?--&gt;\s*"</span>, <span class="st">""</span>, text, count=<span class="nu">1</span>, flags=re.S)
+    heads = list(_SECTION.finditer(text.strip()))
+    out = []
+    <span class="kw">if</span> heads:
+        text = text.strip()
+        pre = text[:heads[<span class="nu">0</span>].start()].strip()
+        <span class="kw">for</span> k, (_, piece) <span class="kw">in</span> enumerate(_windows(pre)):
+            out.append({<span class="st">"text"</span>: piece, <span class="st">"kind"</span>: <span class="st">"text"</span>, <span class="st">"page_start"</span>: <span class="kw">None</span>,
+                        <span class="st">"locator"</span>: <span class="st">"preamble"</span> + (f<span class="st">"-{k}"</span> <span class="kw">if</span> k <span class="kw">else</span> <span class="st">""</span>), <span class="st">"section"</span>: <span class="kw">None</span>})
+        <span class="kw">for</span> n, h <span class="kw">in</span> enumerate(heads):
+            title = h.group(<span class="nu">1</span>).strip()
+            body = text[h.end(): heads[n + <span class="nu">1</span>].start() <span class="kw">if</span> n + <span class="nu">1</span> &lt; len(heads) <span class="kw">else</span> len(text)].strip()
+            code = _CODE.match(title)
+            key = code.group(<span class="nu">1</span>) <span class="kw">if</span> code <span class="kw">else</span> f<span class="st">"s{n + 1}"</span>
+            <span class="kw">for</span> k, (_, piece) <span class="kw">in</span> enumerate(_windows(f<span class="st">"{title}\n{body}"</span>)):
+                out.append({<span class="st">"text"</span>: piece, <span class="st">"kind"</span>: <span class="st">"text"</span>, <span class="st">"page_start"</span>: <span class="kw">None</span>,
+                            <span class="st">"locator"</span>: key + (f<span class="st">"-{k}"</span> <span class="kw">if</span> k <span class="kw">else</span> <span class="st">""</span>), <span class="st">"section"</span>: title})</pre></div>
+
+<p>The first line drops a mirror's provenance header, the HTML comment <code>fetch_real.py</code> writes at the top of every mirrored Act, so a comment about where a file came from is never indexed as content. The rest is the rule: preamble, then one chunk per heading, each chunk beginning with its own title so the clause code is inside the text that gets embedded.</p>
+
+<h4>Do it: cut the handbook, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys
+sys.path.insert(0, "."); sys.path.insert(0, "services/ingest")
+from shared import documind_corpus as dc
+text = open("evals/corpus/acme/hr_policy_2026.md", encoding="utf-8").read()
+doc = {"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://x/acme/hr_policy_2026.md", "text": text}
+chunks = dc.chunk_document(doc, "acme")
+print(len(chunks), "chunks from", text.count("\n## "), "headings")
+for c in chunks[:5]:
+    print(f"  {c['locator']:10} section={str(c['section'])[:32]:34} chars={len(c['text']):5}  hash={c['chunk_hash'][:12]}")
+from collections import Counter
+per_section = Counter(c["section"] for c in chunks)
+print("sections windowed within themselves:", [t for t, n in per_section.items() if n &gt; 1])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">283 chunks from 282 headings
+  preamble   section=None                               chars=   97  hash=903e2b39ee92
+  NP-03      section=NP-03 &#8212; Notice period              chars=  234  hash=f4512754ae41
+  PB-02      section=PB-02 &#8212; Probation                  chars=  212  hash=bb65ccc2494c
+  LV-01      section=LV-01 &#8212; Earned leave               chars=  189  hash=ff463cede286
+  LV-07      section=LV-07 &#8212; Leave on exit              chars=  167  hash=7b5538b88f78
+sections windowed within themselves: []</pre></div>
+
+<p>Every one of the 282 sections fits in a single window, so no locator carries a numeric suffix; the handbook's clauses are short. The hashes are what lesson 1.1 called the chunk's identity across versions.</p>
+
+<h4>Read it on the lane</h4>
+<p>The worker cut the same file with the same rule when the corpus was loaded. Its rows for the handbook should be the same 283 locators in the same order.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path.insert(0, ".")
+from google.cloud import firestore
+from shared import documind_corpus as dc
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+
+q = (db.collection("chunks").where("tenant_id", "==", "acme")
+     .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/hr_policy_2026.md")
+     .where("current", "==", True))
+lane = sorted(q.stream(), key=lambda c: int(c.id.rsplit("#", 1)[1]))
+lane_loc = [c.to_dict().get("locator") for c in lane]
+
+text = open("evals/corpus/acme/hr_policy_2026.md", encoding="utf-8").read()
+local = dc.chunk_document({"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://x", "text": text}, "acme")
+local_loc = [c["locator"] for c in local]
+print("lane:", len(lane_loc), "local:", len(local_loc), "same locators in the same order:", lane_loc == local_loc)
+print("same hashes:", [c.to_dict().get("chunk_hash") for c in lane] == [c["chunk_hash"] for c in local])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">lane: 283 local: 283 same locators in the same order: True
+same hashes: True</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two different programs - the worker on Cloud Run and the loader on your machine - cut the same Markdown into the same 283 pieces with the same locators and the same hashes. For a text file there is nothing to disagree about: no parser stands between the bytes and the chunker. Step 7 shows what happens when one does.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Windows</span><h3>Chunk by window: an Act becomes page windows</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/demo_06_chunk_by_window_an_act_becomes_page_windows.py" target="_blank" rel="noopener"><code>demo_06_chunk_by_window_an_act_becomes_page_windows.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The second rule of the chunker: fixed windows with an overlap, cut page by page, ending on a sentence when one is near.</p></div></div>
+
+<h4>Definition</h4>
+<p>Running text has no headings to cut at, so the chunker cuts windows of 2,000 characters. It prefers to end a window at a sentence boundary in the window's second half, and it starts the next window 200 characters back, so a sentence sitting on the seam is present in both. Windows never cross a page: the text is split at every form feed first, and each page is windowed on its own. The locator is the page and the window's number on it, counted from zero: <code>p7-0</code>, <code>p7-1</code>. Text with no form feeds at all has no page to name, and its locators are <code>w0</code>, <code>w1</code>.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _windows(), and the window rule in _chunk()</span><span class="ro">read only</span></div><pre tabindex="0">CHUNK_CHARS, CHUNK_OVERLAP = <span class="nu">2000</span>, <span class="nu">200</span>
+<span class="cm"># ...</span>
+<span class="kw">def</span> <span class="fn">_windows</span>(text: str) -&gt; list[tuple[int, str]]:
+    <span class="cm">"""Fixed windows with overlap, ending on a sentence when there is one nearby; (start offset, text)."""</span>
+    text = text.strip()
+    out, start = [], <span class="nu">0</span>
+    <span class="kw">while</span> start &lt; len(text):
+        end = min(len(text), start + CHUNK_CHARS)
+        <span class="kw">if</span> end &lt; len(text):
+            cut = text.rfind(<span class="st">". "</span>, start + CHUNK_CHARS // <span class="nu">2</span>, end)
+            <span class="kw">if</span> cut != -<span class="nu">1</span>:
+                end = cut + <span class="nu">1</span>
+        piece = text[start:end].strip()
+        <span class="kw">if</span> piece:
+            out.append((start, piece))
+        <span class="kw">if</span> end &gt;= len(text):
+            <span class="kw">break</span>
+        start = max(end - CHUNK_OVERLAP, start + <span class="nu">1</span>)
+    <span class="kw">return</span> out
+<span class="cm"># ...</span>
+    <span class="kw">else</span>:
+        paged = <span class="st">"\f"</span> <span class="kw">in</span> text
+        <span class="kw">for</span> p, page <span class="kw">in</span> enumerate(text.split(<span class="st">"\f"</span>), <span class="nu">1</span>):
+            <span class="kw">for</span> k, (_, piece) <span class="kw">in</span> enumerate(_windows(page)):
+                out.append({<span class="st">"text"</span>: piece, <span class="st">"kind"</span>: <span class="st">"text"</span>, <span class="st">"page_start"</span>: p <span class="kw">if</span> paged <span class="kw">else</span> <span class="kw">None</span>,
+                            <span class="st">"locator"</span>: f<span class="st">"p{p}-{k}"</span> <span class="kw">if</span> paged <span class="kw">else</span> f<span class="st">"w{k}"</span>, <span class="st">"section"</span>: <span class="kw">None</span>})</pre></div>
+
+<h4>Do it: cut the Code on Wages, Rs 0</h4>
+<p>Your kit has a text mirror of every Act, made by pypdf when the corpus was fetched, with a form feed between pages. Cut the mirror of the Code on Wages and look at one seam.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys
+sys.path.insert(0, ".")
+from shared import documind_corpus as dc
+text = open("evals/corpus/acme/code_on_wages_2019.md", encoding="utf-8").read()
+print("pages in the mirror:", text.count("\f") + 1)
+chunks = dc.chunk_document({"slug": "code_on_wages_2019", "doc_type": "act", "source_uri": "gs://x", "text": text}, "acme")
+print(len(chunks), "windows; the first six locators:", [c["locator"] for c in chunks[:6]])
+a, b = chunks[1], chunks[2]                      # p2-0 and p2-1: two windows on the same page
+print(f"{a['locator']} is {len(a['text'])} chars; {b['locator']} is {len(b['text'])} chars")
+print("end of", a["locator"], "->", repr(a["text"][-60:]))
+print("start of", b["locator"], "->", repr(b["text"][:60]))
+print("the overlap: the last 200 characters of", a["locator"], "reappear at the start of", b["locator"], "->", a["text"][-200:] == b["text"][:200])
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">pages in the mirror: 29
+65 windows; the first six locators: ['p1-0', 'p2-0', 'p2-1', 'p3-0', 'p3-1', 'p4-0']
+p2-0 is 2000 chars; p2-1 is 1201 chars
+end of p2-0 -&gt; 'th or without the knowledge of the\nprincipal employer and includ'
+start of p2-1 -&gt; 'in or\nin connection with the work of an establishment when he'
+the overlap: the last 200 characters of p2-0 reappear at the start of p2-1 -&gt; True</pre></div>
+
+<p>Page 1 is a title page and makes one window; page 2 makes two. Look at the seam. The first window is exactly 2,000 characters and ends in the middle of the word "including": the definitions clause on that page runs for hundreds of characters without a full stop, so there was no sentence end in the window's second half to cut at, and the rule fell back to a hard cut. This is what the overlap is for. The second window starts 200 characters earlier, so the broken word, and the sentence around it, are whole in <code>p2-1</code>. A question about that sentence still finds it.</p>
+
+<h4>Read it on the lane, and ask a question that lands on a page</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+q = (db.collection("chunks").where("tenant_id", "==", "acme")
+     .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/code_on_wages_2019.pdf")
+     .where("current", "==", True))
+rows = sorted(q.stream(), key=lambda c: int(c.id.rsplit("#", 1)[1]))
+print(len(rows), "windows on the lane; first six:", [c.to_dict().get("locator") for c in rows[:6]])
+print("pages seen:", sorted({c.to_dict().get("page_start") for c in rows})[:5], "...", max(c.to_dict().get("page_start") for c in rows))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (acme pinned to vector, see the setup)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -s -X POST $API/v1/query -H "Authorization: Bearer $(tok $API)" -H "Content-Type: application/json" \
+  -d '{"query":"Within how many days must wages be paid after the wage period ends under the Code on Wages?","tenant_id":"acme","stream":false}' \
+  | python -c "import json,sys; j=json.load(sys.stdin); print(j['answer'][:160]); [print(c['chunk_id'].split('#')[1], c['source_uri'].split('/')[-1], 'page', c['page'], '|', c['quote'][:60]) for c in j['citations']]"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your wording differs; the pages are the point)</span><span class="ro">read only</span></div><pre tabindex="0">67 windows on the lane; first six: ['p1-0', 'p2-0', 'p2-1', 'p3-0', 'p3-1', 'p4-0']
+pages seen: [1, 2, 3, 4, 5] ... 29
+Under the Code on Wages, wages must be paid within seven days after the end of the wage period ... [Source 1]
+19 code_on_wages_2019.pdf page 9 | (iv) monthly basis, before the expiry of the seventh day of the succ
+20 code_on_wages_2019.pdf page 9 | ...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The lane's windows carry pages because the parser kept the page breaks, and the citation shows <code>page 9</code> because the chunk's <code>page_start</code> is 9: section 17 of the Code, on when wages fall due, sits on page 9 of the Act. But look at the first line: the lane has 67 windows where your mirror has 65. Same Act, same rule, two different counts. That is the next step.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Compare</span><h3>Compare the boundaries: two parsers, one document</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_01/lesson_1_2/demo_07_compare_the_boundaries_two_parsers_one_document.py" target="_blank" rel="noopener"><code>demo_07_compare_the_boundaries_two_parsers_one_document.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Why the same Act became 67 pieces on the lane and 65 on your laptop, and what that means for anything that compares chunks.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chunking rule is the same in both places, character for character. What differs is the text it was given. The lane's text came from Document AI; your mirror's text came from pypdf when the corpus was fetched. Two readers of the same PDF do not produce identical characters: line breaks fall differently, hyphenated words are joined or not, headers and footers are kept or dropped, spaces between columns vary. A window is cut by counting characters, so a few characters more or fewer on a page can add or remove a window. For a Markdown file nothing stands between the bytes and the chunker, and the two sides agree exactly, as step 5 showed.</p>
+
+<h4>The numbers, on a real lane</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Document (acme)</th><th>Pages</th><th>Mirror windows (pypdf text, your laptop)</th><th>Lane windows (Document AI text, the Versions table)</th><th>Same?</th></tr></thead>
+<tbody>
+<tr><td><code>hr_policy_2026.md</code></td><td data-label="Pages">none (Markdown)</td><td data-label="Mirror windows">283</td><td data-label="Lane windows">283</td><td data-label="Same?">yes: no parser in between</td></tr>
+<tr><td><code>dpdp_act_2023.pdf</code></td><td data-label="Pages">21</td><td data-label="Mirror windows">44</td><td data-label="Lane windows">44</td><td data-label="Same?">yes, by luck of the cuts</td></tr>
+<tr><td><code>maternity_benefit_act_1961.pdf</code></td><td data-label="Pages">11</td><td data-label="Mirror windows">21</td><td data-label="Lane windows">21</td><td data-label="Same?">yes</td></tr>
+<tr><td><code>code_on_wages_2019.pdf</code></td><td data-label="Pages">29</td><td data-label="Mirror windows">65</td><td data-label="Lane windows">67</td><td data-label="Same?">no: two extra cuts</td></tr>
+<tr><td><code>it_act_2000.pdf</code></td><td data-label="Pages">34</td><td data-label="Mirror windows">77</td><td data-label="Lane windows">78</td><td data-label="Same?">no</td></tr>
+<tr><td><code>labour_codes_compliance_handbook.pdf</code></td><td data-label="Pages">38</td><td data-label="Mirror windows">50</td><td data-label="Lane windows">49</td><td data-label="Same?">no: one fewer</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Even where the counts agree, the hashes do not: a single differently placed line break changes a window's characters and therefore its <code>chunk_hash</code>. The two sides only match exactly on files that need no parsing.</p>
+
+<h4>See it, page by page</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path.insert(0, ".")
+from collections import Counter
+from google.cloud import firestore
+from shared import documind_corpus as dc
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+NAME = "code_on_wages_2019"
+
+q = (db.collection("chunks").where("tenant_id", "==", "acme")
+     .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/{NAME}.pdf").where("current", "==", True))
+lane = sorted(q.stream(), key=lambda c: int(c.id.rsplit("#", 1)[1]))
+lane_rows = [c.to_dict() for c in lane]
+text = open(f"evals/corpus/acme/{NAME}.md", encoding="utf-8").read()
+local = dc.chunk_document({"slug": NAME, "doc_type": "act", "source_uri": "gs://x", "text": text}, "acme")
+
+lp = Counter(r["page_start"] for r in lane_rows); mp = Counter(c["page_start"] for c in local)
+print(f"lane {len(lane_rows)} windows, mirror {len(local)} windows")
+diff = [p for p in sorted(set(lp) | set(mp)) if lp[p] != mp[p]]
+print("pages with a different number of windows:", [(p, lp[p], mp[p]) for p in diff])
+a = next(r for r in lane_rows if r["locator"] == "p2-0"); b = next(c for c in local if c["locator"] == "p2-0")
+print(f"p2-0 on the lane: {len(a['text'])} chars, hash {a['chunk_hash'][:12]}")
+print(f"p2-0 in the mirror: {len(b['text'])} chars, hash {b['chunk_hash'][:12]}")
+print("lane text starts:", repr(a["text"][:80]))
+print("mirror text starts:", repr(b["text"][:80]))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your pages and characters differ; the shape is the point)</span><span class="ro">read only</span></div><pre tabindex="0">lane 67 windows, mirror 65 windows
+pages with a different number of windows: [(7, 3, 2), (23, 3, 2)]
+p2-0 on the lane: 2000 chars, hash 4c19e0b7a2d8
+p2-0 in the mirror: 2000 chars, hash 6a3f7e9c01b5
+lane text starts: 'THE CODE ON WAGES, 2019\nCHAPTER I\nPRELIMINARY\n1. (1) This Code may be called ...'
+mirror text starts: 'THE CODE ON WAGES, 2019 CHAPTER I PRELIMINARY 1. (1) This Code may be called ...'</pre></div>
+
+<h4>Why it matters</h4>
+<p>Three things follow, and the kit is built around all three. First, a chunk id on the lane is not the id a notebook would give the same PDF; only the Markdown-fed rows match. Second, the golden set does not assert on ids at all: its <code>must_retrieve</code> anchors are short phrases matched against the retrieved <em>text</em>, so a test written on the mirror still passes against the lane. Third, when you compare two retrievers, two lanes or two versions, compare quotes and locators, never ids. Module 4 builds on exactly this.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You held the two parsers' outputs side by side and found where they parted: a couple of pages where a few extra characters pushed a window over 2,000 and forced one more cut. Same document, same rule, different text. The lesson is not that one parser is wrong; it is that a boundary is a property of the text you cut, so anything that depends on a boundary must be checked on the text the lane actually holds.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>One chunker in two places, and what parsing bills</h3><p>Why the chunking rule is written twice, how the kit keeps the two copies honest, and where the rupees go.</p></div></div>
+
+<h4>Two copies, one rule</h4>
+<p>The chunker lives in <code>services/ingest/main.py</code> for the worker and again in <code>shared/documind_corpus.py</code> for everything that runs outside the worker's image: the notebooks that seed a Colab lane, the Rs 0 lane on a laptop, and the offline evaluation gate that runs on every push. The image cannot import a notebook and a notebook cannot import the image, so the block is pasted into both, with the same constants and the same two rules. The kit's own check holds the two to identical output on the same text - the same 65 windows from the Code on Wages mirror, the same 283 clauses from the handbook. Two small differences are deliberate: the loader gives a Markdown chunk <code>page_start: 1</code> where the worker gives <code>None</code>, and the loader's chunk ids are the human form <code>acme:hr_policy_2026#NP-03</code> while the worker's are the version-and-position form from lesson 1.1.</p>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_corpus.py - the constants, and windows()</span><span class="ro">read only</span></div><pre tabindex="0">CHUNK_CHARS, CHUNK_OVERLAP = <span class="nu">2000</span>, <span class="nu">200</span>                     <span class="cm"># services/ingest/main.py</span>
+<span class="cm"># ...</span>
+<span class="kw">def</span> <span class="fn">windows</span>(text: str) -&gt; list:
+    <span class="cm">"""The worker's chunker: fixed windows with overlap, ending on a sentence when one is nearby."""</span>
+    text = text.strip()
+    out, start = [], <span class="nu">0</span>
+    <span class="kw">while</span> start &lt; len(text):
+        end = min(len(text), start + CHUNK_CHARS)
+        <span class="kw">if</span> end &lt; len(text):
+            cut = text.rfind(<span class="st">". "</span>, start + CHUNK_CHARS // <span class="nu">2</span>, end)
+            <span class="kw">if</span> cut != -<span class="nu">1</span>:
+                end = cut + <span class="nu">1</span>
+        piece = text[start:end].strip()
+        <span class="kw">if</span> piece:
+            out.append(piece)
+        <span class="kw">if</span> end &gt;= len(text):
+            <span class="kw">break</span>
+        start = max(end - CHUNK_OVERLAP, start + <span class="nu">1</span>)
+    <span class="kw">return</span> out</pre></div>
+
+<p>Compare it with <code>_windows()</code> in step 6: the same loop, one difference in what it returns (the worker keeps the start offset too). The comment on the first line points at the worker's file, which is how a reader knows where the twin lives.</p>
+
+<h4>What parsing bills, and what it does not</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Counting pages</td><td data-label="Costs">nothing: pypdf reads the page tree</td><td data-label="On your lane">every PDF, every ingest</td></tr>
+<tr><td>Document AI</td><td data-label="Costs">per page: the OCR processor at USD 1.50 per 1,000 pages, the Layout Parser at USD 10 per 1,000 (list prices as the course reads them; re-verify before quoting)</td><td data-label="On your lane">the corpus's 1,065 pages once: about Rs 136 on OCR, about Rs 905 on the Layout Parser, at Rs 85 to the dollar</td></tr>
+<tr><td>Chunking</td><td data-label="Costs">nothing: a loop over a string</td><td data-label="On your lane">milliseconds</td></tr>
+<tr><td>A re-issued PDF</td><td data-label="Costs">the whole file is parsed again; parsing has no carry-over. Only embeddings (lesson 1.3) reuse unchanged pieces</td><td data-label="On your lane">re-issuing the CGST Act is sixteen requests again, then 2 embeddings if two clauses changed</td></tr>
+<tr><td>A Markdown file</td><td data-label="Costs">nothing to parse</td><td data-label="On your lane">the handbook and the synthetic documents</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry is worth remembering when you design an update: parsing is paid per re-issue, embedding is paid per changed chunk. A tenant that re-uploads a 200-page PDF to fix one clause pays for 200 pages of parsing and one chunk of embedding.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">Which store answers</td><td data-label="The check"><code>stages.retrieval_backend</code> on any answer</td><td data-label="Pass looks like"><code>vector</code> during this lesson</td></tr>
+<tr><td>1</td><td data-label="Claim">One processor, chosen by residency</td><td data-label="The check">the worker's env and the two processor listings in step 3</td><td data-label="Pass looks like">one <code>documind-parser</code>, in the location <code>RESIDENCY</code> names</td></tr>
+<tr><td>2</td><td data-label="Claim">Pages are counted before they are paid for</td><td data-label="The check">the Rs 0 cell in step 4</td><td data-label="Pass looks like">1,065 pages, 79 requests, no file over 250</td></tr>
+<tr><td>3</td><td data-label="Claim">The page count rides on the log line</td><td data-label="The check">the amendment Act under globex, step 4</td><td data-label="Pass looks like"><code>pages 4</code> on its <code>ingest_ok</code> line</td></tr>
+<tr><td>4</td><td data-label="Claim">Sections cut identically everywhere</td><td data-label="The check">the lane-versus-local cell in step 5</td><td data-label="Pass looks like">283 and 283, same locators, same hashes</td></tr>
+<tr><td>5</td><td data-label="Claim">Windows overlap and respect pages</td><td data-label="The check">the seam cell in step 6</td><td data-label="Pass looks like">65 windows, the overlap check <code>True</code>, no window crossing a page</td></tr>
+<tr><td>6</td><td data-label="Claim">A citation carries the page</td><td data-label="The check">the wages question in step 6</td><td data-label="Pass looks like"><code>page 9</code> on the citation</td></tr>
+<tr><td>7</td><td data-label="Claim">Two parsers, two boundaries</td><td data-label="The check">the comparison cell in step 7</td><td data-label="Pass looks like">67 versus 65, with the pages that differ named</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One new source: <code>globex/maternity_benefit_amendment_act_2017.pdf</code>, four pages, five chunks, a few paise of Document AI. Everything else was read, not written. Lesson 1.3 takes the chunks you cut today and gives each one its 768 numbers, with the stamp that lets the lane tell its own vectors from anyone else's.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.2 Parse documents and compare chunk boundaries &middot; v5.0</p><p>Next: Lesson 1.3 Create and validate compatible embeddings.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var SAMPLES = {hb: "# ACME Employee Handbook 2026\n\nSynthetic document. Every name, number and identifier is invented.\n\n## NP-03 \u2014 Notice period\n\nA confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs\nfrom the date the resignation is acknowledged in writing. Unused earned leave may not be\nset off against the notice period.\n\n## PB-02 \u2014 Probation\n\nNew joiners serve six months on probation at grade E2. During probation the notice\nperiod is 15 days for either side. Probation may be extended once, by up to three\nmonths, with written reasons.\n\n## LV-01 \u2014 Earned leave\n\nEarned leave accrues at 1.75 days per completed month. A maximum of 30 days may be\ncarried forward into the next calendar year; anything above 30 lapses on 31 December.\n\n## LV-07 \u2014 Leave on exit\n\nEarned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be\nencashed during probation and cannot be used to shorten notice.\n\n## EXP-12 \u2014 Travel reimbursement\n\nDomestic travel is reimbursed against original receipts, capped at Rs 40,000 per trip.\nAnything above the cap needs written approval from the function head before travel, not\nafter.", act: "SEC. 1] THE GAZETTE OF INDIA EXTRAORDINARY 9\nProvided  that the appropriate Government may, by notification, specify the industrial\nor other establishment, the employer of which shall pay to every person employed in such\nindustrial or other establishment, the wages only by cheque or by crediting the wages in his\nbank account.\n16. The employer shall fix the wage period for employees either as daily or weekly or\nfortnightly or monthly subject to the condition that no wage period in respect of any employee\nshall be more than a month:\nProvided that different wage periods may be fixed for different establishments.\n17."};
+  var root = document.getElementById('explorer'); if (!root) return;
+  var sel = document.getElementById('bx-sample'), rule = document.getElementById('bx-rule'),
+      size = document.getElementById('bx-size'), ov = document.getElementById('bx-ov'),
+      q = document.getElementById('bx-q'), out = document.getElementById('bx-out'), sum = document.getElementById('bx-sum'),
+      sizeV = document.getElementById('bx-size-v'), ovV = document.getElementById('bx-ov-v');
+  var CODE = /^([A-Z][A-Z0-9]{0,7}(?:-[A-Z0-9]{1,6}){1,2})\b/;
+  function windows(text, n, o){                      /* the kit's _windows(), with the size and overlap as parameters */
+    text = text.trim(); var res = [], start = 0;
+    while (start < text.length){
+      var end = Math.min(text.length, start + n);
+      if (end < text.length){ var cut = text.lastIndexOf('. ', end); if (cut >= start + Math.floor(n / 2)) end = cut + 1; }
+      var piece = text.slice(start, end).trim();
+      if (piece) res.push({text: piece, start: start});
+      if (end >= text.length) break;
+      start = Math.max(end - o, start + 1);
+    }
+    return res;
+  }
+  function chunk(text, mode, n, o){
+    var lines = text.split('\n'), heads = [];
+    lines.forEach(function(l, i){ if (/^## +/.test(l)) heads.push(i); });
+    var outc = [];
+    if (mode !== 'win' && heads.length){
+      var pre = lines.slice(0, heads[0]).join('\n').trim();
+      windows(pre, n, o).forEach(function(w, k){ outc.push({loc: 'preamble' + (k ? '-' + k : ''), text: w.text}); });
+      heads.forEach(function(h, j){
+        var title = lines[h].replace(/^## +/, '').trim();
+        var body = lines.slice(h + 1, j + 1 < heads.length ? heads[j + 1] : lines.length).join('\n').trim();
+        var m = CODE.exec(title), key = m ? m[1] : 's' + (j + 1);
+        windows(title + '\n' + body, n, o).forEach(function(w, k){ outc.push({loc: key + (k ? '-' + k : ''), text: w.text}); });
+      });
+    } else {
+      windows(text, n, o).forEach(function(w, k){ outc.push({loc: 'w' + k, text: w.text}); });
+    }
+    return outc;
+  }
+  function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function render(){
+    var text = SAMPLES[sel.value], n = parseInt(size.value, 10), o = parseInt(ov.value, 10);
+    sizeV.textContent = n; ovV.textContent = o;
+    var cs = chunk(text, rule.value, n, o), needle = q.value.trim().toLowerCase(), hits = 0;
+    out.innerHTML = cs.map(function(c){
+      var body = esc(c.text), hit = needle && c.text.toLowerCase().indexOf(needle) !== -1;
+      if (hit){ hits++; var re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'); body = body.replace(re, function(m){ return '<mark>' + m + '</mark>'; }); }
+      return '<div class="bx-chunk' + (hit ? ' hit' : '') + '"><b>' + esc(c.loc) + ' · ' + c.text.length + ' chars</b>' + body + '</div>';
+    }).join('');
+    var mode = (rule.value !== 'win' && /^## +/m.test(text)) ? 'by section' : 'by window';
+    sum.textContent = cs.length + ' chunks, cut ' + mode + (needle ? ' · "' + q.value.trim() + '" is in ' + hits + ' chunk' + (hits === 1 ? '' : 's') : '');
+  }
+  [sel, rule, size, ov].forEach(function(el){ el.addEventListener('input', render); el.addEventListener('change', render); });
+  q.addEventListener('input', render);
+  render();
+})();
+</script>
+</body>
+</html>

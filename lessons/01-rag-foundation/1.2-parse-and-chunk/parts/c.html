@@ -1,0 +1,127 @@
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Compare</span><h3>Compare the boundaries: two parsers, one document</h3><p>Why the same Act became 67 pieces on the lane and 65 on your laptop, and what that means for anything that compares chunks.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chunking rule is the same in both places, character for character. What differs is the text it was given. The lane's text came from Document AI; your mirror's text came from pypdf when the corpus was fetched. Two readers of the same PDF do not produce identical characters: line breaks fall differently, hyphenated words are joined or not, headers and footers are kept or dropped, spaces between columns vary. A window is cut by counting characters, so a few characters more or fewer on a page can add or remove a window. For a Markdown file nothing stands between the bytes and the chunker, and the two sides agree exactly, as step 5 showed.</p>
+
+<h4>The numbers, on a real lane</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Document (acme)</th><th>Pages</th><th>Mirror windows (pypdf text, your laptop)</th><th>Lane windows (Document AI text, the Versions table)</th><th>Same?</th></tr></thead>
+<tbody>
+<tr><td><code>hr_policy_2026.md</code></td><td data-label="Pages">none (Markdown)</td><td data-label="Mirror windows">283</td><td data-label="Lane windows">283</td><td data-label="Same?">yes: no parser in between</td></tr>
+<tr><td><code>dpdp_act_2023.pdf</code></td><td data-label="Pages">21</td><td data-label="Mirror windows">44</td><td data-label="Lane windows">44</td><td data-label="Same?">yes, by luck of the cuts</td></tr>
+<tr><td><code>maternity_benefit_act_1961.pdf</code></td><td data-label="Pages">11</td><td data-label="Mirror windows">21</td><td data-label="Lane windows">21</td><td data-label="Same?">yes</td></tr>
+<tr><td><code>code_on_wages_2019.pdf</code></td><td data-label="Pages">29</td><td data-label="Mirror windows">65</td><td data-label="Lane windows">67</td><td data-label="Same?">no: two extra cuts</td></tr>
+<tr><td><code>it_act_2000.pdf</code></td><td data-label="Pages">34</td><td data-label="Mirror windows">77</td><td data-label="Lane windows">78</td><td data-label="Same?">no</td></tr>
+<tr><td><code>labour_codes_compliance_handbook.pdf</code></td><td data-label="Pages">38</td><td data-label="Mirror windows">50</td><td data-label="Lane windows">49</td><td data-label="Same?">no: one fewer</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Even where the counts agree, the hashes do not: a single differently placed line break changes a window's characters and therefore its <code>chunk_hash</code>. The two sides only match exactly on files that need no parsing.</p>
+
+<h4>See it, page by page</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell, wrapped so it pastes straight into bash)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path.insert(0, ".")
+from collections import Counter
+from google.cloud import firestore
+from shared import documind_corpus as dc
+PROJECT = os.environ["PROJECT"]
+db = firestore.Client(project=PROJECT)
+NAME = "code_on_wages_2019"
+
+q = (db.collection("chunks").where("tenant_id", "==", "acme")
+     .where("source_uri", "==", f"gs://{PROJECT}-uploads/acme/{NAME}.pdf").where("current", "==", True))
+lane = sorted(q.stream(), key=lambda c: int(c.id.rsplit("#", 1)[1]))
+lane_rows = [c.to_dict() for c in lane]
+text = open(f"evals/corpus/acme/{NAME}.md", encoding="utf-8").read()
+local = dc.chunk_document({"slug": NAME, "doc_type": "act", "source_uri": "gs://x", "text": text}, "acme")
+
+lp = Counter(r["page_start"] for r in lane_rows); mp = Counter(c["page_start"] for c in local)
+print(f"lane {len(lane_rows)} windows, mirror {len(local)} windows")
+diff = [p for p in sorted(set(lp) | set(mp)) if lp[p] != mp[p]]
+print("pages with a different number of windows:", [(p, lp[p], mp[p]) for p in diff])
+a = next(r for r in lane_rows if r["locator"] == "p2-0"); b = next(c for c in local if c["locator"] == "p2-0")
+print(f"p2-0 on the lane: {len(a['text'])} chars, hash {a['chunk_hash'][:12]}")
+print(f"p2-0 in the mirror: {len(b['text'])} chars, hash {b['chunk_hash'][:12]}")
+print("lane text starts:", repr(a["text"][:80]))
+print("mirror text starts:", repr(b["text"][:80]))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your pages and characters differ; the shape is the point)</span><span class="ro">read only</span></div><pre tabindex="0">lane 67 windows, mirror 65 windows
+pages with a different number of windows: [(7, 3, 2), (23, 3, 2)]
+p2-0 on the lane: 2000 chars, hash 4c19e0b7a2d8
+p2-0 in the mirror: 2000 chars, hash 6a3f7e9c01b5
+lane text starts: 'THE CODE ON WAGES, 2019\nCHAPTER I\nPRELIMINARY\n1. (1) This Code may be called ...'
+mirror text starts: 'THE CODE ON WAGES, 2019 CHAPTER I PRELIMINARY 1. (1) This Code may be called ...'</pre></div>
+
+<h4>Why it matters</h4>
+<p>Three things follow, and the kit is built around all three. First, a chunk id on the lane is not the id a notebook would give the same PDF; only the Markdown-fed rows match. Second, the golden set does not assert on ids at all: its <code>must_retrieve</code> anchors are short phrases matched against the retrieved <em>text</em>, so a test written on the mirror still passes against the lane. Third, when you compare two retrievers, two lanes or two versions, compare quotes and locators, never ids. Module 4 builds on exactly this.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You held the two parsers' outputs side by side and found where they parted: a couple of pages where a few extra characters pushed a window over 2,000 and forced one more cut. Same document, same rule, different text. The lesson is not that one parser is wrong; it is that a boundary is a property of the text you cut, so anything that depends on a boundary must be checked on the text the lane actually holds.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>One chunker in two places, and what parsing bills</h3><p>Why the chunking rule is written twice, how the kit keeps the two copies honest, and where the rupees go.</p></div></div>
+
+<h4>Two copies, one rule</h4>
+<p>The chunker lives in <code>services/ingest/main.py</code> for the worker and again in <code>shared/documind_corpus.py</code> for everything that runs outside the worker's image: the notebooks that seed a Colab lane, the Rs 0 lane on a laptop, and the offline evaluation gate that runs on every push. The image cannot import a notebook and a notebook cannot import the image, so the block is pasted into both, with the same constants and the same two rules. The kit's own check holds the two to identical output on the same text - the same 65 windows from the Code on Wages mirror, the same 283 clauses from the handbook. Two small differences are deliberate: the loader gives a Markdown chunk <code>page_start: 1</code> where the worker gives <code>None</code>, and the loader's chunk ids are the human form <code>acme:hr_policy_2026#NP-03</code> while the worker's are the version-and-position form from lesson 1.1.</p>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_corpus.py - the constants, and windows()</span><span class="ro">read only</span></div><pre tabindex="0">CHUNK_CHARS, CHUNK_OVERLAP = <span class="nu">2000</span>, <span class="nu">200</span>                     <span class="cm"># services/ingest/main.py</span>
+<span class="cm"># ...</span>
+<span class="kw">def</span> <span class="fn">windows</span>(text: str) -&gt; list:
+    <span class="cm">"""The worker's chunker: fixed windows with overlap, ending on a sentence when one is nearby."""</span>
+    text = text.strip()
+    out, start = [], <span class="nu">0</span>
+    <span class="kw">while</span> start &lt; len(text):
+        end = min(len(text), start + CHUNK_CHARS)
+        <span class="kw">if</span> end &lt; len(text):
+            cut = text.rfind(<span class="st">". "</span>, start + CHUNK_CHARS // <span class="nu">2</span>, end)
+            <span class="kw">if</span> cut != -<span class="nu">1</span>:
+                end = cut + <span class="nu">1</span>
+        piece = text[start:end].strip()
+        <span class="kw">if</span> piece:
+            out.append(piece)
+        <span class="kw">if</span> end &gt;= len(text):
+            <span class="kw">break</span>
+        start = max(end - CHUNK_OVERLAP, start + <span class="nu">1</span>)
+    <span class="kw">return</span> out</pre></div>
+
+<p>Compare it with <code>_windows()</code> in step 6: the same loop, one difference in what it returns (the worker keeps the start offset too). The comment on the first line points at the worker's file, which is how a reader knows where the twin lives.</p>
+
+<h4>What parsing bills, and what it does not</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Counting pages</td><td data-label="Costs">nothing: pypdf reads the page tree</td><td data-label="On your lane">every PDF, every ingest</td></tr>
+<tr><td>Document AI</td><td data-label="Costs">per page: the OCR processor at USD 1.50 per 1,000 pages, the Layout Parser at USD 10 per 1,000 (list prices as the course reads them; re-verify before quoting)</td><td data-label="On your lane">the corpus's 1,065 pages once: about Rs 136 on OCR, about Rs 905 on the Layout Parser, at Rs 85 to the dollar</td></tr>
+<tr><td>Chunking</td><td data-label="Costs">nothing: a loop over a string</td><td data-label="On your lane">milliseconds</td></tr>
+<tr><td>A re-issued PDF</td><td data-label="Costs">the whole file is parsed again; parsing has no carry-over. Only embeddings (lesson 1.3) reuse unchanged pieces</td><td data-label="On your lane">re-issuing the CGST Act is sixteen requests again, then 2 embeddings if two clauses changed</td></tr>
+<tr><td>A Markdown file</td><td data-label="Costs">nothing to parse</td><td data-label="On your lane">the handbook and the synthetic documents</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry is worth remembering when you design an update: parsing is paid per re-issue, embedding is paid per changed chunk. A tenant that re-uploads a 200-page PDF to fix one clause pays for 200 pages of parsing and one chunk of embedding.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">Which store answers</td><td data-label="The check"><code>stages.retrieval_backend</code> on any answer</td><td data-label="Pass looks like"><code>vector</code> during this lesson</td></tr>
+<tr><td>1</td><td data-label="Claim">One processor, chosen by residency</td><td data-label="The check">the worker's env and the two processor listings in step 3</td><td data-label="Pass looks like">one <code>documind-parser</code>, in the location <code>RESIDENCY</code> names</td></tr>
+<tr><td>2</td><td data-label="Claim">Pages are counted before they are paid for</td><td data-label="The check">the Rs 0 cell in step 4</td><td data-label="Pass looks like">1,065 pages, 79 requests, no file over 250</td></tr>
+<tr><td>3</td><td data-label="Claim">The page count rides on the log line</td><td data-label="The check">the amendment Act under globex, step 4</td><td data-label="Pass looks like"><code>pages 4</code> on its <code>ingest_ok</code> line</td></tr>
+<tr><td>4</td><td data-label="Claim">Sections cut identically everywhere</td><td data-label="The check">the lane-versus-local cell in step 5</td><td data-label="Pass looks like">283 and 283, same locators, same hashes</td></tr>
+<tr><td>5</td><td data-label="Claim">Windows overlap and respect pages</td><td data-label="The check">the seam cell in step 6</td><td data-label="Pass looks like">65 windows, the overlap check <code>True</code>, no window crossing a page</td></tr>
+<tr><td>6</td><td data-label="Claim">A citation carries the page</td><td data-label="The check">the wages question in step 6</td><td data-label="Pass looks like"><code>page 9</code> on the citation</td></tr>
+<tr><td>7</td><td data-label="Claim">Two parsers, two boundaries</td><td data-label="The check">the comparison cell in step 7</td><td data-label="Pass looks like">67 versus 65, with the pages that differ named</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One new source: <code>globex/maternity_benefit_amendment_act_2017.pdf</code>, four pages, five chunks, a few paise of Document AI. Everything else was read, not written. Lesson 1.3 takes the chunks you cut today and gives each one its 768 numbers, with the stamp that lets the lane tell its own vectors from anyone else's.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.2 Parse documents and compare chunk boundaries &middot; v5.0</p><p>Next: Lesson 1.3 Create and validate compatible embeddings.</p></div>

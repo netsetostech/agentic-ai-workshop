@@ -1,0 +1,91 @@
+name: DocuMind dry run (Tier A)
+
+# Offline validation of the DocuMind kit. No GCP credentials, no cost: every Python file compiles, the offline
+# regression suites, terraform validate, the requirements, pins and Dockerfile checks, the service images
+# build, and the offline half of the eval gate. This is the "will the live session hold together" gate; it
+# must be green before a live session.
+#
+# This repository is generated from deploy/ in the private authoring repository, so the kit is the repository
+# root here. The live rehearsal (terraform apply, a real deploy, the smoke tests) is deliberately not here: it
+# costs money and needs a project. Run it with the Makefile (make plan / up / smoke / down). See README.md.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tier-a:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # What the checks import, directly or through the kit code they load: the answer contract is pydantic
+      # (shared/documind_schemas.py), the tool layer calls requests (shared/documind_tools.py), judge.py reads
+      # pandas, fetch_real.py reads pypdf. Everything else they need is the standard library.
+      - name: The checks' imports
+        run: pip install pydantic pandas pypdf requests
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: tflint (optional lint)
+        uses: terraform-linters/setup-tflint@v4
+        continue-on-error: true
+
+      - name: CI has the required build tools
+        run: |
+          terraform version
+          docker version
+
+      - name: All Python files compile
+        run: python -m compileall -q .
+
+      - name: IDE lesson session regressions (offline)
+        run: |
+          python -m pip install --no-deps -e workshop_demos/setup
+          python workshop_demos/tests/run_tests.py
+
+      - name: Command regressions (offline)
+        run: python -m unittest discover -s commands/tests -v
+
+      - name: Operator regressions (offline)
+        run: python -m unittest discover -s operators/tests -v
+
+      - name: Corpus recovery regressions (offline)
+        run: python -m unittest discover -s evals/tests -v
+
+      # The chat brains (workshop lessons 5.1, 5.4, 5.5 and 5.7) need the chat image's own pins - LangChain, LangGraph,
+      # google-adk - which the checks above do not install. They get a venv of their own, so nothing above changes,
+      # and DOCUMIND_REQUIRE_LIBS=1 makes a missing pin a failure rather than a skipped test. test_chat_limits.py's
+      # library half is the brains under a turn's limits (workshop lessons 5.5 and 5.7); make limits-check runs
+      # the same. test_cases.py's is the Desk's chat door and case routes (workshop lesson 5.6; make desk-check),
+      # test_desk.py's the router and the desk graph (workshop lesson 10.4), test_gchat.py's the Google Chat bridge and
+      # the Desk's delegation rules (workshop lesson 10.4).
+      - name: Chat brain regressions, in the chat image's pins (offline)
+        run: |
+          python -m venv /tmp/chat-venv
+          /tmp/chat-venv/bin/pip install -q -r services/chat/requirements.txt
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_chat_brains.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_chat_limits.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_cases.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_desk.py -v
+          DOCUMIND_REQUIRE_LIBS=1 /tmp/chat-venv/bin/python -m unittest commands/tests/test_gchat.py -v
+
+      - name: Extraction check (a kit-only checkout has no notebooks, so it reports and passes)
+        run: python extract_documind.py --check
+
+      - name: Tier-A offline validation (terraform validate and docker build run here)
+        run: python validate.py
+
+      # The eval gate, offline half. It judges the GOLDEN SET, not the model: that every assertion could still
+      # fail, that every must_retrieve anchor resolves, and that the isolation rows are still there. No
+      # credentials, so it runs on every push. The live half needs a deployment and runs from documind-cd.yml.
+      - name: Eval gate (offline)
+        run: python evals/run_eval.py

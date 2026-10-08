@@ -1,0 +1,97 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; The pairwise judge</span><h3>The pairwise judge: which answer is better, row by row</h3><p>Both revisions answer the same twenty questions, the candidate is rated, and the judge picks a side or calls a tie.</p></div></div>
+
+<h4>Definition</h4>
+<p>With <code>API_B</code>, the judge collects answers from the live revision and then from the candidate, for the same rows. It rates the candidate's answers for groundedness and instruction following, as in lesson 4.2. It also adds one pairwise metric, question-answering quality, where the judge model reads both answers to each question and chooses the candidate, the baseline, or neither. The SDK turns those choices into two win rates, and a tie counts for neither side. <code>--rows 20</code> keeps the run to the first twenty golden rows, thirteen lookups and seven joins, which is enough to see a direction for a fraction of the full run's cost. The run's name ends in <code>-vs-candidate</code> and the template hash.</p>
+
+<h4>The code</h4>
+@@judge_pairwise@@
+@@pair_metric@@
+%%SDK_WIN%%
+
+<h4>Do it</h4>
+%%CELL_JUDGE%%
+%%OUT_JUDGE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Forty answers came back, twenty from each revision, and the Evaluation service made %%N_JUDGE_REQ%% ratings: two pointwise and one pairwise for every row. Read the two win rates together. A candidate win rate near the baseline's, with many ties, says the cheaper model answers these questions about as well. A baseline win rate well above the candidate's says you would be buying the saving with quality. The pointwise lines describe the candidate alone, so compare them with lesson 4.2's run of the live revision. None of these numbers gates anything: step 4's gate decides whether the candidate may ship.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The rupee delta</span><h3>The rupee delta, from the usage rows</h3><p>Every answer of the last hour, grouped by the model that gave it, and the difference per answer.</p></div></div>
+
+<p>The API priced every answer on its usage row with <code>cost.price()</code>, at the rates of the model that answered. The gate's runs and the judge's collections asked both revisions the same questions, so the two groups are like for like. The cell groups the last hour's rows by model and divides.</p>
+@@price@@
+%%CELL_DELTA%%
+%%OUT_DELTA%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The usage rows priced about %%N_ANSWERS%% answers, half on each model. The delta is measured, not estimated: the same questions, the same context, only the model's rates and the model's own token counts differ. For a sense of scale, an answer of 2,000 tokens in and 300 out costs Rs %%EX_FLASH%% on flash and Rs %%EX_LITE%% on flash-lite, at the kit's rates: Rs %%EX_SAVE_1K%% saved per thousand answers. Multiply your delta by your monthly volume, and set it beside step 5's win rates. That pair, the verdict and the rupees, is this lesson's proof.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Retrieval-only changes</span><h3>Retrieval-only changes: measure retrieval first, with no model</h3><p>Which instrument fits which kind of change, and why a retrieval change starts with the ablation.</p></div></div>
+
+<p>A model change needs the gate and the judge, because only answers show it. A change that touches only retrieval is different: the current-only filter, the knowledge graph, another store as <code>RETRIEVAL_BACKEND</code>. Its effect is on which chunks reach the model, and the golden anchors measure that directly. <code>make ablate</code>, lesson 2.2's harness, runs retrieval arms against the anchors with no model in the loop, so it is cheap and repeatable. The Makefile's own advice for a new retrieval backend is to run the ablation first and then judge a candidate. Only an arm that retrieves better earns a candidate, the scoped gate and a judge.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>The change</th><th>Measure it with</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>the model, <code>GENERATOR_MODEL</code></td><td data-label="Measure it with">a candidate, the scoped gate on both, the pairwise judge, the usage rows by model</td><td data-label="Why">quality and price both move, and only answers show quality</td></tr>
+<tr><td>retrieval: current-only, the graph, the backend</td><td data-label="Measure it with"><code>make ablate</code> first, then a candidate and the scoped gate</td><td data-label="Why">the anchors measure retrieval without paying for generation</td></tr>
+<tr><td>routing, <code>ROUTING</code></td><td data-label="Measure it with">the full gate and the usage rows by model</td><td data-label="Why">the router moves answers between models, so the mix is the result</td></tr>
+<tr><td>the answer cache, <code>SEMANTIC_CACHE</code></td><td data-label="Measure it with">lesson 6.4's threshold curve first</td><td data-label="Why">with it on, a repeated question replays an earlier answer, which fakes a pairwise run</td></tr>
+<tr><td>Model Armor, <code>ARMOR</code></td><td data-label="Measure it with">the full gate</td><td data-label="Why">a blocked prompt is a 400, which the gate counts as a failed request</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Deciding, the confounds that fake a result, and removing the candidate</h3><p>What the three measurements decide together, five ways a comparison lies, and the end of the experiment.</p></div></div>
+
+<h4>Deciding</h4>
+<p>The gate decides whether the candidate may ship. The scoped gate is a first look. Before any release, lesson 4.2's path runs the full gate on the candidate, then a person approves, then <code>make promote</code> moves traffic by name. The judge's win rates say what you trade, and the usage rows say what you save. A cheaper model that clears the full gate, and loses no more rows than it wins, is a saving you can defend with numbers.</p>
+
+<h4>Confounds: five ways a comparison fakes a result</h4>
+<ul>
+<li><strong>A second setting on the template.</strong> A value an earlier experiment left on the latest template rides into the candidate. Step 3's diff against the serving revision catches it.</li>
+<li><strong>A variable in your shell.</strong> Make prefers an exported variable to its own default, and earlier lessons exported the API's settings. They usually match the live values; the diff proves it.</li>
+<li><strong>The answer cache.</strong> With <code>SEMANTIC_CACHE=on</code> on either side, a repeated question replays an earlier answer at no cost, and both the judge and the price compare replays.</li>
+<li><strong>Time.</strong> A reindex between the two runs changes the corpus under one side. Run both in the same sitting.</li>
+<li><strong>Different questions.</strong> A delta per answer over different question sets compares the questions, not the models. Every step here asks both sides the same rows.</li>
+</ul>
+
+<h4>Do it: remove the candidate's tag</h4>
+<p>This ends the experiment. The candidate revision stays in the service's history with no traffic and no URL. Removing the tag is not enough on its own: <code>make promote</code> refuses only when the tag points at another revision, and otherwise flips traffic to the revision named in <code>.candidate-revision</code>. Deleting that file makes <code>make promote</code> stop with an error instead.</p>
+%%CELL_CLEANUP%%
+%%OUT_CLEANUP%%
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><code>make candidate</code>, the diff, the tag's removal</td><td data-label="Costs">nothing: a new revision takes no requests until its URL is called</td><td data-label="On your lane">free</td></tr>
+<tr><td>The scoped gates</td><td data-label="Costs">%%N_SCOPED%% answers on each revision, the candidate's at the flash-lite rate</td><td data-label="On your lane">in step 6's rows</td></tr>
+<tr><td>The pairwise judge</td><td data-label="Costs">twenty answers on each revision, and %%N_JUDGE_REQ%% requests to the Evaluation service</td><td data-label="On your lane">in step 6's rows, plus the service's own line</td></tr>
+<tr><td>The comparison and the delta cells</td><td data-label="Costs">nothing: they read files and log rows</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A candidate exists with no traffic</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>&gt;&gt; candidate revision:</code> and <code>CAND=</code></td></tr>
+<tr><td>2</td><td data-label="Claim">It differs from the live revision in one setting</td><td data-label="The check">step 3, the diff</td><td data-label="Pass looks like"><code>GENERATOR_MODEL</code> and <code>1 setting(s) differ</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Both revisions were gated on the same rows</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>scoped to hr_policy_2026.md: %%N_SCOPED%% row(s) cite it</code> on each</td></tr>
+<tr><td>4</td><td data-label="Claim">The rows that moved are named</td><td data-label="The check">step 4, the comparison</td><td data-label="Pass looks like">each moved row with its reason, or <code>0 row(s) changed verdict</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The pairwise verdict exists</td><td data-label="The check">step 5</td><td data-label="Pass looks like">both win rates, <code>row_count 20.000</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The rupee delta is measured</td><td data-label="The check">step 6</td><td data-label="Pass looks like">both models, and <code>less an answer</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The instrument fits the change</td><td data-label="The check">step 7</td><td data-label="Pass looks like">a model change measured by gate, judge and rows</td></tr>
+<tr><td>8</td><td data-label="Claim">The candidate's URL is gone</td><td data-label="The check">step 8</td><td data-label="Pass looks like"><code>HTTP 404</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Users never left the live revision</td><td data-label="The check">step 8, gcloud's traffic table</td><td data-label="Pass looks like">100% on the revision that served before step 3</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One more <code>documind-api</code> revision in the service's history, with no traffic and no tag; step 8 deleted the file that named it. Two reports, <code>evals/reports/base73.json</code> and <code>cand73.json</code>, also ignored. The usage rows of about %%N_ANSWERS%% answers, and one Experiments run in <code>documind-eval</code> whose name ends in <code>-vs-candidate</code> and the template hash. The golden set is sound, the gate judges a deployment, the judge explains, and a change is measured against its baseline. Lesson 4.5 checks the judge against people, and lesson 4.6 turns to security, starting with how an authenticated identity becomes a tenant.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.4 Compare one controlled change against a baseline &middot; v5.0</p><p>Next: Lesson 4.5 Check the LLM judge against people.</p></div>

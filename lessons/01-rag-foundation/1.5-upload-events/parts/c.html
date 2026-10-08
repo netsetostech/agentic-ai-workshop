@@ -1,0 +1,86 @@
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Dead letters</span><h3>Dead letters: reading the queue, deciding, cleaning up</h3><p>Where a message goes after its twelfth refusal, how to read it without consuming it, and the three things a person can do with it.</p></div></div>
+
+<h4>Definition</h4>
+<p>A dead-letter topic is not an error log; it is a queue of messages that still exist. When the push subscription has delivered a message twelve times without an acknowledgement, it forwards the message, unchanged, to <code>documind-ingest-dlq</code>, and the subscription <code>ingest-dlq-sub</code> holds it. Pulling from that subscription without acknowledging shows the message and leaves it there; acknowledging it is the only thing that removes it. A person reading a dead letter has three choices: fix the cause and upload the object again, which is a new event and a fresh twelve attempts; acknowledge the message to drop it, because the object was never meant to be indexed; or leave it while the cause is investigated. What a person must not do is fix the worker and expect the dead letter to retry itself: it is out of the push subscription for good.</p>
+
+<h4>The code</h4>
+@@make_dlq@@
+@@tf_dlq_sub@@
+
+<h4>Read it, when it has landed</h4>
+<p>The poison message from step 5 reaches the queue about an hour after its first refusal. Run the first line then; an empty listing earlier is the retries still running, not a fault. The second read decodes the message's own record, the same JSON the worker refused, to see the size of zero with your own eyes.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, about an hour after step 5 (both peek; nothing is acknowledged)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make dlq PROJECT=$PROJECT
+
+gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 --format='value(message.data)' \
+  | base64 -d | python -c "import json,sys; r=json.load(sys.stdin); print({k: r.get(k) for k in ('name','size','contentType','generation','timeCreated')})"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your ids and times differ; the last column is this subscription's own count, not the twelve)</span><span class="ro">read only</span></div><pre tabindex="0">MESSAGE_ID         OBJECT_ID                    EVENT_TIME                DELIVERY_ATTEMPT
+12345678901234567  acme/poison-1758542871.pdf   2026-09-22T12:17:52.318Z  1
+{'name': 'acme/poison-1758542871.pdf', 'size': '0', 'contentType': 'application/pdf', 'generation': '1758542872123456', 'timeCreated': '2026-09-22T12:17:52.101Z'}</pre></div>
+
+<h4>Decide, then clean up</h4>
+<p>This dead letter deserves the second choice: the object was never meant to be indexed. Acknowledge the message to remove it from the queue, and delete the empty object from the bucket, because an object with no ledger row is exactly what the nightly walk of lesson 1.8 looks for, and it would rewrite the object onto itself and send the same poison round again every night. Both commands change your lane; both act only on the drill's own artefacts.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (removes the dead letter and the empty object; nothing else)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 --auto-ack --format='value(message.attributes.objectId)'
+gcloud storage rm "gs://$PROJECT-uploads/acme/poison-"*.pdf</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme/poison-1758542871.pdf
+Removing gs://documind-ai-YOUR-ID-uploads/acme/poison-1758542871.pdf...</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read a message that had been refused twelve times, decoded the record inside it and found the zero that made it poison, and then took the operator's decision: drop it, and remove its cause. Notice what did not need doing: no worker was restarted, no subscription touched, no retry forced. The platform did the retrying, stopped at the ceiling, and kept the evidence for you. A dead letter you could not explain would be the other case, and the first read in step 4, the request log, is where that investigation starts.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>At-least-once, and what it costs</h3><p>The three ways a delivery can surprise a worker, the defence for each, the one hazard the ceiling exists for, and where the rupees go.</p></div></div>
+
+<h4>Three surprises, three defences</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>The queue may</th><th>Because</th><th>The defence</th></tr></thead>
+<tbody>
+<tr><td>Deliver a message twice, even concurrently</td><td data-label="Because">an answer arrives after the ack deadline, or a redelivery overlaps a slow first attempt</td><td data-label="The defence">the claim, taken in a Firestore transaction: the second delivery finds <code>processing</code> or <code>indexed</code> and is acknowledged as a duplicate (lesson 1.4)</td></tr>
+<tr><td>Deliver events out of order</td><td data-label="Because">retries and backoff reorder them: an older generation's event can arrive after the newer one was indexed</td><td data-label="The defence">the generation guard: the ledger's generation is read first, an older event is acknowledged as <code>stale</code>, and the bytes are fetched by generation, never "whatever the object holds now" (lesson 1.7)</td></tr>
+<tr><td>Refuse the worker's door</td><td data-label="Because">Cloud Run answers "no available instance" while it cold-starts, and a corpus upload lands thirty objects at once against one request per instance</td><td data-label="The defence">twelve attempts, not five, so a document is never dead-lettered for a refusal that was not its fault</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+@@claim_doc@@
+@@deploy_flags@@
+
+<h4>The hazard the ceiling exists for</h4>
+<p>There is one failure the claim cannot defend against on its own. A request that runs past 600 seconds is killed by the platform, not by the worker, so the code that releases the claim never runs. The claim stays <code>processing</code>; the subscription retries; the retry finds the claim taken and is acknowledged as a duplicate; and the document is never indexed while every delivery reports success. The 250-page ceiling is the answer: no push request is allowed to begin a document that could reach the deadline, and the job that takes such documents has two hours and no platform retries, because a failed document says why on its claim and the next run does not retake it. Lesson 1.8's reconcile is the backstop that would notice a claim stuck in <code>processing</code>.</p>
+@@batch_timeout@@
+
+<h4>What deliveries bill, and what they do not</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Event</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A notification and a message</td><td data-label="Costs">Pub/Sub bills per message volume in gigabytes; a record is about a kilobyte</td><td data-label="On your lane">a corpus upload of thirty objects is thirty kilobytes: nothing</td></tr>
+<tr><td>A push request</td><td data-label="Costs">Cloud Run bills the worker's CPU and memory while it answers: seconds for an indexed document, milliseconds for a refusal or a duplicate</td><td data-label="On your lane">the poison drill's twelve refusals: a fraction of a second in total</td></tr>
+<tr><td>A dead letter</td><td data-label="Costs">storage in the topic for the subscription's retention (seven days by default), then it is gone unless acknowledged first</td><td data-label="On your lane">one message; read it before next week</td></tr>
+<tr><td>The batch job</td><td data-label="Costs">the job's CPU and memory while it runs, plus what the document itself costs to parse and embed</td><td data-label="On your lane">the optional bundle: Rs 34 or Rs 230 of Document AI, the job's own time is paise</td></tr>
+<tr><td>Reading logs and queues</td><td data-label="Costs">nothing beyond the logging quota</td><td data-label="On your lane">every read on this page</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry to remember: the delivery machinery is nearly free, and the expensive thing is the document, which is why the kit spends nothing before it knows what it is dealing with: parse the record before downloading, count the pages before parsing, take the claim before embedding. Every refusal in this lesson happened before the first rupee.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">One notification, one topic, one push subscription</td><td data-label="The check">the four reads in step 3</td><td data-label="Pass looks like"><code>OBJECT_FINALIZE</code>, <code>JSON_API_V1</code>, the endpoint is the worker's URL, the token is <code>documind-ingest-sa</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The policy is declared, not defaulted</td><td data-label="The check">the subscription in step 3</td><td data-label="Pass looks like">600 s, 10 s to 600 s, <code>maxDeliveryAttempts: 12</code>, the dead-letter topic named</td></tr>
+<tr><td>3</td><td data-label="Claim">A 2xx acknowledges whatever the body says</td><td data-label="The check">your 1.4 upload's request log in step 4</td><td data-label="Pass looks like">two POSTs, both 200, one in milliseconds (the duplicate), one in seconds (the index)</td></tr>
+<tr><td>4</td><td data-label="Claim">A 400 is retried on the clock</td><td data-label="The check">the reads in step 5</td><td data-label="Pass looks like">400s about 10, 20, 40, 80 and 160 seconds apart; <code>ingest_poison</code> counted once per attempt</td></tr>
+<tr><td>5</td><td data-label="Claim">The retries stop at twelve</td><td data-label="The check"><code>make dlq</code> in step 7, about an hour later</td><td data-label="Pass looks like">the poison object's message in <code>ingest-dlq-sub</code>, its record carrying <code>size '0'</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The 250-page line is drawn before Document AI</td><td data-label="The check">the code in step 6, and the optional bundle</td><td data-label="Pass looks like"><code>ingest_queued_batch</code> with <code>pages 270</code> and no parse on the push lane</td></tr>
+<tr><td>7</td><td data-label="Claim">The queue is a claim</td><td data-label="The check"><code>make queued</code> in step 6</td><td data-label="Pass looks like"><code>0 queued document(s)</code>, or the bundle with its pages and generation</td></tr>
+<tr><td>8</td><td data-label="Claim">The batch job is the worker, without a deadline</td><td data-label="The check">the job and schedule reads in step 6</td><td data-label="Pass looks like">the ingest image, <code>batch.py --project</code>, 7200 s, <code>maxRetries: 0</code>, <code>15 * * * *</code> Asia/Kolkata</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One empty object, uploaded and then deleted; one dead letter, read and then acknowledged; and, only if you took the optional drill, one 270-page bundle under acme with its own records. Everything else was read. Lesson 1.6 goes back to a document that is already indexed and changes one clause of it, to see exactly what a re-issue costs.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.5 Follow upload events, retries, dead-letter handling and the batch lane &middot; v5.0</p><p>Next: Lesson 1.6 Reindex a changed section and measure embedding reuse.</p></div>

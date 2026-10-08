@@ -1,0 +1,90 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code> and <code>NUMBER</code> set by the setup above.</p>
+<ul>
+<li><strong>The lane as <code>make up</code> left it.</strong> Its cluster, <code>documind-autopilot</code>, is what step 5 inspects.</li>
+<li><strong>Nothing to build or deploy.</strong> The lesson's one live step reads the lane with gcloud. It also runs <code>make gke-up</code>, which stops on the lab cluster before it changes anything.</li>
+<li><strong>No Hugging Face token, no GPU quota and no change to the cluster.</strong> The lesson reads what those would take instead:
+<ul>
+<li><code>make build-vllm</code> runs for 20 to 30 minutes on a 32-vCPU build machine, and needs a token with Gemma access.</li>
+<li>The GPU pod needs <code>gke_autopilot=true</code>, which replaces the cluster, and Compute Engine GPU quota in the region.</li>
+</ul></li>
+<li><strong>What the lesson changes: nothing.</strong> The lab cluster already bills while it exists (step 5).</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The vLLM service, read</h3><p>The image, the engine, the service's door and the gateway's route, from the kit's files. No network.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make deploy-vllm</code> puts the image on the same L4 shape as the SLM, with room for 32 requests at a time:</p>
+@@deployvllm@@
+<p>The image is vLLM's own base, with the app installed on top:</p>
+@@dockerfile@@
+<p>The app loads the engine before the server answers:</p>
+@@engine@@
+<p>And it keeps a door of its own, in front of every chat completion:</p>
+@@door@@
+<p>The cell reads these files, together with the token proxy, the gateway's config and Terraform. It prints what the service needs, and whether anything on the lane supplies it.</p>
+
+<h4>Do it</h4>
+%%CELL_VLLM%%
+%%OUT_VLLM%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The image carries no weights.</strong> The Dockerfile installs the app on vLLM's base image and never downloads a model. <code>cloudbuild.yaml</code> passes the Hugging Face token as a build-arg, but no <code>ARG</code> receives it. The Makefile's comment, the GKE manifest and the GKE README all say the weights are in the image, and they are not.</li>
+<li><strong>So the engine would download Gemma 3 4B when it starts, and that download would be refused.</strong> Gemma's weights on Hugging Face are gated behind Google's licence, and <code>make deploy-vllm</code> gives the service no token.</li>
+<li><strong>The service keeps its own door.</strong> Every chat completion needs an <code>X-API-Key</code>, hashed and looked up in Firestore. The gateway's token proxy sends an ID token and no <code>X-API-Key</code>. Nothing in the kit writes an <code>api_keys</code> document, and the service's account has no roles, Firestore's included. A request from the gateway would be refused, and <code>documind-inference</code> would fall back to the SLM.</li>
+<li><strong>Its request log goes to a placeholder:</strong> a BigQuery table named <code>project.dataset.inference_logs</code>.</li>
+<li><strong>What it would do well, once fed:</strong> 32 requests at a time on one L4, the model loaded before the first request (the startup probe allows 270 s), and structured output for classifying and extracting.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The manifest, read</h3><p>What gke/vllm-deployment.yaml asks the cluster for, checked against the image it names. No network.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make gke-up</code> fills in the image's name and applies two objects. The Deployment's container:</p>
+@@pod@@
+<p>The Service in front of it:</p>
+@@service@@
+<p>The cell reads the manifest the way Kubernetes would, and checks it against the image's own start: the Dockerfile's <code>ENTRYPOINT</code> and <code>CMD</code>, and what <code>main.py</code> reads.</p>
+
+<h4>Do it</h4>
+%%CELL_MANIFEST%%
+%%OUT_MANIFEST%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The manifest, read.</strong> That is the first proof. It asks for one replica on an L4 node, with 6 vCPU and 24 GiB, which stays under the <code>g2-standard-8</code>'s 8 and 32. Ask for all 8 and 32, the manifest's comment says, and Autopilot rounds up to a <code>g2-standard-12</code>. The weights get 600 seconds to load, and the Service is a ClusterIP.</li>
+<li><strong>It cannot start this image.</strong> A container's <code>args</code> replace the image's <code>CMD</code> and run after its <code>ENTRYPOINT</code>. This image's <code>ENTRYPOINT</code> is empty, so Kubernetes runs the first arg, <code>--model=google/gemma-3-4b-it</code>, as the program. The args were written for vLLM's own server image, whose entrypoint is its API server. The kit's image starts uvicorn from <code>CMD</code>, and the args replace it.</li>
+<li><strong>Even the right command would find nothing to load.</strong> The image holds no weights (step 3), and <code>HF_HUB_OFFLINE=1</code> forbids the download.</li>
+<li><strong>The args would not configure it either.</strong> <code>main.py</code> takes its model from <code>MODEL_NAME</code> in its environment, and sets <code>max_model_len=8192</code> in code, whatever <code>--max-model-len</code> says.</li>
+</ul></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>The lane's cluster, inspected</h3><p>What documind-autopilot is, what it bills, what make gke-up says about it, and whether any vLLM service exists. Read-only.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell describes <code>documind-autopilot</code> with gcloud: its mode, its node pool and the hour it bills. It also looks for the vLLM service on Cloud Run and its image in the lane's registry. Then <code>make gke-up</code> checks the mode before anything else:</p>
+@@gkeup@@
+
+<h4>Do it</h4>
+%%CELL_CLUSTER%%
+%%OUT_CLUSTER%%
+%%CELL_GKEUP%%
+%%OUT_GKEUP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The cluster is a Standard lab:</strong> one <code>e2-standard-2</code> with no GPU, in one zone, under a regional control plane.</li>
+<li><strong>It bills while it exists:</strong> $%%LAB_H%% an hour, Rs %%LAB_MONTH%% a month in Mumbai.
+<ul>
+<li>$0.10 an hour is the control plane. The free tier covers that fee only for zonal and Autopilot clusters, and this one is regional.</li>
+<li>The rest is the node, and no lesson schedules a pod on it.</li>
+</ul>
+The kit's README says the fee and the node "continue while provisioned". <code>make off</code> and the nightly job leave them; only <code>make down</code> removes them.</li>
+<li><strong><code>make gke-up</code> read the mode and stopped.</strong> This is the kit's own guard: without it, a GPU pod would sit Pending on a cluster that has no GPU node.</li>
+<li><strong>No vLLM service and no image.</strong> Both are optional, and no lesson builds them.</li>
+<li><strong>The gateway's GKE route has nowhere to go.</strong> Here it is:</li>
+</ul>
+@@gkeroute@@
+<p><code>GKE_VLLM_URL</code> is never set: <code>make deploy-gateway</code> sets the SLM's and the vLLM service's URLs, and not this one. A ClusterIP has no address outside the cluster, and the gateway has no route into the VPC. So <code>documind-gke</code> falls through to <code>documind-inference</code>, and then to Gemini.</p></div>

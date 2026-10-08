@@ -1,0 +1,171 @@
+
+<h3 id="setup">Before you run anything: open the operator shell</h3>
+
+<p>Every command on this page runs in the operator shell you set up in lesson 0.2: the kit cloned at <code>~/deploy_module_rag</code>, the <code>rag-shell-venv</code> environment with the kit's Python packages in it, and gcloud signed in with your lesson 0.1 project as its default. Later lessons open with a block that builds the API's address and mints tokens to call it. This one cannot: the lane does not exist yet. The block below brings the kit up to date, reads the project and the region from gcloud, names the state bucket you create in step 3, sets <code>ADMIN_EMAILS</code> to your own address (the people IAP will let in, and the first name on the roster), and checks the tools <code>make up</code> drives. Run it once per session; every block below uses the variables it exports.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}"
+cd "$DEMO_ROOT" &amp;&amp; git pull -q --ff-only &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   <span class="cm"># lesson 0.2's venv: make and the Python cells use its python</span>
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)"
+export REGION="$(gcloud config get-value run/region 2&gt;/dev/null)"; export REGION="${REGION:-asia-south1}"
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export ADMIN_EMAILS="$ME" TENANT=acme          <span class="cm"># who may pass IAP, and whom make up puts on acme's roster</span>
+export TFSTATE_BUCKET="$PROJECT-tfstate" TFSTATE_PREFIX="documind/$PROJECT"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+terraform version | head -1; make --version | head -1; bq version 2&gt;/dev/null | head -1
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which Terraform and the kit's Python use: reads a credential, calls nothing</span>
+import warnings; warnings.filterwarnings("ignore", category=UserWarning)
+import google.auth
+try:
+    credentials, _ = google.auth.default()
+    print("adc ok:", type(credentials).__name__)
+except Exception as e:
+    print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+echo "PROJECT=$PROJECT REGION=$REGION NUMBER=$NUMBER ME=$ME"
+echo "state: gs://$TFSTATE_BUCKET/$TFSTATE_PREFIX"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+Terraform vVERSION
+GNU Make VERSION
+This is BigQuery CLI VERSION
+adc ok: Credentials
+PROJECT=documind-ai-YOUR-ID REGION=asia-south1 NUMBER=NUMBER ME=you@example.com
+state: gs://documind-ai-YOUR-ID-tfstate/documind/documind-ai-YOUR-ID</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p>No <code>kit</code> line, or <code>cd</code> failing, means the kit was never cloned on this machine: lesson 0.2's clone block makes it. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited here: <code>git -C "$DEMO_ROOT" status</code> names it and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. A missing <code>activate</code> file means the venv was never made on this machine, which is lesson 0.2 again. <code>PROJECT=</code> empty means gcloud has no default project: <code>gcloud config set project YOUR-PROJECT-ID</code> with the id from lesson 0.1, then the block again. A <code>REGION</code> other than <code>asia-south1</code> means your gcloud configuration names another <code>run/region</code>: the course's lane runs in Mumbai and every later lesson's addresses say so, so run <code>gcloud config set run/region asia-south1</code> and the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code>. No <code>Terraform</code> line, or a version below 1.9, is fixed in step 3, where <code>make preflight</code> prints the install line; <code>terraform/backend.tf</code> requires 1.9 or newer. No <code>BigQuery</code> line means the Google Cloud CLI on this machine lacks <code>bq</code>, which <code>make up</code>'s last steps call. <code>adc NOT ok</code> means Application Default Credentials, the sign-in Terraform and the kit's Python libraries use, is missing: it is separate from gcloud's own. Run <code>gcloud auth application-default login --no-launch-browser</code>, open the link, sign in as the account you use for this project, paste the code back, and run the block again.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>A window labelled <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; it has a copy button. A window labelled with a kit file is that file's own lines, verbatim, to read. A window labelled <strong>expected</strong> or <strong>text</strong> was computed from the kit when this page was built, with your values written as placeholders (<code>documind-ai-YOUR-ID</code>, <code>NUMBER</code>, <code>you@example.com</code>). A window labelled <strong>output</strong> is what the command printed on the author's lane, deployed once from a blank project for this lesson, with the project id, its number and the email replaced by the same placeholders. None of the read-only windows has a copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Each target this lesson uses is a short entry in the kit's <code>Makefile</code> or <code>mk/ingestion.mk</code> that runs a script or the kit's own Python, so you can run the same code without make:</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make apis</code></td><td data-label="Without make">the <code>ENABLE_APIS</code> block of <code>commands/lesson-12.1.sh</code>, with <code>PROJECT</code> exported: <code>sh -c "$(sed -n '/^# ---- ENABLE_APIS ----/,/^# ---- APPLY ----/p' commands/lesson-12.1.sh | grep -v '^# ----')"</code></td></tr>
+<tr><td><code>make preflight</code></td><td data-label="Without make"><code>PROJECT=$PROJECT TFSTATE_BUCKET=$TFSTATE_BUCKET REGION=$REGION sh smoke/preflight.sh</code></td></tr>
+<tr><td><code>make plan</code></td><td data-label="Without make"><code>python commands/infrastructure.py plan --project "$PROJECT" --region "$REGION"</code> and the <code>--var</code> flags make adds (step 6); <code>make -n plan</code> prints the whole line without running it</td></tr>
+<tr><td><code>make up</code></td><td data-label="Without make"><code>python commands/infrastructure.py apply --project "$PROJECT" --region "$REGION"</code>, then the %%N_UP_WORD%% targets in step 7, one by one</td></tr>
+<tr><td><code>make roster</code></td><td data-label="Without make"><code>python commands/lane.py --project "$PROJECT" roster --tenant acme --members "$ADMIN_EMAILS"</code> (<code>--dry-run</code> prints the plan and writes nothing)</td></tr>
+<tr><td><code>make vector-status</code></td><td data-label="Without make"><code>PROJECT=$PROJECT REGION=$REGION bash commands/vector-status.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The project</span><h3>A blank project, made ready for a plan</h3><p>The APIs, a state bucket of your own, the one repository you trust, and the sign-in screen IAP will show.</p></div></div>
+
+<p>"Blank" here means the project from lesson 0.1 with billing linked and a budget on it, and nothing of the kit's yet: no Terraform state, no accounts, no services. Four things should exist before <code>make plan</code> and <code>make up</code> run, and the plan itself makes none of them: it reads the project, it never prepares it. Each takes a minute, and the kit's preflight then says whether the project is ready.</p>
+
+<h4>1. The APIs</h4>
+<p>A Google Cloud API is off until a project turns it on, and Terraform cannot create a resource whose API is off. <code>make apis</code> turns on the %%N_APIS%% the lane uses, in two calls, because the Service Usage API takes at most twenty at a time. It is safe to run again; an API already on stays on.</p>
+@@mk_apis@@
+@@apis_two_calls@@
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per project</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make apis PROJECT="$PROJECT"</pre></div>
+<p>What it prints is gcloud's own report of the operations it waited for. Step 5's preflight is the check that matters: it names any of the APIs it looks for that is still off.</p>
+
+<h4>2. A state bucket of your own</h4>
+<p>Terraform keeps its record of what it built, the state, in a bucket, so that the next plan in any shell compares the files with what exists instead of trying to create everything again. Bucket names are global: the first person in the world to create a name owns it. The Makefile's default, <code>documind-tfstate</code>, is one name for the whole world and can serve only one lane, so the setup block named yours after your project, the form the kit's own <code>smoke/preflight.sh</code> uses in its example. It exported <code>TFSTATE_BUCKET</code> and <code>TFSTATE_PREFIX</code> too, so the targets that connect to the state later (<code>make tf-backend</code>, <code>make down</code>) find this one. Versioning keeps every earlier copy of the state file, which is how a damaged state is recovered.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per project</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud storage buckets create "gs://$TFSTATE_BUCKET" --project="$PROJECT" --location=asia-south1 --uniform-bucket-level-access
+gcloud storage buckets update "gs://$TFSTATE_BUCKET" --versioning
+terraform -chdir=terraform init -input=false \
+  -backend-config="bucket=$TFSTATE_BUCKET" -backend-config="prefix=$TFSTATE_PREFIX"</pre></div>
+<p>The last command ends on Terraform's line <em>Terraform has been successfully initialized!</em> It connects this checkout to the state and downloads the providers <code>terraform/backend.tf</code> pins. Run it again only on a new machine or a fresh clone, and always with the same bucket and prefix: <code>terraform/</code> in a checkout pointed at another prefix is a checkout that believes the lane does not exist.</p>
+
+<h4>3. The one repository you trust to deploy</h4>
+<p>The kit includes a keyless pipeline: <code>terraform/wif.tf</code> declares a workload identity pool that lets GitHub Actions workflows from <strong>one</strong> repository, on <strong>one</strong> branch, become <code>sa-documind-cicd</code>, the pipeline's account, with no key file anywhere. That account may act as %%N_ACTAS%% accounts (step 4), which makes this one of the most powerful settings in your project: whoever controls that repository's workflows can deploy code that runs as your services. Lesson 11.1 builds and deploys through this trust. A new project has to name it now, and the kit refuses to guess.</p>
+@@infra_trust@@
+<p>Name a repository you own, for instance your fork of <code>netsetos/agents_workshop_learner</code>. Its numeric id is what the trust is really keyed on, because a repository's name can be released and claimed by someone else and its id cannot. <code>prepare</code> then reads your project and its billing account, checks that the project has no GitHub provider the state does not know about, and saves the three values with your project, region and billing account in <code>terraform/runbook-project.auto.tfvars.json</code>, a local file Git ignores. Every later plan reads them from there.</p>
+@@infra_prepare@@
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per project (your repository, not the example's)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export GH_REPO=YOUR-GITHUB-USER/YOUR-REPO     <span class="cm"># a repository you own</span>
+export GH_REPO_ID="$(curl -s "https://api.github.com/repos/$GH_REPO" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+echo "trusting $GH_REPO, id $GH_REPO_ID"    <span class="cm"># a private repository: gh api repos/$GH_REPO --jq .id</span>
+python commands/infrastructure.py prepare --project "$PROJECT" --region "$REGION" \
+  --github-repository "$GH_REPO" --github-repository-id "$GH_REPO_ID" --deploy-ref refs/heads/main</pre></div>
+%%OUT_PREPARE%%
+<div class="box box-red"><div class="box-title">Never copy the README's three values</div>
+<p>The kit's <code>README.md</code> and <code>INFRASTRUCTURE.md</code> show a repository name, a numeric id and a branch in their examples. They are the kit author's. Pasted into your project, they would let that repository's workflows deploy into your lane as <code>sa-documind-cicd</code>. Use your own, and if <code>prepare</code> stops with <em>Set the CI repository as OWNER/REPO</em> or <em>the CI repository's immutable numeric GitHub ID</em>, one of the two variables above came back empty: <code>echo</code> them before running it again. Once applied, the trust is protected: a later plan that would change it is refused (step 6), so changing your mind later is a deliberate migration, not an accident.</p></div>
+
+<h4>4. The sign-in screen IAP will show</h4>
+<p>IAP signs people in with Google's OAuth, and an OAuth sign-in needs a consent screen with a name on it. Configure it once in the console, under <strong>Google Auth Platform &gt; Branding</strong>: an app name such as <em>DocuMind</em> and your address as the support e-mail. The kit cannot check this for you, and its preflight says so on its last line. Whether you need more depends on where your project lives:</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell: is your project inside an organization?</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud projects describe "$PROJECT" --format='value(parent.type,parent.id)'   <span class="cm"># empty: no organization</span></pre></div>
+<p>If it prints <code>organization</code> and the people you will let in belong to that organization, IAP's Google-managed sign-in is enough. If it prints nothing, which is the usual case for a project made with a personal account, Google's IAP guide says you must bring your own OAuth client: IAP's managed client serves only people inside an organization, and a project outside any organization has none. In the console, create one under <strong>Google Auth Platform &gt; Clients</strong> (or <strong>APIs &amp; Services &gt; Credentials</strong>), type <em>Web application</em>; once it exists, add the redirect URI <code>https://iap.googleapis.com/v1/oauth/clientIds/CLIENT_ID:handleRedirect</code> with its own client id in place of <code>CLIENT_ID</code>. Set the consent screen's audience to <em>External</em>; while it is in testing, list each address in <code>ADMIN_EMAILS</code> as a test user. Then hand the client to IAP for the whole project:</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, only for a project with no organization</span><button class="cp" type="button">copy</button></div><pre tabindex="0">cat &gt; "$HOME/iap-oauth.yaml" &lt;&lt;'EOF'
+accessSettings:
+  oauthSettings:
+    clientId: CLIENT_ID
+    clientSecret: CLIENT_SECRET
+EOF
+<span class="cm"># edit the two values in $HOME/iap-oauth.yaml first; the file holds a secret, so it never goes in the kit's folder</span>
+gcloud iap settings set "$HOME/iap-oauth.yaml" --project="$PROJECT" &amp;&amp; rm "$HOME/iap-oauth.yaml"</pre></div>
+<p>The settings file shape and the redirect URI are Google's, from the IAP guide <a href="https://docs.cloud.google.com/iap/docs/custom-oauth-configuration" target="_blank" rel="noopener">Configure IAP with a custom OAuth client</a>. The kit itself never sees the client: <code>terraform/secrets.tf</code> declares empty <code>oauth-client-id</code> and <code>oauth-client-secret</code> holders, and nothing in the kit reads them.</p>
+
+<h4>5. Ask the kit whether the project is ready</h4>
+<p><code>make preflight</code> reads, and creates nothing: the four tools on <code>PATH</code> and Terraform's version, your sign-in, the project and its billing, the state bucket, %%N_APIS_CHECKED%% of the APIs, and the one Python package <code>make roster</code> needs. A line that starts with <code>MISS</code> carries the command that fixes it.</p>
+@@mk_preflight@@
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make preflight PROJECT="$PROJECT" TFSTATE_BUCKET="$TFSTATE_BUCKET" REGION="$REGION"</pre></div>
+%%OUT_PREFLIGHT%%
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit's Terraform</span><h3>Identities: %%N_SA%% accounts, %%N_SERVICES_WORD%% of them running a service</h3><p>Who each account is, who may become it, and who may call what.</p></div></div>
+
+<p>The kit declares %%N_SA%% service accounts on a default lane (%%N_SA_ALL%% with the Google Chat door on). Most live in <code>terraform/sa.tf</code>; the rest sit beside the resource that needs them, so the file that creates a thing also creates the identity it runs as. Read the table by its third column: %%N_SERVICES_WORD%% accounts run the services <code>make up</code> deploys, %%N_JOBS_WORD%% run a job or a machine, one is the pipeline, %%N_FIXTURES_WORD%% are fixtures (identities that exist only so a test can call the lane as someone it must refuse or admit), %%N_ONREQ_WORD%% run services a later module deploys on request, and %%N_UNUSED_WORD%% is declared for a job no target deploys yet.</p>
+%%SA_TABLE%%
+
+<p>The file's own first comment still says three accounts, as the README's layout does (ui, api, admin). Most accounts added since carry a comment saying why they are not a reuse of an older one:</p>
+@@sa_first@@
+@@sa_outsider@@
+
+<h4>%%N_SERVICES_CAP%% services, %%N_SERVICES_WORD%% accounts: what the deploy scripts say</h4>
+<p>Terraform does not create the services: <code>gcloud run deploy</code> in each deploy script does, and the script names the account the service runs as and the callers it admits. This table is read from the %%N_SCRIPTS_WORD%% scripts <code>make up</code> runs. Step 8 checks it against the live lane.</p>
+%%SERVICE_TABLE%%
+
+<p>Two columns carry the design. <em>Who may call it</em> is the caller graph: each service admits by name the accounts that call it and no one else. <code>roles/run.invoker</code> is never granted on the project, because a project-wide invoker would let every account call every service, the A2A peer included, and the peer refuses nobody by roster. The graph is written down twice, in <code>sa.tf</code> and in the loops of the scripts, and a check run on every change to the kit fails when the two disagree. This page's build makes the same comparison for the services <code>make up</code> deploys.</p>
+@@sa_graph@@
+
+<h4>Who may become an account: actAs and token minting</h4>
+<p>A role you cannot hold yourself is a role you can borrow from any account you may become, so the grants <em>on</em> accounts matter as much as the grants they hold. The pipeline's account must act as every account it deploys a service as; that is inherent. What the kit controls is the list: %%N_ACTAS%% accounts named one by one, never <code>roles/iam.serviceAccountUser</code> on the project, which would include every account created later.</p>
+@@sa_actas@@
+<p>Minting tokens is the other way in. <code>make up</code> ends its deploy step with <code>make operators</code>, which lets each address in <code>ADMIN_EMAILS</code> mint tokens as the UI's account and the outsider; that is how your shell calls the API as a surface would (lesson 1.1's setup does exactly that) and as a stranger would. Project Owner does not carry this permission, and the kit's first live run stopped on its absence.</p>
+@@mk_operators@@
+
+<h4>One account's roles, with the reasons for the missing ones</h4>
+<p>The UI's account is a good one to read in full, because its comments explain two roles it does not have: the invoker role, removed in favour of the caller graph, and every BigQuery role, kept out so that a flaw in the page that renders user chat cannot reach the warehouse.</p>
+@@sa_ui_roles@@
+
+<p>The DocuMind Desk added the newest accounts: five people the Desk's live checks call the chat service as, each a service account because a script cannot mint a token as a person. None holds a project role. Each is admitted to <code>documind-chat</code> and to nothing else, and goes on one tenant's roster only when a later lesson puts it there.</p>
+@@desk_eval@@
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The kit's Terraform</span><h3>The stores, and the switches that add more</h3><p>Every bucket, index and database the plan creates, where each lives, and what a switch would add.</p></div></div>
+
+<p>Two variables decide where things go. <code>REGION</code> is where the services run, and with them the connector, the image repository, the search index, the databases and the cluster; the setup block set it to <code>asia-south1</code>. Data at rest that must stay in India, Firestore and the buckets, follows <code>india_region</code> in <code>terraform/variables.tf</code>, which is <code>asia-south1</code> whatever <code>REGION</code> says.</p>
+@@mk_region@@
+
+<h4>%%N_BUCKETS_CAP%% buckets</h4>
+%%BUCKET_TABLE%%
+<p>The last column is the one to read twice. %%N_WIDE_WORD%% accounts reach every bucket because they hold a storage role on the whole project, and <code>sa.tf</code> gives each one's reason: the ingest worker reads the uploaded object and writes audit rows, the MCP server writes audit rows, the admin console writes its exports to the audit bucket. Everyone else is granted bucket by bucket. The audit bucket keeps every object for five years and refuses to delete one inside that term; locking the policy as well is a separate, irreversible decision the kit leaves off for a lab:</p>
+@@storage_audit@@
+
+<h4>Firestore: %%N_FS_INDEXES%% composite indexes and %%N_TTL_WORD%% TTL fields</h4>
+<p>One database, <code>(default)</code>, in <code>asia-south1</code>, with point-in-time recovery and delete protection on. A vector search over chunks needs a composite index for every combination of filters a query can carry, which is why <code>chunks</code> alone has most of them; the graph walk and the Desk's case queue add their own. A TTL field names the timestamp after which Firestore deletes a row by itself: nothing else on the lane deletes a chunk.</p>
+%%FS_TABLE%%
+@@fs_vector@@
+@@fs_ttl@@
+<p>A new index takes minutes to build, and a vector query against an index still building fails. That is why <code>make up</code> waits for them (step 7).</p>
+
+<h4>The other stores, and the rest of what a plan creates once</h4>
+%%STORE_TABLE%%
+
+<p>One line in <code>terraform/vector.tf</code> deserves a second look before step 10 prices it. The deployed index runs on a machine chosen by the index's <em>shard size</em>, and the index declares none, so the service picks it. The kit's own comment records an existing index whose service-selected size was MEDIUM, which deploys on <code>%%MACHINE_MEDIUM%%</code>, not on SMALL's <code>%%MACHINE_SMALL%%</code>. Step 8 reads which one your lane got.</p>
+@@vector_deploy@@
+
+<h4>%%N_RESOURCES%% resource instances, file by file</h4>
+<p>Counting every resource block, with each <code>count</code> and <code>for_each</code> worked out for the values <code>make plan</code> passes, gives the number a blank project's plan should add. One variable moves it: each address in <code>ADMIN_EMAILS</code> adds one e-mail channel for the alerts.</p>
+%%FILE_TABLE%%
+
+<h4>The switches: off now, and refused once they have been on</h4>
+<p>Some of the kit's resources exist only while a Makefile variable says so: jobs that need an image to exist first, alerts that need data first, a door that needs Google Workspace. All %%N_SWITCHES_WORD%% are off on a first lane. The trap is turning one off again: a later plan without it would delete what it declared, so the plan's guard refuses, and its refusal names these switches.</p>
+@@infra_switches@@
+%%SWITCH_TABLE%%
+<p>Nothing on this page turns a switch on. When a later lesson does, the rule is the same for all of them: keep the switch on every later <code>make plan</code> and <code>make up</code>, and on the other job targets, or the next plan stops.</p>

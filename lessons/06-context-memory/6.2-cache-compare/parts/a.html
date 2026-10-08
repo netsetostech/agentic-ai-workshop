@@ -1,0 +1,101 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.2</div>
+<h1>Compare context caching and answer caching: <span>a cached prefix the model still reads, and a stored answer the model never sees</span></h1>
+<p>DocuMind has two caches, and they hold different things. Gemini's context cache holds part of the model's input: acme's documents, packed once and read at a tenth of the price by every question for an hour. The answer cache holds the model's output: the answer and its citations, returned without retrieval or a model call when the same question comes back. You create the first with <code>make cache</code> and read <code>cached_tokens</code> on the next usage row. You switch the second on for a candidate, ask one question twice, and read <code>model_backend=cache</code> on the second row. Along the way you find out what the first one really does to the bill.</p>
+<div class="hero-chips"><div class="hero-chip">4,096-token floor</div><div class="hero-chip">60 minutes, no maximum</div><div class="hero-chip">cached input at a tenth</div><div class="hero-chip">exact words, then 0.95</div><div class="hero-chip">answers for 24 hours</div><div class="hero-chip">model_backend=cache</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Two caches: a prefix the model still reads, an answer the model never sees</a></li>
+<li><a href="#s2">The words: context cache, cached_tokens, TTL, fingerprint, answer cache, the two rungs, scope</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The context cache: a pack, a cache, and the next answer</a></li>
+<li><a href="#s4">The rows: what the context cache did to the bill</a></li>
+<li><a href="#s5">The answer cache: a candidate that remembers answers</a></li>
+<li><a href="#s6">Four asks: a miss, two hits and a paraphrase</a></li>
+<li><a href="#s7">What each cache is holding, and the clean-up</a></li>
+<li><a href="#s8">Why the caches are shaped this way, what they cost, and what the kit does not do yet</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what each cache stores, the conditions under which each is used, and what each costs to keep and to use. Then you will prove both on your lane: <code>cached_tokens</code> on a usage row once acme's context cache exists, and <code>model_backend=cache</code> at a cost of zero on the second of two identical questions. You will also measure something the kit's comments do not say: attached the way the kit attaches it, the context cache makes each answer dearer, not cheaper.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Two caches: a prefix the model still reads, an answer the model never sees</h3><p>One makes reading cheaper. The other skips the reading.</p></div></div>
+
+<p><strong>The two caches store different things.</strong> The context cache is Gemini's explicit cache: part of the model's input, a long prefix, stored on Google's side and referenced by name. Every question still goes to the model, which still reads the prefix. It reads the cached tokens at a tenth of the input rate, the figure <code>cost.py</code> uses, and Google bills the cache's storage by the hour while it lives. The answer cache is the kit's own: the model's output, the answer with its citations, stored in Firestore. A hit returns that answer without retrieval, without the reranker and without the model. The usage row then says <code>model_backend</code> <code>cache</code>, with zero tokens and a cost of zero.</p>
+
+<p><strong>The context cache has hard rules.</strong> It must hold at least 4,096 tokens for the Gemini 3 family. It belongs to one model. It lives for 60 minutes by default, and there is no maximum, so something has to refresh or delete it. The kit creates it on the global endpoint, where Gemini 3 generation runs, and falls back to the regional client only if global refuses. It records the cache in <code>tenant_caches/{tenant}</code>, together with the tenant's corpus fingerprint. The API attaches it to a question only when three things hold: more than two minutes are left, the request's model is the cache's model, and the fingerprint has not moved since packing. Otherwise the answer runs uncached, and a moved fingerprint writes <code>cache_stale</code> in the log.</p>
+
+<p><strong>What the kit puts in it is added to the prompt, not swapped for anything.</strong> The pack is acme's %%N_DOCS%% synthetic documents: %%PACK_CHARS%% characters, about %%PACK_TOKENS%% tokens by the kit's own four-characters-a-token estimate. The generator's prompt does not change when a cache is attached. The system text, the retrieved chunks and the question are sent exactly as before, and the cache is one more keyword on the call. So the model reads the whole pack as well as the chunks. The cache makes those extra tokens cheap but not free. At the kit's flash rates, the pack adds about Rs %%EXTRA_RS%% to every acme question; sent uncached, the same pack would add Rs %%RAW_RS%%. Step 4 measures this on your lane.</p>
+
+<p><strong>The answer cache has rules too, all of them about when an old answer is still this question's answer.</strong> The cache is kept per tenant, always. The entry's corpus fingerprint must still be the tenant's, and its scope must match: the filters, <code>top_k</code> and the prompt version. It must be less than 24 hours old. There are two rungs. The exact rung matches the same words, lower-cased with punctuation removed. The near rung reads the five nearest earlier questions by cosine similarity and takes the first at 0.95 or closer. Only an answer that is answerable, cited and not blocked is ever stored. The switch, <code>SEMANTIC_CACHE</code>, is off by default, because 0.95 is a guess until lesson 6.4 measures it.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128188;</div><div>
+<p><strong>A chartered accountant's office in March.</strong> The client's file stays open on the CA's desk for the afternoon. Every question still takes the CA's time, but nobody fetches and re-reads the whole file for each one, and the desk is paid for by the hour. That is the context cache. At the front desk, the receptionist keeps this morning's written answers. If the same client asks what was asked earlier, in the same words or very nearly, the receptionist hands over that answer with the same references, and the CA is never disturbed. That is the answer cache. It works only for that client, only if nothing in the file has changed since, and only until the end of the day.</p></div></div>
+
+<h4>Two caches, one question</h4>
+<p>The first box decides whether the context cache is attached to a call, the second whether the answer cache answers, and the third prices one question each way. Every rule is the kit's.</p>
+
+<div class="diagram pc" id="caches">
+<div class="dg-title">The context cache, the answer cache and the price of one question - generate_config_kwargs(), lookup() and price()</div>
+<div class="pc-box"><b class="h">Is the context cache attached to this call?</b>
+<div class="pc-in">
+<label>tenant_caches/acme<select id="cx-rec"><option value="y">a record</option><option value="n">none: never made, or deleted</option></select></label>
+<label>Time left on the cache<select id="cx-time"><option value="y">more than two minutes</option><option value="n">two minutes or less</option></select></label>
+<label>The request's model<select id="cx-model"><option value="y">the cache's model</option><option value="n">another: a routed tier or a tuned endpoint</option></select></label>
+<label>The corpus since make cache<select id="cx-corpus"><option value="y">unchanged</option><option value="n">reindexed: the fingerprint moved</option></select></label>
+</div>
+<div id="cx-out" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">Does the answer cache answer this question?</b>
+<div class="pc-in">
+<label>The revision's SEMANTIC_CACHE<select id="an-on"><option value="y">on</option><option value="n">off</option></select></label>
+<label>The first answer<select id="an-first"><option value="y">answerable and cited</option><option value="n">a refusal, or no citation</option></select></label>
+<label>This question<select id="an-words"><option value="same">the same words</option><option value="case">the same words, other case, no "?"</option><option value="p97">a paraphrase at similarity 0.97</option><option value="p90">a paraphrase at similarity 0.90</option></select></label>
+<label>The corpus since then<select id="an-corpus"><option value="y">unchanged</option><option value="n">reindexed</option></select></label>
+<label>Filters, top_k, prompt version<select id="an-scope"><option value="y">the same</option><option value="n">one of them changed</option></select></label>
+<label>Age of the first answer<select id="an-young"><option value="y">under 24 hours</option><option value="n">over 24 hours</option></select></label>
+</div>
+<div id="an-out" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">What one question costs</b>
+<div class="pc-in">
+<label>The model<select id="pr-model"><option>gemini-3.6-flash</option><option>gemini-3.1-flash-lite</option><option>gemini-3.1-pro-preview</option></select></label>
+<label>RAG prompt tokens<input id="pr-p" type="number" min="0" step="100" value="%%P%%" inputmode="numeric"></label>
+<label>Output tokens, thinking included<input id="pr-o" type="number" min="0" step="50" value="%%O%%" inputmode="numeric"></label>
+<label>Tokens in the context cache<input id="pr-k" type="number" min="0" step="1000" value="%%K%%" inputmode="numeric"></label>
+<label>Questions an hour<input id="pr-n" type="number" min="0" step="10" value="100" inputmode="numeric"></label>
+<label>Answer-cache hits, %<input id="pr-h" type="number" min="0" max="100" step="5" value="20" inputmode="numeric"></label>
+<label>Cache storage, USD per 1M tokens an hour<input id="pr-s" type="number" min="0" step="0.05" placeholder="from the price page" inputmode="decimal"></label>
+</div>
+<div id="pr-out" aria-live="polite"></div></div>
+<p class="dg-cap">The first box runs <code>get()</code>, <code>stale_against()</code> and <code>generate_config_kwargs()</code> from <code>cache_manager.py</code>, the second <code>lookup()</code> from <code>semantic_cache.py</code> with the switch and the store rule from <code>main.py</code>, and the third <code>price()</code> from <code>cost.py</code> with its fallback rates. The build executed the kit's own functions on all %%N_CTX%%, all %%N_ANS%% and %%N_PRICE%% combinations, against stand-in Firestore records, and every box had to agree.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the kit's rules, not Google's cache or your embeddings. The two paraphrase similarities are set by the panel, not measured: how close a real paraphrase lands is lesson 6.4's work. The prices are <code>cost.py</code>'s fallback table, which the kit uses when BigQuery's price table does not answer. The kit carries no storage rate, so that one is yours to enter from your model's price page.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: context cache, cached_tokens, TTL, fingerprint, answer cache, the two rungs, scope</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Context cache</strong></td><td data-label="Meaning">Gemini's explicit cache: a system instruction and contents stored on Google's side and referenced by name on later calls.</td><td data-label="On your lane"><code>.../locations/global/cachedContents/...</code></td></tr>
+<tr><td><strong>cached_content</strong></td><td data-label="Meaning">The keyword the call takes. The kit passes it only through <code>generate_config_kwargs()</code>.</td><td data-label="On your lane">on every acme call while the cache lives</td></tr>
+<tr><td><strong>cached_tokens</strong></td><td data-label="Meaning">The row's count of prompt tokens read from the cache, the SDK's <code>cached_content_token_count</code>. <code>tokens_in</code> includes them.</td><td data-label="On your lane">the cache's own count</td></tr>
+<tr><td><strong>The 4,096-token floor</strong></td><td data-label="Meaning">The smallest explicit cache the Gemini 3 family accepts.</td><td data-label="On your lane">the pack is about %%PACK_TOKENS%%</td></tr>
+<tr><td><strong>TTL</strong></td><td data-label="Meaning">How long the cache lives. 60 minutes by default (<code>CACHE_TTL_S</code>), no maximum; storage bills by the hour until it expires or is deleted.</td><td data-label="On your lane">one hour</td></tr>
+<tr><td><strong>tenant_caches</strong></td><td data-label="Meaning">The kit's record of a tenant's cache: its name, location, model, tokens, expiry and corpus fingerprint.</td><td data-label="On your lane">step 7 prints acme's</td></tr>
+<tr><td><strong>Corpus fingerprint</strong></td><td data-label="Meaning">The ledger's hash of a tenant's current documents, <code>ledger/{tenant}</code>, recomputed on every reindex, retirement and reactivation. Both caches are keyed on it.</td><td data-label="On your lane"><code>cache_stale</code> when it moves</td></tr>
+<tr><td><strong>Answer cache</strong></td><td data-label="Meaning"><code>answer_cache</code> in Firestore: one entry per stored answer, with its citations, the question's embedding, the model, the fingerprint, the scope and an <code>expire_at</code> 24 hours out, which Firestore's TTL policy reaps.</td><td data-label="On your lane"><code>SEMANTIC_CACHE=off</code> on the live revision</td></tr>
+<tr><td><strong>Exact rung</strong></td><td data-label="Meaning">The same words, by <code>qhash</code>: lower-cased, punctuation out, whitespace collapsed, hashed. Two equality filters, no vector search.</td><td data-label="On your lane">asks 2 and 3 in step 6</td></tr>
+<tr><td><strong>Near rung</strong></td><td data-label="Meaning">The five nearest earlier questions of the tenant by cosine similarity; the first at or above the threshold that is still alive wins.</td><td data-label="On your lane">threshold 0.95</td></tr>
+<tr><td><strong>Scope</strong></td><td data-label="Meaning">A short hash of the request's filters, <code>top_k</code> and prompt version. An entry answered under another scope is a miss.</td><td data-label="On your lane"><code>top_k</code> 6, prompt <code>v3</code></td></tr>
+<tr><td><strong>model_backend=cache</strong></td><td data-label="Meaning">The usage row of an answer-cache hit: zero tokens, zero cost, the model that gave the original answer.</td><td data-label="On your lane">step 6, the second ask</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the context cache lowers the price of reading, and the answer cache removes the reading. The first still sends every question to the model, so every answer is new. The second returns an old answer, so its risks are an answer that no longer fits the question (a false hit) or no longer fits the facts (a stale hit). The threshold guards against the first; the fingerprint and the 24 hours guard against the second.</p>

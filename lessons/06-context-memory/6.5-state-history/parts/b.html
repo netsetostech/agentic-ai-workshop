@@ -1,0 +1,72 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code> and <code>tok</code>. You need <code>~/graph-venv</code> from lesson 5.4. Step 3's first cell adds FastAPI and the SQLite checkpointer to it, and makes it if it is missing. The chat service must be running in your region, from lesson 5.1's step 3. Step 5 asks six questions through the chat service. Nothing in your lane's configuration changes.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; One turn</span><h3>One turn, taken apart</h3><p>The kit's LangChain brain answers once; you read what the thread kept, then change the corpus under it.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell builds the kit's <code>LangChainBrain</code> on an in-memory checkpointer. It has a model that says what it is told, and a stand-in rag-api whose corpus says the notice period is 60 days. Turn 1 asks for the notice period, and the model calls <code>retrieve</code> and answers. The cell prints what the thread kept, whether the system prompt is among it, and how many checkpoints the turn wrote. Then the corpus changes to 90 days, as lesson 6.3's second handbook did. Turn 2 goes to the LangGraph brain, on the same thread. The cell prints what the history quotes and what the corpus now says. Last, it looks at a new session of the same person.</p>
+
+<h4>The code</h4>
+@@thread@@
+@@prompt@@
+
+<h4>Do it: the venv</h4>
+%%CELL_VENV%%
+%%OUT_VENV%%
+
+<h4>Do it: one turn</h4>
+%%CELL_TURN%%
+%%OUT_TURN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Turn 1 left four messages in the thread: the question, the model's call for <code>retrieve</code>, the tool's result, the answer. That was the agent's state, and now it is history. The system prompt is not among them. The turn wrote %%N_CK%% checkpoints, one per step, and the next turn reads only the latest.</p>
+<p>Turn 2 went to a different brain, and it found turn 1, because LangChain and LangGraph share the checkpointer and the thread id. The history still quotes 60 days while the corpus says 90. The tool result is a copy of knowledge, made when it was fetched. Whether a real model searches again or answers from that copy is the model's choice, and nothing in the kit makes it search again. The new session found nothing: history is per thread, and the thread is tenant, person and session.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The proof</span><h3>The memory checkpointer, and the line it logs</h3><p>The chat service's own start-up code with <code>CHECKPOINT_DSN=memory</code>, then a restart.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat service picks its checkpointer once, at start-up, in <code>build_checkpointer()</code>. <code>CHECKPOINT_DSN=memory</code> is a valid value, and the only one that logs anything: a warning that conversations die with the instance. The cell sets the value the way the service reads it, builds the checkpointer with the kit's own function, and keeps one turn in it. Then it builds the checkpointer again, as a restarted or second instance would, and looks for the turn. Last, it does the same with the laptop lane's <code>SqliteSaver</code>, a file on disk.</p>
+
+<h4>The code</h4>
+@@saver@@
+
+<h4>Do it</h4>
+%%CELL_SAVER%%
+%%OUT_SAVER%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The <code>WARNING</code> line is this lesson's proof, printed by the chat service's own code each time a checkpointer is built with memory. The first checkpointer kept the turn: two messages, the word and the reply. The second, built the way a restarted instance builds it, found nothing. On Cloud Run that happens whenever the service scales to zero. A second instance never sees the first one's dictionary at all.</p>
+<p>The SQLite file kept the turn across the restart, because it is a file. It is still one file per machine, which is why <code>agent.py</code> keeps it for the laptop lane.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; On your lane</span><h3>One conversation, four brains, two sessions</h3><p>A word to remember, asked for by every brain, then a question only the corpus can answer.</p></div></div>
+
+<h4>Definition</h4>
+<p>Six turns go through your chat service, as <code>documind-ui-sa</code>. In session A, the LangChain brain is given a word to remember. The LangGraph, ADK and direct brains are then each asked for it, in the same session. In session B, the LangChain brain is asked for the word, then a question only the corpus can answer. Each run uses two fresh session names.</p>
+
+<h4>The code</h4>
+@@adk@@
+
+<h4>Do it</h4>
+%%CELL_CONVO%%
+%%OUT_CONVO%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The word followed the checkpointer's thread. LangGraph found it because it reads the same thread as LangChain. ADK did not, though its session id is the same string, because it keeps its conversations in its own store, which on your lane is the instance's memory. The direct brain has no history, so it searched the corpus for your question and found nothing about a word.</p>
+<p>Session B was a new thread and knew nothing of session A. But session B still answered the gratuity question: knowledge belongs to the tenant, not to a conversation. The UI's brain radio sends one session id whichever brain you pick. So switching to ADK or direct mid-conversation loses the thread in just this way.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; Your lane</span><h3>Which checkpointer your lane runs</h3><p>What the service is configured with, and whether it ever warned.</p></div></div>
+
+<h4>Definition</h4>
+<p>The service's configuration decides which checkpointer it builds. The cell reads <code>CHECKPOINT_DSN</code> and the Cloud SQL instance from <code>documind-chat</code>'s current template. Then it searches 30 days of the service's log for the memory warning.</p>
+
+<h4>Do it</h4>
+%%CELL_LANE%%
+%%OUT_LANE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>CHECKPOINT_DSN</code> comes from a Secret Manager secret, the Postgres URL Terraform wrote, and the service mounts the Cloud SQL instance it points at. So the service builds <code>PostgresSaver</code>, and every instance reads and writes the same threads. The memory warning never appeared: <code>make deploy-services</code> always mounts the secret, and no make target deploys memory.</p>
+<p>Notice what proved it: the configuration, not a log line. <code>PostgresSaver</code> and <code>SqliteSaver</code> open silently, and only the memory checkpointer announces itself. Lesson 6.6 opens the tables.</p></div>

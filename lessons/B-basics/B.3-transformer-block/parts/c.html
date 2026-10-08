@@ -1,0 +1,83 @@
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 6 &middot; Layer norm</span><h3>Layer normalization: mean 0, variance 1, then a scale and a shift</h3><p>Each word's eight numbers moved to one common scale, checked to six decimals, then given the scale and shift a model learns.</p></div></div>
+
+<h4>Definition</h4>
+<p>Layer normalization works on one word at a time, across that word's own numbers. Take its eight numbers, subtract their mean, divide by their standard deviation, and the eight come out with a mean of 0 and a variance of 1. A small ε (epsilon; here 0.00001, PyTorch's default) is added to the variance before the square root, so that a word whose eight numbers are all equal does not divide by zero. It leaves the variance a hair under 1, which the cell lets you see in the fifth decimal. Then two learned vectors give the model its say: γ (gamma), a scale for each column, and β (beta), a shift for each column. In one line, for each word: LN(x) = γ &times; (x − mean) / √(variance + ε) + β. Training starts with γ = 1 and β = 0, which leave the normalized numbers as they are.</p>
+<p>It is not batch normalization, which normalizes each column across many examples, so that one example's result depends on the others in its batch. Layer normalization depends on the word alone, and the cell checks that too. Recent open models such as Llama and Gemma use a lighter variant, RMSNorm, which divides by the root of the mean square, with no mean taken off and no shift added; the cell computes it for comparison.</p>
+
+<h4>Do it: normalize H, Rs 0</h4>
+%%CELL_NORM%%
+%%OUT_NORM%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Before, the six words sat on different scales: means from %%LN_MEAN0_MIN%% to %%LN_MEAN0_MAX%%, variances from %%LN_VAR0_MIN%% to %%LN_VAR0_MAX%%. After, every mean is 0.000000 and every variance %%LN_VAR_MIN%% to %%LN_VAR_MAX%%: a hair under 1, by about ε divided by the word's own variance, so the most where the variance was smallest. Every normalized word now has the same length, √8 = 2.83: the notebooks of the analogy, rewritten to one size. γ and β then turn the meaning columns up and the position columns down, and the mean and variance become whatever they make them. A word ten times as loud comes out the same, and changing <em>serves</em> moves no other word: each word is normalized alone. RMSNorm's words have a mean square of 1.000, but their means are not 0.</p></div>
+
+<p>Those six zeros and six variances of 1, to ε, are the second half of this lesson's proof.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 7 &middot; The block</span><h3>The block, assembled</h3><p>Attention, add, norm, feed-forward, add, norm: the same parts in the 2017 order and in the norm-first order of GPT-2 and later.</p></div></div>
+
+<h4>Definition</h4>
+<p>The feed-forward step is the last part: two weight matrices with a ReLU between them (every negative number set to 0), applied to each word on its own. It takes eight numbers out to 32, four times the block's width, the ratio the 2017 paper used, and back to eight. Its weights here come from a cosine and a sine of their row and column numbers, standing in for trained ones, and its biases are zero. With it, the block is two sub-layers, each wrapped the same way. In the paper's order that is LayerNorm(x + Sublayer(x)). GPT-2 and most models since put the norm first, x + Sublayer(LayerNorm(x)), and add one final norm after the last block.</p>
+
+<h4>Do it: one block, both orders, Rs 0</h4>
+%%CELL_BLOCK%%
+%%OUT_BLOCK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Six vectors of eight numbers went in, six of eight came out, and a second block took them as they were: that is all a stack is. In the paper's order the block ends on a norm, so every word leaves at mean 0.000 and variance 1.000, with γ and β still at their starting values. In the norm-first order the block ends on an addition, and its words leave with means from %%PRE_MEAN_MIN%% to %%PRE_MEAN_MAX%% and variances from %%PRE_VAR_MIN%% to %%PRE_VAR_MAX%%; that is why those models normalize once more at the very top. The block has %%N_LEARNED%% numbers a training run would set: %%N_ATTN%% in attention, %%N_FFN%% in the feed-forward step and %%N_NORMS%% in the two norms. In the standard design, where the feed-forward width is four times the block's, the feed-forward step holds about two thirds of a block's weights, as it does here.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 8 &middot; The kit</span><h3>Where the kit meets the block: tokens and their ceilings</h3><p>The kit never builds a block. It calls models that read tokens, and it plans every call in that unit.</p></div></div>
+
+<h4>Definition</h4>
+<p>DocuMind calls two kinds of model. Gemini writes the answers. Google's model card for Gemini 3 Pro describes it as a "sparse mixture-of-experts (MoE)" transformer-based model and cites the 2017 paper this page follows; in a mixture-of-experts model, each token is routed to a few of many sets of weights, the experts. The card gives no layer count, width or number of heads. <code>text-embedding-005</code> turns every chunk into the 768 numbers of lesson 1.3. The kit never touches a head or a norm. What it meets is the unit both models read, the token, and the ceilings on how many tokens one call may carry.</p>
+<p>The reason those ceilings are counted in tokens is in the block you built. Its feed-forward step does the same work for every token, and its attention scores every token of a sequence against every other: in a block like this page's, <em>n</em> tokens make <em>n</em> &times; <em>n</em> scores, for every head in every layer.</p>
+
+<h4>The code: the ceilings the kit plans around</h4>
+<p>The worker cuts a document's text into chunks of at most 2,000 characters (lesson 1.2); the comment above this line in <code>main.py</code> calls that about 500 tokens.</p>
+@@main_chunk@@
+<p>The indexer embeds the chunks in requests. It cannot count tokens without a call, so it estimates at three characters a token, which puts a full chunk at %%KIT_CHUNK_TOKENS%%, above the comment's 500 and so on the safe side. A request closes at 250 texts or 15,000 estimated tokens, whichever comes first.</p>
+@@indexer_consts@@
+@@indexer_batches@@
+<p>The loader's copy of the rule says why: the model's own ceilings are 250 texts and 20,000 tokens per request, and a request over either fails whole. The indexer's 15,000 stays 5,000 below the model's 20,000, room for the estimate to be wrong.</p>
+@@corpus_doc@@
+<p>On the answering side, the API packs the retrieved chunks into a prompt of at most 8,000 estimated tokens and caps the answer at 2,048 tokens (lesson 3.4). Its estimate is four characters a token; a real count, <code>client.models.count_tokens</code>, can be passed in its place.</p>
+@@config_budget@@
+@@estimate@@
+
+<h4>Do it: the kit's numbers, squared, Rs 0</h4>
+<p>The cell copies those constants, the toy sentence's six tokens beside them, and puts each through the square, then fills one embedding request the way <code>batches()</code> does.</p>
+%%CELL_KIT%%
+%%OUT_KIT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One chunk is %%KIT_CHUNK_TOKENS%% tokens by the indexer's estimate, and one head of a block like this page's computes %%KIT_CHUNK_SCORES%% scores for it in one layer; for the API's prompt budget, %%KIT_PROMPT_SCORES%%. The embedding request shows that a request's tokens are not one sequence. %%KIT_TEXTS%% full chunks fill a request, %%KIT_TOKENS%% estimated tokens under the indexer's 15,000, and because each text is its own sequence, the request costs %%KIT_TEXTS%% small squares rather than one large one: %%KIT_RATIO%% times fewer scores than the same tokens as a single text. Chunks are cut for retrieval (lesson 1.2); they keep every square small as well.</p></div>
+
+<div class="box box-amber"><div class="box-title">What these numbers are not</div>
+<p>Google does not publish the inner workings of Gemini or <code>text-embedding-005</code>, and production models use many techniques to make long sequences cheaper. Read the squares as the arithmetic of the block you built, not as a measurement of either model. The ceilings themselves are Google's (250 texts and 20,000 tokens per embedding request) and the kit's own (the 15,000-token margin, the 8,000-token prompt and the 2,048-token answer), and the kit plans around all of them with estimates, because an exact count is a call of its own.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 8 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one cell above, each with the value that proves it on your laptop.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">The laptop is ready</td><td data-label="The check">the last line of the setup block</td><td data-label="Pass looks like"><code>3.12.x 2.5.3 2.22.0</code></td></tr>
+<tr><td>1</td><td data-label="Claim">Six tokens, eight numbers each, position by distance</td><td data-label="The check">the cell in step 3</td><td data-label="Pass looks like"><code>tokens: %%N_TOKENS%% | numbers per token: %%D_MODEL%%</code>, and <code>measures distance only: True</code></td></tr>
+<tr><td>2</td><td data-label="Claim">One head's weights, each row a set of shares</td><td data-label="The check">the cell in step 4</td><td data-label="Pass looks like"><code>each row sums to: 1.00</code> six times; <em>employee</em> looks at <em>the</em> with %%H1_EMPLOYEE_THE%%</td></tr>
+<tr><td>3</td><td data-label="Claim">Two heads look for different things</td><td data-label="The check">the first cell in step 5</td><td data-label="Pass looks like"><em>serves</em> looks at <em>employee</em> %%H2_SERVES_EMPLOYEE%%; <em>the</em> spreads evenly, %%H2_THE_EVEN%%; the concat is 6 &times; 8</td></tr>
+<tr><td>4</td><td data-label="Claim">The mask hides later words; only position knows order</td><td data-label="The check">the second cell in step 5</td><td data-label="Pass looks like"><em>employee</em> at %%M2_EMPLOYEE%% and %%M2_EMPLOYEE%% under the mask; head 2 <code>True</code>, head 1 <code>False</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The residual path keeps each word itself</td><td data-label="The check">the cell in step 6</td><td data-label="Pass looks like"><code>cos(X, H)</code> at least %%COS_XH_MIN%%; without it, <code>0.00 apart</code> by layer 3</td></tr>
+<tr><td>6</td><td data-label="Claim">Layer norm: mean 0 and variance 1</td><td data-label="The check">the cell in step 7</td><td data-label="Pass looks like">every mean <code>0.000000</code>, every variance %%LN_VAR_MIN%% to %%LN_VAR_MAX%%</td></tr>
+<tr><td>7</td><td data-label="Claim">A block returns the shape it reads</td><td data-label="The check">the cell in step 8</td><td data-label="Pass looks like"><code>in (6, 8) -&gt; out (6, 8)</code>; means <code>0.000</code>, variances <code>1.000</code>; <code>%%N_LEARNED%%</code> numbers to learn</td></tr>
+<tr><td>8</td><td data-label="Claim">The kit's ceilings, in tokens</td><td data-label="The check">the cell in step 9</td><td data-label="Pass looks like"><code>%%KIT_TEXTS%% texts, %%KIT_TOKENS%% estimated tokens</code>; <code>%%KIT_RATIO%% times as many</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your laptop</div>
+<p>Nothing outside the setup's <code>~/basics-venv</code>. Every cell computed in memory and printed: no file was written, nothing was sent anywhere, and no account or rupee was used. You have read every number in one transformer block, from the words' vectors to the six normalized rows it hands on. Lesson B.4 stacks blocks like this one into encoders, BERT-style, and compares the two ways they score a passage against a question: one vector each, or the two read together.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Basics &middot; Lesson B.3 Read a transformer block, with layer normalization &middot; v5.0</p><p>Next: Lesson B.4 Encode with BERT-style models: embeddings and rankers.</p></div>

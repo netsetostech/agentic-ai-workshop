@@ -1,0 +1,48 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>tok</code>. Step 3 creates acme's context cache. The live API attaches it to every acme question until step 7 deletes it, an hour at most, and each of those answers costs a little more in the meantime. Step 5 creates a candidate with <code>SEMANTIC_CACHE=on</code> that serves no traffic. Its answers stay in <code>answer_cache</code> for 24 hours, and nothing else reads them.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The context cache</span><h3>The context cache: a pack, a cache, and the next answer</h3><p>One question without a cache, <code>make cache</code>, and the same question with one.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make cache</code> runs <code>cache_admin.py create</code>. It builds the pack from the kit's own copies of acme's synthetic documents: every <code>.md</code> file under <code>evals/corpus/acme/</code> that has no PDF twin. The generator's system text becomes the cache's system instruction, so the cache and the request agree on the rules. The cache is created with a one-hour TTL, and the record written to <code>tenant_caches/acme</code> keeps the ledger's fingerprint at packing time. From then on, every acme answer goes through <code>generate_config_kwargs()</code>. That costs one Firestore read of the record and one of the ledger, and it returns <code>cached_content</code> when the cache qualifies. The first cell below defines <code>ask91</code>, a small function that asks acme one question and prints the fields that show a cache at work. It notes the time for step 4 and asks once, before any cache exists. The question is a golden row whose answer is in the handbook, which is also in the pack.</p>
+
+<h4>The code</h4>
+@@pack@@
+@@create@@
+@@attach@@
+@@call@@
+
+<h4>Do it: the question, uncached</h4>
+%%CELL_ASKFN%%
+%%OUT_ASKFN%%
+
+<h4>Do it: the cache</h4>
+%%CELL_CACHE%%
+%%OUT_CACHE%%
+
+<h4>Do it: the same question, with the cache</h4>
+%%CELL_ASK2%%
+%%OUT_ASK2%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The first answer's <code>tokens_in</code> is the whole RAG prompt: the system text, the chunks the reranker kept, and the question. <code>make cache</code> then packed the %%N_DOCS%% documents and printed where the cache landed. It should say <code>global</code>, the endpoint that serves generation; a regional location means global refused the create. It also printed Google's count of the cached tokens. The second answer is the same question with the cache attached. <code>cached_tokens</code> equals that count, and <code>tokens_in</code> grew by the same number, because the prompt itself did not change. If <code>cached_tokens</code> is 0, the panel's first box lists the reasons a cache is not attached.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The rows</span><h3>The rows: what the context cache did to the bill</h3><p>The usage rows of both answers, priced the way the API prices them.</p></div></div>
+
+<h4>Definition</h4>
+<p>Every answer writes one usage row to the API's log. <code>tokens_in</code> is the whole prompt, the cached part included, and <code>cached_tokens</code> is the cached part. <code>price()</code> charges the uncached tokens at the input rate, the cached ones at a tenth of it, and the output at the output rate. The cell reads every acme row written since the first ask and prints the revision, the backend, both token counts, the cost in rupees at 85 to the dollar, and the latency. Cloud Logging can take half a minute to show a row, so if one is missing, run the cell again.</p>
+
+<h4>The code</h4>
+@@price@@
+
+<h4>Do it</h4>
+%%CELL_ROWS%%
+%%OUT_ROWS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The second row carries <code>cached_tokens</code>: this lesson's first proof. Now compare the two costs. The cached row is dearer, by about a tenth of the pack's full price. That is roughly Rs %%EXTRA_RS%% at the kit's flash rates, against Rs %%PLAIN_RS%% for the whole uncached answer in the expected block. The cache did exactly what it promises. The pack's tokens cost a tenth of their full price, Rs %%RAW_RS%% if they had been sent uncached. But nothing was sent uncached before: the retrieved chunks carried the context, and they still do. Compare the latency on the two rows yourself, because the model now reads some forty thousand more tokens for each answer.</p></div>
+
+<div class="box box-amber"><div class="box-title">When the context cache does pay</div>
+<p>A context cache saves money when the same long prefix would otherwise travel uncached with every call. That covers a policy manual every answer must follow, a long contract that is questioned all afternoon, or a set of examples each prompt repeats. Then it replaces full-price tokens with cheap ones, and the saving has to beat the storage bill. The kit's cache does not replace anything: the pack is added beside the retrieval. What it buys is grounding. The model sees every acme policy, even when retrieval misses the right chunk, and that costs about Rs %%EXTRA_RS%% an answer plus storage. Whether that is worth it is a quality question, and lesson 4.4's controlled comparison is how to answer it.</p></div>

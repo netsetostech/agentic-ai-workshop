@@ -1,0 +1,52 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why storage is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Only a database outlives the instance.</strong> <code>cloudsql.tf</code> gives the reasons. <code>InMemorySaver</code> dies with the process, and <code>SqliteSaver</code> is a file on one instance. Only a database survives a deploy, a scale-to-zero and an instance dying.</li>
+<li><strong>The DSN is a secret, not a setting.</strong> It is mounted by <code>--set-secrets</code> and readable by the chat service's account, so the image and the repository never hold the password.</li>
+<li><strong>No authorized networks.</strong> The connector checks an identity with IAM, so nothing on the internet can open a connection. Your shell's connector in step 5 went through the same check.</li>
+<li><strong><code>setup()</code> is a job.</strong> Exclusive locks and a keyed migrations table make a start-up <code>setup()</code> race across instances. A job runs it once, and the service never does.</li>
+<li><strong>Every version is kept.</strong> Because each version is stored whole, a thread can be read back at any step. The price is tables that grow faster than the conversations.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>What a turn writes</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>What your lane runs</td><td data-label="Costs">describes, and one log read</td><td data-label="On your lane">free</td></tr>
+<tr><td>The tables, and one thread</td><td data-label="Costs">two short connections, reading only</td><td data-label="On your lane">free</td></tr>
+<tr><td>The instance itself</td><td data-label="Costs">db-f1-micro, one zone, 10 GB, no backups, all month</td><td data-label="On your lane">roughly Rs 700 to 850 a month, per <code>cloudsql.tf</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>ADK's conversations are not durable.</strong> <code>brains.py</code> says the ADK brain uses <code>DatabaseSessionService</code> on the same Cloud SQL. The image installs google-adk without its <code>db</code> extra, so SQLAlchemy is missing, and the ADK brain keeps its sessions in memory, with only a warning.</li>
+<li><strong>The setup job keeps its first image.</strong> The deploy script creates the job only when it is missing, then executes it. A newer checkpointer library in the service never has its migrations applied.</li>
+<li><strong>Nothing prunes a thread's versions.</strong> Every version of messages stays, so storage grows with the square of a conversation's length. The package ships <code>ShallowPostgresSaver</code>, which keeps only the latest checkpoint, and the kit does not use it.</li>
+<li><strong>No backups.</strong> <code>backup_configuration</code> is off, so losing the instance loses every conversation.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A turn writes a checkpoint per step</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>+3 checkpoints</code> with no tool, <code>+5</code> with retrieve</td></tr>
+<tr><td>2</td><td data-label="Claim">Every version of messages is stored whole</td><td data-label="The check">step 3</td><td data-label="Pass looks like">six versions, <code>%%V_ALL%% bytes kept</code>, the latest <code>%%V_LAST%%</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The ADK brain cannot open a database store</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>using memory</code>, and <code>InMemorySessionService</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The instance is what Terraform asked for</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>POSTGRES_16, db-f1-micro, zonal, 10 GB</code>, <code>backups off</code>, <code>0 authorized networks</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The setup job runs the service's image</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>the same</code>; <code>DIFFERENT</code> is the gap above</td></tr>
+<tr><td>6</td><td data-label="Claim">The checkpoint tables exist</td><td data-label="The check">step 5</td><td data-label="Pass looks like">four tables, <code>migrations 0 to %%MIG_LAST%%</code></td></tr>
+<tr><td>7</td><td data-label="Claim">One row per thread</td><td data-label="The check">step 5</td><td data-label="Pass looks like">a line per session from your earlier lessons, and no ADK table</td></tr>
+<tr><td>8</td><td data-label="Claim">A thread's versions grow</td><td data-label="The check">step 6</td><td data-label="Pass looks like">sizes climbing, and <code>every version kept</code> several times <code>the latest alone</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing. The cells read your project and the database, and wrote nothing. <code>~/graph-venv</code> has the Cloud SQL connector. Lesson 6.7 redeploys the chat service, checks that a conversation continues, and checks that another person finds nothing.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.6 Configure and inspect durable conversation storage &middot; v5.0</p><p>Next: Lesson 6.7 Verify restart recovery and session isolation.</p></div>

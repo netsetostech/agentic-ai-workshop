@@ -1,0 +1,93 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; make cache again</span><h3>make cache again: attached again, and what it packed</h3><p>A new pack under the new fingerprint, and one question to the live revision.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make cache</code> builds the pack from the kit's copies of acme's documents, which still hold version 1's 60 days. It records the ledger's current fingerprint, so the record is current and the API attaches it again. The model now reads two things that disagree: the cached pack, which says 60 days and carries no date, and the retrieved NP-03 chunk, which says 90 days from 1 October 2026. Because a packed chunk carries a date, the generator adds the dated rule, and the rule tells the model which source to follow.</p>
+
+<h4>The code</h4>
+@@dated@@
+
+<h4>Do it</h4>
+%%CELL_RECACHE%%
+%%OUT_RECACHE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The state line is current again, and the live answer carries <code>cached_tokens</code>. That is the second proof: a hit again after <code>make cache</code>. Now read the answer, which should still say 90 days. The reason is not the cache, which holds version 1's text under revision 2's fingerprint. It is the dated rule, which sends the model to the dated source. The cache's label is current, but its content is a version behind the index. A revision without a date line would leave the model to choose between 60 and 90 on its own.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; The corpus comes back</span><h3>The corpus comes back: version 1, and the old answer with it</h3><p>Version 1's bytes again, the state, one ask, every row, and the clean-up.</p></div></div>
+
+<p>The same release command with version 1's file puts the handbook back. The worker finds bytes it retired minutes ago, flips their rows back to current, retires revision 2 in turn, and recomputes the fingerprint. Because the set of current <code>doc_key</code>s is the same as at the start, the fingerprint is the same as at the start too.</p>
+%%CELL_RESTORE%%
+%%OUT_RESTORE%%
+%%CELL_BACK%%
+%%OUT_BACK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The ledger shows step 3's fingerprint again, and the context cache, packed under revision 2's, is STALE in turn. The candidate's ask was a hit, and the answer is 60 days: the entry it stored in step 3. It was never deleted, only unread. Its fingerprint is the tenant's again and it is still inside its day, so it is right again. The fingerprint names a corpus, not a moment.</p></div>
+
+<h4>Every row of the walk</h4>
+%%CELL_ROWS%%
+%%OUT_ROWS%%
+<p>Read the rows in order. There are three live answers: with the cache, stale, then with the cache again. The candidate's rows show a miss, a hit, two scope misses, a fingerprint miss, and the returning hit. The <code>vertex</code> rows at <code>cached</code> 0 are the minutes between the reindex and <code>make cache</code>, when every acme answer ran without the pack. Nothing alerted; only the log said <code>cache_stale</code>.</p>
+
+<h4>Clean up</h4>
+%%CELL_CLEAN%%
+%%OUT_CLEAN%%
+<p>The answer cache keeps this lesson's entries until their day is up. The 60-day ones match the current fingerprint, so any revision with the switch on may serve them until then, which is correct. The service's configuration says <code>SEMANTIC_CACHE=on</code> until the next deploy or candidate sets it back.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why freshness works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Coarse on purpose.</strong> A new version of any document invalidates every answer the tenant has. A missed hit costs one model call, a wrong hit costs trust, and a fingerprint costs one read. A finer rule, tracing which documents each answer used, would be exact and would cost a join on every lookup.</li>
+<li><strong>The fingerprint moves after the swap, never before.</strong> The worker recomputes it only once the new version is current and recorded, so no cache is invalidated for a version a reader cannot yet retrieve.</li>
+<li><strong>Nothing is deleted on a reindex.</strong> Old answers and the old cache record stay where they are, unread, the same way the ledger retires a version with a flag. The undo brings the answers back for free.</li>
+<li><strong>Five candidates, not one.</strong> A stale twin of the question sits beside the current entry after a reindex, and the lookup reads five neighbours so the stale one cannot hide the current one.</li>
+<li><strong>The two-minute rule.</strong> A call never starts on a cache that could expire before the model reads it.</li>
+<li><strong>The dated rule is the backstop.</strong> When two sources in one prompt disagree, the model is told to follow the latest effective date and to say so. Step 6 depended on it.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The two releases</td><td data-label="Costs">the offline gate twice, and the worker flipping rows back; if revision 2's rows had aged out, a few chunks embedded</td><td data-label="On your lane">a paisa or two</td></tr>
+<tr><td>The context cache</td><td data-label="Costs">two create calls that read the pack, and minutes of storage until the clean-up</td><td data-label="On your lane">minutes of storage</td></tr>
+<tr><td>The asks</td><td data-label="Costs">seven answered questions, about a rupee each with the pack attached and half that without; two hits at Rs 0 on the row</td><td data-label="On your lane">about Rs 6</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">a revision with no traffic, at zero minimum instances</td><td data-label="On your lane">free</td></tr>
+<tr><td>Firestore</td><td data-label="Costs">the ledger and the cache record read per ask, and a query or two for the answer cache</td><td data-label="On your lane">free at this size</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The scope leaves out the model.</strong> Every revision with the switch on shares one <code>answer_cache</code>. A candidate on a new model is served the answers other revisions stored, for up to a day, so evaluating a model through a cached candidate measures the old model on every cached question. The row names the model that answered, so this shows, but nothing stops it.</li>
+<li><strong><code>make cache</code> packs the kit's files, not the corpus.</strong> Step 6's cache was labelled current while it held version 1's text, and only the dated rule kept the answer right.</li>
+<li><strong>Nothing alerts on <code>cache_stale</code>.</strong> After every upload, a tenant's answers run without the pack until someone runs <code>make cache</code>. No metric or alert in <code>terraform/</code> counts the log line.</li>
+</ul></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Both caches start current</td><td data-label="The check">step 3, the state line</td><td data-label="Pass looks like">the two fingerprints equal, <code>current</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The same words hit</td><td data-label="The check">step 3, the third ask</td><td data-label="Pass looks like"><code>cache  semantic in      0</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Another top_k misses</td><td data-label="The check">step 4, the first ask</td><td data-label="Pass looks like"><code>vertex none</code></td></tr>
+<tr><td>4</td><td data-label="Claim">A filter misses</td><td data-label="The check">step 4, the second ask</td><td data-label="Pass looks like"><code>vertex none</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Each scope has its own hash</td><td data-label="The check">step 4, the four hashes</td><td data-label="Pass looks like">four different values</td></tr>
+<tr><td>6</td><td data-label="Claim">The release moves the fingerprint</td><td data-label="The check">step 5, the state line</td><td data-label="Pass looks like">a new ledger value, <code>STALE</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The miss after make reindex</td><td data-label="The check">step 5, both asks and the log</td><td data-label="Pass looks like"><code>vertex none</code> with 90 days, <code>cached 0</code>, <code>cache_stale</code> lines</td></tr>
+<tr><td>8</td><td data-label="Claim">A hit again after make cache</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>current</code>, <code>cached</code> non-zero</td></tr>
+<tr><td>9</td><td data-label="Claim">The old answer returns with the old corpus</td><td data-label="The check">step 7, the ask</td><td data-label="Pass looks like">step 3's fingerprint, <code>cache semantic</code>, 60 days</td></tr>
+<tr><td>10</td><td data-label="Claim">Both caches are put away</td><td data-label="The check">step 7, the clean-up</td><td data-label="Pass looks like"><code>deleted acme's cache</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>acme's handbook is version 1 again, and revision 2 is retired for another 30 days, as it was before this lesson. The ledger's fingerprint is back to its starting value. The context cache is deleted. <code>documind-api</code> has one more revision, which serves no traffic and has no tag, and the service's configuration says <code>SEMANTIC_CACHE=on</code> until the next deploy. <code>answer_cache</code> holds this lesson's answers until their day is up. The usage rows of seven answered questions and two hits. Lesson 6.4 measures what these caches buy: latency, avoided calls in rupees, and the threshold that keeps the near rung from answering the wrong question.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.3 Test cache scope, configuration changes and freshness &middot; v5.0</p><p>Next: Lesson 6.4 Measure latency, avoided calls and false cache hits.</p></div>

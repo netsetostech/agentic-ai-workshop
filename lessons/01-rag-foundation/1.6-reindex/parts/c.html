@@ -1,0 +1,123 @@
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Release</span><h3>The gate goes red, and the two ways back to green</h3><p>The live half of the gate, scoped to the handbook, against a lane where the answer moved; then the release path and the undo path.</p></div></div>
+
+<h4>Definition</h4>
+<p>The live half sends each row's question to the API as a rostered member, validates the answer's shape, checks its citations name the tenant's own current documents, and looks for the expected figure on its own word boundary. It scores the rows against thresholds, and it treats the required rows separately: a version row or an isolation row that fails blocks the release on its own, whatever the averages say. Against revision 3, the two rows that expect 60 days fail: <code>lk-06</code> costs a point, and <code>vr-01</code>, a required row, blocks. There are two honest ways back to green. The release path changes the two rows' expected answer to 90 in <code>evals/golden.jsonl</code>, in the same commit as the document, and re-runs the gate. The undo path uploads version 1's bytes again, which the worker reactivates for nothing, and the unchanged rows pass. This lesson takes the undo, so your lane and your checkout agree at the end.</p>
+
+<h4>The code</h4>
+@@required@@
+@@eval_live_make@@
+
+<h4>Do it: the live gate, red</h4>
+<p>Ten questions to the API, each a generation call: a few rupees at most. The target mints two identity tokens, the UI's account as the member and the outsider's for the isolation rows, which is why it takes a moment to start.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (ten questions; a few rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make eval-live PROJECT=$PROJECT SOURCE=hr_policy_2026.md</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your rates, latencies and the wording of the two miss lines differ; the Blocked line is the point)</span><span class="ro">read only</span></div><pre tabindex="0">>> https://documind-api-NUMBER.asia-south1.run.app
+== eval gate: LIVE ==
+  scoped to hr_policy_2026.md: 10 row(s) cite it
+  10 rows (10 answerable, 0 not) against https://documind-api-NUMBER.asia-south1.run.app
+
+  [PASS] request_success_rate  100.0%  (threshold 100%; 10 rows)
+  [PASS] answerable_rate       100.0%  (threshold 80%; 10 rows)
+  [PASS] citation_rate         100.0%  (threshold 95%; 10 rows)
+  [PASS] citation_valid_rate   100.0%  (threshold 100%; 10 rows)
+  [FAIL] must_contain_rate      80.0%  (threshold 85%; 10 rows)
+  [PASS] correct_rate           80.0%  (threshold 68%; 10 rows)
+  [ -- ] refusal_rate            0.0%  (threshold 90%; no rows in scope; 0 rows)
+  ...
+
+  shape        rows   ok   pass
+  lookup          9    9      8
+  version         1    1      0
+  latency ms  p50  2410  p95  3980   (round trip, 10 rows)
+
+  rows that cost a point (2):
+    lk-06  lookup    acme    missing '60' | What is the notice period for a confirmed E3?
+    vr-01  version   acme    missing '60' | What is the notice period for a confirmed E3?
+
+  required rows that did not pass (1) - each one blocks on its own:
+    vr-01: missing '60'
+
+  Blocked: must_contain_rate: 80% < 85%; required: 1 mandatory row(s) did not pass</pre></div>
+
+<h4>The undo, then the gate, green</h4>
+<p>Version 1's bytes again, through the same release command. The offline gate passes, the upload lands, and the worker finds a version it has retired within the window: <code>ingest_reactivated</code>, nothing embedded, revision 3 retired in turn. The live gate then passes with the rows as they are.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the undo, then ten questions again)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make reindex PROJECT=$PROJECT TENANT=acme FILE=evals/corpus/acme/hr_policy_2026.md
+
+make eval-live PROJECT=$PROJECT SOURCE=hr_policy_2026.md</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">>> gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md - waiting for the worker (up to 5 min)
+>> event doc_key chunks reused embedded retired effective_from
+>> ingest_reactivated	acme_%%SHA1_16%%...	283	283	0	283
+>> the gate, scoped to this document, on a candidate: make eval-live PROJECT=documind-ai-YOUR-ID SOURCE=hr_policy_2026.md API=&lt;candidate url&gt;
+...
+  [PASS] must_contain_rate     100.0%  (threshold 85%; 10 rows)
+  ...
+  shape        rows   ok   pass
+  lookup          9    9      9
+  version         1    1      1
+  All thresholds met.</pre></div>
+
+<div class="box box-amber"><div class="box-title">The release path, if revision 3 were real</div>
+<p>A real revision 3 ships with its rows. In the same commit as the document, the two rows that cite NP-03's figure change their expectation from <code>"60"</code> to <code>"90"</code>: <code>lk-06</code> and <code>vr-01</code> in <code>evals/golden.jsonl</code>. The offline gate then still finds the set sound (a 90 could still fail), the live gate passes against the new version, and a later upload of version 1 would turn it red the other way, which is the gate protecting you from an accidental rollback. The demo's README says it in one line: the golden rows move with the policy in the same commit, and the red gate in between is the demo.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The gate did exactly what a release gate is for. Eight of the nine lookups still passed, the two rows that asserted the old figure failed, and one of them was mandatory, so the run was blocked regardless of the averages. Then the undo put version 1 back without a single embedding, and the same ten questions passed. Between the two runs nothing was deleted: revision 3's rows are retired with their vectors, and uploading its bytes again within thirty days would reactivate them just as version 1's were.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>The claim's four states, what reuse cannot save, and what a reindex costs</h3><p>The record that tells a version's story, the costs the carry-over does not touch, and the rupee line.</p></div></div>
+
+<h4>The claim's four states</h4>
+<p>A claim is taken in a transaction and ends in one of four states. <code>processing</code> while a worker holds it. <code>indexed</code> when it finished, with its counts. <code>failed</code> when the worker released it with the error, and a failed claim is not a claim but a record of one: the next delivery may take it again, which is what <code>retakes</code> is for. <code>superseded</code> when a newer version retired its rows; the same bytes again reactivate it, and only when the reactivation is refused (too few rows left, or the window closed) is a superseded claim retaken and the bytes indexed as a fresh version. The three-version history you read in step 6 is these states, one claim per version.</p>
+@@claim_tx@@
+@@release@@
+
+<h4>What reuse cannot save</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step of a re-issue</th><th>Reused?</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Parsing</td><td data-label="Reused?">never: a PDF is sent to Document AI whole, every page, every re-issue (lesson 1.2)</td><td data-label="On your lane">the handbook is Markdown: nothing to parse; a 236-page Act would pay for 236 pages again</td></tr>
+<tr><td>Chunking, hashing, the plan</td><td data-label="Reused?">free: a loop over strings</td><td data-label="On your lane">milliseconds</td></tr>
+<tr><td>Embedding</td><td data-label="Reused?">yes: only the misses are sent</td><td data-label="On your lane">2 of 283, one request instead of four</td></tr>
+<tr><td>The rows, the swap, the tier</td><td data-label="Reused?">no: every row of the new version is written, every datapoint upserted, every retired id removed</td><td data-label="On your lane">283 rows staged and flipped, 283 datapoints up, 283 out</td></tr>
+<tr><td>The BigQuery mirror</td><td data-label="Reused?">no: append-only, every chunk again</td><td data-label="On your lane">283 more rows for acme</td></tr>
+<tr><td>The undo</td><td data-label="Reused?">everything: rows flipped, datapoints re-upserted from their own vectors, nothing embedded, nothing parsed</td><td data-label="On your lane"><code>embedded 0</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The lesson of the table: the carry-over saves model calls, which are the part that could drift, and the part that is billed per character. It does not save writes, and it cannot save the parse. A re-issue of a long PDF is priced by its pages; a re-issue of a Markdown handbook by its changed clauses.</p>
+
+<h4>What a reindex bills</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Event</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The offline gate</td><td data-label="Costs">nothing</td><td data-label="On your lane">run twice</td></tr>
+<tr><td>Revision 3's embeddings</td><td data-label="Costs">453 characters at the rate lesson 1.3 quoted</td><td data-label="On your lane">about a hundredth of a paisa</td></tr>
+<tr><td>The live gate</td><td data-label="Costs">one generation per row, ten rows, the model priced per token</td><td data-label="On your lane">a few rupees, twice</td></tr>
+<tr><td>The undo</td><td data-label="Costs">nothing: no parse, no embedding</td><td data-label="On your lane"><code>embedded 0</code></td></tr>
+<tr><td>Storage</td><td data-label="Costs">three versions' rows for thirty days, then the policy removes the retired ones</td><td data-label="On your lane">849 rows for one document until late October</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The gate runs before the upload</td><td data-label="The check">step 3, and the first line of <code>commands/reindex.sh</code></td><td data-label="Pass looks like">the set is sound; 10 rows cite the handbook</td></tr>
+<tr><td>2</td><td data-label="Claim">Reuse is a function of the text</td><td data-label="The check">the seven plans in step 4</td><td data-label="Pass looks like">1, 1, 0, 1, 1, 0 and 2 embeddings, as the table says</td></tr>
+<tr><td>3</td><td data-label="Claim">A re-issue embeds only what changed</td><td data-label="The check">the worker's line in step 5</td><td data-label="Pass looks like"><code>283 281 2 283 2026-11-01</code></td></tr>
+<tr><td>4</td><td data-label="Claim">Bytes the ledger has seen are never embedded twice</td><td data-label="The check">the undo in step 7</td><td data-label="Pass looks like"><code>ingest_reactivated</code>, <code>embedded 0</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The ledger row carries the counts</td><td data-label="The check">the API read in step 6</td><td data-label="Pass looks like"><code>reused 281 embedded 2 retired 283 effective 2026-11-01</code></td></tr>
+<tr><td>6</td><td data-label="Claim">One claim per version, one indexed</td><td data-label="The check">the claims cell in step 6</td><td data-label="Pass looks like">three claims: two <code>superseded</code>, one <code>indexed</code></td></tr>
+<tr><td>7</td><td data-label="Claim">Reused means copied</td><td data-label="The check">the vector check in step 6</td><td data-label="Pass looks like">LV-01 <code>same vector: True</code>, NP-03 <code>False</code></td></tr>
+<tr><td>8</td><td data-label="Claim">A moved answer blocks the release</td><td data-label="The check">the live gate in step 7</td><td data-label="Pass looks like"><code>Blocked: must_contain_rate: 80% &lt; 85%; required: 1 mandatory row(s) did not pass</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The undo restores the gate</td><td data-label="The check">the second live run in step 7</td><td data-label="Pass looks like"><code>All thresholds met.</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The handbook went to revision 3 and back to version 1. Revision 3's 283 rows are retired with their two fresh vectors and expire with the policy in thirty days; version 1 is current again, reactivated a second time. The golden set in your checkout is unchanged. Lesson 1.7 stays with these records and asks what "current" means when three versions exist: how the swap publishes one, how a person retires a document by hand, and why an event for an older generation is refused.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 1 RAG foundation &middot; Lesson 1.6 Reindex a changed section and measure embedding reuse &middot; v5.0</p><p>Next: Lesson 1.7 Publish versions, retire documents and reject stale events.</p></div>

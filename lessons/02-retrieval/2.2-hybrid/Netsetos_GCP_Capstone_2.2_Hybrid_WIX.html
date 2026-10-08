@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 2.2 Compare dense and hybrid retrieval - two legs through one index, one fusion rule, and an ablation that measures instead of arguing | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.fb-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 16px;margin-bottom:10px;}
+.fb-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.fb-wide{grid-column:1/-1;}
+.fb-l select,.fb-l textarea{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.fb-l textarea{font-family:var(--mono);font-size:16px;line-height:1.35;min-height:96px;resize:vertical;}
+.fb-l input[type=range]{width:100%;min-height:44px;margin:0;}
+.fb-legs{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:8px 0;}
+.fb-leg{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-width:0;}
+.fb-leg h5{margin:0 0 6px;font-size:var(--small-size);color:var(--navy);}
+.fb-leg ol{margin:0;padding-left:22px;font-size:12.5px;line-height:1.5;color:var(--slate);}
+.fb-leg li span,.fb-fused td span{color:var(--slate);font-family:var(--mono);font-size:var(--kicker-size);overflow-wrap:anywhere;}
+.fb-leg li.hit{color:var(--navy);font-weight:600;background:var(--teal-light);border-radius:4px;padding:1px 4px;margin-left:-4px;}
+.fb-rank{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal);margin:6px 0 0;}
+.fb-fused{margin-top:8px;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+.fb-fused table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.fb-fused th,.fb-fused td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);vertical-align:top;}
+.fb-fused td.num{font-family:var(--mono);white-space:nowrap;}
+.fb-fused tr.hit td{background:var(--teal-light);color:var(--navy);font-weight:600;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 2 &middot; Retrieval &middot; Lesson 2.2</div>
+<h1>Compare dense and hybrid retrieval: <span>two legs through one index, one fusion rule, and an ablation that measures instead of arguing</span></h1>
+<p>Lesson 2.1 reproduced the API's pool by hand: one vector, one index, the tenant restrict. This lesson adds the second leg. Every datapoint already carries a sparse vector (lesson 1.3); the index can search by it, fuse the two lists by rank rather than by score, and hand back one pool; a deployment setting turns that on; and a harness measures each choice on the golden set with no model in the loop. You will rank acme's own rows with two sparse rulers and see one find the right clause first while the other buries it, fetch the same question three ways from the index, fuse two of the lists yourself with the kit's function and match the server's order, run the ablation and read recall, MRR and p95 per arm, then turn hybrid on for a candidate revision that takes no traffic and compare its answers with the live dense ones.</p>
+<div class="hero-chips"><div class="hero-chip">Dense: meaning</div><div class="hero-chip">Sparse: spellings</div><div class="hero-chip">RRF, alpha 0.7, k 60</div><div class="hero-chip">HybridQuery, server-side</div><div class="hero-chip">make ablate</div><div class="hero-chip">RETRIEVAL_MODE, on a candidate</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a second leg adds, and how two lists become one</a></li>
+<li><a href="#s2">The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The lane runs dense, and two sparse rulers over its own rows</a></li>
+<li><a href="#s4">Three ways through the index: dense, sparse only, fused</a></li>
+<li><a href="#s5">RRF by hand: the kit's rule reproduces the server's order</a></li>
+<li><a href="#s6">The ablation: one knob per arm, no model in the loop</a></li>
+<li><a href="#s7">The knob: hybrid on a candidate that takes no traffic, compared, then removed</a></li>
+<li><a href="#s8">What hybrid costs, where it cannot go, and what the harness does not measure</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the sparse leg of hybrid retrieval is made of, why two ranked lists are merged by position with Reciprocal Rank Fusion rather than by score, and why a sparse leg is only as good as its weights. Then you will prove it on your lane: rank acme's rows with the index's ruler and the ablation's, ask the index dense, sparse-only and fused, reproduce the fused order with <code>rrf_fuse()</code>, run <code>make ablate</code>, and judge <code>RETRIEVAL_MODE=hybrid</code> on a candidate revision before it serves anyone.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a second leg adds, and how two lists become one</h3><p>Meaning and spellings are found by different rulers, fused by rank, and only as good as their weights.</p></div></div>
+
+<p><strong>Retrieval finds evidence two ways, and each is blind where the other sees.</strong> The dense leg turns the question and every chunk into 768 numbers from a model that has read a great deal of text, so "quit" lands near "resign" and a question about senior staff finds a clause about grade E3. It is weak exactly where a token means nothing outside this corpus: an invoice number, a clause code, a product name is just a rare string to it. The sparse leg counts the words themselves. "INV-2026-0412" matches "INV-2026-0412" and nothing else, and it will never know that "quit" and "resign" are the same request. Hybrid retrieval runs both legs and merges the two ranked lists into one pool.</p>
+
+<p><strong>The merge goes by rank, not by score.</strong> A dense distance and a sparse dot product live on different scales, so adding them would let one leg drown the other. Reciprocal Rank Fusion ignores the scores: each list gives an id 1 / (k + rank) points, the dense list's points are multiplied by alpha and the sparse list's by 1 - alpha, the points are summed and the ids sorted. With k at 60, being first rather than second is worth a little; being on a list rather than absent is worth a lot. The kit's <code>rrf_fuse()</code>, the ablation's <code>rrf()</code> and the index's <code>rrf_ranking_alpha</code> are three spellings of this one rule, and the API sends alpha 0.7.</p>
+
+<p><strong>A sparse leg is only as good as its weights.</strong> The index's sparse leg weights a word by how often it appears in the chunk, 1 for the first time and 0.5 for each repeat, and every word counts: "the" as much as "invoice". A long Act page with sixty occurrences of "the" and "of" therefore outscores the one invoice that carries the number you asked for. The ablation's sparse leg is BM25, which does two more things: it weights a word by how rare it is across the corpus, so "inv-2026-0412" counts and "the" barely does, and it discounts long chunks. On acme's corpus that is the difference between finding the invoice first and finding it around rank one thousand. This is the finding steps 3 and 4 confirm on your lane, and it is why the question "is hybrid better?" has to be answered as "which hybrid, and measured how".</p>
+
+<div class="analogy"><div class="analogy-icon">&#128218;</div><div>
+<p><strong>Two clerks and a chair.</strong> A records room with two clerks. The first has read every file and brings the pages that mean what you asked. The second works from a concordance and brings every page that carries your exact words, and if you let him count every "the", he brings the longest pages first. The chair never compares the clerks' confidence. She takes each clerk's ranked stack, gives a page 1 / (60 + position) points for where it sits in each stack, trusts the first clerk 70 to 30, and reads the totals. A page both clerks brought rises. A page only the second clerk brought, at 30 percent, cannot outscore anything in the first clerk's top twenty, and that arithmetic is in step 5.</p></div></div>
+
+<h4>The fusion bench: two sparse rulers and one rule, on acme's real questions</h4>
+<p>Pick a golden question. Leg A is what the index's sparse leg computes for it: the kit's encoder on the question and on every chunk of acme's corpus, scored by dot product, as the index scores a sparse vector. Leg B is the ablation's leg, BM25, over the same chunks. The anchor is the golden row's clause or document, and each leg says where it ranked it. The table underneath fuses two lists with the RRF rule at the alpha and k you set: list 2 is leg A, and list 1 is your dense order from step 4 once you paste it, with leg B standing in until then.</p>
+
+<div class="diagram fb" id="bench">
+<div class="dg-title">Fusion bench - the index's sparse leg, the ablation's, and Reciprocal Rank Fusion</div>
+<div class="fb-controls">
+<label class="fb-l">Golden question <select id="fb-q"><option value="lk-10">lk-10 &middot; What is the total payable on invoice INV-2026-0412?</option><option value="lk-06">lk-06 &middot; What is the notice period for a confirmed E3?</option><option value="jn-02">jn-02 &middot; Can unused leave shorten my notice period?</option><option value="lk-05">lk-05 &middot; Are USB drives allowed on a company laptop?</option><option value="lk-12">lk-12 &middot; What notice does the ACME MSA require to terminate for convenience?</option><option value="mm-03">mm-03 &middot; In the FY2026 town hall, what did the CFO say happened to EMEA revenue?</option><option value="lk-27">lk-27 &middot; What is the maximum rate of central tax the CGST Act allows?</option></select></label>
+<label class="fb-l">alpha, the dense leg's weight: <span id="fb-alpha-v">0.70</span> <input type="range" id="fb-alpha" min="0" max="1" step="0.05" value="0.7"></label>
+<label class="fb-l">k, the damping: <span id="fb-k-v">60</span> <input type="range" id="fb-k" min="1" max="100" step="1" value="60"></label>
+<label class="fb-l fb-wide">Your dense order from step 4, one line per chunk as the cell prints it (locator, then source)<textarea id="fb-dense" rows="4" placeholder="NP-03 hr_policy_2026.md&#10;LV-07 hr_policy_2026.md&#10;..."></textarea></label>
+</div>
+<p class="fb-rank" id="fb-meta" aria-live="polite"></p>
+<div class="fb-legs" id="fb-legs"></div>
+<div class="fb-fused" id="fb-fused" aria-live="polite"></div>
+<p class="dg-cap">Computed when this page was built by the kit's own code: <code>shared/sparse_encoder.py</code> for leg A, BM25Okapi with rank_bm25's constants (k1 1.5, b 0.75) for leg B, over the 1,628 chunks the kit's chunker cuts from acme's 17 markdown mirrors. Your lane's Act chunks came through Document AI and differ; the ranks in step 3 are yours. The fusion is the rule in <code>rrf_fuse()</code>, character for character, in JavaScript.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the bench is not</div>
+<p>It has no dense leg of its own, because that needs the model and your lane; step 4 gives you the list to paste. Until then, list 1 is leg B, which makes the RRF table a demonstration of the rule on two rankers that disagree, not of what the API fuses. Move alpha from 0.7 towards 0 on the invoice question and watch which ruler's first choice wins the fused top: that is the whole meaning of alpha.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</h3><p>Twelve words, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Dense leg</strong></td><td data-label="Meaning"><code>find_neighbors()</code> with the question's 768-number vector under the query profile; the index compares by dot product with every datapoint's dense vector.</td><td data-label="On your lane">Step 4's first list; the API's whole pool while <code>RETRIEVAL_MODE</code> is dense.</td></tr>
+<tr><td><strong>Sparse leg, the index's</strong></td><td data-label="Meaning">The hashed word-count vector on every datapoint (lesson 1.3), scored by dot product with the question's. No rarity weight, no length discount.</td><td data-label="On your lane">Step 4's alpha-0 list; step 3's first ruler.</td></tr>
+<tr><td><strong>TF weight</strong></td><td data-label="Meaning">1 + 0.5 (n - 1) for a word seen n times in a text; every word counts, including "the".</td><td data-label="On your lane"><code>sparse_encode()</code>, run in step 3.</td></tr>
+<tr><td><strong>IDF</strong></td><td data-label="Meaning">The log of how rare a word is across the corpus. BM25 multiplies by it; the index's leg has nothing like it.</td><td data-label="On your lane">Why step 3's second ruler finds the invoice.</td></tr>
+<tr><td><strong>BM25</strong></td><td data-label="Meaning">The ablation's sparse leg: IDF times a saturating term count times a length discount (k1 1.5, b 0.75), built in-process from the rows' text.</td><td data-label="On your lane"><code>Lane.hybrid()</code> in step 6; <code>rank_bm25</code> from the setup box.</td></tr>
+<tr><td><strong>RRF</strong></td><td data-label="Meaning">score(id) = alpha / (k + rank in the dense list) + (1 - alpha) / (k + rank in the sparse list); an id absent from a list gets nothing from it; sort by score.</td><td data-label="On your lane"><code>rrf_fuse()</code> in hybrid.py, <code>rrf()</code> in ablate.py, <code>rrf_ranking_alpha</code> on the index.</td></tr>
+<tr><td><strong>alpha</strong></td><td data-label="Meaning">The dense leg's weight: 1 is dense only, 0 sparse only. The API sends 0.7; the ablation defaults to 0.7; <code>rrf_fuse()</code> defaults to 0.5.</td><td data-label="On your lane">Steps 4 and 5.</td></tr>
+<tr><td><strong>k</strong></td><td data-label="Meaning">60 in every fuser here. It flattens the difference between neighbouring ranks so that presence on a list matters more than position.</td><td data-label="On your lane">The bench's second slider.</td></tr>
+<tr><td><strong>Arm</strong></td><td data-label="Meaning">One retrieval recipe with one knob moved: dense 5 with no reranker; dense 20 then rerank to 5, which is the lane; dense 50 then rerank; hybrid 20 then rerank.</td><td data-label="On your lane"><code>make ablate</code>, one line per arm.</td></tr>
+<tr><td><strong>recall@k, MRR</strong></td><td data-label="Meaning">Recall: the share of a row's anchors found in the top k, an anchor being a clause code or a document name matched in a chunk's source and text. MRR: 1 over the rank of the first anchor hit, averaged.</td><td data-label="On your lane">The table's <code>recall@5</code> and <code>mrr</code> columns.</td></tr>
+<tr><td><strong>p95, ceiling</strong></td><td data-label="Meaning">p95: the latency under which 95 percent of an arm's rows finished. Ceiling: <code>recall@depth</code>, what the reranker could at most surface; if the 20 and 50 arms agree, depth is not the knob.</td><td data-label="On your lane">The first and last columns.</td></tr>
+<tr><td><strong>Candidate revision</strong></td><td data-label="Meaning">A revision of <code>documind-api</code> that takes no traffic and answers on a tag URL; where a switch is judged before it serves anyone.</td><td data-label="On your lane">Step 7, then removed.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words carry the lesson's finding: the index's sparse leg and BM25 are both "sparse", and they are not the same ruler. Keep them apart when someone says the ablation proved hybrid does nothing: it proved that about one of them.</p>
+
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">The names this lesson reads off the API, and one package the ablation needs</div>
+<p>The index endpoint, the deployed index and the retrieval settings live in the API's environment; steps 3, 4 and 7 use them. An empty value means the setting's default, which the page names where it matters; a name the service does not set is unset rather than exported empty, because the kit's settings class reads an empty variable as a value, and step 8's cell imports the kit. The ablation's sparse leg needs <code>rank_bm25</code>, which the kit's images do not carry because no service runs it; the pip line puts it in the venv once.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }
+setenv() { v="$(svc_env documind-api "$1")"; if [ -n "$v" ]; then export "$1=$v"; else unset "$1"; fi; }
+for N in VECTOR_INDEX_ENDPOINT VECTOR_DEPLOYED_INDEX_ID RETRIEVAL_MODE RETRIEVAL_BACKEND; do setenv "$N"; done
+python -m pip install -q rank-bm25==0.2.2
+echo "endpoint: $VECTOR_INDEX_ENDPOINT  deployed: $VECTOR_DEPLOYED_INDEX_ID"
+echo "mode: ${RETRIEVAL_MODE:-dense (default)}  backend: ${RETRIEVAL_BACKEND:-vector (default)}"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (your ids differ; a lane deployed by make up has no RETRIEVAL_MODE in its environment, so the default shows)</span><span class="ro">read only</span></div><pre tabindex="0">endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321  deployed: documind_chunks_v1
+mode: dense (default)  backend: vector</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Rows</span><h3>The lane runs dense, and two sparse rulers over its own rows</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/demo_03_the_lane_runs_dense_and_two_sparse_rulers_over_its_own_rows.py" target="_blank" rel="noopener"><code>demo_03_the_lane_runs_dense_and_two_sparse_rulers_over_its_own_rows.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The setting that decides the mode, the vector the second leg is made of, and the bench run on your rows for Rs 0.</p></div></div>
+
+<h4>Definition</h4>
+<p>The mode is a deployment setting: <code>retrieval_mode</code> in config.py is "dense" unless <code>RETRIEVAL_MODE</code> says otherwise, a validator refuses a pair the service could not honour, <code>/version</code> reports the mode that passed, and every usage row carries it. Nothing in a request can change it. The second leg's material is already on every row and datapoint: the sparse vector lesson 1.3 computed and lesson 1.4 read back off the index. At query time the index scores it by dot product with the question's sparse vector, which is the sum, over the words the two share, of the two term-frequency weights. The ablation's harness never touches that vector: its sparse leg is BM25, built in memory from the rows' text. The cell runs both rulers over acme's current rows for a question you choose and prints where the right chunk lands under each.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/config.py - retrieval_mode, and the validator that refuses an impossible pair at import</span><span class="ro">read only</span></div><pre tabindex="0">    retrieval_mode: str = <span class="st">&quot;dense&quot;</span>          <span class="cm"># dense | hybrid (4.5&#x27;s hybrid.py)</span>
+...
+    @model_validator(mode=<span class="st">&quot;after&quot;</span>)
+    <span class="kw">def</span> <span class="fn">_retrieval_modes_agree</span>(self):
+        <span class="cm"># Refused here, at import, so a revision with an impossible pair never serves: the deploy fails with the</span>
+        <span class="cm"># message above instead of a service that runs dense and reports hybrid. /version reports the mode that</span>
+        <span class="cm"># passed this check - the effective one.</span>
+        check_retrieval_modes(self.retrieval_backend, self.retrieval_mode, self.retrieval_graph, self.graph_backend)
+        <span class="kw">return</span> self</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /version: the mode that passed the check</span><span class="ro">read only</span></div><pre tabindex="0">@app.get(<span class="st">&quot;/version&quot;</span>)
+<span class="kw">def</span> <span class="fn">version</span>():
+    <span class="cm"># What is actually serving. When an answer changes and no one deployed,</span>
+    <span class="cm"># this is the first thing to check - and it is the same triple that goes</span>
+    <span class="cm"># on every log line and every span.</span>
+    <span class="kw">return</span> {<span class="st">&quot;model_backend&quot;</span>: settings.model_backend,
+            <span class="st">&quot;generator_model&quot;</span>: settings.generator_model,
+            <span class="st">&quot;prompt&quot;</span>: f<span class="st">&quot;{settings.prompt_id}@{settings.prompt_version}&quot;</span>,
+            <span class="st">&quot;retrieval_mode&quot;</span>: settings.retrieval_mode,
+            <span class="st">&quot;retrieval_backend&quot;</span>: settings.retrieval_backend,   <span class="cm"># vector | firestore | rag_engine | vertex_search: the DEFAULT; a tenant&#x27;s pin and its data_region decide per request (the row&#x27;s retrieval_backend is the effective one)</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - _sparse(): the vector on every datapoint (lesson 1.3)</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_sparse</span>(text: str) -&gt; IndexDatapoint.SparseEmbedding:
+    values, dimensions = sparse_encode(text)
+    <span class="kw">return</span> IndexDatapoint.SparseEmbedding(values=values, dimensions=dimensions)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/ablate.py - Lane.tenant_corpus(): the rows&#x27; text and a BM25 index, the harness&#x27;s sparse leg</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">tenant_corpus</span>(self, tenant: str):
+        <span class="st">&quot;&quot;&quot;One tenant&#x27;s text chunks (no embeddings: 768 floats each) and a BM25 index - the sparse leg.&quot;&quot;&quot;</span>
+        <span class="kw">if</span> tenant <span class="kw">not</span> <span class="kw">in</span> self._tenant:
+            <span class="kw">from</span> google.cloud.firestore_v1.base_query <span class="kw">import</span> FieldFilter
+            <span class="kw">from</span> rank_bm25 <span class="kw">import</span> BM25Okapi
+            rows = []
+            <span class="kw">for</span> d <span class="kw">in</span> (self._current(self.db.collection(<span class="st">&quot;chunks&quot;</span>).where(filter=FieldFilter(<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;==&quot;</span>, tenant)))
+                      .select([<span class="st">&quot;text&quot;</span>, <span class="st">&quot;source_uri&quot;</span>]).stream()):
+                x = d.to_dict()
+                rows.append({<span class="st">&quot;chunk_id&quot;</span>: d.id, <span class="st">&quot;text&quot;</span>: x.get(<span class="st">&quot;text&quot;</span>, <span class="st">&quot;&quot;</span>), <span class="st">&quot;source_uri&quot;</span>: x.get(<span class="st">&quot;source_uri&quot;</span>, <span class="st">&quot;&quot;</span>)})
+            self._tenant[tenant] = (rows, {r[<span class="st">&quot;chunk_id&quot;</span>]: r <span class="kw">for</span> r <span class="kw">in</span> rows}, BM25Okapi([tokens(r[<span class="st">&quot;text&quot;</span>]) <span class="kw">for</span> r <span class="kw">in</span> rows]))
+        <span class="kw">return</span> self._tenant[tenant]</pre></div>
+
+
+<h4>The bench's numbers, offline, for seven golden questions</h4>
+<p>Where each ruler placed the anchor among the 1,628 chunks of acme's mirrors, computed when this page was built. Yours, in the cell after the table, come from your rows.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Golden row</th><th>Anchor</th><th>Index leg: rank</th><th>BM25: rank</th></tr></thead>
+<tbody>
+<tr><td>lk-10 &middot; What is the total payable on invoice INV-2026-0412?</td><td data-label="Anchor">inv_2026_0412</td><td data-label="Index leg: rank">1161</td><td data-label="BM25: rank">1</td></tr>
+<tr><td>lk-06 &middot; What is the notice period for a confirmed E3?</td><td data-label="Anchor">NP-03, hr_policy_2026</td><td data-label="Index leg: rank">962</td><td data-label="BM25: rank">1</td></tr>
+<tr><td>jn-02 &middot; Can unused leave shorten my notice period?</td><td data-label="Anchor">NP-03, LV-07</td><td data-label="Index leg: rank">5</td><td data-label="BM25: rank">1</td></tr>
+<tr><td>lk-05 &middot; Are USB drives allowed on a company laptop?</td><td data-label="Anchor">IT-SEC-04, hr_policy_2026</td><td data-label="Index leg: rank">589</td><td data-label="BM25: rank">1</td></tr>
+<tr><td>lk-12 &middot; What notice does the ACME MSA require to terminate for convenience?</td><td data-label="Anchor">MSA-04, msa_acme_2026</td><td data-label="Index leg: rank">1515</td><td data-label="BM25: rank">1</td></tr>
+<tr><td>mm-03 &middot; In the FY2026 town hall, what did the CFO say happened to EMEA revenue?</td><td data-label="Anchor">townhall_2026_q1</td><td data-label="Index leg: rank">234</td><td data-label="BM25: rank">1</td></tr>
+<tr><td>lk-27 &middot; What is the maximum rate of central tax the CGST Act allows?</td><td data-label="Anchor">cgst_act_2017</td><td data-label="Index leg: rank">1</td><td data-label="BM25: rank">1</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Do it: both rulers over your rows, Rs 0</h4>
+<p>The cell reads the text of every current acme row, no vectors, and scores each row twice for the invoice question; then run it again for the notice-period clause. Firestore reads of this size sit inside the free quota.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell, then the same cell for a second question)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, re, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path.insert(0, ".")
+from google.cloud import firestore
+from rank_bm25 import BM25Okapi
+from shared.sparse_encoder import sparse_encode
+Q = os.environ.get("Q", "What is the total payable on invoice INV-2026-0412?")
+ANCHOR = os.environ.get("ANCHOR", "inv_2026_0412")          # a locator (NP-03) or the start of a source name
+db = firestore.Client(project=os.environ["PROJECT"])
+rows = []
+for d in db.collection("chunks").where("tenant_id", "==", "acme").where("current", "==", True).select(["text", "locator", "source_uri"]).stream():
+    x = d.to_dict(); rows.append((d.id, x.get("locator", "?"), x.get("source_uri", "").split("/")[-1], x.get("text", "")))
+print(len(rows), "current acme rows read, text only")
+tokens = lambda t: re.findall(r"[a-z0-9\-]+", t.lower())            # the ablation's tokens(), the encoder's _tokens()
+hit = lambda r: r[1] == ANCHOR or r[2].startswith(ANCHOR)
+qv, qd = sparse_encode(Q); qw = dict(zip(qd, qv))
+def index_leg(r):                                                    # what Vector Search computes for a sparse query
+    v, dd = sparse_encode(r[3]); return sum(qw[d] * w for d, w in zip(dd, v) if d in qw)
+bm25 = BM25Okapi([tokens(r[3]) for r in rows]).get_scores(tokens(Q))
+for name, scores in (("index leg, hashed TF by dot product", [index_leg(r) for r in rows]), ("ablation leg, BM25", list(bm25))):
+    order = sorted(range(len(rows)), key=lambda i: -scores[i])
+    rank = next((k + 1 for k, i in enumerate(order) if hit(rows[i])), None)
+    print(f"\n{name}: anchor {ANCHOR} at rank {rank} of {len(rows)}")
+    for i in order[:3]:
+        print(f"   {rows[i][1]:10} {rows[i][2][:34]:34} {scores[i]:8.3f}" + ("   &lt;- anchor" if hit(rows[i]) else ""))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts and ranks differ; the shape is the point: hundreds against 1)</span><span class="ro">read only</span></div><pre tabindex="0">N current acme rows read, text only
+
+index leg, hashed TF by dot product: anchor inv_2026_0412 at rank 9xx of N
+   p28-1      industrial_relations_code_2020.pdf     35.500
+   p32-0      cgst_act_2017.pdf                      34.000
+   p7-0       payment_of_gratuity_act_1972.pdf       32.000
+
+ablation leg, BM25: anchor inv_2026_0412 at rank 1 of N
+   p1-0       inv_2026_0412.md                       21.949   &lt;- anchor
+   p36-0      cgst_act_2017.pdf                      16.609
+   p40-0      cgst_act_2017.pdf                      16.514</pre></div>
+
+<div class="box box-amber"><div class="box-title">The second question</div>
+<p>To run the cell for another question, put the two variables in front of its first line, <code>Q="What is the notice period for a confirmed E3?" ANCHOR=NP-03 python - &lt;&lt;'PY'</code>, and paste the rest unchanged. NP-03 is the clause 2.1 cited; the index leg buries it under the same Act pages and BM25 puts it first, because "notice", "period" and "e3" are rare across the corpus and "the" is not.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The same rows were ranked by two rulers and the anchor's rank told the story. The first counted every shared word, so the pages with the most words won; the second weighted rare words and discounted long pages, so the one chunk with the invoice number won. The API's hybrid mode is built on the first ruler, and the ablation's hybrid arm on the second. Neither is wrong about what it measures; they measure different things, which is what step 6 has to be read with.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Index</span><h3>Three ways through the index: dense, sparse only, fused</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/demo_04_three_ways_through_the_index_dense_sparse_only_fused.py" target="_blank" rel="noopener"><code>demo_04_three_ways_through_the_index_dense_sparse_only_fused.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>One question, one endpoint, three queries, and the lists saved for step 5.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>hybrid_find_neighbors()</code> is the whole production path. It encodes the question with the same sparse encoder the worker used, builds a <code>HybridQuery</code> from the dense vector, the sparse values and dimensions and <code>rrf_ranking_alpha</code>, puts the tenant restrict in the filter exactly once beside whatever the dense path sends, and asks the endpoint for one list. The fusion happens on the index, not in the API. Alpha 1.0 is the dense leg alone, alpha 0.0 the sparse leg alone, and 0.7 is what <code>_dense_retrieve()</code> sends under hybrid mode. Alpha 0.0 is the one value the function does not send: 0.0 is the wire format's empty value, so a query carrying it reaches the index with no alpha at all and comes back in the dense order, and the function asks for the sparse leg as a query with no dense vector instead. The cell embeds the question once, where the API embeds it, asks the index the three ways and prints where the anchor landed in each list; it saves the lists so step 5 can fuse them by hand.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/hybrid.py - hybrid_find_neighbors(): the question encoded, one HybridQuery, the tenant once</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">hybrid_find_neighbors</span>(index_endpoint, deployed_index_id: str, dense_vec: list[float], query_text: str,
+                          tenant_id: str, k: int = <span class="nu">20</span>, alpha: float = <span class="nu">0.5</span>, restricts: list | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; list:
+    <span class="st">&quot;&quot;&quot;Vector Search hybrid query with the tenant restrict in the query (never post-filter).
+
+    Returns the ONE query&#x27;s neighbours - a flat list of MatchNeighbor - and [] when there are none.
+    find_neighbors answers List[List[...]], one inner list per query sent, and this sends one query.
+
+    `restricts`: the Namespace list the dense path sends - the tenant, the ledger&#x27;s `current`,
+    and the caller&#x27;s filters. The tenant restrict is always inserted exactly once.
+
+    alpha 0 is asked as a sparse-only query (26 September 2026): 0.0 is the wire format&#x27;s empty value, so
+    rrf_ranking_alpha=0.0 reaches the index as no alpha at all and the answer came back in the dense order.
+    &quot;&quot;&quot;</span>
+    <span class="kw">from</span> google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint <span class="kw">import</span> HybridQuery, Namespace
+    vals, dims = sparse_encode(query_text)
+    q = HybridQuery(dense_embedding=dense_vec, sparse_embedding_values=vals,
+                    sparse_embedding_dimensions=dims, rrf_ranking_alpha=alpha)
+    <span class="kw">if</span> alpha &lt;= <span class="nu">0</span>:
+        q = HybridQuery(sparse_embedding_values=vals, sparse_embedding_dimensions=dims)
+    filters = [Namespace(name=<span class="st">&quot;tenant_id&quot;</span>, allow_tokens=[tenant_id])]
+    filters += [r <span class="kw">for</span> r <span class="kw">in</span> (restricts <span class="kw">or</span> []) <span class="kw">if</span> getattr(r, <span class="st">&quot;name&quot;</span>, <span class="kw">None</span>) != <span class="st">&quot;tenant_id&quot;</span>]
+    resp = index_endpoint.find_neighbors(
+        deployed_index_id=deployed_index_id, queries=[q], num_neighbors=k, filter=filters)
+    <span class="kw">return</span> resp[<span class="nu">0</span>] <span class="kw">if</span> resp <span class="kw">else</span> []</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - _dense_retrieve(): the two branches, alpha 0.7 under hybrid mode</span><span class="ro">read only</span></div><pre tabindex="0">        <span class="kw">if</span> settings.retrieval_mode == <span class="st">&quot;hybrid&quot;</span>:
+            <span class="cm"># 4.5&#x27;s hybrid.py, wired. Dense recall misses exact tokens - an</span>
+            <span class="cm"># invoice number, a clause id - and sparse misses paraphrase. RRF</span>
+            <span class="cm"># over both is what 4.5 measured; this is where it earns its keep.</span>
+            <span class="cm"># The SAME restricts as the dense query (12 September 2026): a filter is a</span>
+            <span class="cm"># predicate on the corpus, not on one of the two ways through it.</span>
+            <span class="kw">from</span> hybrid <span class="kw">import</span> hybrid_find_neighbors
+            neighbours = hybrid_find_neighbors(
+                _index_endpoint(), settings.vector_deployed_index, vec,
+                query, tenant_id, settings.top_k_retrieve, alpha=<span class="nu">0.7</span>, restricts=restricts)
+        <span class="kw">else</span>:
+            resp = _index_endpoint().find_neighbors(
+                deployed_index_id=settings.vector_deployed_index,
+                queries=[vec], num_neighbors=settings.top_k_retrieve,
+                filter=restricts,
+            )
+            <span class="cm"># One query in, one neighbour list out - and an EMPTY outer list when the index</span>
+            <span class="cm"># holds nothing for these restricts. That is an empty pool (main.py answers it</span>
+            <span class="cm"># without a model call), not an outage: it must not fall through to the except</span>
+            <span class="cm"># below and come back from Firestore as if the index were down (12 September 2026).</span>
+            neighbours = resp[<span class="nu">0</span>] <span class="kw">if</span> resp <span class="kw">else</span> []</pre></div>
+
+
+<h4>Do it: dense, alpha 0, alpha 0.7</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; one paid embedding of a few dozen characters)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys, json, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path[:0] = [".", "services/rag-api"]                 # shared/ for the encoder, the API's folder for hybrid.py
+from google import genai
+from google.cloud import aiplatform, firestore
+from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import Namespace
+from hybrid import hybrid_find_neighbors
+PROJECT, REGION = os.environ["PROJECT"], os.environ["REGION"]
+ENDPOINT, DEPLOYED = os.environ["VECTOR_INDEX_ENDPOINT"], os.environ["VECTOR_DEPLOYED_INDEX_ID"]
+Q = os.environ.get("Q", "What is the total payable on invoice INV-2026-0412?")
+ANCHOR = os.environ.get("ANCHOR", "inv_2026_0412")
+client = genai.Client(enterprise=True, project=PROJECT, location=REGION)          # the API embeds in its own region
+vec = list(client.models.embed_content(model="text-embedding-005", contents=[Q],
+                                       config={"output_dimensionality": 768, "task_type": "RETRIEVAL_QUERY"}).embeddings[0].values)
+aiplatform.init(project=PROJECT, location=REGION)
+ep = aiplatform.MatchingEngineIndexEndpoint(ENDPOINT)
+tenant = [Namespace(name="tenant_id", allow_tokens=["acme"])]
+lists = {"dense": [n.id for n in ep.find_neighbors(deployed_index_id=DEPLOYED, queries=[vec], num_neighbors=20, filter=tenant)[0]]}
+for name, alpha in (("sparse", 0.0), ("hybrid", 0.7)):
+    lists[name] = [n.id for n in hybrid_find_neighbors(ep, DEPLOYED, vec, Q, "acme", k=20, alpha=alpha, restricts=tenant)]
+db = firestore.Client(project=PROJECT)
+label = {}
+for cid in set(sum(lists.values(), [])):
+    row = db.collection("chunks").document(cid).get().to_dict() or {}
+    label[cid] = (row.get("locator", "?"), row.get("source_uri", "").split("/")[-1])
+hit = lambda cid: label[cid][0] == ANCHOR or label[cid][1].startswith(ANCHOR)
+for name in ("dense", "sparse", "hybrid"):
+    rank = next((i + 1 for i, cid in enumerate(lists[name]) if hit(cid)), None)
+    print(f"\n{name:6} first five (anchor at rank {rank} of 20):")
+    for cid in lists[name][:5]:
+        print(f"   {label[cid][0]:10} {label[cid][1][:34]}" + ("   &lt;- anchor" if hit(cid) else ""))
+print("\noverlap of 20: dense/hybrid", len(set(lists["dense"]) &amp; set(lists["hybrid"])), "| dense/sparse", len(set(lists["dense"]) &amp; set(lists["sparse"])))
+json.dump({"question": Q, "label": label, **lists}, open("/tmp/legs52.json", "w"))
+print("saved /tmp/legs52.json for step 5")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your ids and orders differ; the two anchor ranks and the two overlaps are the point)</span><span class="ro">read only</span></div><pre tabindex="0">dense  first five (anchor at rank 1 of 20):
+   w0         inv_2026_0412.md                     &lt;- anchor
+   p23-0      payment_of_bonus_act_1965.pdf
+   ...
+
+sparse first five (anchor at rank None of 20):
+   p28-1      industrial_relations_code_2020.pdf
+   p7-0       payment_of_gratuity_act_1972.pdf
+   ...
+
+hybrid first five (anchor at rank 1 of 20):
+   w0         inv_2026_0412.md                     &lt;- anchor
+   p23-0      payment_of_bonus_act_1965.pdf
+   ...
+
+overlap of 20: dense/hybrid 20 | dense/sparse 0
+saved /tmp/legs52.json for step 5</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three queries went to one endpoint with the same tenant restrict. The dense leg found the invoice; the sparse leg alone did not, and its list was the long Act pages step 3 predicted, the same first three as step 3's first ruler; on acme's lane the two legs shared no chunk, so the fused list at alpha 0.7 was the dense list exactly, because a leg weighted 0.3 cannot lift an id the other leg did not hold. On a question where the legs do share a chunk, the fused list is the dense list with a few positions shuffled, and an Act page both legs held can move above the invoice: that is the lift working against you, and the arithmetic of it is next. Paste the dense list's five lines into the bench in step 1 and the RRF table becomes what the API would fuse. For a question whose exact token the corpus repeats rarely, set <code>Q</code> and <code>ANCHOR</code> and run the cell again; the anchor ranks are the measurement.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Fusion</span><h3>RRF by hand: the kit's rule reproduces the server's order</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/demo_05_rrf_by_hand_the_kit_s_rule_reproduces_the_server_s_order.py" target="_blank" rel="noopener"><code>demo_05_rrf_by_hand_the_kit_s_rule_reproduces_the_server_s_order.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The function, the bound that decides what a 0.3 leg can do, and the fused list checked against the index's.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>rrf_fuse(dense_ids, sparse_ids, alpha, k=60)</code> is eleven lines: two passes that add alpha / (k + rank + 1) and (1 - alpha) / (k + rank + 1) into one dictionary, then a sort. The same eleven lines sit in ablate.py as <code>rrf()</code>. Three numbers explain everything you saw in step 4. At alpha 0.7 the dense list's first id earns 0.01148, its twentieth 0.00875, and the sparse list's first id earns only 0.00492: a chunk the sparse leg alone found cannot outscore any chunk in the dense top twenty. What the sparse leg can do is lift a chunk both legs hold, for better or worse: with a ruler that likes long pages, the lifted chunk is often an Act page, and it can overtake an anchor the sparse leg never saw. When the legs share nothing, the bound decides the whole list: every dense id outranks every sparse id, and the fused twenty are the dense twenty in their order. The index fuses deeper lists than the twenty you fetched, so the tails of your fusion and the server's can differ; the heads should agree. The comparison proves something only if the two saved legs differ, so the cell prints that first: two copies of one list fuse into that list, and every check below would pass.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/hybrid.py - rrf_fuse(): the rule</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">rrf_fuse</span>(dense_ids: list[str], sparse_ids: list[str], alpha: float = <span class="nu">0.5</span>, k: int = <span class="nu">60</span>) -&gt; list[tuple[str, float]]:
+    <span class="st">&quot;&quot;&quot;alpha=1 dense only, 0 sparse only. Same semantics as HybridQuery.rrf_ranking_alpha.&quot;&quot;&quot;</span>
+    fused: dict[str, float] = {}
+    <span class="kw">for</span> rank, cid <span class="kw">in</span> enumerate(dense_ids):
+        fused[cid] = fused.get(cid, <span class="nu">0.0</span>) + alpha / (k + rank + <span class="nu">1</span>)
+    <span class="kw">for</span> rank, cid <span class="kw">in</span> enumerate(sparse_ids):
+        fused[cid] = fused.get(cid, <span class="nu">0.0</span>) + (<span class="nu">1</span> - alpha) / (k + rank + <span class="nu">1</span>)
+    <span class="kw">return</span> sorted(fused.items(), key=<span class="kw">lambda</span> kv: -kv[<span class="nu">1</span>])</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/ablate.py - rrf(): the same rule, in the harness</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">rrf</span>(dense_ids: list, sparse_ids: list, alpha: float = <span class="nu">0.7</span>, k: int = <span class="nu">60</span>) -&gt; list:
+    <span class="st">&quot;&quot;&quot;Reciprocal Rank Fusion, hybrid.py&#x27;s semantics: alpha=1 dense only, 0 sparse only.&quot;&quot;&quot;</span>
+    fused = {}
+    <span class="kw">for</span> rank, cid <span class="kw">in</span> enumerate(dense_ids):
+        fused[cid] = fused.get(cid, <span class="nu">0.0</span>) + alpha / (k + rank + <span class="nu">1</span>)
+    <span class="kw">for</span> rank, cid <span class="kw">in</span> enumerate(sparse_ids):
+        fused[cid] = fused.get(cid, <span class="nu">0.0</span>) + (<span class="nu">1</span> - alpha) / (k + rank + <span class="nu">1</span>)
+    <span class="kw">return</span> [cid <span class="kw">for</span> cid, _ <span class="kw">in</span> sorted(fused.items(), key=<span class="kw">lambda</span> kv: -kv[<span class="nu">1</span>])]</pre></div>
+
+
+<h4>Do it: fuse the saved lists, compare with the index's fused list</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0: the lists are on disk)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, sys
+sys.path[:0] = [".", "services/rag-api"]
+from hybrid import rrf_fuse
+d = json.load(open("/tmp/legs52.json"))
+name = lambda cid: f"{d['label'][cid][0]} {d['label'][cid][1][:22]}"
+print("the legs differ:", d["dense"] != d["sparse"], "| shared of 20:", len(set(d["dense"]) &amp; set(d["sparse"])))
+fused = rrf_fuse(d["dense"], d["sparse"], alpha=0.7)             # the kit's rule on the two lists you fetched
+print("by hand, alpha 0.7:")
+for cid, score in fused[:5]:
+    print(f"   {name(cid):36} {score:.5f}   dense rank {d['dense'].index(cid) + 1 if cid in d['dense'] else '-':>2}  sparse rank {d['sparse'].index(cid) + 1 if cid in d['sparse'] else '-':>2}")
+hand = [cid for cid, _ in fused][:5]
+print("the index's fused first five:", [name(c) for c in d["hybrid"][:5]])
+print("heads agree on", len(set(hand) &amp; set(d["hybrid"][:5])), "of 5 | first is the same:", hand[0] == d["hybrid"][0])
+print("all twenty in the index's order:", [c for c, _ in fused][:20] == d["hybrid"])
+print("alpha 1.0 gives the dense list back:", [c for c, _ in rrf_fuse(d["dense"], d["sparse"], alpha=1.0)][:20] == d["dense"])
+print("alpha 0.0 gives the sparse list back:", [c for c, _ in rrf_fuse(d["dense"], d["sparse"], alpha=0.0)][:20] == d["sparse"])
+print(f"the bound: dense #1 {0.7 / 61:.5f}, dense #20 {0.7 / 80:.5f}, sparse #1 alone {0.3 / 61:.5f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your ids differ; the legs differing, the True lines and the bound are the point)</span><span class="ro">read only</span></div><pre tabindex="0">the legs differ: True | shared of 20: 0
+by hand, alpha 0.7:
+   w0 inv_2026_0412.md                  0.01148   dense rank  1  sparse rank  -
+   p23-0 payment_of_bonus_act_1         0.01129   dense rank  2  sparse rank  -
+   ...
+the index's fused first five: ['w0 inv_2026_0412.md', 'p23-0 payment_of_bonus_act_1', ...]
+heads agree on 5 of 5 | first is the same: True
+all twenty in the index's order: True
+alpha 1.0 gives the dense list back: True
+alpha 0.0 gives the sparse list back: True
+the bound: dense #1 0.01148, dense #20 0.00875, sparse #1 alone 0.00492</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Eleven lines on your machine gave the order the index computed on its side, which is the claim in the function's docstring, checked. The two extreme alphas returned the legs unchanged, and the bound showed why a 0.3 leg is a tie-breaker rather than a second opinion: it can move a chunk both legs found, never one the dense leg missed. In the sample the legs shared nothing, so no line has a sparse rank and the fused twenty are the dense twenty, in order: the bound, seen whole. On a question where a line with a sparse rank sits above the anchor, that is the lift, and with this ruler it is usually an Act page: the sparse ruler's taste for long pages, applied at 0.3. If the first line printed says the legs do not differ, the sparse list you saved is the dense list again, and the checks under it prove nothing; update the kit and run step 4 again. Either is the honest result for that question, and the reranker in lesson 2.3 gets the whole pool either way.</p></div>
+
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Ablation</span><h3>The ablation: one knob per arm, no model in the loop</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/demo_06_the_ablation_one_knob_per_arm_no_model_in_the_loop.py" target="_blank" rel="noopener"><code>demo_06_the_ablation_one_knob_per_arm_no_model_in_the_loop.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Four arms, three numbers each, a miss list under every arm, and what the hybrid row does and does not say.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>evals/ablate.py</code> runs retrieval only, from outside the API, against the golden rows that carry <code>must_retrieve</code> anchors: 47 of the 65 rows today, 40 of them acme's, with 66 anchors of which 21 are clause codes. Each arm changes one thing: dense 5 with no reranker, dense 20 then rerank to 5, which is the lane's own recipe, dense 50 then rerank, and hybrid 20 then rerank. The dense leg of every arm is Firestore's <code>find_nearest</code> with the tenant filter, not the index; the hybrid arm's sparse leg is BM25 over the tenant's rows, fused with <code>rrf()</code> in-process at alpha 0.7. Beside every reranked number stands <code>recall@depth</code>, the reranker's ceiling, and under every arm the rows that cost a point say whether the anchor was ranked out or never retrieved. No generation call is made; the exit code is 1 only when an arm could not run a single row.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>Makefile - the ablate target</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The ablation harness (4.8, Part 5): retrieval only, no model in the loop, one knob per arm -</span>
+<span class="cm"># the lane&#x27;s dense 20 -&gt; rerank 5 against the same without the reranker, a deeper candidate</span>
+<span class="cm"># list, and 4.5&#x27;s hybrid leg. Prints recall at the candidate depth beside every reranked</span>
+<span class="cm"># number. ABLATE_ARGS=&quot;--limit 5&quot; is a wiring check; --ledger ~/ablate.jsonl keeps the runs.</span>
+<span class="cm"># Needs: pip install --user google-genai==2.21.0 google-cloud-firestore==2.30.0 #        google-cloud-discoveryengine==0.13.11 rank-bm25==0.2.2</span>
+ablate: guard-project
+	$(PY) evals/ablate.py --project $(PROJECT) --region $(REGION) $(ABLATE_ARGS)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/ablate.py - arms(): one knob each</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">arms</span>(lane: Lane, keys=DEFAULT_ARMS) -&gt; list:
+    every = {  <span class="cm"># key: (name, candidates(question, tenant), reranked to 5?)</span>
+        <span class="st">&quot;dense5&quot;</span>: (<span class="st">&quot;dense 5, no reranker&quot;</span>, <span class="kw">lambda</span> q, t: lane.dense(q, t, <span class="nu">5</span>), <span class="kw">False</span>),
+        <span class="st">&quot;dense20&quot;</span>: (<span class="st">&quot;dense 20 -&gt; rerank 5   (the lane)&quot;</span>, <span class="kw">lambda</span> q, t: lane.dense(q, t, <span class="nu">20</span>), <span class="kw">True</span>),
+        <span class="st">&quot;dense50&quot;</span>: (<span class="st">&quot;dense 50 -&gt; rerank 5&quot;</span>, <span class="kw">lambda</span> q, t: lane.dense(q, t, <span class="nu">50</span>), <span class="kw">True</span>),
+        <span class="st">&quot;hybrid&quot;</span>: (<span class="st">&quot;hybrid 20 -&gt; rerank 5  (4.5, not wired)&quot;</span>, <span class="kw">lambda</span> q, t: lane.hybrid(q, t, <span class="nu">20</span>), <span class="kw">True</span>),
+        <span class="st">&quot;rag_engine&quot;</span>: (<span class="st">&quot;rag_engine 20 -&gt; rerank 5  (4.3&#x27;s corpus, P9.4)&quot;</span>, <span class="kw">lambda</span> q, t: lane.rag_engine(q, t, <span class="nu">20</span>), <span class="kw">True</span>),
+        <span class="st">&quot;vertex_search&quot;</span>: (<span class="st">&quot;vertex_search 20 -&gt; rerank 5  (4.4&#x27;s data store, R4)&quot;</span>, <span class="kw">lambda</span> q, t: lane.vertex_search(q, t, <span class="nu">20</span>), <span class="kw">True</span>),
+    }
+    <span class="kw">return</span> [every[k] <span class="kw">for</span> k <span class="kw">in</span> keys]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/ablate.py - Lane.hybrid(): BM25 ids fused with the Firestore rung&#x27;s dense ids</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">hybrid</span>(self, question: str, tenant: str, k: int) -&gt; list:
+        rows, by_id, bm25 = self.tenant_corpus(tenant)
+        dense_ids = [c[<span class="st">&quot;chunk_id&quot;</span>] <span class="kw">for</span> c <span class="kw">in</span> self.dense(question, tenant, k)]
+        scores = bm25.get_scores(tokens(question))
+        sparse_ids = [rows[i][<span class="st">&quot;chunk_id&quot;</span>] <span class="kw">for</span> i <span class="kw">in</span> sorted(range(len(rows)), key=<span class="kw">lambda</span> i: -scores[i])[:k] <span class="kw">if</span> scores[i] &gt; <span class="nu">0</span>]
+        <span class="kw">return</span> [by_id[cid] <span class="kw">for</span> cid <span class="kw">in</span> rrf(dense_ids, sparse_ids, self.alpha)[:k] <span class="kw">if</span> cid <span class="kw">in</span> by_id]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/ablate.py - hay(), recall_at(), mrr(), p95(): how an arm is scored</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">hay</span>(chunk: dict) -&gt; str:
+    <span class="kw">return</span> (chunk.get(<span class="st">&quot;source_uri&quot;</span>, <span class="st">&quot;&quot;</span>) + <span class="st">&quot; &quot;</span> + chunk.get(<span class="st">&quot;text&quot;</span>, <span class="st">&quot;&quot;</span>)).lower()
+
+
+<span class="kw">def</span> <span class="fn">recall_at</span>(chunks: list, anchors: list, k: int) -&gt; float:
+    found = [hay(c) <span class="kw">for</span> c <span class="kw">in</span> chunks[:k]]
+    <span class="kw">return</span> sum(<span class="nu">1</span> <span class="kw">for</span> a <span class="kw">in</span> anchors <span class="kw">if</span> any(a.lower() <span class="kw">in</span> h <span class="kw">for</span> h <span class="kw">in</span> found)) / len(anchors)
+
+
+<span class="kw">def</span> <span class="fn">mrr</span>(chunks: list, anchors: list) -&gt; float:
+    <span class="kw">for</span> i, c <span class="kw">in</span> enumerate(chunks, <span class="nu">1</span>):
+        <span class="kw">if</span> any(a.lower() <span class="kw">in</span> hay(c) <span class="kw">for</span> a <span class="kw">in</span> anchors):
+            <span class="kw">return</span> <span class="nu">1.0</span> / i
+    <span class="kw">return</span> <span class="nu">0.0</span>
+
+
+<span class="kw">def</span> <span class="fn">p95</span>(values: list) -&gt; float:
+    <span class="kw">return</span> sorted(values)[int(<span class="nu">0.95</span> * (len(values) - <span class="nu">1</span>))] <span class="kw">if</span> values <span class="kw">else</span> <span class="nu">0.0</span></pre></div>
+
+
+<h4>Do it: a wiring check, then acme's rows with a ledger</h4>
+<p>The first run takes five rows and about a minute; the second takes acme's 40 rows and a few minutes, and appends one JSON line per arm to a ledger you keep. <code>make ablate</code> passes your exported <code>REGION</code> as the embedding region, which is where the API embeds; the direct call is the same line without make.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (embeddings in paise; the Ranking API per request, a few rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ablate PROJECT=$PROJECT ABLATE_ARGS="--tenant acme --limit 5"
+<span class="cm"># the same without make: python evals/ablate.py --project $PROJECT --region $REGION --tenant acme --limit 5</span>
+
+make ablate PROJECT=$PROJECT ABLATE_ARGS="--tenant acme --ledger ~/ablate.jsonl"
+tail -n 4 ~/ablate.jsonl | python -c "import sys, json; [print(j['arm'][:32].ljust(34), 'recall@5', j['recall_at_5'], 'mrr', j['mrr'], 'p95', j['p95_ms'], 'ms') for j in map(json.loads, sys.stdin)]"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your numbers are yours; the column order, the miss lines and the reading order are fixed)</span><span class="ro">read only</span></div><pre tabindex="0">40 rows with anchors, NN anchors, one knob per arm (project documind-ai-YOUR-ID, embeddings in asia-south1, ranker on global)
+
+arm                                          recall@depth  recall@5    mrr rows@1.0  p95 ms
+dense 5, no reranker                                 0.9x      0.9x   0.8x       3x    xxxx
+dense 20 -> rerank 5   (the lane)                    0.9x      0.9x   0.9x       3x    xxxx
+       lost: lk-xx: PB-02 - ranked out (in the candidates, not the five)
+dense 50 -> rerank 5                                 0.9x      0.9x   0.9x       3x    xxxx
+hybrid 20 -> rerank 5  (4.5, not wired)              0.9x      0.9x   0.9x       3x    xxxx
+
+Read it in this order: recall@depth is the reranker's ceiling - if the 20 and 50 rows agree, depth is not the knob;
+recall@5 of the lane's row minus the first row is the reranker's lift, and p95 is what it costs;
+the hybrid row says whether a BM25 leg is worth wiring - twenty of the anchors are clause codes, its home ground;
+the rag_engine row (--arms all) is 4.3's corpus against the lane's own rows - a managed chunk that splits a clause from its code shows up as a miss.</pre></div>
+
+<p>The kit's author measured this on 8 September 2026, over the 43 anchored rows the golden set had then: dense 5 alone 0.91 recall at 5 and 0.81 MRR; the lane's dense 20 then rerank 0.96 and 0.91; dense 50 then rerank 0.99 and 0.94 at four times the latency; and the hybrid row identical to the lane's row at alpha 0.5 and, on acme's rows, 0.7. Those figures are in the file's docstring, and they are the baseline your ledger line is read against.</p>
+<div class="cw"><div class="ch-bar"><span>evals/ablate.py - the reading order the harness prints</span><span class="ro">read only</span></div><pre tabindex="0">    print(<span class="st">&quot;\nRead it in this order: recall@depth is the reranker&#x27;s ceiling - if the 20 and 50 rows agree, depth is not the knob;&quot;</span>
+          <span class="st">&quot;\nrecall@5 of the lane&#x27;s row minus the first row is the reranker&#x27;s lift, and p95 is what it costs;&quot;</span>
+          <span class="st">&quot;\nthe hybrid row says whether a BM25 leg is worth wiring - twenty of the anchors are clause codes, its home ground;&quot;</span>
+          <span class="st">&quot;\nthe rag_engine row (--arms all) is 4.3&#x27;s corpus against the lane&#x27;s own rows - a managed chunk that splits a clause from its code shows up as a miss.&quot;</span>)</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Four recipes ran over the same rows and the same question set, and each was scored by whether the anchor came back, not by whether an answer sounded right, so nothing a model said could flatter a recipe. The hybrid row's honest reading is narrow: with BM25 as the sparse leg and Firestore as the dense one, fusing changed nothing at depth 20 on this golden set, because the dense leg already held the anchors and RRF at 0.7 could only reorder. It says nothing about the index's own sparse leg, which step 3 showed is a weaker ruler, and it says nothing about the API's wiring, which is step 7's business. The arm's label, "not wired", is the file telling you the same.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Candidate</span><h3>The knob: hybrid on a candidate that takes no traffic, compared, then removed</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/demo_07_the_knob_hybrid_on_a_candidate_that_takes_no_traffic_compared_then_removed.py" target="_blank" rel="noopener"><code>demo_07_the_knob_hybrid_on_a_candidate_that_takes_no_traffic_compared_then_removed.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A revision that answers on a tag URL and serves nobody, the same questions to both, and the variable taken back out.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>RETRIEVAL_MODE</code> is read once, at startup, and <code>check_retrieval_modes()</code> refuses the pairs the service could not honour before it serves a request: hybrid with a managed backend, hybrid with the Firestore backend. The way to judge a switch is the kit's own: a revision of <code>documind-api</code> deployed with <code>--no-traffic</code> and a tag, which gets a URL of its own and no traffic, while the live revision keeps serving. With <code>MIN_INSTANCES</code> at 0 an idle revision costs nothing. Two rules from the release lessons apply here. The identity token's audience stays the service's canonical URL whichever URL you call, so <code>tok "$API"</code> is right for the candidate too. And environment variables merge across revisions, so a variable set for one candidate would ride into the next one unless removed; the last block removes it and drops the tag.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/config.py - check_retrieval_modes(): the two refusals</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">check_retrieval_modes</span>(backend: str, mode: str, graph: str = <span class="st">&quot;off&quot;</span>, graph_backend: str = <span class="st">&quot;firestore&quot;</span>) -&gt; <span class="kw">None</span>:
+...
+    <span class="kw">if</span> backend <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">and</span> mode == <span class="st">&quot;hybrid&quot;</span>:
+        <span class="kw">raise</span> ValueError(f<span class="st">&quot;RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: {backend} embeds and searches on its own &quot;</span>
+                         <span class="st">&quot;terms (a managed store has no sparse leg to fuse). Set RETRIEVAL_MODE=dense.&quot;</span>)
+    <span class="kw">if</span> backend == <span class="st">&quot;firestore&quot;</span> <span class="kw">and</span> mode == <span class="st">&quot;hybrid&quot;</span>:
+        <span class="kw">raise</span> ValueError(<span class="st">&quot;RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: the Firestore backend is dense-only. &quot;</span>
+                         <span class="st">&quot;Set RETRIEVAL_MODE=dense, or RETRIEVAL_BACKEND=vector with the Vector Search endpoint &quot;</span>
+                         <span class="st">&quot;vector.tf declares and keep hybrid.&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - choose_for(): a managed pin is ignored under hybrid, with a line</span><span class="ro">read only</span></div><pre tabindex="0">    pin = ts.get(<span class="st">&quot;retrieval_backend&quot;</span>)
+    retrieval = settings.retrieval_backend
+    <span class="kw">if</span> pin <span class="kw">and</span> pin != retrieval:
+        <span class="kw">if</span> pin <span class="kw">in</span> RETRIEVAL_BACKENDS <span class="kw">and</span> <span class="kw">not</span> (pin <span class="kw">in</span> MANAGED_BACKENDS <span class="kw">and</span> settings.retrieval_mode == <span class="st">&quot;hybrid&quot;</span>):
+            retrieval = pin
+        <span class="kw">else</span>:
+            log.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;retrieval_pin_ignored&quot;</span>, <span class="st">&quot;tenant&quot;</span>: req.tenant_id, <span class="st">&quot;retrieval_backend&quot;</span>: pin,
+                                    <span class="st">&quot;served&quot;</span>: retrieval, <span class="st">&quot;why&quot;</span>: f<span class="st">&quot;one of {&#x27;|&#x27;.join(RETRIEVAL_BACKENDS)}, and a managed store cannot fuse hybrid&quot;</span>}))</pre></div>
+
+
+<h4>Do it: hybrid on a candidate, the same two questions to both revisions, then undo</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; two version reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars RETRIEVAL_MODE=hybrid --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+for U in "$API" "$CAND"; do
+  curl -s "$U/version" -H "Authorization: Bearer $(tok "$API")" \
+    | python -c "import sys, json; j = json.load(sys.stdin); print('$U'.split('//')[1].split('.')[0].ljust(36), 'mode', j['retrieval_mode'], '| backend', j['retrieval_backend'])"
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">documind-api-NUMBER                  mode dense | backend vector
+candidate---documind-api-NUMBER      mode hybrid | backend vector</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (four questions, one or two rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ask() { curl -s -X POST "$1/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d "{\"query\":\"$2\",\"tenant_id\":\"acme\",\"stream\":false,\"top_k\":3}" \
+  | python -c "import sys, json; j = json.load(sys.stdin); s = j['stages']; print('  ', '$1'.split('//')[1].split('---')[0].split('.')[0][:9].ljust(10), [c['chunk_id'].rsplit('#', 1)[1].rjust(3) + ' ' + c['source_uri'].split('/')[-1][:22] for c in j['citations']], '| retrieve_ms', s['retrieve_ms'], '| pool', s['pool'], '| vector_chunks', s['vector_chunks'])"; }
+for Q in "What is the total payable on invoice INV-2026-0412?" "What is the notice period for a confirmed E3?"; do
+  echo "$Q"; ask "$API" "$Q"; ask "$CAND" "$Q"
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your ids and milliseconds differ; the citations agreeing or not is the measurement)</span><span class="ro">read only</span></div><pre tabindex="0">What is the total payable on invoice INV-2026-0412?
+   documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 6xx | pool 20 | vector_chunks 20
+   candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 7xx | pool 20 | vector_chunks 20
+What is the notice period for a confirmed E3?
+   documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 6xx | pool 20 | vector_chunks 20
+   candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 7xx | pool 20 | vector_chunks 20</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the undo: the variable removed, the tag dropped, the live mode read again)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --remove-env-vars RETRIEVAL_MODE --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet
+curl -s "$API/version" -H "Authorization: Bearer $(tok "$API")" | python -c "import sys, json; print('live mode:', json.load(sys.stdin)['retrieval_mode'])"
+gcloud run services describe documind-api --region "$REGION" --project "$PROJECT" --format='value(status.traffic[].percent,status.traffic[].revisionName)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">live mode: dense
+100;documind-api-00042-xyz</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A second revision of the API came up with hybrid on, answered on its own URL, took no traffic, and was asked the same questions as the live one. The citations are the reranker's choice from the pool, so hybrid can only change them by changing which twenty candidates arrive, not their order; where the citations agreed, the pool's membership was the same and hybrid changed nothing for that question, which step 5's bound predicted for a 0.3 leg over a dense pool that already held the anchor; where they differed, the difference is the finding, and the gate that decides whether it is a good one is lesson 7's, <code>make eval-live</code> against the candidate URL. Then the variable was removed, so the next candidate does not inherit it, and the tag was dropped. The next <code>make plan</code> may show the service template moved; <code>make up</code> puts it back.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What hybrid costs, where it cannot go, and what the harness does not measure</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_2/demo_08_what_hybrid_costs_where_it_cannot_go_and_what_the_harness_does_not_measure.py" target="_blank" rel="noopener"><code>demo_08_what_hybrid_costs_where_it_cannot_go_and_what_the_harness_does_not_measure.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The rupee line, the two places the mode is refused or degrades, and the column that lets a day of hybrid be compared with a day of dense.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The sparse vector</td><td data-label="Costs">nothing: a hash and a count, on the worker at ingest and in the API per question</td><td data-label="On your lane">already on every datapoint since lesson 1.3</td></tr>
+<tr><td>A hybrid query</td><td data-label="Costs">the same as a dense one: the deployed index bills by the hour, not per query</td><td data-label="On your lane">the three queries in step 4</td></tr>
+<tr><td>The ablation</td><td data-label="Costs">four embeddings a row in paise; three Ranking API requests a row, billed per request; the rows' text read once from Firestore</td><td data-label="On your lane">acme's 40 rows: a few rupees at the Ranking API's listed rate per thousand; check the price page</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle at <code>MIN_INSTANCES</code> 0; the questions you ask it at the generator's rate</td><td data-label="On your lane">step 7's four answers, one or two rupees</td></tr>
+<tr><td>Step 3's rulers</td><td data-label="Costs">Firestore reads of the rows' text, inside the free quota</td><td data-label="On your lane">Rs 0, twice</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Where hybrid cannot go</h4>
+<p>Two places, one at startup and one at runtime. A managed backend has no sparse leg to fuse and the Firestore rung's vector index takes one dense vector and nothing else, so <code>check_retrieval_modes()</code> refuses both pairs before the service serves; a tenant pinned to a managed store under hybrid mode is served from the deployment's backend with a <code>retrieval_pin_ignored</code> line instead. At runtime the chaos rung applies to hybrid as to dense: an unreachable index degrades to the Firestore rung, which is dense only, with a <code>vector_search_fallback</code> line and never a 500. The cell asks the validator the two questions offline.</p>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - the chaos rung: hybrid degrades to the dense Firestore rung, logged</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">except</span> Exception <span class="kw">as</span> e:
+        <span class="cm"># The chaos rung. An undeployed or unreachable index raises here;</span>
+        <span class="cm"># Firestore holds the same vectors, so answer from there and say so</span>
+        <span class="cm"># in the log rather than returning nothing. Hybrid takes the same rung:</span>
+        <span class="cm"># an outage degrades to dense, logged - it never 500s.</span>
+        logging.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;vector_search_fallback&quot;</span>,
+                                    <span class="st">&quot;tenant&quot;</span>: tenant_id, <span class="st">&quot;error&quot;</span>: str(e)[:<span class="nu">200</span>]}))
+        <span class="kw">return</span> prefer_current(_firestore_fallback(vec, tenant_id, settings.top_k_retrieve, filters))</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0: no call leaves the machine)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, sys
+sys.path[:0] = [".", "services/rag-api"]
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", os.environ["PROJECT"])
+for k in ("RETRIEVAL_MODE", "RETRIEVAL_BACKEND", "RETRIEVAL_CURRENT_ONLY", "TOP_K_RETRIEVE", "RERANK_TIMEOUT_S", "SEMANTIC_CACHE"):
+    if os.environ.get(k) == "":
+        del os.environ[k]                                  # an empty export from an earlier names box means the default
+from config import check_retrieval_modes
+for backend, mode in (("vector", "hybrid"), ("firestore", "hybrid"), ("rag_engine", "hybrid"), ("firestore", "dense")):
+    try:
+        check_retrieval_modes(backend, mode); print(f"{backend:10} {mode:6} -> allowed")
+    except ValueError as e:
+        print(f"{backend:10} {mode:6} -> refused: {str(e)[:96]}...")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">vector     hybrid -> allowed
+firestore  hybrid -> refused: RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: the Firestore backend is dense-only. Set RETR...
+rag_engine hybrid -> refused: RETRIEVAL_MODE=hybrid needs RETRIEVAL_BACKEND=vector: rag_engine embeds and searches on its own ...
+firestore  dense  -> allowed</pre></div>
+
+<h4>What the harness does not measure, and what the usage rows can</h4>
+<p>The ablation's hybrid arm is BM25 plus Firestore's dense rung, fused in-process; the API's hybrid mode is the hashed word-count leg plus the index, fused on the index. The 8 September result, hybrid identical to the lane, is a statement about the first pair. The second pair is judged on a candidate, as in step 7, and over time on the usage rows: every answer's row carries <code>retrieval_mode</code>, and the warehouse view groups by it, so a day served under hybrid can be set beside a day served under dense with the same columns lesson 11.5 reads. And when a better sparse ruler is wanted on the index itself, the encoder is the place: <code>SPARSE_ENCODER_VERSION</code> is stamped on every row, so a weighting with rarity in it is a reindex away, and lesson 1.6 showed what a reindex costs.</p>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py and terraform/sql/tenant_daily.sql - the mode on every usage row, and the view that groups by it</span><span class="ro">read only</span></div><pre tabindex="0">            <span class="st">&quot;retrieval_mode&quot;</span>: settings.retrieval_mode,
+...
+  jsonPayload.retrieval_mode AS retrieval_mode,</pre></div>
+
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The lane serves dense unless told otherwise</td><td data-label="The check">the setup box; <code>/version</code> in step 7</td><td data-label="Pass looks like"><code>mode: dense (default)</code>, <code>retrieval_mode: dense</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The index's sparse ruler buries the invoice; BM25 finds it</td><td data-label="The check">step 3</td><td data-label="Pass looks like">anchor rank in the hundreds, then rank 1</td></tr>
+<tr><td>3</td><td data-label="Claim">The same holds for a clause without its code in the question</td><td data-label="The check">step 3, NP-03</td><td data-label="Pass looks like">hundreds against 1 again</td></tr>
+<tr><td>4</td><td data-label="Claim">Dense, sparse-only and fused are three queries to one endpoint</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the anchor in the dense and fused lists, absent from the sparse one</td></tr>
+<tr><td>5</td><td data-label="Claim">The kit's RRF reproduces the index's fused order</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>the legs differ: True</code> first, then <code>first is the same: True</code>, heads agree on 4 or 5 of 5</td></tr>
+<tr><td>6</td><td data-label="Claim">Alpha 1 and 0 return the legs; the 0.3 leg cannot beat a dense top-20 id</td><td data-label="The check">step 5</td><td data-label="Pass looks like">two <code>True</code> lines; 0.00492 below 0.00875</td></tr>
+<tr><td>7</td><td data-label="Claim">The ablation scores four arms without a model</td><td data-label="The check">step 6</td><td data-label="Pass looks like">four rows, recall@depth beside recall@5, a ledger line per arm</td></tr>
+<tr><td>8</td><td data-label="Claim">Hybrid is judged on a candidate and taken back out</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>mode hybrid</code> on the tag URL, <code>live mode: dense</code> after the undo</td></tr>
+<tr><td>9</td><td data-label="Claim">Impossible pairs are refused at startup</td><td data-label="The check">step 8</td><td data-label="Pass looks like">two <code>refused</code> lines naming the fix</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. Step 7 created two revisions of the API that took none and removed the tag and the variable again; the service's live revision never changed. The ablation left <code>~/ablate.jsonl</code>, one line per arm, which lesson 7 reads as a baseline. The bench in step 1 keeps whatever you pasted only until you leave the page. Lesson 2.3 takes the pool this lesson measured and studies the reranker that cuts it to the citations you see.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 2 Retrieval &middot; Lesson 2.2 Compare dense and hybrid retrieval &middot; v5.0</p><p>Next: Lesson 2.3 Rerank and inspect retrieved candidates.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var BENCH = {"lk-10":{"id":"lk-10","q":"What is the total payable on invoice INV-2026-0412?","anchors":["inv_2026_0412"],"tokens":["what","is","the","total","payable","on","invoice","inv-2026-0412"],"dims":8,"n":1628,"ranks":{"hashed":1161,"bm25":1},"legs":{"hashed":[{"loc":"p28-1","src":"industrial_relations_code_2020.md","score":35.5,"hit":false},{"loc":"p32-0","src":"cgst_act_2017.md","score":34.0,"hit":false},{"loc":"p7-0","src":"payment_of_gratuity_act_1972.md","score":32.0,"hit":false},{"loc":"p36-0","src":"cgst_act_2017.md","score":31.5,"hit":false},{"loc":"p44-1","src":"code_on_social_security_2020.md","score":31.5,"hit":false}],"bm25":[{"loc":"p1-0","src":"inv_2026_0412.md","score":21.949,"hit":true},{"loc":"p36-0","src":"cgst_act_2017.md","score":16.609,"hit":false},{"loc":"p40-0","src":"cgst_act_2017.md","score":16.514,"hit":false},{"loc":"p63-0","src":"cgst_act_2017.md","score":15.828,"hit":false},{"loc":"p32-0","src":"cgst_act_2017.md","score":15.212,"hit":false}]}},"lk-06":{"id":"lk-06","q":"What is the notice period for a confirmed E3?","anchors":["NP-03","hr_policy_2026"],"tokens":["what","is","the","notice","period","for","a","confirmed","e3"],"dims":9,"n":1628,"ranks":{"hashed":962,"bm25":1},"legs":{"hashed":[{"loc":"p28-1","src":"industrial_relations_code_2020.md","score":42.0,"hit":false},{"loc":"p7-0","src":"payment_of_gratuity_act_1972.md","score":35.0,"hit":false},{"loc":"p116-0","src":"cgst_act_2017.md","score":34.5,"hit":false},{"loc":"p45-0","src":"code_on_social_security_2020.md","score":34.5,"hit":false},{"loc":"p78-1","src":"code_on_social_security_2020.md","score":34.5,"hit":false}],"bm25":[{"loc":"NP-03","src":"hr_policy_2026.md","score":35.647,"hit":true},{"loc":"p112-0","src":"cgst_act_2017.md","score":18.725,"hit":false},{"loc":"p36-1","src":"osh_code_2020.md","score":16.829,"hit":false},{"loc":"p48-0","src":"code_on_social_security_2020.md","score":16.557,"hit":false},{"loc":"p33-1","src":"industrial_relations_code_2020.md","score":16.289,"hit":false}]}},"jn-02":{"id":"jn-02","q":"Can unused leave shorten my notice period?","anchors":["NP-03","LV-07"],"tokens":["can","unused","leave","shorten","my","notice","period"],"dims":7,"n":1628,"ranks":{"hashed":5,"bm25":1},"legs":{"hashed":[{"loc":"p28-0","src":"osh_code_2020.md","score":8.5,"hit":false},{"loc":"p30-0","src":"osh_code_2020.md","score":8.5,"hit":false},{"loc":"p28-1","src":"industrial_relations_code_2020.md","score":7.5,"hit":false},{"loc":"p48-0","src":"code_on_social_security_2020.md","score":6.5,"hit":false},{"loc":"NP-03","src":"hr_policy_2026.md","score":6.5,"hit":true}],"bm25":[{"loc":"NP-03","src":"hr_policy_2026.md","score":22.609,"hit":true},{"loc":"LV-07","src":"hr_policy_2026.md","score":22.243,"hit":true},{"loc":"SEC-09","src":"hr_policy_2026.md","score":10.807,"hit":false},{"loc":"p6-1","src":"maternity_benefit_act_1961.md","score":10.029,"hit":false},{"loc":"p30-0","src":"osh_code_2020.md","score":9.238,"hit":false}]}},"lk-05":{"id":"lk-05","q":"Are USB drives allowed on a company laptop?","anchors":["IT-SEC-04","hr_policy_2026"],"tokens":["are","usb","drives","allowed","on","a","company","laptop"],"dims":8,"n":1628,"ranks":{"hashed":589,"bm25":1},"legs":{"hashed":[{"loc":"p5-0","src":"code_on_social_security_2020.md","score":14.5,"hit":false},{"loc":"p25-0","src":"cgst_act_2017.md","score":14.0,"hit":false},{"loc":"p8-0","src":"cgst_act_2017.md","score":13.0,"hit":false},{"loc":"p139-0","src":"cgst_act_2017.md","score":12.5,"hit":false},{"loc":"p4-0","src":"payment_of_bonus_act_1965.md","score":12.5,"hit":false}],"bm25":[{"loc":"IT-SEC-04","src":"hr_policy_2026.md","score":20.678,"hit":true},{"loc":"p16-0","src":"code_on_wages_2019.md","score":12.93,"hit":false},{"loc":"p4-0","src":"payment_of_bonus_act_1965.md","score":12.334,"hit":false},{"loc":"p8-0","src":"payment_of_bonus_act_1965.md","score":11.987,"hit":false},{"loc":"p47-0","src":"cgst_act_2017.md","score":11.957,"hit":false}]}},"lk-12":{"id":"lk-12","q":"What notice does the ACME MSA require to terminate for convenience?","anchors":["MSA-04","msa_acme_2026"],"tokens":["what","notice","does","the","acme","msa","require","to","terminate","for","convenience"],"dims":11,"n":1628,"ranks":{"hashed":1515,"bm25":1},"legs":{"hashed":[{"loc":"p116-0","src":"cgst_act_2017.md","score":38.0,"hit":false},{"loc":"p60-1","src":"code_on_social_security_2020.md","score":36.5,"hit":false},{"loc":"p7-0","src":"payment_of_gratuity_act_1972.md","score":36.0,"hit":false},{"loc":"p78-1","src":"code_on_social_security_2020.md","score":35.5,"hit":false},{"loc":"p28-1","src":"industrial_relations_code_2020.md","score":35.0,"hit":false}],"bm25":[{"loc":"MSA-04","src":"msa_acme_2026.md","score":25.83,"hit":true},{"loc":"p28-2","src":"industrial_relations_code_2020.md","score":20.028,"hit":false},{"loc":"p80-0","src":"code_on_social_security_2020.md","score":17.209,"hit":false},{"loc":"p115-1","src":"cgst_act_2017.md","score":16.989,"hit":false},{"loc":"p28-1","src":"industrial_relations_code_2020.md","score":16.83,"hit":false}]}},"mm-03":{"id":"mm-03","q":"In the FY2026 town hall, what did the CFO say happened to EMEA revenue?","anchors":["townhall_2026_q1"],"tokens":["in","the","fy2026","town","hall","what","did","the","cfo","say","happened","to","emea","revenue"],"dims":13,"n":1628,"ranks":{"hashed":234,"bm25":1},"legs":{"hashed":[{"loc":"p60-1","src":"code_on_social_security_2020.md","score":51.75,"hit":false},{"loc":"p7-0","src":"payment_of_gratuity_act_1972.md","score":50.0,"hit":false},{"loc":"p44-1","src":"code_on_social_security_2020.md","score":48.5,"hit":false},{"loc":"p78-1","src":"code_on_social_security_2020.md","score":47.0,"hit":false},{"loc":"p116-0","src":"cgst_act_2017.md","score":46.75,"hit":false}],"bm25":[{"loc":"p1-0","src":"townhall_2026_q1.md","score":55.349,"hit":true},{"loc":"AR-02","src":"annual_report_2026.md","score":27.729,"hit":false},{"loc":"p116-1","src":"cgst_act_2017.md","score":19.825,"hit":false},{"loc":"FIN-02","src":"hr_policy_2026.md","score":19.044,"hit":false},{"loc":"p53-0","src":"industrial_relations_code_2020.md","score":18.821,"hit":false}]}},"lk-27":{"id":"lk-27","q":"What is the maximum rate of central tax the CGST Act allows?","anchors":["cgst_act_2017"],"tokens":["what","is","the","maximum","rate","of","central","tax","the","cgst","act","allows"],"dims":11,"n":1628,"ranks":{"hashed":1,"bm25":1},"legs":{"hashed":[{"loc":"p35-0","src":"cgst_act_2017.md","score":65.5,"hit":true},{"loc":"p36-0","src":"cgst_act_2017.md","score":61.25,"hit":true},{"loc":"p32-0","src":"cgst_act_2017.md","score":60.25,"hit":true},{"loc":"p235-0","src":"cgst_act_2017.md","score":51.75,"hit":true},{"loc":"p230-0","src":"cgst_act_2017.md","score":51.5,"hit":true}],"bm25":[{"loc":"p222-0","src":"cgst_act_2017.md","score":25.554,"hit":true},{"loc":"p222-1","src":"cgst_act_2017.md","score":23.968,"hit":true},{"loc":"p36-0","src":"cgst_act_2017.md","score":22.079,"hit":true},{"loc":"p221-0","src":"cgst_act_2017.md","score":21.89,"hit":true},{"loc":"p35-0","src":"cgst_act_2017.md","score":21.625,"hit":true}]}}};
+  var root = document.getElementById('bench'); if (!root) return;
+  var qSel = document.getElementById('fb-q'), alpha = document.getElementById('fb-alpha'), kIn = document.getElementById('fb-k'),
+      dense = document.getElementById('fb-dense'), legs = document.getElementById('fb-legs'), fusedEl = document.getElementById('fb-fused'),
+      alphaV = document.getElementById('fb-alpha-v'), kV = document.getElementById('fb-k-v'), meta = document.getElementById('fb-meta');
+  var CLAUSE = /^[A-Z]{2,}(?:-[A-Z]+)?-\d+$/;
+  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function key(loc, src){ return (loc + ' ' + src.slice(0, 12)).toLowerCase(); }
+  function isHit(loc, src, anchors){ return anchors.some(function(a){ return CLAUSE.test(a) ? loc === a : src.indexOf(a) === 0; }); }
+  function legList(rows){ return rows.map(function(r){ return {k: key(r.loc, r.src), loc: r.loc, src: r.src, score: r.score, hit: r.hit}; }); }
+  function pasted(anchors){
+    return dense.value.split('\n').map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
+      var p = l.split(/\s+/); return {k: key(p[0], p[1] || ''), loc: p[0], src: p[1] || '', hit: isHit(p[0], p[1] || '', anchors)}; });
+  }
+  function render(){
+    var b = BENCH[qSel.value], a = parseFloat(alpha.value), k = parseInt(kIn.value, 10);
+    alphaV.textContent = a.toFixed(2); kV.textContent = k;
+    meta.textContent = b.tokens.length + ' words, ' + b.dims + ' sparse dimensions; anchor: ' + b.anchors.join(', ') + '; ' + b.n + ' chunks scored';
+    var A = legList(b.legs.hashed), Bl = legList(b.legs.bm25);
+    legs.innerHTML = [['Leg A: the index\'s sparse leg (hashed TF, dot product)', A, b.ranks.hashed], ['Leg B: the ablation\'s leg (BM25)', Bl, b.ranks.bm25]].map(function(x){
+      return '<div class="fb-leg"><h5>' + esc(x[0]) + '</h5><ol>' + x[1].map(function(r){
+        return '<li' + (r.hit ? ' class="hit"' : '') + '>' + esc(r.loc) + ' <span>' + esc(r.src) + '</span> ' + r.score.toFixed(2) + '</li>'; }).join('') +
+        '</ol><div class="fb-rank">anchor at rank ' + (x[2] === null ? 'none' : x[2]) + ' of ' + b.n + '</div></div>';
+    }).join('');
+    var P = pasted(b.anchors), one = P.length ? P : Bl;
+    var label1 = P.length ? 'your dense order from step 4' : 'leg B, standing in for the dense leg until you paste yours';
+    var score = {}, info = {};
+    /* rrf_fuse(): alpha / (k + rank + 1) for list 1, (1 - alpha) / (k + rank + 1) for list 2, summed per id, sorted */
+    one.forEach(function(r, i){ score[r.k] = (score[r.k] || 0) + a / (k + i + 1); info[r.k] = info[r.k] || {loc: r.loc, src: r.src, hit: r.hit}; info[r.k].r1 = i + 1; });
+    A.forEach(function(r, i){ score[r.k] = (score[r.k] || 0) + (1 - a) / (k + i + 1); info[r.k] = info[r.k] || {loc: r.loc, src: r.src, hit: r.hit}; info[r.k].r2 = i + 1; if (r.hit) info[r.k].hit = true; });
+    var order = Object.keys(score).sort(function(x, y){ return score[y] - score[x]; }).slice(0, 8);
+    fusedEl.innerHTML = '<p class="fb-rank">RRF: list 1 = ' + esc(label1) + ', weight ' + a.toFixed(2) + '; list 2 = leg A, weight ' + (1 - a).toFixed(2) + '; k = ' + k + '</p>' +
+      '<table><thead><tr><th>#</th><th>chunk</th><th>list 1</th><th>list 2</th><th>score</th></tr></thead><tbody>' +
+      order.map(function(kk, i){ var f = info[kk];
+        return '<tr' + (f.hit ? ' class="hit"' : '') + '><td class="num">' + (i + 1) + '</td><td>' + esc(f.loc) + ' <span>' + esc(f.src.slice(0, 26)) + '</span></td>' +
+               '<td class="num">' + (f.r1 || '-') + '</td><td class="num">' + (f.r2 || '-') + '</td><td class="num">' + score[kk].toFixed(4) + '</td></tr>'; }).join('') +
+      '</tbody></table>';
+  }
+  [qSel, alpha, kIn].forEach(function(el){ el.addEventListener('input', render); el.addEventListener('change', render); });
+  dense.addEventListener('input', render);
+  render();
+})();
+</script>
+</body>
+</html>

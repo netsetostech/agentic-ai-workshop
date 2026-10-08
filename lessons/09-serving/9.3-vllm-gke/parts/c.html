@@ -1,0 +1,88 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Decide</span><h3>The duty-cycle sum</h3><p>Your traffic as bursts, the minutes an instance lives for them, and the crossover where an always-on pod gets cheaper.</p></div></div>
+
+<h4>Definition</h4>
+<p>The sum is an instance's life. Each burst of traffic, plus the idle minutes after it (up to 10, or less when the next burst is sooner), capped at a day, times the days with traffic. Cloud Run bills that share of the month's 730 hours at $%%RUN_H%% an hour. A GKE pod bills all 730 hours, at the node's price plus Autopilot's premiums, and the cluster fee unless the free tier pays it. The free tier pays one Autopilot cluster's fee per billing account.</p>
+<p>Put your own traffic in the first line: how many bursts a day, how many minutes each, and on how many days a month.</p>
+
+<h4>Do it</h4>
+%%CELL_DUTY%%
+%%OUT_DUTY%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The duty-cycle sum.</strong> That is the second proof. Eight bursts of 30 minutes, each with 10 idle minutes after it, make 320 minutes a day. On 22 days that is 117.3 hours, 16.1% of the month: Rs 14,171 on Cloud Run.</li>
+<li><strong>An always-on pod costs more than four times as much at this pattern:</strong> Rs %%GKE_US_MONTH%% in Iowa and Rs %%GKE_IN_MONTH%% in Mumbai, before any cluster fee.</li>
+<li><strong>The crossovers.</strong> GKE is cheaper above %%X_US%% of the month in Iowa (%%XF_US%% with the fee), and above %%X_IN%% in Mumbai (%%XF_IN%%). That is an instance alive for roughly 16 to 19 hours of every 24.</li>
+<li><strong>The kit's README does the same sum</strong> for Iowa, with the fee, and gets 74%. It counts the fee as due "after the free-tier credit", but the credit pays that fee for one Autopilot cluster per billing account.</li>
+<li><strong>For traffic in bursts during a working day, Cloud Run wins by a wide margin.</strong> GKE earns its bill with steady traffic, or when the model must run on an L4 in India.</li>
+</ul></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>vLLM is the engine for concurrency.</strong> Continuous batching lets 32 requests share one L4. The image runs one worker, because GPU memory is not shared across processes.</li>
+<li><strong>The engine loads before the server answers,</strong> so the service's <code>/health</code> means the weights are on the GPU.</li>
+<li><strong>The pod asks for 6 vCPU and 24 GiB, not 8 and 32.</strong> A pod that asks for the whole <code>g2-standard-8</code> leaves nothing for the kubelet, and Autopilot provisions a <code>g2-standard-12</code>, at about $0.16 an hour more.</li>
+<li><strong>The Service is a ClusterIP on purpose:</strong> no public IP and no load-balancer charge, for a service only a benchmark talks to.</li>
+<li><strong>The lab cluster is Standard, with standard disks,</strong> because Autopilot needs SSD quota a new project may lack. <code>make gke-up</code> checks the mode, instead of leaving a GPU pod Pending.</li>
+<li><strong>Both are optional.</strong> The lane's self-hosted model is the SLM on Cloud Run; vLLM and GKE are the alternatives you price before you choose.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Reading the service and the manifest, and the sum</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The lab cluster</td><td data-label="Costs">a regional control plane and one <code>e2-standard-2</code>, billed while they exist</td><td data-label="On your lane">Rs %%LAB_INR_H%% an hour, Rs %%LAB_MONTH%% a month in Mumbai: already running</td></tr>
+<tr><td><code>make build-vllm</code> (not run)</td><td data-label="Costs">20 to 30 minutes on <code>E2_HIGHCPU_32</code>, and the image's storage</td><td data-label="On your lane">build minutes and storage, priced on Google's pages</td></tr>
+<tr><td>vLLM on Cloud Run (not deployed)</td><td data-label="Costs">the SLM's L4 shape, billed while an instance lives</td><td data-label="On your lane">Rs %%RUN_INR%% an hour</td></tr>
+<tr><td>vLLM on GKE Autopilot (not run)</td><td data-label="Costs">a <code>g2-standard-8</code> and Autopilot's premiums, every hour</td><td data-label="On your lane">Rs %%GKE_US_MONTH%% a month in Iowa, Rs %%GKE_IN_MONTH%% in Mumbai, plus the fee if the free tier is spent</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does. The prices are Google's, read on 24 September 2026.</p>
+<ul>
+<li><strong>The vLLM image carries no weights.</strong> The Dockerfile downloads nothing, and the Hugging Face token passed as a build-arg has no <code>ARG</code> to land in. The model is gated, and <code>make deploy-vllm</code> gives the service no token to fetch it at start-up.</li>
+<li><strong>The vLLM service cannot answer the gateway.</strong> It wants an <code>X-API-Key</code> that the token proxy never sends, looked up in Firestore collections nothing writes, as an account with no roles. It also logs to a placeholder BigQuery table.</li>
+<li><strong>The manifest cannot start its image.</strong> It sets args and no command on an image with an empty <code>ENTRYPOINT</code>, so the first arg runs as the program. <code>main.py</code> reads none of those args, and <code>HF_HUB_OFFLINE=1</code> meets an image with no weights.</li>
+<li><strong>The <code>documind-gke</code> route reaches nothing.</strong> <code>GKE_VLLM_URL</code> is never set, a ClusterIP has no address outside the cluster, and the gateway has no VPC egress.</li>
+<li><strong>The lab cluster bills for nothing.</strong> A regional Standard control plane, which the free tier does not cover, plus one CPU node, comes to about Rs %%LAB_MONTH%% a month in Mumbai. No lesson schedules a pod on it, and only <code>make down</code> removes it.</li>
+<li><strong>A GKE GPU pod is outside the three cost controls.</strong>
+<ul>
+<li><code>make gpu-cap</code> caps Cloud Run's GPU quota only.</li>
+<li><code>gpu_left_warm</code> watches the two Cloud Run GPU services only.</li>
+<li>The nightly job skips the cluster.</li>
+</ul>
+Only <code>make off</code>, run by hand, removes the pod.</li>
+<li><strong>The nightly job's account keeps cluster-admin</strong> on a cluster it no longer touches: its script only prints a line about it.</li>
+<li><strong>The docs lag the code.</strong>
+<ul>
+<li><code>gke/README.md</code> still lists "no VPC attachment", though <code>gke.tf</code> attaches <code>documind-vpc</code>. It also counts the $0.10 fee as due after the free-tier credit, which pays it for one Autopilot cluster.</li>
+<li><code>UNOWNED.md</code> still calls <code>gke.tf</code> Autopilot, and still says the manifest pins <code>vllm/vllm-openai:v0.28.0</code>.</li>
+</ul></li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The vLLM image has no weights</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>weights in the image: none</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The service's own door</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>X-API-Key</code>, and <code>writes an api_keys document: none</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The manifest, read</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>verdict: as written, this pod cannot start</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The Service's address</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>ClusterIP</code>, <code>no address outside the cluster</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The lane's cluster</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>STANDARD</code>, one <code>e2-standard-2</code>, <code>GPU: none</code></td></tr>
+<tr><td>6</td><td data-label="Claim">What it bills</td><td data-label="The check">step 5</td><td data-label="Pass looks like">the hour and the month, in rupees</td></tr>
+<tr><td>7</td><td data-label="Claim">make gke-up's guard</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>STOP: the Standard CPU lab cannot run the L4 GPU lesson.</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The duty-cycle sum</td><td data-label="The check">step 6</td><td data-label="Pass looks like">your share of the month, and which bill is lower</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing. The lesson built and deployed nothing, and <code>make gke-up</code> stopped before it changed anything. The lab cluster, <code>documind-autopilot</code>, is still there and still billing, as it was before; <code>make down</code> removes it with the rest of the lane. Lesson 9.4 compares the backends that actually answer, and checks that no GPU instance is left running.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 9 Serving &middot; Lesson 9.3 Inspect the vLLM service and the GKE alternative &middot; v5.0</p><p>Next: Lesson 9.4 Compare actual backends and verify shutdown behavior.</p></div>

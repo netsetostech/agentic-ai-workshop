@@ -1,0 +1,50 @@
+name: publish learner
+
+# Publishes deploy/ to netsetos/agents_workshop_learner after the checks pass on main.
+#
+# OFF until it is switched on on purpose. To switch it on:
+#   1. create a deploy key with write access on netsetos/agents_workshop_learner (Settings > Deploy keys);
+#   2. store its private half here as the repository secret LEARNER_DEPLOY_KEY;
+#   3. set the repository variable LEARNER_PUBLISH to "on".
+# Until then the job is skipped (not failed), and a publish is run by hand:
+#   python tools/publish_learner.py --dest ../agents_workshop_learner --commit
+#   git -C ../agents_workshop_learner push origin main
+
+on:
+  workflow_run:
+    workflows: [checks]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ vars.LEARNER_PUBLISH == 'on' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    env:
+      PUBLISH_DENY: ${{ secrets.PUBLISH_DENY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          path: src
+
+      - uses: actions/checkout@v4
+        with:
+          repository: netsetos/agents_workshop_learner
+          path: learner
+          ssh-key: ${{ secrets.LEARNER_DEPLOY_KEY }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: deploy/ becomes the learner repository, then push
+        run: |
+          git -C learner config user.name "github-actions[bot]"
+          git -C learner config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python src/tools/publish_learner.py --dest learner --commit
+          git -C learner push origin HEAD:main

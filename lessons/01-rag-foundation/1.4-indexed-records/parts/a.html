@@ -1,0 +1,75 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 1 &middot; RAG foundation &middot; Lesson 1.4</div>
+<h1>Write, inspect and verify indexed records: <span>the row, the datapoint, the mirror and the ledger, read side by side</span></h1>
+<p>Lessons 1.1 to 1.3 followed one document from bytes to vectors. This lesson is about what it leaves behind: the records in Firestore, in the Vector Search index, in BigQuery and in the audit bucket that say the document is indexed, and the order the worker writes them in so that a reader never sees half a document. You will index a three-chunk note, read every record it created from the store that holds it, check that they agree with each other, and learn which store is the truth when they do not.</p>
+<div class="hero-chips"><div class="hero-chip">One claim, N rows, one ledger row</div><div class="hero-chip">Staged, then current</div><div class="hero-chip">768 numbers + 4 restricts</div><div class="hero-chip">An append-only mirror</div><div class="hero-chip">Two rungs, one predicate</div><div class="hero-chip">The rows rebuild the tier</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What an indexed record is</a></li>
+<li><a href="#s2">The words: claim, row, datapoint, restrict, mirror, ledger, fingerprint</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Write: the order the worker keeps, and a fresh document to watch</a></li>
+<li><a href="#s4">Inspect Firestore: the claim, the rows, the ledger row, the fingerprint</a></li>
+<li><a href="#s5">Inspect Vector Search: the datapoint, its restricts, and a search for itself</a></li>
+<li><a href="#s6">Inspect the mirror and the audit trail</a></li>
+<li><a href="#s7">Verify: the two rungs that read the records</a></li>
+<li><a href="#s8">Repair, expire, and what the records cost</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a document's indexed records are (a claim, its chunk rows, one datapoint per row, one mirror row per chunk, a ledger row and a tenant fingerprint), the order the worker writes them in and why that order is what keeps a reader from ever seeing two versions or none, and how the two read paths use the same predicates over two different stores. Then you will prove it on your lane: index a small note, read back every record it created, search the index for a row by its own vector, and run the kit's own verification commands.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What an indexed record is</h3><p>One upload, several registers, and why the order of writing decides what a question can find.</p></div></div>
+
+<p><strong>A record is what remains after the log line scrolls away.</strong> When the worker finishes a document it logs one line, <code>ingest_ok</code>, and that line is gone from the operator's screen in a minute. What stays is a set of records: a <em>claim</em> that says which worker took the version and how it ended, one <em>row</em> per chunk with the text and the vector, one <em>datapoint</em> per row in the search index, one row per chunk in a BigQuery table, one <em>ledger row</em> per document naming its current version, and a <em>fingerprint</em> per tenant that changes whenever any of that changes. Each lives in the store that is best at its job, and each can be read on its own, which is what makes the whole thing verifiable.</p>
+
+<p><strong>The order of writes is the design.</strong> No transaction spans Firestore, Vector Search and BigQuery, so the worker cannot make a document appear everywhere at once. What it can do is choose an order in which every intermediate state is safe. New rows land <em>staged</em>, invisible to every reader, and a single pass flips them current and retires the old ones; only then do the datapoints go up and the retired ids come out; only then are the claim, the ledger row and the fingerprint written. A reader that arrives between any two steps finds exactly one version of the document, or the one it had before. That property is what you will step through in the player below, and it is what "indexed" means in DocuMind: not "some rows exist", but "the sequence completed".</p>
+
+<p><strong>Verification is agreement.</strong> A record on its own proves little. The claim says three chunks; are there three current rows? The rows hold vectors; does the index hold the same numbers under the same ids? The ledger row names a version; do the rows carry that <code>doc_key</code>? When every register agrees, the document is indexed. When they disagree, one of them is the truth and the others are repaired from it, and in DocuMind that truth is the Firestore row: the index is rebuilt from the rows, never the other way around.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127968;</div><div>
+<p><strong>A property changes hands.</strong> One sale, several registers: the sale deed at the sub-registrar's office, the mutation in the municipal records, the 7/12 extract or property card, the bank's charge on the title. A careful buyer's lawyer does not read one of them and stop; they read all of them and check that every register tells the same story, because a property whose deed and mutation disagree is a dispute waiting to happen. In DocuMind the chunk row is the deed. The datapoint, the mirror row and the ledger must agree with it, and the verification in this lesson is the lawyer's walk from office to office.</p></div></div>
+
+<h4>Watch the worker write</h4>
+<p>The player steps through the worker's order for two real ingests on your lane: the three-chunk note you will index in step 3, and the handbook re-issue from lesson 1.3. Each card is one store; the highlighted card is the one the step writes, and the amber line says what a reader asking a question at that moment would find.</p>
+
+<div class="diagram wp" id="writer">
+<div class="dg-title">The write order - one document, seven records</div>
+<div class="wp-controls">
+<select id="wp-mode" aria-label="Which ingest to step through"><option value="first">First version: smoke_note_v1.md under acme (3 chunks)</option><option value="reissue">Re-issue: hr_policy_2026.md revision 2 (283 chunks)</option></select>
+<button class="wp-btn" id="wp-prev" type="button">&larr; back</button>
+<button class="wp-btn" id="wp-next" type="button">next &rarr;</button>
+</div>
+<p class="wp-step" id="wp-step" aria-live="polite"></p>
+<div class="wp-grid" id="wp-grid"></div>
+<div class="wp-reader" id="wp-reader"></div>
+<p class="dg-cap">The order is the one in <code>services/ingest/main.py</code>, which you will read in step 3. Two things to watch for: the rows exist for two steps before a reader can see them (staged), and in the re-issue the reader moves from version 1 to version 2 in one step and never sees both. The numbers are the real counts from your lane.</p>
+</div>
+
+<p>The player starts once the worker has the message. What comes before it - the bucket's notification, the Pub/Sub topic, the push subscription and its dead-letter topic - and every service the worker calls are drawn end to end in lesson 1.1, under "The services behind the stages".</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: claim, row, datapoint, restrict, mirror, ledger, fingerprint</h3><p>Nine words, each with the record it names and where that record lives on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Claim</strong></td><td data-label="Meaning">One Firestore document per <em>version</em>, <code>documents/{doc_key}</code>, taken in a transaction so that two workers never index the same bytes twice. Its status tells the version's story: <code>processing</code>, <code>indexed</code>, <code>failed</code> (with the error), <code>superseded</code>, or <code>queued</code> for the batch lane.</td><td data-label="On your lane">After lesson 1.3 the handbook has two claims: version 1 <code>indexed</code> again, version 2 <code>superseded</code>.</td></tr>
+<tr><td><strong>Row</strong></td><td data-label="Meaning">One Firestore document per chunk, <code>chunks/{tenant:sha256#i}</code>: the text, the vector, the stamps from 1.3, the locator and hash from 1.1, <code>doc_key</code>, and the flags below.</td><td data-label="On your lane">Three rows for the note you index in step 3.</td></tr>
+<tr><td><strong>Staged, current, retired</strong></td><td data-label="Meaning">The three states of a row. Staged: written, invisible, <code>expire_at</code> one day out in case nothing ever swaps it. Current: the version a reader may see. Retired: <code>current: false</code>, <code>superseded_by</code>, <code>expire_at</code> thirty days out.</td><td data-label="On your lane">The handbook has 283 current rows and 283 retired ones from 1.3.</td></tr>
+<tr><td><strong>Datapoint</strong></td><td data-label="Meaning">The row's entry in the Vector Search index, under the same id: the dense vector, the sparse vector, and four <em>restricts</em>.</td><td data-label="On your lane">Read one back by id in step 5.</td></tr>
+<tr><td><strong>Restrict</strong></td><td data-label="Meaning">A labelled token on a datapoint that a query can filter on: <code>tenant_id</code>, <code>kind</code>, <code>doc_type</code>, <code>current</code>. The worker writes all four; the API always sends the first and, by default, the last.</td><td data-label="On your lane"><code>[('tenant_id', ['acme']), ('kind', ['text']), ('doc_type', ['unknown']), ('current', ['true'])]</code></td></tr>
+<tr><td><strong>Mirror row</strong></td><td data-label="Meaning">One BigQuery row per chunk in <code>rag_data.chunk_source</code>: the text, the page, the heading and the worker's PII verdict. Streamed at index time, never updated or deleted: the SQL lane's copy.</td><td data-label="On your lane">Every version ever indexed is still there, revision 2 of the handbook included.</td></tr>
+<tr><td><strong>Ledger row</strong></td><td data-label="Meaning">One Firestore document per <em>document</em>, <code>sources/{tenant~name}</code>: which version is current, its object generation and hash, chunk count, the carry-over counts, the effective date, the embedding pair. What the Versions table renders.</td><td data-label="On your lane"><code>sources/acme~smoke_note_v1.md</code> after step 3.</td></tr>
+<tr><td><strong>Fingerprint</strong></td><td data-label="Meaning">A hash of the tenant's current version keys, in <code>ledger/{tenant}</code>, refreshed on every change to what is current. The answer cache is keyed to it.</td><td data-label="On your lane">It changed in 1.3 twice and will change once more in step 3.</td></tr>
+<tr><td><strong>Audit event</strong></td><td data-label="Meaning">One JSON object per <code>doc.upload</code> in a retention-locked bucket, naming the version and its counts. The record that survives everything else.</td><td data-label="On your lane"><code>gs://&lt;project&gt;-audit/2026/09/22/acme/doc.upload-&lt;id&gt;.json</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The lifecycle of these records, what retires them, what deletes them, what brings them back, is the story of lessons 1.5 to 1.8. This lesson reads them as they are written and checks that they agree.</p>
+

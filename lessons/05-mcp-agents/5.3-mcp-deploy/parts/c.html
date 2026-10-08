@@ -1,0 +1,52 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why access is split this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The boundary is identity.</strong> With ingress <code>all</code> and a public run.app address, the network does not hide the server; IAM and the token do.</li>
+<li><strong>Invokers per service, not per project.</strong> Since 12 September 2026, the caller graph binds <code>run.invoker</code> on each service for exactly its callers, and <code>check_authz.py</code> fails when the scripts and the graph disagree.</li>
+<li><strong>The outsider is let in on purpose.</strong> The gate's refusal then comes from the roster, the check that protects tenants, and not from the network.</li>
+<li><strong>The audience is checked twice.</strong> Cloud Run checks that the token was minted for the service, and the server checks its own address, so a token minted for another service cannot be replayed here.</li>
+<li><strong>The deputy keeps rag-api simple.</strong> rag-api has a handful of callers and one roster. The MCP server does the per-caller check, then asks as itself.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The door</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>Deploy</td><td data-label="Costs">a Cloud Build of the MCP image, and a new revision</td><td data-label="On your lane">a few rupees</td></tr>
+<tr><td>The gate</td><td data-label="Costs">one retrieval; the outsider is refused before rag-api</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>Every door, both sides</td><td data-label="Costs">one retrieval; four refusals cost nothing; two log reads</td><td data-label="On your lane">under a rupee</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>rag-api cannot tell who asked.</strong> The server calls rag-api as <code>documind-mcp-sa</code>, which is on every golden roster, and does not pass on who asked. rag-api's row names the deputy. The server's roster check is the only thing between a caller and another tenant's documents.</li>
+<li><strong>The server logs only answered calls.</strong> The <code>mcp_call</code> line is written after the checks, so step 6's refusals left no line naming their caller.</li>
+<li><strong>The deploy block does not build.</strong> <code>lesson-7.2.sh</code> deploys <code>mcp:$GIT_SHA</code> and never builds it, where <code>lesson-12.8.sh</code> builds its own image. After a new commit, <code>make deploy-services</code> on its own points Cloud Run at an image that does not exist.</li>
+<li><strong>Bindings are only ever added.</strong> The script adds the three invokers and removes nothing. An account bound by hand survives every redeploy, and <code>check_authz.py</code> reads the scripts, not the live policy.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Three invokers, per the script</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>documind-ui-sa, documind-agent-sa, documind-outsider-sa</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Each invoker's tenants</td><td data-label="The check">step 3</td><td data-label="Pass looks like">ui-sa on three, agent-sa on <code>acme</code>, the outsider on <code>none</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The deputy is on every golden roster</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>documind-mcp-sa, on acme, zeta, globex</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The service runs as the script says</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>runs as documind-mcp-sa</code>, and the invokers <code>the same</code></td></tr>
+<tr><td>5</td><td data-label="Claim"><code>make smoke-mcp</code> green</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>4 passed, 0 failed</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Another tenant refused</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>[PASS] outsider refused</code> ... <code>not on tenant 'acme''s roster</code></td></tr>
+<tr><td>7</td><td data-label="Claim">Each door refuses its own caller</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>HTTP 403</code>, <code>HTTP 401</code>, <code>not authenticated</code>, <code>not on tenant 'acme''s roster</code></td></tr>
+<tr><td>8</td><td data-label="Claim">rag-api sees the deputy</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>caller documind-ui-sa</code> in one log, <code>user documind-mcp-sa</code> in the other</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>documind-mcp</code> has a new revision, built from your kit's commit, with the same three invokers. Two retrievals ran, for acme and zeta, and rag-api's rows for them name <code>documind-mcp-sa</code>. Lesson 5.4 opens the LangGraph brain, and lesson 10.6 later follows the A2A peer, <code>documind-agent-sa</code>, through this server to rag-api.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 5 MCP and agents &middot; Lesson 5.3 Deploy MCP and verify authorized access &middot; v5.0</p><p>Next: Lesson 5.4 Implement the main LangGraph workflow.</p></div>

@@ -1,0 +1,79 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 5 &middot; MCP and agents &middot; Lesson 5.1</div>
+<h1>Understand tool contracts and the direct agent loop: <span>what the model reads, what the runtime adds, one retrieve() for every brain, and the floor they must beat</span></h1>
+<p>An agent is a model that is allowed to call functions. What it may call, with which arguments, and what comes back is a contract, and the kit writes that contract once. Every brain shares one <code>retrieve()</code>. The tenant reaches a tool through the runtime, never through an argument the model fills. A failure comes back as data. You deploy the chat service in your lane's region and read the contract the model sees. Then you call the one <code>retrieve()</code> from your shell, and ask the same questions of two brains: the direct brain, which has no loop at all, and the LangChain loop, which decides for itself.</p>
+<div class="hero-chips"><div class="hero-chip">%%N_TOOLS%% tools</div><div class="hero-chip">one retrieve()</div><div class="hero-chip">the tenant from the runtime</div><div class="hero-chip">errors as data</div><div class="hero-chip">direct: the floor</div><div class="hero-chip">retrieve in tool_calls</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A tool is a contract, and the direct brain is the floor</a></li>
+<li><a href="#s2">The words: tool, schema, runtime context, adapter, brain, tool_calls, refusals</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The chat service, in your lane's region</a></li>
+<li><a href="#s4">The contract: what the model reads of each tool</a></li>
+<li><a href="#s5">The one retrieve(), from your shell</a></li>
+<li><a href="#s6">The direct brain: one retrieve(), no loop</a></li>
+<li><a href="#s7">The loop: the model chooses its tools</a></li>
+<li><a href="#s8">The rows: what each brain cost, and which row records it</a></li>
+<li><a href="#s9">Why the contract is shaped this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a model can and cannot see of a tool, why the kit keeps identity out of the model's reach, and why one retrieval function adapted per brain beats one per brain. You will also learn why the direct brain is the number an agent has to beat. Then you will prove it on your lane: the model-facing contract, a direct-brain answer with <code>retrieve</code> in <code>tool_calls</code>, the loop choosing a second tool on its own, and the rows that show what each turn cost.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A tool is a contract, and the direct brain is the floor</h3><p>What the model reads, what the runtime supplies, and a loop against no loop.</p></div></div>
+
+<p><strong>A tool is a contract with three parts.</strong> The model reads a name, a one-line description, and the arguments it may fill, each with a type and sometimes a default. That is the tool's schema. The runtime supplies everything else, and returns a result in a fixed shape. The model never runs code. It emits a request, "call <code>retrieve</code> with this query", and the runtime executes it and hands the result back as a message. So whatever the model can write, it can change. Whatever must not change belongs outside the schema.</p>
+
+<p><strong>Identity is outside the schema.</strong> In the chat service, the tenant is looked up from the roster using the verified caller's email, and placed in a runtime context. The tool reads it from there. The request has no tenant field, and the model-facing schema has no tenant argument, so neither the caller nor the model can choose one. A question that names another tenant is still searched in the caller's own corpus. The person's IAP assertion travels the same hidden way, to rag-api, so the retrieval is made in their name.</p>
+
+<p><strong>One retrieval, adapted per brain.</strong> <code>shared/documind_tools.py</code> holds the only function that reaches the corpus. It posts to rag-api, or reads a Chroma directory on the laptop lane. The chat service's <code>retrieve</code> tool is an adapter: it binds the tenant, renames the filter and reshapes the result, and calls that one function. The course's own check refuses a second implementation, however it is named. A failure comes back as data, <code>{"error": ...}</code>, so the model can say retrieval is down instead of the turn dying on an exception.</p>
+
+<p><strong>The direct brain is the floor.</strong> The chat service has four brains behind one endpoint. Three are agent loops: LangChain, LangGraph and ADK. The model reads the question and the tool schemas, calls tools, reads the results and decides again. The fourth, <code>direct</code>, has no loop. It calls <code>retrieve()</code> once, in code, and returns rag-api's own grounded answer. It is the cheapest and fastest brain, and it cannot do anything but look things up. An agent justifies its extra model turns only by answering what the floor cannot, or answering it better.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127970;</div><div>
+<p><strong>A government office counter.</strong> The clerk may use two registers, and the counter sheet lists what each one needs: a file number, a year. The sheet has no line for "whose file". The office fills that in from the token you were given at the gate, so no one at the counter can ask for someone else's file. At the simple window, an attendant takes your question, looks up the one register and reads out the entry. At the full counter, a clerk decides which registers to consult and in what order, and can do the arithmetic the attendant cannot. The simple window is where you judge whether the full counter is worth its wait.</p></div></div>
+
+<h4>One turn, two brains</h4>
+<p>Choose a brain and a question, and follow the turn: what the model reads, what the runtime adds, which tools run, and the two lists that come back.</p>
+
+<div class="diagram pc" id="turn">
+<div class="dg-title">One turn through the chat service - the tool schemas, the runtime context, _summary() and DirectBrain</div>
+<div class="pc-box"><b class="h">The turn</b>
+<div class="pc-in">
+<label>The brain<select id="tu-b"><option value="langchain">langchain: a loop</option><option value="direct">direct: no loop</option></select></label>
+<label>The question<select id="tu-q"><option value="policy">a policy question</option><option value="cost">a cost question that needs a page count</option><option value="zeta">a question naming another tenant</option></select></label>
+</div></div>
+<div class="pc-box"><b class="h">What the model reads</b><div class="tc-schema" id="tu-schema"></div></div>
+<div class="pc-box"><b class="h">The steps</b><ol class="pc-steps" id="tu-steps"></ol><span class="pc-out" id="tu-out" aria-live="polite"></span></div>
+<p class="dg-cap">The schemas are LangChain's own <code>tool_call_schema</code> for the kit's two tools, read at build time; the cell in step 4 prints the same from the source. The <code>tool_calls</code> and <code>refusals</code> come from the kit's <code>_summary()</code> run on these turns, and the direct brain's from <code>DirectBrain.answer()</code> run with a stand-in <code>retrieve()</code>. The loop's steps are the path a well-behaved model takes; on your lane, the model decides.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the contract and the plumbing, not a model's judgement. A model may call <code>retrieve</code> twice, or skip the page-count search, and step 7 shows what yours did. Blocked tools, timeouts and refusals are lesson 5.5's subject, and the hand-built LangGraph loop is 5.4's.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: tool, schema, runtime context, adapter, brain, tool_calls, refusals</h3><p>Eleven rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Tool</strong></td><td data-label="Meaning">A function the runtime runs for the model, declared with <code>@tool</code> in <code>services/chat/tools.py</code>.</td><td data-label="On your lane"><code>retrieve</code>, <code>calculate_processing_cost</code></td></tr>
+<tr><td><strong>Tool schema</strong></td><td data-label="Meaning">The name, the description and the arguments the model may fill: LangChain's <code>tool_call_schema</code>.</td><td data-label="On your lane">step 4 prints both</td></tr>
+<tr><td><strong>Runtime context</strong></td><td data-label="Meaning">The dict <code>agent.py</code> passes to the brain, which the framework hands the tool as <code>runtime</code>, a parameter absent from the schema.</td><td data-label="On your lane">tenant, user, assertion, brain</td></tr>
+<tr><td><strong>The one retrieve()</strong></td><td data-label="Meaning"><code>shared/documind_tools.retrieve</code>: the only code that reaches the corpus. It sends a Bearer ID token, and forwards the person's assertion when there is one.</td><td data-label="On your lane">step 5 calls it</td></tr>
+<tr><td><strong>Adapter</strong></td><td data-label="Meaning">A brain's own wrapper that binds the tenant, renames the filter and reshapes the result, then calls the one <code>retrieve()</code>. Every brain's ends in <code>search()</code>, which also numbers the citations for the turn.</td><td data-label="On your lane">the chat service's <code>retrieve</code> tool</td></tr>
+<tr><td><strong>Brain</strong></td><td data-label="Meaning">What drives the turn: <code>langchain</code>, <code>langgraph</code>, <code>adk</code> or <code>direct</code>. <code>DOCUMIND_BRAIN</code> sets the default; a request may name another.</td><td data-label="On your lane">default <code>langchain</code></td></tr>
+<tr><td><strong>The direct brain</strong></td><td data-label="Meaning">No loop: one <code>retrieve()</code> in code, rag-api's own answer returned with its citations.</td><td data-label="On your lane">step 6</td></tr>
+<tr><td><strong>tool_calls</strong></td><td data-label="Meaning">The names of the tools this turn called, in order, and not the earlier turns' on the same thread. An agent's list comes from the model's messages; the direct brain's is written by its code.</td><td data-label="On your lane"><code>['retrieve']</code></td></tr>
+<tr><td><strong>refusals</strong></td><td data-label="Meaning">The tools whose result came back as an error message, such as a blocked name. Lesson 5.5 makes one.</td><td data-label="On your lane"><code>[]</code> in this lesson</td></tr>
+<tr><td><strong>The thread</strong></td><td data-label="Meaning"><code>tenant:user:session</code>, built by the server from the verified identity, so a session id names a conversation but never a tenant.</td><td data-label="On your lane"><code>acme:...:lesson101-direct</code></td></tr>
+<tr><td><strong>tenant_for()</strong></td><td data-label="Meaning">The roster lookup: the first roster that lists the caller's email.</td><td data-label="On your lane"><code>documind-ui-sa</code> gets acme</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the schema is what the model can change, and the context is what it cannot. Everything about identity lives in the second.</p>

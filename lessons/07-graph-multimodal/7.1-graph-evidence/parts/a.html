@@ -1,0 +1,85 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 7 &middot; Graph and multimodal &middot; Lesson 7.1</div>
+<h1>Build graph evidence from source documents: <span>stated, resolved, and cited</span></h1>
+<p>Dense retrieval finds passages that sound like the question. A question about a relation, such as who approves a purchase above two lakh rupees, is better answered by following a named link from one thing to another. The kit builds those links from the tenant's own documents. It asks flash-lite for the entities and relations each passage states, and folds the different ways a name is written into one node. Every node and every edge keeps the chunk it came from, so a hop through the graph can be cited like a passage.</p>
+<p>In this lesson you build the handbook's graph with <code>make graph</code>, read it back, and audit one extraction against the passage it came from.</p>
+<div class="hero-chips"><div class="hero-chip">GraphExtraction</div><div class="hero-chip">stated, never inferred</div><div class="hero-chip">normalise()</div><div class="hero-chip">cosine 0.92</div><div class="hero-chip">graph_nodes</div><div class="hero-chip">graph_edges</div><div class="hero-chip">make graph</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A graph built from what the text says</a></li>
+<li><a href="#s2">The words: entity, relation, extraction, surface form, canonical name, node, edge, evidence</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The rules, run</a></li>
+<li><a href="#s4">Build the handbook's graph</a></li>
+<li><a href="#s5">Read it back: the counts, and one edge with its source</a></li>
+<li><a href="#s6">Audit an extraction, and build again</a></li>
+<li><a href="#s7">Why the graph is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn the four passes that turn passages into a graph, and the two rules that keep it honest: stated, never inferred; and a wrong merge is worse than a duplicate. You will also see why every node and edge carries a chunk id. Then you will prove it on your lane: node and edge counts from your own build, and one edge read back with the passage that states it.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A graph built from what the text says</h3><p>Four passes, two rules, and a chunk id on everything.</p></div></div>
+
+<p><strong>Why a graph at all.</strong> Dense retrieval ranks passages by how much they resemble the question. "Who approves a purchase of Rs 3,00,000?" needs the clause that names the approver, and that clause may not resemble the question at all. A graph reaches it from the names: from Purchase approval, along an edge, to the person who approves. The graph hands the retriever chunk ids by relation; lesson 7.2 walks it.</p>
+
+<p><strong><code>services/ingest/graph.py</code> builds it in four passes:</strong></p>
+<ol>
+<li><strong>Extract.</strong> For each current text chunk of the tenant (the handbook's GEN- boilerplate is skipped), flash-lite returns a <code>GraphExtraction</code>. Its entities are a name exactly as written, with one of seven types. Its relations each have a source, a target, an UPPER_SNAKE verb and a confidence. One rule governs both: only what the passage states.</li>
+<li><strong>Resolve.</strong> The same thing written differently becomes one node. First <code>normalise()</code> removes case, punctuation and company suffixes such as Pvt and Ltd. Then text-embedding-005 compares what is left, and merges two names only at cosine 0.92 or above. A wrong merge is worse than a duplicate node.</li>
+<li><strong>Build.</strong> Each canonical name becomes a node, carrying every chunk id that mentions it. Each source, target and relation becomes an edge, carrying the chunk that states it and the best confidence seen. A relation whose end is not an entity, or that points at its own source, is dropped.</li>
+<li><strong>Load.</strong> The nodes and edges go to <code>graph_nodes</code> and <code>graph_edges</code>, in the same Firestore database as the chunks, every document keyed by tenant. Each extraction is cached in <code>graph_extractions</code> under its chunk's hash.</li>
+</ol>
+
+<p><strong>A node is its chunk ids.</strong> The graph is evidence, not knowledge. Every node lists the chunks that name it, and every edge names the chunk that states it. So an answer that reached a clause through the graph can still cite the clause, and anyone can check an edge by reading one passage.</p>
+
+<div class="analogy"><div class="analogy-icon">&#9878;&#65039;</div><div>
+<p><strong>A lawyer's index to a case file.</strong> She lists every party and every relation the documents state, such as "the tenant paid rent to the landlord (page 12)". She records only what the file says, and every line carries its page.</p>
+<p>The same man appears as R. Sharma, Rajesh Sharma and the appellant. She merges those only when she is sure: merging two different Sharmas would wreck the brief, while a duplicate entry costs one extra look.</p>
+<p>Because every line points to a page, anyone can check the index. The parties are the entities, the page references are the chunk ids, and her care over merges is the 0.92.</p></div></div>
+
+<h4>Every edge, with the passage that states it</h4>
+<p>Pick an edge the build kept, or a relation it dropped. The panel shows:</p>
+<ul>
+<li>the edge, the clause that states it, and its confidence;</li>
+<li>the two nodes, the clauses that cite them, and the spellings folded into them;</li>
+<li>the passage, with the names marked.</li>
+</ul>
+
+<div class="diagram pc" id="gx">
+<div class="dg-title">The handbook's graph: %%N_NODES%% nodes, %%N_EDGES%% edges, and the %%N_DROPPED%% relations the build dropped</div>
+<div class="pc-box"><b class="h">The edge</b>
+<div class="pc-in"><label>Choose<select id="gx-pick"></select></label></div>
+<div class="fs-grid" id="gx-out" aria-live="polite"></div>
+<div id="gx-text"></div></div>
+<p class="dg-cap">The graph is the build's: the kit's <code>resolve_entities()</code> and <code>build_graph()</code> over the stand-in's extractions of the handbook's %%N_CHUNKS%% clauses. On your lane flash-lite writes the extractions, so your names and counts will differ.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>The extractions behind it were written for this page, following the prompt's rule. Flash-lite may name more things or fewer. The rules the build applies to them are the kit's own.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: entity, relation, extraction, surface form, canonical name, node, edge, evidence</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Entity</strong></td><td data-label="Meaning">A thing a passage names, with a type.</td><td data-label="On your lane">person, org, product, policy, system, location, date</td></tr>
+<tr><td><strong>Relation</strong></td><td data-label="Meaning">A stated link: source, target, an UPPER_SNAKE verb, a confidence.</td><td data-label="On your lane">both ends must be entities of the same passage</td></tr>
+<tr><td><strong>Extraction</strong></td><td data-label="Meaning">Flash-lite's <code>GraphExtraction</code> for one chunk.</td><td data-label="On your lane">cached in <code>graph_extractions</code> while the chunk's hash matches</td></tr>
+<tr><td><strong>Surface form</strong></td><td data-label="Meaning">A name exactly as a passage writes it.</td><td data-label="On your lane">"Earned leave" and "earned leave" are two</td></tr>
+<tr><td><strong>Canonical name</strong></td><td data-label="Meaning">The one name a node keeps for all its surface forms.</td><td data-label="On your lane">the first surface form the build meets</td></tr>
+<tr><td><strong><code>normalise()</code></strong></td><td data-label="Meaning">The cheap first pass: lower case, no punctuation, no company suffixes.</td><td data-label="On your lane">"ACME Pvt. Ltd." and "Acme Private Limited" both become "acme"</td></tr>
+<tr><td><strong>Resolution threshold</strong></td><td data-label="Meaning">The cosine at which two remaining names merge.</td><td data-label="On your lane">0.92, with text-embedding-005</td></tr>
+<tr><td><strong>Node</strong></td><td data-label="Meaning">A canonical name, its kind, and the chunk ids that mention it.</td><td data-label="On your lane"><code>graph_nodes</code>, keyed by the tenant and the SHA-1 of the name</td></tr>
+<tr><td><strong>Edge</strong></td><td data-label="Meaning">Two nodes and a relation, with the chunk that states it.</td><td data-label="On your lane"><code>graph_edges</code>, with the best confidence seen</td></tr>
+<tr><td><strong>Evidence</strong></td><td data-label="Meaning">The chunk id on every node and edge: what makes a graph hop citable.</td><td data-label="On your lane">read back from the <code>chunks</code> collection</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: resolution decides which names are the same thing, and the build decides which relations survive. A mistake in the first joins things that should stay apart; a mistake in the second loses a link. The kit errs towards duplicates and drops.</p>

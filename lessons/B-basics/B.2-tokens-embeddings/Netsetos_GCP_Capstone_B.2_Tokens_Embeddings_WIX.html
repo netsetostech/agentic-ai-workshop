@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson B.2 Turn text into tokens and embeddings - what a model counts, what it costs in rupees, and how two meanings are compared | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.tm-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px 16px;margin-bottom:10px;}
+.tm-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.tm-l select,.tm-l input{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;box-sizing:border-box;}
+.tm-text{font-size:var(--small-size);color:var(--slate);margin:4px 0;overflow-wrap:anywhere;}
+.tm-chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 8px;}
+.tm-chips span{font-family:var(--mono);font-size:13px;line-height:1.5;padding:1px 6px;border-radius:5px;background:#ccfbf1;color:var(--navy);overflow-wrap:anywhere;}
+.tm-chips span:nth-child(even){background:#e0f2fe;}
+.tm-sum{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal-dark);margin:4px 0;overflow-wrap:anywhere;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.2</div>
+<h1>Turn text into tokens and embeddings: <span>what a model counts, what it costs in rupees, and how two meanings are compared</span></h1>
+<p>Every call the kit makes to Gemini is counted and billed in tokens, and every search it runs compares embeddings. This page builds both from the bottom, on your laptop. You will train a tokenizer small enough to read on two clauses of the kit's handbook, put the kit's two token estimates beside plain character counts, and price a sentence with the kit's own prices the way lesson 3.4 prices an answer. Then you will ask gemini-3.6-flash for its own count of that sentence, embed three clauses and two questions with text-embedding-005 under the task types the kit uses, and compare them by cosine similarity in numpy. Two cells call Vertex AI in your project, for a fraction of a paisa; the rest never leave your machine.</p>
+<div class="hero-chips"><div class="hero-chip">65 merges, two clauses</div><div class="hero-chip">len // 4 and len // 3</div><div class="hero-chip">$1.50 in, $7.50 out per 1M</div><div class="hero-chip">Rs 85 to the dollar</div><div class="hero-chip">count_tokens on global</div><div class="hero-chip">text-embedding-005 on us-central1</div><div class="hero-chip">768 numbers</div><div class="hero-chip">cosine similarity</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a token is, and what an embedding is</a></li>
+<li><a href="#s2">The words: token, vocabulary, merge, estimate, count, price, embedding, task type, cosine</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">A tokenizer you can read: byte-pair merges on two handbook clauses</a></li>
+<li><a href="#s4">The kit's two estimates against plain character counts</a></li>
+<li><a href="#s5">The rupee line: tokens priced with the kit's prices</a></li>
+<li><a href="#s6">The model's own count: count_tokens on gemini-3.6-flash</a></li>
+<li><a href="#s7">Cosine similarity in numpy, on vectors you can read</a></li>
+<li><a href="#s8">Real embeddings: text-embedding-005 under the kit's task types</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a token is (a piece of text from a vocabulary a tokenizer learned, the unit a model counts and bills), how the kit estimates tokens before a call and prices them after, and what an embedding is (768 numbers for a whole text) and how cosine similarity compares two. Then you will prove it on your laptop: one sentence's token count with its rupee line, and the cosine similarity of real embeddings.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a token is, and what an embedding is</h3><p>Two readings of the same text: the pieces a model counts and bills, and the numbers retrieval compares.</p></div></div>
+
+<p><strong>A token is the unit a model reads, counts and bills.</strong> A language model does not read letters or words. A tokenizer reads first: it cuts the text into pieces from a fixed vocabulary, learned once from a large amount of text, and hands the model each piece's number. Common words come out as one piece, often with the space in front of them; rarer words come out as two or three; a word the vocabulary never saw falls apart into short pieces and, at worst, single characters or bytes, so no text is ever unreadable. A model's limits and a Gemini call's price are counted in these pieces: the price per million tokens in and out, the budget lesson 3.4 packs evidence into, and the 2,048 tokens text-embedding-005 reads of one text, cutting off the rest by default.</p>
+
+<p><strong>The exact count needs the model, so the kit estimates first.</strong> Counting exactly takes the model's own tokenizer, which means a call to the model's endpoint: Vertex AI does not charge for it, but it is a round trip for every text, and the kit sizes its prompts and its batches without one. So it estimates from the length. The API divides the characters by four to budget a prompt (lesson 3.4), and the ingest worker divides them by three to size its embedding requests (lesson 1.3). Google's pricing page writes the same rule of thumb down: about four characters to a token. It is a guess, and the toy tokenizer below shows why: the same number of characters can be very different numbers of pieces, depending on what the vocabulary has seen. Step 6 puts the model's own count beside the guess.</p>
+
+<p><strong>An embedding is a whole text as one list of numbers.</strong> An embedding model reads a text's tokens and returns a fixed number of numbers for the whole of it: 768 for text-embedding-005, whether the text is a question of 8 words or a clause of 28. The numbers mean nothing one at a time. Together they point in a direction, and the model is trained so that texts which mean similar things point in similar directions. Cosine similarity measures how alike two directions are: 1 for the same direction, 0 at right angles, -1 for opposite. Retrieval is that arithmetic: embed the question, and fetch the passages whose vectors point most nearly the same way.</p>
+
+<p><strong>Two readings, on every question.</strong> The kit does both every time someone asks DocuMind something. It estimates the prompt's tokens to pack it, and prices the answer's tokens in rupees afterwards. And it embeds the question with the same model and the same dimension it used for every stored passage, under a task type that tells the model which side of the search the text is on: RETRIEVAL_DOCUMENT for passages, RETRIEVAL_QUERY for questions. Generation runs on the <code>global</code> location and embeddings are served regionally, from <code>us-central1</code>, so the kit keeps two clients, and so will your cells.</p>
+
+<div class="analogy"><div class="analogy-icon">&#129517;</div><div>
+<p><strong>The rubber-stamp press and the compass.</strong> A small press sets a page with rubber stamps: one stamp for each common word, syllable stamps for the rest, single letters as the last resort, and it charges by the stamp pressed. A familiar sentence takes few stamps; a sentence full of names the tray has no stamp for takes many, and a script the tray was never built for takes a stamp a letter. That is a tokenizer and its bill. An embedding is a different job: a reader who finishes the page and, instead of a summary, writes down a compass bearing in 768 directions. Two pages about the same thing get nearly the same bearing, however long each page is, and cosine similarity is how close two bearings are.</p></div></div>
+
+<div class="diagram">
+<div class="dg-title">One sentence, two readings: the count the bill is made of, and the vector retrieval compares</div>
+<div class="cd">
+<div class="lane"><div class="lane-h">The text</div>
+<div class="node"><b>golden row lk-06</b>"What is the notice period for a confirmed E3?"<br>45 characters</div></div>
+<div class="cd-arrow" aria-hidden="true">&rarr;</div>
+<div class="lane"><div class="lane-h">The tokenizer</div>
+<div class="node code"><b>pieces, then their numbers</b>The model's own tokenizer cuts the text into pieces from its vocabulary. Before any call the kit estimates 11 tokens (the characters divided by four); step 6 asks the model.</div></div>
+<div class="cd-arrow" aria-hidden="true">&rarr;</div>
+<div class="lane"><div class="lane-h">Two readings</div>
+<div class="node hub"><b>gemini-3.6-flash, on global</b>reads the tokens and bills them: $1.50 per million in, $7.50 per million out, at Rs 85 to the dollar</div>
+<div class="node hub"><b>text-embedding-005, on us-central1</b>reads the tokens and returns 768 numbers for the whole text; two such lists are compared by their cosine</div></div>
+</div>
+<p class="dg-cap">The text is the kit's own data: lk-06 is a row of the kit's golden set, the questions its evaluations ask (Module 4). The rest are the kit's numbers: the estimate is <code>estimate_tokens()</code> in rag-api's <code>context_budget.py</code>, the prices are <code>shared/prices.py</code>'s, and the two models and their locations are the ones <code>generator.py</code> and the ingest worker's <code>indexer.py</code> call. Steps 3 to 5 open the middle box; steps 6 to 8, the two on the right.</p>
+</div>
+
+<h4>Try it: the token meter</h4>
+<p>The meter runs the toy tokenizer of step 3, the 65 merges it learns from two handbook clauses, on a text you pick or type, and puts beside it the two estimates the kit makes before a call and the rupee line at gemini-3.6-flash's standard rates. Pick the Hindi question and watch the toy fall back to a piece a character; type a sentence of your own about leave or notice and watch the words the handbook taught it come out whole.</p>
+
+<div class="diagram tm" id="meter">
+<div class="dg-title">Token meter - a toy tokenizer, and the kit's estimates and prices</div>
+<div class="tm-controls">
+<label class="tm-l">Text <select id="tm-sample"><option value="q">The question (golden row lk-06)</option><option value="hi">The same question in Hindi</option><option value="amt">An Indian amount (FIN-02)</option><option value="np">A whole clause (NP-03)</option><option value="blr">A word the training text never had</option></select></label>
+<label class="tm-l">Or type your own <input type="text" id="tm-own" maxlength="200" placeholder="e.g. Can I encash leave during probation?"></label>
+</div>
+<p class="tm-text" id="tm-text"></p>
+<div class="tm-chips" id="tm-chips" aria-live="polite"></div>
+<p class="tm-sum" id="tm-sum"></p>
+<p class="tm-sum" id="tm-rupee"></p>
+<p class="dg-cap">Each chip is one piece, and a dot stands for the space a piece begins with. The counts are the text's characters, its UTF-8 bytes and its words. The estimates are the kit's two rules, <code>len // 4</code> in the API's <code>estimate_tokens()</code> and <code>len // 3</code> in the worker's <code>batches()</code>, and the price is <code>shared/prices.py</code>'s for gemini-3.6-flash at Rs 85, on the API's estimate. When this page was built, the meter's script and the Python of steps 3 to 5 were run on the same 12 texts, and they agreed on every piece and every paisa.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the meter is not</div>
+<p>It is not Gemini's tokenizer. The toy learns 65 merges from 407 characters, so it knows the words those two clauses repeat and little else. Gemini's tokenizer is also learned from text, from vastly more of it, with a far larger vocabulary, so it cuts ordinary English into fewer, longer pieces; this page does not load it, and step 6 asks the model to count instead. The meter's estimates and prices are the kit's real rules, character for character. Only the pieces are a toy.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: token, vocabulary, merge, estimate, count, price, embedding, task type, cosine</h3><p>Ten rows, each with where the word lives on this page and in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>Here and in the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Token</strong></td><td data-label="Meaning">One piece of text from a tokenizer's vocabulary, and the unit of a model's limits and of a Gemini call's price: what a model takes in and writes out, the API's prompt budget, and the 2,048 that text-embedding-005 reads of one text.</td><td data-label="Here and in the kit">Estimated by rag-api's <code>estimate_tokens()</code> before a call; priced by <code>cost.price()</code> after, from the answer's <code>tokens_in</code> and <code>tokens_out</code>.</td></tr>
+<tr><td><strong>Tokenizer, vocabulary</strong></td><td data-label="Meaning">The program that cuts text into tokens, and the list of pieces it can produce, learned once from a corpus and fixed when the model is trained. Any text, in any script, can be cut into some sequence of its pieces.</td><td data-label="Here and in the kit">Inside the models: the kit never tokenizes. It estimates, or asks the model to count.</td></tr>
+<tr><td><strong>Merge</strong> (byte-pair encoding)</td><td data-label="Meaning">One learned rule: this pair of neighbouring pieces becomes one piece. A byte-pair tokenizer learns its merges by joining the commonest pair in its training text again and again, and replays them in the same order on new text.</td><td data-label="Here and in the kit">Step 3's toy learns 65; <code>' notice'</code>, with its leading space, is merge 25.</td></tr>
+<tr><td><strong>Estimate</strong></td><td data-label="Meaning">A token count guessed from the length alone, with no call: the characters divided by a constant, rounded down, never below 1.</td><td data-label="Here and in the kit"><code>len // 4</code> in rag-api's <code>estimate_tokens()</code>, for the prompt budget (lesson 3.4); <code>len // 3</code> in the worker's <code>batches()</code>, for the embedding requests (lesson 1.3).</td></tr>
+<tr><td><strong>count_tokens</strong></td><td data-label="Meaning">The model's own count of a text, from its own tokenizer, returned without generating anything. Vertex AI does not charge for it.</td><td data-label="Here and in the kit">The counter <code>context_budget.py</code> can be handed in place of the estimate; step 6 calls it on <code>global</code>.</td></tr>
+<tr><td><strong>Price per 1M tokens</strong></td><td data-label="Meaning">What a model charges per million tokens, one rate for the input sent and another for the output written.</td><td data-label="Here and in the kit"><code>shared/prices.py</code>: gemini-3.6-flash at $1.50 in and $7.50 out, the standard price.</td></tr>
+<tr><td><strong>The rupee line</strong></td><td data-label="Meaning">A count turned into money: tokens times the rate per token in dollars, then rupees at a stated rate, printed with the figure so nobody converts at a rate of their own.</td><td data-label="Here and in the kit"><code>USD_INR = 85</code>; <code>cost.price()</code> returns both currencies and the rate, as lesson 3.4 reads them.</td></tr>
+<tr><td><strong>Embedding, dimension</strong></td><td data-label="Meaning">One fixed-length list of numbers for a whole text; its length is the dimension. Texts that mean similar things get vectors that point in similar directions.</td><td data-label="Here and in the kit">text-embedding-005 at 768 dimensions, from a client on <code>us-central1</code>: the worker's <code>embed_all()</code> and the API's <code>embed_query()</code>.</td></tr>
+<tr><td><strong>Task type</strong></td><td data-label="Meaning">A setting that tells the embedding model what a text is for, so the two sides of a search are shaped to be compared. Given none, the model treats the text as a query.</td><td data-label="Here and in the kit"><code>RETRIEVAL_DOCUMENT</code> for every stored passage (<code>indexer.py</code>), <code>RETRIEVAL_QUERY</code> for every question (<code>retriever.py</code>).</td></tr>
+<tr><td><strong>Cosine similarity</strong>, distance, dot product</td><td data-label="Meaning">The cosine of the angle between two vectors: 1 the same direction, 0 at right angles, -1 opposite, whatever their lengths. Cosine distance is 1 minus it. For vectors of length 1 the dot product is the same number.</td><td data-label="Here and in the kit">Firestore's fallback ranks by cosine distance and turns it back with <code>1.0 - d</code>; the Vector Search index ranks by <code>DOT_PRODUCT_DISTANCE</code>; the answer cache wants 0.95 or more.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words are the bill (token, price), two are how the kit learns a count (estimate, count_tokens), and the rest are retrieval's. Lesson 1.3 stamps the embedding's model, version and task type on every row the kit stores, and lesson 3.4 packs a prompt by the estimate and prices its tokens. This page is the arithmetic under both, run where you can see every number.</p>
+
+<h3 id="setup">Before you run anything: set up your laptop</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>Every cell on this page runs on your own laptop, in a bash shell: the Terminal on macOS or Linux, WSL or Git Bash on Windows, or Cloud Shell in a browser. The Python is 3.12, the version the kit's services run in their images (<code>python:3.12-slim</code>), inside a virtual environment of its own, <code>~/basics-venv</code>, so nothing is installed into the Python your system uses. Most cells need no account and no network. The cells that call Gemini need the Google Cloud project you create in lesson 0.1 and Application Default Credentials, and their labels say so.</p>
+
+<p>Set up the venv once. The block below finds a Python 3.12 or newer, makes the venv the first time and activates it every time after. Then it installs the two libraries the Basics pages use, at fixed versions: numpy for the arithmetic, and google-genai, at the version the kit pins, for the calls to Gemini. The last line proves both import.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in a bash shell on your laptop, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export BASICS_VENV="$HOME/basics-venv"
+PY312="$(command -v python3.12 || command -v python3)"; [ -n "$PY312" ] || PY312="py -3.12"   <span class="cm"># Windows, Git Bash: the py launcher</span>
+[ -d "$BASICS_VENV" ] || $PY312 -m venv "$BASICS_VENV"                                      <span class="cm"># the first time only</span>
+source "$BASICS_VENV/bin/activate" 2&gt;/dev/null || source "$BASICS_VENV/Scripts/activate"   <span class="cm"># macOS and Linux, else Windows</span>
+python -m pip install -q "numpy==2.5.3" "google-genai==2.22.0"                             <span class="cm"># numpy 2.5 needs Python 3.12 or newer</span>
+python -c "import sys, numpy, google.genai as g; print(sys.version.split()[0], numpy.__version__, g.__version__)"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (the first number is your Python's own patch release)</span><span class="ro">read only</span></div><pre tabindex="0">3.12.x 2.5.3 2.22.0</pre></div>
+
+<p>The cells that call Gemini need two more things: your project from lesson 0.1, and Application Default Credentials, the sign-in Google's client libraries read. Run the block below once, after lesson 0.1, in the same shell; the browser opens for the sign-in. It uses the gcloud CLI, which lesson 0.2 installs on a laptop and Cloud Shell already has. As in the kit, Gemini 3 models are called on the <code>global</code> location and the embedding model on <code>us-central1</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run once, for the cells that call Gemini (after lesson 0.1)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud auth application-default login                                <span class="cm"># once: the sign-in client libraries read</span>
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)"     <span class="cm"># the project from lesson 0.1</span>
+gcloud services enable aiplatform.googleapis.com --project "$PROJECT"   <span class="cm"># Vertex AI, where the kit calls Gemini</span>
+echo "PROJECT=$PROJECT"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">PROJECT=documind-ai-YOUR-ID</pre></div>
+
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Offline</span><h3>A tokenizer you can read: byte-pair merges on two handbook clauses</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_2/demo_03_a_tokenizer_you_can_read_byte_pair_merges_on_two_handbook_clauses.py" target="_blank" rel="noopener"><code>demo_03_a_tokenizer_you_can_read_byte_pair_merges_on_two_handbook_clauses.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Learn a vocabulary from 407 characters of the kit's handbook, cut the golden question with it, and see why the same word can cost one piece or three.</p></div></div>
+
+<h4>Definition</h4>
+<p>Byte-pair encoding, the idea behind many real tokenizers, learns a vocabulary by counting. Start with every word of the training text as single characters, keeping the space in front of a word as part of it. Count every pair of neighbouring pieces across the whole text, join the commonest pair into one new piece wherever it occurs, and do it again. Each join is a merge, and the list of merges, in the order they were learned, is the tokenizer. To cut a new text, split it into words the same way and replay the merges in order: whatever the merges never joined stays in smaller pieces, down to single characters. The cell runs this on two clauses of the kit's handbook, NP-03 (the notice period) and PB-02 (probation), and stops when no pair occurs twice. It needs nothing but Python.</p>
+
+<h4>Do it: learn the merges, then cut five texts</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in ~/basics-venv (a Python cell; Rs 0, nothing leaves the machine)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re
+from collections import Counter
+# the whole training text: two clauses of the kit's handbook, NP-03 and PB-02
+TRAIN = ("A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs "
+         "from the date the resignation is acknowledged in writing. Unused earned leave may not be set "
+         "off against the notice period. New joiners serve six months on probation at grade E2. During "
+         "probation the notice period is 15 days for either side. Probation may be extended once, by "
+         "up to three months, with written reasons.")
+def words(text):
+    """Cut a text into words: a word keeps the space before it, and a digit or a mark stands alone."""
+    return re.findall(r" ?[A-Za-z]+| ?[0-9]| ?[^\sA-Za-z0-9]", text)
+def merge(word, a, b):
+    """Join every a followed by b inside one word into the single piece a+b."""
+    out, i = [], 0
+    while i &lt; len(word):
+        if i + 1 &lt; len(word) and (word[i], word[i + 1]) == (a, b):
+            out.append(a + b)
+            i += 2
+        else:
+            out.append(word[i])
+            i += 1
+    return tuple(out)
+counts = Counter(tuple(w) for w in words(TRAIN))   # each word as single characters, and how often it occurs
+merges = []
+while True:                         # learn: merge the commonest neighbouring pair, until no pair occurs twice
+    pairs = Counter()
+    for w, n in counts.items():
+        for pair in zip(w, w[1:]):
+            pairs[pair] += n
+    (a, b), seen = pairs.most_common(1)[0]
+    if seen &lt; 2:
+        break
+    merges.append((a, b))
+    counts = Counter({merge(w, a, b): n for w, n in counts.items()})
+def encode(text):
+    """Tokenize: cut the text into words, then apply every merge in the order it was learned."""
+    out = []
+    for w in words(text):
+        w = tuple(w)
+        for a, b in merges:
+            w = merge(w, a, b)
+        out += w
+    return out
+print(f"training text: {len(TRAIN)} characters, {len(set(TRAIN))} distinct; {len(merges)} merges learned")
+print("the first ten:", [a + b for a, b in merges[:10]])
+print("the last five:", [a + b for a, b in merges[-5:]])
+for text in ("What is the notice period for a confirmed E3?", " notice", "notice", "Notice", "Bengaluru"):
+    pieces = encode(text)
+    print(f"{text!r:49} {len(text):2} characters -&gt; {len(pieces):2} piece{'s' if len(pieces) &gt; 1 else ' '} {pieces}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell's own output, produced when this page was built; yours matches it piece for piece)</span><span class="ro">read only</span></div><pre tabindex="0">training text: 407 characters, 39 distinct; 65 merges learned
+the first ten: ['on', 'ti', 'th', 'er', 'ed', ' a', ' s', 'no', 'ce', ' p']
+the last five: [' months', ' on', ' probation', 'ith', 'ten']
+'What is the notice period for a confirmed E3?'   45 characters -&gt; 23 pieces ['W', 'h', 'a', 't', ' is', ' the', ' notice', ' period', ' f', 'o', 'r', ' a', ' ', 'c', 'on', 'f', 'i', 'r', 'm', 'ed', ' E', '3', '?']
+' notice'                                          7 characters -&gt;  1 piece  [' notice']
+'notice'                                           6 characters -&gt;  2 pieces ['no', 'tice']
+'Notice'                                           6 characters -&gt;  3 pieces ['N', 'o', 'tice']
+'Bengaluru'                                        9 characters -&gt;  9 pieces ['B', 'e', 'n', 'g', 'a', 'l', 'u', 'r', 'u']</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The first merges were the commonest letter pairs in the two clauses (<code>on</code>, <code>ti</code>, <code>th</code>), then spaces joined to the letters after them (<code>' a'</code>, <code>' s'</code>), and pair by pair whole words formed: <code>' notice'</code> at merge 25, <code>' probation'</code> among the last. The golden question came out as 23 pieces for 45 characters: the words the clauses repeat (<code>' the'</code>, <code>' notice'</code>, <code>' period'</code>) whole, and the words they use once or never (<code>What</code>, <code>confirmed</code>) in letters and fragments. The same word cost one piece with a space before it, two with no space and three with a capital letter, because those are three different strings to a tokenizer. <code>Bengaluru</code>, which the clauses never contain, fell apart into its 9 letters. Nothing was unknown and nothing was lost: the pieces always join back into the text.</p></div>
+
+<div class="box box-amber"><div class="box-title">What changes in a real tokenizer</div>
+<p>Not the idea: the scale and the base. Many real tokenizers work on bytes rather than characters, or fall back to bytes for a character they do not know, and in UTF-8 a Devanagari letter is three bytes (step 4 counts them). They learn from vastly more text, so far more words are whole pieces. And a model's vocabulary is fixed when the model is trained: the model is billed in, and limited by, the pieces of its own tokenizer and no other, which is why the count that matters is the model's own (step 6).</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit</span><h3>The kit's two estimates against plain character counts</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_2/demo_04_the_kit_s_two_estimates_against_plain_character_counts.py" target="_blank" rel="noopener"><code>demo_04_the_kit_s_two_estimates_against_plain_character_counts.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The API divides by four and the ingest worker by three: what each rule says about the same four texts, and where each one decides something.</p></div></div>
+
+<h4>Definition</h4>
+<p>Before it calls a model, the kit needs a token count it can compute for free, so it estimates from the length. rag-api's <code>estimate_tokens()</code> divides the characters by four, and lesson 3.4's packer uses it block by block to fill a prompt's budget. The ingest worker's <code>batches()</code> divides by three and closes an embedding request at 250 texts or 15,000 estimated tokens, because the embedding model takes at most 250 texts and 20,000 tokens in one request and refuses an over-full request whole (lesson 1.3); dividing by three counts more tokens for the same text than dividing by four, which errs on the safe side of that ceiling. Both round down and never return less than 1. Neither looks at anything but the length, so each rule treats English, Hindi and an amount in lakhs alike, so many characters for so many tokens, and the cell puts each answer beside the characters, the bytes and the words.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/context_budget.py - estimate_tokens(): the API&#x27;s estimate, four characters a token</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">estimate_tokens</span>(text: str) -&gt; int:
+    <span class="kw">return</span> max(<span class="nu">1</span>, len(text) // <span class="nu">4</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - the worker&#x27;s estimate: three characters a token, for the embedding batches</span><span class="ro">read only</span></div><pre tabindex="0">EMBED_BATCH = <span class="nu">250</span>
+EMBED_TOKENS = <span class="nu">15_000</span>
+CHARS_PER_TOKEN = <span class="nu">3</span>
+...
+<span class="kw">def</span> <span class="fn">batches</span>(texts: list[str]) -&gt; list[list[str]]:
+    out, cur, cur_tokens = [], [], <span class="nu">0</span>
+    <span class="kw">for</span> text <span class="kw">in</span> texts:
+        tokens = max(<span class="nu">1</span>, len(text) // CHARS_PER_TOKEN)
+        <span class="kw">if</span> cur <span class="kw">and</span> (len(cur) &gt;= EMBED_BATCH <span class="kw">or</span> cur_tokens + tokens &gt; EMBED_TOKENS):
+            out.append(cur)
+            cur, cur_tokens = [], <span class="nu">0</span>
+        cur.append(text)
+        cur_tokens += tokens
+    <span class="kw">if</span> cur:
+        out.append(cur)
+    <span class="kw">return</span> out</pre></div>
+
+
+<h4>Do it: four texts, five counts each</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in ~/basics-venv (a Python cell; Rs 0, nothing leaves the machine)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+TEXTS = {
+    "the question (golden row lk-06)": "What is the notice period for a confirmed E3?",
+    "the same question in Hindi": "पुष्टि किए गए E3 कर्मचारी की सूचना अवधि क्या है?",
+    "an Indian amount (FIN-02)": "Purchases up to Rs 2,00,000 are approved by the function head.",
+    "a whole clause (NP-03)": ("A confirmed employee at grade E3 or above serves a notice period of 60 "
+                               "days. Notice runs from the date the resignation is acknowledged in "
+                               "writing. Unused earned leave may not be set off against the notice "
+                               "period."),
+}
+def api_estimate(text):
+    """services/rag-api/context_budget.py, estimate_tokens(): four characters a token."""
+    return max(1, len(text) // 4)
+def worker_estimate(text):
+    """services/ingest/indexer.py, batches(): CHARS_PER_TOKEN = 3."""
+    return max(1, len(text) // 3)
+print(f"{'':32} {'characters':&gt;10} {'bytes':&gt;6} {'words':&gt;6} {'len // 4':&gt;9} {'len // 3':&gt;9}")
+for name, text in TEXTS.items():
+    print(f"{name:32} {len(text):10} {len(text.encode('utf-8')):6} {len(text.split()):6} {api_estimate(text):9} {worker_estimate(text):9}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell's own output, produced when this page was built; yours matches it digit for digit)</span><span class="ro">read only</span></div><pre tabindex="0">                                 characters  bytes  words  len // 4  len // 3
+the question (golden row lk-06)          45     45      9        11        15
+the same question in Hindi               48    120     10        12        16
+an Indian amount (FIN-02)                62     62     11        15        20
+a whole clause (NP-03)                  212    212     38        53        70</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>For English, characters and bytes are the same number: the golden question is 45 of each, 11 tokens to the API and 15 to the worker, and the NP-03 clause, 212 characters, is 53 or 70. The same question in Hindi is 48 characters, close to the English, so the estimates barely move (12 to the API), but it is 120 bytes, because every Devanagari letter and vowel sign takes three bytes in UTF-8. The estimate cannot see that; only the model's count can, and step 6 asks for it. Keep the two rules apart: <code>len // 4</code> is what lesson 3.4's budget is made of, and <code>len // 3</code> decides how many embedding requests a document takes.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Price</span><h3>The rupee line: tokens priced with the kit's prices</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_2/demo_05_the_rupee_line_tokens_priced_with_the_kit_s_prices.py" target="_blank" rel="noopener"><code>demo_05_the_rupee_line_tokens_priced_with_the_kit_s_prices.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Dollars per million tokens, input and output apart, then rupees at the rate the kit carries with every figure: lesson 3.4's arithmetic for a whole answer, run on one sentence.</p></div></div>
+
+<h4>Definition</h4>
+<p>A model's price is two numbers per million tokens: one for the input you send, one for the output it writes. The kit keeps them in <code>shared/prices.py</code> with the rupee rate beside them, and rag-api's <code>cost.price()</code> does the same arithmetic on every answer: the input at the input rate, cached input at a tenth of it, the output at the output rate, the total in dollars and in rupees, and the rate returned with the figures. Lesson 3.4 prices a whole answer that way. This cell prices one sentence, the golden question, on the API's estimate of its tokens: what it costs to send, what the same tokens would cost if the model wrote them, and what a lakh of such questions comes to.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>shared/prices.py - the kit&#x27;s prices, USD per 1M tokens, and the rupee rate</span><span class="ro">read only</span></div><pre tabindex="0">USD_INR = <span class="nu">85</span>            <span class="cm"># the course-wide rate, as in cost.py and shared/documind_tools.py</span>
+PROFILE = os.environ.get(<span class="st">&quot;DOCUMIND_PROFILE&quot;</span>, <span class="st">&quot;gcp&quot;</span>)     <span class="cm"># the same switch shared/profile.py reads</span>
+DEFAULT_MODEL = <span class="st">&quot;gemini-3.6-flash&quot;</span>
+
+PRICES = {<span class="st">&quot;gemini-3.6-flash&quot;</span>: (<span class="nu">1.50</span>, <span class="nu">7.50</span>),
+          <span class="st">&quot;gemini-3.1-flash-lite&quot;</span>: (<span class="nu">0.25</span>, <span class="nu">1.50</span>),
+          <span class="st">&quot;gemini-3.1-pro-preview&quot;</span>: (<span class="nu">2.00</span>, <span class="nu">12.00</span>),
+          <span class="st">&quot;documind-general&quot;</span>: (<span class="nu">1.50</span>, <span class="nu">7.50</span>),
+          <span class="st">&quot;documind-reasoning&quot;</span>: (<span class="nu">2.00</span>, <span class="nu">12.00</span>),
+          <span class="st">&quot;documind-slm&quot;</span>: (<span class="nu">20.5</span>, <span class="nu">20.5</span>),
+          <span class="st">&quot;documind-inference&quot;</span>: (<span class="nu">20.5</span>, <span class="nu">20.5</span>),
+          <span class="st">&quot;documind-gke&quot;</span>: (<span class="nu">20.5</span>, <span class="nu">20.5</span>)}
+
+<span class="kw">def</span> <span class="fn">usd</span>(model: str | <span class="kw">None</span>, tokens_in: int, tokens_out: int, cached_tokens: int = <span class="nu">0</span>) -&gt; float:
+    <span class="st">&quot;&quot;&quot;One call&#x27;s cost in USD. An unknown model is priced as flash, as cost.py prices one. A tuned endpoint&#x27;s
+    path is unknown here too: cost.py bills it at its base model (RAG_MODEL_BASE, which only rag-api is given),
+    this at flash.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> PROFILE == <span class="st">&quot;local&quot;</span>:
+        <span class="kw">return</span> <span class="nu">0.0</span>
+    usd_in, usd_out = PRICES.get(model <span class="kw">or</span> DEFAULT_MODEL, PRICES[DEFAULT_MODEL])
+    billable_in = max(tokens_in - cached_tokens, <span class="nu">0</span>)
+    <span class="kw">return</span> (billable_in * usd_in + cached_tokens * usd_in * <span class="nu">0.10</span> + tokens_out * usd_out) / <span class="nu">1_000_000</span>
+
+<span class="kw">def</span> <span class="fn">inr</span>(usd_amount: float) -&gt; float:
+    <span class="kw">return</span> usd_amount * USD_INR</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/cost.py - price(): how lesson 3.4 prices an answer, in both currencies</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">price</span>(model: str, tokens_in: int, tokens_out: int,
+          cached_tokens: int = <span class="nu">0</span>) -&gt; dict:
+    <span class="st">&quot;&quot;&quot;Both currencies, always, and the cached tokens counted at the cache rate.
+
+    Reporting only USD to an Indian finance team means somebody re-does the
+    conversion in a spreadsheet at whatever rate they had to hand, and then two
+    numbers exist for one month. Carry the rate WITH the figure.
+    &quot;&quot;&quot;</span>
+    <span class="cm"># A tuned model (10.1) is an endpoint path, billed at its BASE model&#x27;s rate: RAG_MODEL_BASE names it.</span>
+    <span class="kw">if</span> model.startswith(<span class="st">&quot;projects/&quot;</span>):
+        model = os.environ.get(<span class="st">&quot;RAG_MODEL_BASE&quot;</span>) <span class="kw">or</span> <span class="st">&quot;gemini-3.6-flash&quot;</span>
+    usd_in, usd_out = _prices().get(model, FALLBACK[<span class="st">&quot;gemini-3.6-flash&quot;</span>])
+    billable_in = max(tokens_in - cached_tokens, <span class="nu">0</span>)
+    usd = (billable_in * usd_in
+           + cached_tokens * usd_in * <span class="nu">0.10</span>      <span class="cm"># cached input: 90% off</span>
+           + tokens_out * usd_out) / <span class="nu">1_000_000</span>
+    <span class="kw">return</span> {<span class="st">&quot;model&quot;</span>: model, <span class="st">&quot;usd&quot;</span>: round(usd, <span class="nu">6</span>),
+            <span class="st">&quot;inr&quot;</span>: round(usd * USD_INR, <span class="nu">4</span>), <span class="st">&quot;usd_inr_rate&quot;</span>: USD_INR,
+            <span class="st">&quot;tokens_in&quot;</span>: tokens_in, <span class="st">&quot;tokens_out&quot;</span>: tokens_out,
+            <span class="st">&quot;cached_tokens&quot;</span>: cached_tokens}</pre></div>
+
+<p>The two files carry the same numbers on purpose. The chat service has no access to the price table in BigQuery, so it prices from <code>shared/prices.py</code>, and a test in the kit holds that table equal to <code>cost.py</code>'s fallback. When this page was built, the cell's two constants were checked against both files, and its dollars and rupees against the kit's own <code>usd()</code> and <code>inr()</code>.</p>
+
+<h4>Do it: the golden question's rupee line, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in ~/basics-venv (a Python cell; Rs 0, arithmetic only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+MODEL = "gemini-3.6-flash"
+PRICES = {MODEL: (1.50, 7.50)}     # USD per 1M tokens, input and output: shared/prices.py, the standard price
+USD_INR = 85                       # shared/prices.py: the course-wide rate
+def price(tokens_in, tokens_out=0):
+    """Dollars, then rupees: the arithmetic of the kit's usd() and cost.price(), without the cache."""
+    usd_in, usd_out = PRICES[MODEL]
+    usd = (tokens_in * usd_in + tokens_out * usd_out) / 1_000_000
+    return usd, usd * USD_INR
+Q = "What is the notice period for a confirmed E3?"
+n = max(1, len(Q) // 4)            # the API's estimate: no call made yet
+usd, inr = price(n)
+print(f"{Q!r}: {len(Q)} characters, about {n} tokens by the estimate")
+print(f"as input to {MODEL}: {n} x ${PRICES[MODEL][0]:.2f} per 1M = ${usd:.6f} = Rs {inr:.4f} at {USD_INR}, {inr * 100:.2f} paise")
+usd_o, inr_o = price(0, n)
+print(f"the same {n} tokens as output: ${usd_o:.6f} = Rs {inr_o:.4f}, at {PRICES[MODEL][1] / PRICES[MODEL][0]:.0f} times the input rate")
+print(f"a lakh such questions as input: Rs {inr * 100_000:.2f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell's own output, produced when this page was built, with the kit's prices)</span><span class="ro">read only</span></div><pre tabindex="0">'What is the notice period for a confirmed E3?': 45 characters, about 11 tokens by the estimate
+as input to gemini-3.6-flash: 11 x $1.50 per 1M = $0.000017 = Rs 0.0014 at 85, 0.14 paise
+the same 11 tokens as output: $0.000082 = Rs 0.0070, at 5 times the input rate
+a lakh such questions as input: Rs 140.25</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>11 tokens of input cost $0.000017, which is Rs 0.0014, or 0.14 paise. That is the rupee line, and every cost the kit reports has its shape: a count, a rate, dollars, then rupees at a rate printed beside them. The same tokens as output cost 5 times as much, because gemini-3.6-flash's output rate is 5 times its input rate: what a model writes costs more than what you send it. A lakh of these questions as input comes to Rs 140.25, which is why the cost of one question is never the interesting number; the volume is. A real answer's input also carries the system prompt and the packed evidence, which is the part lesson 3.4 budgets.</p></div>
+
+<div class="box box-amber"><div class="box-title">The kit's price, and what you pay this year</div>
+<p>The kit prices gemini-3.6-flash at Google's standard rate, $1.50 in and $7.50 out per million tokens. Google's pricing page lists an introductory rate for it of $0.75 in and $3.75 out through 31 December 2026, and the standard rate from 1 January 2027. So until the end of December a call on the <code>global</code> location costs you half the kit's line. The pages and the kit use the standard rate throughout, so their figures do not change on 1 January.</p></div>
+
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; Live</span><h3>The model's own count: count_tokens on gemini-3.6-flash</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_2/demo_06_the_model_s_own_count_count_tokens_on_gemini_3_6_flash.py" target="_blank" rel="noopener"><code>demo_06_the_model_s_own_count_count_tokens_on_gemini_3_6_flash.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The proof this lesson is named for: one sentence counted by the model that would read it, with its rupee line, and two more texts beside it.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>count_tokens</code> runs the model's own tokenizer on a text and returns the number, without generating anything, and Google's page for it says there is no charge for using it. For the Gemini 3 family the call goes to the <code>global</code> location, where the kit's generation client lives. The API packs prompts by the estimate, but <code>context_budget.py</code> was written so that the model's counter can be handed in instead, and lesson 3.4 does exactly that to show where the estimate drifts. This cell counts three texts: the golden question, which is this lesson's proof, the same question in Hindi, and the handbook's sentence with an amount in lakh notation. Each line carries the length, the API's estimate, the model's count, and the rupee line on that count, with step 5's prices and step 5's arithmetic.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - the generation client, on the global location</span><span class="ro">read only</span></div><pre tabindex="0">_client = genai.Client(enterprise=<span class="kw">True</span>, project=settings.project_id, location=<span class="st">&quot;global&quot;</span>)  <span class="cm"># generation runs on the global endpoint (Gemini 3.x)</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/context_budget.py - the module&#x27;s promise: a real counter can replace the estimate</span><span class="ro">read only</span></div><pre tabindex="0">Pure Python: no cloud calls. `count_fn` <span class="kw">is</span> injected so the API can <span class="kw">pass</span>
+`client.models.count_tokens` <span class="kw">and</span> tests can <span class="kw">pass</span> a fake.</pre></div>
+
+
+<h4>Do it: three texts, the model's count, and the rupee line</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in ~/basics-venv, after the setup's Gemini block (a Python cell; three count_tokens calls, no charge)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google import genai
+client = genai.Client(enterprise=True, project=os.environ["PROJECT"], location="global")   # Gemini 3 is served from global, as in the kit
+MODEL = "gemini-3.6-flash"
+PRICES = {MODEL: (1.50, 7.50)}     # shared/prices.py, as in step 5
+USD_INR = 85
+def price(tokens_in, tokens_out=0):
+    """Dollars, then rupees, as in step 5."""
+    usd_in, usd_out = PRICES[MODEL]
+    usd = (tokens_in * usd_in + tokens_out * usd_out) / 1_000_000
+    return usd, usd * USD_INR
+TEXTS = {
+    "the question": "What is the notice period for a confirmed E3?",
+    "the same in Hindi": "पुष्टि किए गए E3 कर्मचारी की सूचना अवधि क्या है?",
+    "an Indian amount": "Purchases up to Rs 2,00,000 are approved by the function head.",
+}
+for name, text in TEXTS.items():
+    n = client.models.count_tokens(model=MODEL, contents=text).total_tokens   # the model's own count: no charge
+    usd, inr = price(n)
+    print(f"{name:17} {len(text):2} characters  estimate {max(1, len(text) // 4):2}  counted {n:2}  "
+          f"as input ${usd:.6f} = Rs {inr:.4f} at {USD_INR}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (recorded from the author's run of this cell; the characters and the estimates are fixed by the texts)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/count_tokens.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The first line is the proof: a sentence's token count, from the model that would read it, and its rupee line, priced as step 5 priced the estimate. Put the count beside step 5's estimate of 11 and the toy's 23 pieces: the toy, with a vocabulary of 104 pieces (its 39 characters and 65 merges), had to spell out every word the two clauses did not repeat, and the count shows what a vocabulary learned from far more text does with the same 45 characters. The second line is the same meaning in another script, and the third is the same kind of sentence with digits and commas in it; read each count against its estimate, which saw only the length. Whatever the counts are, they are what the bill is made of: a price per token is only as good as the count it multiplies.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Cosine</span><h3>Cosine similarity in numpy, on vectors you can read</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_2/demo_07_cosine_similarity_in_numpy_on_vectors_you_can_read.py" target="_blank" rel="noopener"><code>demo_07_cosine_similarity_in_numpy_on_vectors_you_can_read.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The one formula retrieval runs, on two-number vectors first and then on word counts of three handbook clauses, before the model's vectors in step 8.</p></div></div>
+
+<h4>Definition</h4>
+<p>Cosine similarity is the dot product of two vectors divided by the product of their lengths. It is the cosine of the angle between them: 1 when they point the same way, 0 at right angles, -1 when they point opposite ways. It ignores how long they are, so a short question and a long clause can still score 1, and when both vectors already have length 1 the division changes nothing and the dot product alone is the cosine. The cell shows each of those on two-number vectors you could draw on paper. Then it builds vectors you can read: one dimension per distinct word in three handbook clauses and two questions, each value the word's count. The first question is golden row lk-05, whose answer is IT-SEC-04; the second asks the same thing in other words.</p>
+
+<h4>Do it: four cosines, then word counts against meaning</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in ~/basics-venv (a Python cell; Rs 0, nothing leaves the machine)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re
+import numpy as np
+def cosine(a, b):
+    """The cosine of the angle between a and b: 1 the same direction, 0 at right angles, -1 opposite."""
+    return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+a, b = np.array([3.0, 4.0]), np.array([4.0, 3.0])
+print("a", a, " b", b)
+print(f"cosine(a, b)       {cosine(a, b):7.4f}")
+print(f"cosine(a, 10 * a)  {cosine(a, 10 * a):7.4f}   the length does not count, only the direction")
+print(f"cosine(a, [-4, 3]) {cosine(a, np.array([-4.0, 3.0])):7.4f}   at right angles")
+print(f"cosine(a, -a)      {cosine(a, -a):7.4f}   opposite")
+u, v = a / np.linalg.norm(a), b / np.linalg.norm(b)
+print(f"at length 1 the dot product is the cosine: {float(u @ v):.4f}")
+CLAUSES = {
+    "IT-SEC-04": ("USB mass-storage devices are blocked on all company laptops. No exception is "
+                  "granted for contractors. Data transfer uses the approved cloud bucket only."),
+    "EXP-12": ("Domestic travel is reimbursed against original receipts, capped at Rs 40,000 per trip. "
+               "Anything above the cap needs written approval from the function head before travel, "
+               "not after."),
+    "PR-05": ("Salary is credited on the last working day of each month. Form 16 is issued by 15 June "
+              "for the preceding financial year."),
+}
+QUESTIONS = {"lk-05": "Are USB drives allowed on a company laptop?",
+             "reworded": "Can I copy files to a pen drive at work?"}
+def words(text):
+    """The text's words: lower-case runs of letters and digits."""
+    return re.findall(r"[a-z0-9]+", text.lower())
+vocab = sorted({w for text in [*CLAUSES.values(), *QUESTIONS.values()] for w in words(text)})
+def counts(text):
+    """A vector you can read: one dimension per word of the vocabulary, its value the word's count in the text."""
+    return np.array([words(text).count(w) for w in vocab], dtype=float)
+print(f"\nword-count vectors: {len(vocab)} dimensions, one per distinct word")
+for q, question in QUESTIONS.items():
+    print(f"{q:9}", "  ".join(f"{name} {cosine(counts(question), counts(clause)):.4f}" for name, clause in CLAUSES.items()),
+          "  shared with IT-SEC-04:", sorted(set(words(question)) &amp; set(words(CLAUSES["IT-SEC-04"]))))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell's own output, produced when this page was built)</span><span class="ro">read only</span></div><pre tabindex="0">a [3. 4.]  b [4. 3.]
+cosine(a, b)        0.9600
+cosine(a, 10 * a)   1.0000   the length does not count, only the direction
+cosine(a, [-4, 3])  0.0000   at right angles
+cosine(a, -a)      -1.0000   opposite
+at length 1 the dot product is the cosine: 0.9600
+
+word-count vectors: 78 dimensions, one per distinct word
+lk-05     IT-SEC-04 0.2887  EXP-12 0.0000  PR-05 0.0680   shared with IT-SEC-04: ['are', 'company', 'on', 'usb']
+reworded  IT-SEC-04 0.0000  EXP-12 0.0550  PR-05 0.0000   shared with IT-SEC-04: []</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>a</code> and <code>b</code> scored 0.96; ten times <code>a</code> is still <code>a</code>, to the cosine; a vector at right angles scored 0 and the opposite one -1; and the same two directions at length 1 gave 0.96 again by the dot product alone. Then the word counts did what word counts do. The golden question shares four words with IT-SEC-04 (<code>are</code>, <code>company</code>, <code>on</code>, <code>usb</code>) and scores 0.2887 there, but it also scores 0.0680 against the payroll clause, because both contain <code>on</code>. The reworded question asks the same thing and shares no word with IT-SEC-04, so it scores 0 there, while the travel clause, which shares only <code>at</code>, comes first at 0.0550. A pen drive is a USB mass-storage device to anyone who reads English, and to a vector of word counts it is nothing at all. That gap is what an embedding model is for.</p></div>
+
+<h4>Where the kit computes this number</h4>
+<p>Three places, three spellings of the same arithmetic. The Firestore rung, which answers when Vector Search will not, asks Firestore for the nearest rows by cosine distance and turns the distance back into a similarity, 1 minus it, so the reranker can order both rungs the same way. The Vector Search index compares 768-number vectors by dot product, which is the cosine when the vectors have length 1; Google's guide to its text embedding models says their vectors come back normalized, and step 8 prints the lengths so you can see it for yourself. And the answer cache (Module 6) serves a stored answer to a new question only when the two questions' cosine similarity is at least 0.95: its comment says why the line sits there, with two questions that differ in one word.</p>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - the Firestore rung: nearest by cosine distance, turned back into a similarity</span><span class="ro">read only</span></div><pre tabindex="0">    hits = (query
+            .find_nearest(<span class="st">&quot;embedding&quot;</span>, Vector(vec),
+                          distance_measure=DistanceMeasure.COSINE,
+                          limit=top_k,
+                          distance_result_field=<span class="st">&quot;d&quot;</span>).get())
+    out = []
+    <span class="kw">for</span> h <span class="kw">in</span> hits:
+        d = h.to_dict()
+        d[<span class="st">&quot;id&quot;</span>] = h.id
+        <span class="cm"># COSINE distance: smaller is closer, so flip it to a score the</span>
+        <span class="cm"># reranker can order the same way it orders Vector Search results.</span>
+        d[<span class="st">&quot;score&quot;</span>] = <span class="nu">1.0</span> - d.pop(<span class="st">&quot;d&quot;</span>, <span class="nu">1.0</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/vector.tf - the Vector Search index: 768 dimensions, compared by dot product</span><span class="ro">read only</span></div><pre tabindex="0">    config {
+      dimensions                  = <span class="nu">768</span>
+      approximate_neighbors_count = <span class="nu">150</span>
+      distance_measure_type       = <span class="st">&quot;DOT_PRODUCT_DISTANCE&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/semantic_cache.py - the answer cache: a threshold on cosine similarity, and why it is 0.95</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># 0.95, not 0.92: RedisVL&#x27;s default distance of 0.1 is the same neighbourhood, and a cache that answers &quot;what is</span>
+<span class="cm"># the notice period&quot; to &quot;what is the probation period&quot; is a wrong answer served fast. Tight first, then measured.</span>
+THRESHOLD = float(os.environ.get(<span class="st">&quot;SEMANTIC_CACHE_THRESHOLD&quot;</span>, <span class="st">&quot;0.95&quot;</span>))
+...
+        <span class="cm"># COSINE distance: smaller is closer. 1 - d is the similarity; the rest are farther still.</span>
+        <span class="kw">if</span> (<span class="nu">1.0</span> - d.get(<span class="st">&quot;d&quot;</span>, <span class="nu">1.0</span>)) &lt; THRESHOLD:
+            <span class="kw">break</span></pre></div>
+
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; Live</span><h3>Real embeddings: text-embedding-005 under the kit's task types</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_2/demo_08_real_embeddings_text_embedding_005_under_the_kit_s_task_types.py" target="_blank" rel="noopener"><code>demo_08_real_embeddings_text_embedding_005_under_the_kit_s_task_types.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The same three clauses and two questions, embedded the way the worker embeds a passage and the API embeds a question, and compared with step 7's function.</p></div></div>
+
+<h4>Definition</h4>
+<p>The kit embeds in two places with one model. The ingest worker embeds every passage it stores, in requests of at most 250 texts, under <code>RETRIEVAL_DOCUMENT</code>; the API embeds every question under <code>RETRIEVAL_QUERY</code>; both ask for 768 numbers, and both use a client on <code>us-central1</code>, because the embedding models are served regionally while Gemini 3 generation is served from <code>global</code>. The two task types are a pair: the model shapes a passage's vector and a question's vector so that the two can be compared, and a text sent with no task type at all is embedded as a query. This cell does what the kit does, with step 7's texts: one request for the clauses as documents, one for the questions as queries, then the cosine of every question against every clause, by step 7's own function. It also prints what the model reports about its reading: how many tokens each text was, and the characters it bills.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - the worker&#x27;s embedding: model, task type, dimension, and a regional client</span><span class="ro">read only</span></div><pre tabindex="0">EMBEDDING_MODEL = os.environ.get(<span class="st">&quot;EMBEDDING_MODEL&quot;</span>, <span class="st">&quot;text-embedding-005&quot;</span>)
+EMBEDDING_VERSION = os.environ.get(<span class="st">&quot;EMBEDDING_VERSION&quot;</span>, <span class="st">&quot;1&quot;</span>)
+EMBEDDING_TASK_TYPE = <span class="st">&quot;RETRIEVAL_DOCUMENT&quot;</span>
+EMBEDDING_DIMENSIONS = <span class="nu">768</span>
+
+_embed = genai.Client(
+    enterprise=<span class="kw">True</span>,
+    project=os.environ[<span class="st">&quot;GOOGLE_CLOUD_PROJECT&quot;</span>],
+    location=<span class="st">&quot;us-central1&quot;</span>,
+)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - embed_all(): every passage under RETRIEVAL_DOCUMENT, 768 numbers each</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">embed_all</span>(texts: list[str]) -&gt; list[list[float]]:
+    out: list[list[float]] = []
+    <span class="kw">for</span> batch <span class="kw">in</span> batches(texts):
+        response = _embed.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=batch,
+            config={<span class="st">&quot;output_dimensionality&quot;</span>: EMBEDDING_DIMENSIONS, <span class="st">&quot;task_type&quot;</span>: EMBEDDING_TASK_TYPE},
+        )
+        vectors = [list(embedding.values) <span class="kw">for</span> embedding <span class="kw">in</span> (response.embeddings <span class="kw">or</span> [])]
+        <span class="kw">if</span> len(vectors) != len(batch) <span class="kw">or</span> any(<span class="kw">not</span> valid_vector(v) <span class="kw">for</span> v <span class="kw">in</span> vectors):
+            <span class="kw">raise</span> ValueError(<span class="st">&quot;Embedding response must contain one finite 768-dimensional vector per text&quot;</span>)
+        out.extend(vectors)
+    <span class="kw">return</span> out</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - embed_query(): every question under RETRIEVAL_QUERY</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">embed_query</span>(q: str) -&gt; list[float]:
+    <span class="cm"># settings.embed_model is EMBEDDING_MODEL in the environment - the SAME variable the ingest worker stamps on</span>
+    <span class="cm"># every row (variables.tf: embedding_model). Query and document vectors come from one declared model.</span>
+    resp = _genai_client().models.embed_content(
+        model=settings.embed_model, contents=q,
+        config=types.EmbedContentConfig(task_type=<span class="st">&quot;RETRIEVAL_QUERY&quot;</span>, output_dimensionality=<span class="nu">768</span>))
+    <span class="kw">return</span> resp.embeddings[<span class="nu">0</span>].values</pre></div>
+
+
+<h4>Do it: five texts, two requests, six cosines</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run on your laptop, in ~/basics-venv, after the setup's Gemini block (a Python cell; two embedding requests, at most Rs 0.0011)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+from google import genai
+client = genai.Client(enterprise=True, project=os.environ["PROJECT"], location="us-central1")   # embeddings are regional, as in the kit
+MODEL, DIMS = "text-embedding-005", 768
+CLAUSES = {
+    "IT-SEC-04": ("USB mass-storage devices are blocked on all company laptops. No exception is "
+                  "granted for contractors. Data transfer uses the approved cloud bucket only."),
+    "EXP-12": ("Domestic travel is reimbursed against original receipts, capped at Rs 40,000 per trip. "
+               "Anything above the cap needs written approval from the function head before travel, "
+               "not after."),
+    "PR-05": ("Salary is credited on the last working day of each month. Form 16 is issued by 15 June "
+              "for the preceding financial year."),
+}
+QUESTIONS = {"lk-05": "Are USB drives allowed on a company laptop?",
+             "reworded": "Can I copy files to a pen drive at work?"}
+def embed(texts, task_type):
+    """One request: DIMS numbers per text, under the task type given. Returns the response and the vectors."""
+    r = client.models.embed_content(model=MODEL, contents=list(texts),
+                                    config={"output_dimensionality": DIMS, "task_type": task_type})
+    return r, np.array([e.values for e in r.embeddings])
+def cosine(a, b):
+    """Step 7's cosine: the dot product over the product of the lengths."""
+    return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+rd, D = embed(CLAUSES.values(), "RETRIEVAL_DOCUMENT")    # the worker's task type for passages (indexer.py)
+rq, Q = embed(QUESTIONS.values(), "RETRIEVAL_QUERY")     # the API's task type for questions (retriever.py)
+print("clauses", D.shape, " questions", Q.shape, " lengths", np.linalg.norm(D, axis=1).round(4), np.linalg.norm(Q, axis=1).round(4))
+print("IT-SEC-04 begins", D[0, :4].round(4))
+print("tokens per text, as the model read them:", [getattr(e.statistics, "token_count", None) for e in [*rd.embeddings, *rq.embeddings]])
+for q, qv in zip(QUESTIONS, Q):
+    print(f"{q:9}", "  ".join(f"{name} {cosine(qv, dv):.4f}" for name, dv in zip(CLAUSES, D)))
+sent = sum(len(t) for t in [*CLAUSES.values(), *QUESTIONS.values()])
+billed = [getattr(r.metadata, "billable_character_count", None) for r in (rd, rq)]
+print(f"characters sent {sent}, billable as reported {billed}: at most Rs {sent / 1000 * 0.000025 * 85:.4f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (recorded from the author's run of this cell)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/embeddings.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every text became 768 numbers, the 8-word question as much as the 28-word clause. The lengths are your check on Google's word that the vectors come back normalized: at length 1, the index's dot product and step 7's cosine are the same number. The tokens are the model's own count for each text, from the embedding model's tokenizer this time. The two rows of cosines are the proof's second half, and they belong under step 7's word-count rows. For the golden question, see whether IT-SEC-04 still leads, and by how much. For the reworded one, see where IT-SEC-04 lands now that meaning is compared instead of spelling, and where the travel clause, first by word counts, lands now. That comparison is the whole case for embeddings, measured on your own laptop.</p></div>
+
+<h4>What the page's cells cost</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Cells</th><th>What they call</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>Steps 3, 4, 5 and 7</td><td data-label="What they call">nothing: arithmetic in your own Python</td><td data-label="Cost">Rs 0</td></tr>
+<tr><td>Step 6</td><td data-label="What they call">three <code>count_tokens</code> calls to gemini-3.6-flash on <code>global</code></td><td data-label="Cost">Rs 0: Google does not charge for <code>count_tokens</code></td></tr>
+<tr><td>Step 8</td><td data-label="What they call">two embedding requests to text-embedding-005 on <code>us-central1</code>, 536 characters in all</td><td data-label="Cost">at most Rs 0.0011 (0.11 paise), at Google's list price for text embeddings, $0.000025 per 1,000 characters online, and Rs 85 to the dollar</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>The kit's own price table has no embedding price. The list price above was read off Google's pricing page, and the line prices every character sent, spaces included; the bill itself uses the billable characters the API reports with each response, which step 8 prints beside them.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one cell above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A tokenizer is a list of learned merges</td><td data-label="The check">the cell in step 3</td><td data-label="Pass looks like">65 merges; <code>' notice'</code> one piece, <code>'Notice'</code> three, <code>'Bengaluru'</code> 9</td></tr>
+<tr><td>2</td><td data-label="Claim">The kit's two estimates see only the length</td><td data-label="The check">the cell in step 4</td><td data-label="Pass looks like">the golden question 11 by <code>len // 4</code> and 15 by <code>len // 3</code>; the Hindi question 120 bytes for 48 characters</td></tr>
+<tr><td>3</td><td data-label="Claim">The rupee line uses the kit's prices</td><td data-label="The check">the cell in step 5</td><td data-label="Pass looks like"><code>$0.000017 = Rs 0.0014 at 85</code>; a lakh of questions, Rs 140.25</td></tr>
+<tr><td>4</td><td data-label="Claim">The model counts its own tokens, and the count is priced</td><td data-label="The check">step 6, the first line</td><td data-label="Pass looks like">a count from gemini-3.6-flash and its rupee line, at $1.50 per million input tokens and Rs 85</td></tr>
+<tr><td>5</td><td data-label="Claim">Cosine ignores length</td><td data-label="The check">the cell in step 7</td><td data-label="Pass looks like"><code>cosine(a, 10 * a)</code> is <code>1.0000</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Word counts miss a reworded question</td><td data-label="The check">the cell in step 7, the last line</td><td data-label="Pass looks like"><code>reworded</code> scores <code>0.0000</code> against IT-SEC-04</td></tr>
+<tr><td>7</td><td data-label="Claim">The embeddings are the kit's: one model, two task types, 768 numbers</td><td data-label="The check">step 8, the first line</td><td data-label="Pass looks like"><code>(3, 768)</code> for the clauses and <code>(2, 768)</code> for the questions</td></tr>
+<tr><td>8</td><td data-label="Claim">Two embeddings' cosine similarity</td><td data-label="The check">step 8, the two rows of cosines</td><td data-label="Pass looks like">six cosines between -1 and 1, read against step 7's word counts</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your laptop</div>
+<p>Nothing was installed beyond the setup's venv, and no cell wrote a file. Steps 3, 4, 5 and 7 never left your machine. Step 6 made three <code>count_tokens</code> calls and step 8 two embedding requests, in your project on Vertex AI: no charge for the first, at most Rs 0.0011 for the second, and nothing stored anywhere. Lesson B.3 follows the tokens into the model: a transformer block in numpy, one attention head's weights over a sentence, and the layer normalization between its steps.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Basics &middot; Lesson B.2 Turn text into tokens and embeddings &middot; v5.0</p><p>Next: Lesson B.3 Read a transformer block, with layer normalization.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var D = {"merges":[["o","n"],["t","i"],["t","h"],["e","r"],["e","d"],[" ","a"],[" ","s"],["n","o"],["c","e"],[" ","p"],[" ","th"],[" ","e"],["v","e"],[" ","no"],["ti","ce"],["a","y"],["r","o"],[" th","e"],["a","ti"],["ati","on"],["i","n"],[" ","m"],["d","e"],[" ","o"],[" no","tice"],[" p","er"],[" per","i"],[" peri","o"],[" perio","d"],[" ","d"],[" ","r"],["t","e"],[" ","w"],[" ","b"],["ro","b"],["rob","ation"],["e","e"],[" a","t"],[" ","g"],[" g","r"],[" gr","a"],[" gra","de"],[" ","E"],[" s","er"],[" ser","ve"],[" o","f"],[" d","ay"],[" day","s"],[" ","N"],[" ","f"],[" r","e"],[" ","i"],[" i","s"],[" w","r"],[" wr","i"],[" m","ay"],[" b","e"],[" s","i"],[" m","on"],[" mon","th"],[" month","s"],[" ","on"],[" p","robation"],["i","th"],["te","n"]],"samples":{"q":"What is the notice period for a confirmed E3?","hi":"पुष्टि किए गए E3 कर्मचारी की सूचना अवधि क्या है?","amt":"Purchases up to Rs 2,00,000 are approved by the function head.","np":"A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs from the date the resignation is acknowledged in writing. Unused earned leave may not be set off against the notice period.","blr":"Bengaluru"},"usdIn":1.5,"usdOut":7.5,"usdInr":85,"api":4,"worker":3,"model":"gemini-3.6-flash"};
+var RX = / ?[A-Za-z]+| ?[0-9]| ?[^\sA-Za-z0-9]/gu;
+function words(text){ return text.match(RX) || []; }
+function merge(w, a, b){ var out = [], i = 0;
+  while (i < w.length){ if (i + 1 < w.length && w[i] === a && w[i + 1] === b){ out.push(a + b); i += 2; } else { out.push(w[i]); i += 1; } }
+  return out; }
+function encode(text){ var out = [];
+  words(text).forEach(function(word){ var w = Array.from(word); D.merges.forEach(function(m){ w = merge(w, m[0], m[1]); }); out = out.concat(w); });
+  return out; }
+function chars(text){ return Array.from(text).length; }
+function line(text){
+  var n = Math.max(1, Math.floor(chars(text) / D.api)), usdI = (n * D.usdIn + 0 * D.usdOut) / 1000000, usdO = (0 * D.usdIn + n * D.usdOut) / 1000000;
+  var inrI = usdI * D.usdInr, inrO = usdO * D.usdInr;
+  return {pieces: encode(text), chars: chars(text), bytes: new TextEncoder().encode(text).length, words: text.split(/\s+/).filter(Boolean).length,
+    api: n, worker: Math.max(1, Math.floor(chars(text) / D.worker)), usdIn: usdI.toFixed(6), inrIn: inrI.toFixed(4), paise: (inrI * 100).toFixed(2),
+    usdOut: usdO.toFixed(6), inrOut: inrO.toFixed(4), lakh: (inrI * 100000).toFixed(2)}; }
+window.__tm = {line: line};
+var root = document.getElementById('meter'); if (!root) { return; }
+var sel = document.getElementById('tm-sample'), own = document.getElementById('tm-own'), shown = document.getElementById('tm-text'),
+    chips = document.getElementById('tm-chips'), sum = document.getElementById('tm-sum'), rupee = document.getElementById('tm-rupee');
+function render(){
+  var text = own.value.length ? own.value : D.samples[sel.value], r = line(text);
+  shown.textContent = 'Text: ' + (text.length ? text : '(empty)');
+  chips.textContent = '';
+  r.pieces.forEach(function(p){ var s = document.createElement('span'); s.textContent = p.replace(/ /g, '·'); chips.appendChild(s); });
+  sum.textContent = r.chars + ' characters, ' + r.bytes + ' bytes, ' + r.words + (r.words === 1 ? ' word' : ' words') + ' | toy pieces ' + r.pieces.length +
+    ' | the kit estimates ' + r.api + ' tokens (len // ' + D.api + ', the API) or ' + r.worker + ' (len // ' + D.worker + ', the worker)';
+  rupee.textContent = 'Priced by the API estimate at ' + D.model + "'s standard rates: " + r.api + ' tokens in = $' + r.usdIn + ' = Rs ' + r.inrIn +
+    ' at ' + D.usdInr + ' (' + r.paise + ' paise); as output $' + r.usdOut + ' = Rs ' + r.inrOut + '; a lakh of these as input: Rs ' + r.lakh;
+}
+sel.addEventListener('change', function(){ own.value = ''; render(); });
+own.addEventListener('input', render);
+render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson B.4 Encode with BERT-style models: embeddings and rankers - two texts read apart, or one pair read together | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.pe-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px 16px;margin-bottom:8px;}
+.pe-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.pe-l select,.pe-l input{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.pe-own{display:none;}
+.pe-own.on{display:flex;}
+.pe-sum{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal);margin:6px 0 8px;overflow-wrap:anywhere;}
+.pe-out{display:grid;gap:8px;}
+.pe-row{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;display:grid;gap:4px;min-width:0;}
+.pe-id{font-size:var(--small-size);color:var(--navy);}
+.pe-bar{display:grid;grid-template-columns:104px minmax(0,1fr) 46px;align-items:center;gap:8px;font-family:var(--mono);font-size:var(--kicker-size);color:var(--slate);}
+.pe-track{height:12px;background:#e2e8f0;border-radius:6px;overflow:hidden;}
+.pe-fill{height:100%;width:0;background:var(--cyan);transition:width .25s;}
+.pe-fill.x{background:var(--teal);}
+.pe-why{font-size:12.5px;line-height:1.45;color:var(--slate);overflow-wrap:anywhere;}
+@media (prefers-reduced-motion: reduce){.pe-fill{transition:none;}}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Basics &middot; Lesson B.4</div>
+<h1>Encode with BERT-style models: <span>embeddings and rankers</span></h1>
+<p>BERT taught a machine to read a sentence in both directions at once, by hiding words and asking for them back. Encoders in that style do two jobs in a retrieval system, and DocuMind has a model for each. The embedding model turns every chunk, once, and every question, as it arrives, into 768 numbers that are compared by arithmetic: a bi-encoder, fast enough to search the whole corpus. The ranker reads the question beside each of the 20 candidates and scores the pair: a cross-encoder, too slow for the corpus and sharper on the shortlist. You will fill hidden words from counts, score four handbook clauses with a toy bi-encoder and a toy cross-encoder, read the kit's two calls in its own code, and then score the same clauses both ways with the real models on your own project.</p>
+<div class="hero-chips"><div class="hero-chip">15% of the tokens hidden</div><div class="hero-chip">bi-encoder: two vectors, one cosine</div><div class="hero-chip">cross-encoder: one pair, one score</div><div class="hero-chip">text-embedding-005, 768 numbers</div><div class="hero-chip">semantic-ranker-fast-004</div><div class="hero-chip">pool 20, top_k 5</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What an encoder is, and the two ways the kit uses one</a></li>
+<li><a href="#s2">The words: encoder, mask, embedding, bi-encoder, cross-encoder, score</a></li>
+<li><a href="#setup">Before you run anything: set up your laptop</a></li>
+<li><a href="#s3">The masked-language idea: fill the blank from both sides</a></li>
+<li><a href="#s4">A bi-encoder: two texts, encoded apart, compared by cosine</a></li>
+<li><a href="#s5">A cross-encoder: one pair, read together, scored once</a></li>
+<li><a href="#s6">The kit's two encoders, in its own code</a></li>
+<li><a href="#s7">One question, four clauses, scored both ways on your project</a></li>
+<li><a href="#s8">Where each encoder sits, and what each costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how an encoder learns to read (by filling hidden words from both sides) and the two shapes it takes in retrieval: a bi-encoder that turns the question and each chunk into vectors apart and compares them by cosine, and a cross-encoder that reads the question and a chunk together and scores the pair. Then you will prove it: toys of both offline, the kit's two calls read in its own code, and the real two scoring one question side by side.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What an encoder is, and the two ways the kit uses one</h3><p>Reading in both directions, learning by filling blanks, and the two shapes an encoder takes when it scores a question against a passage.</p></div></div>
+
+<p><strong>An encoder reads the whole text at once.</strong> It is a transformer in which every token attends to every other token, the ones before it and the ones after it, so each token comes out as a vector shaped by its neighbours on both sides. The "leave" in "unused earned leave" and the "leave" in "I want to leave" come out as different vectors, because their neighbours differ. A decoder, the GPT-style model of lesson B.5, may only look left, because it writes one token after another; an encoder only has to read, so it looks both ways. Pool its token vectors into one (their average, or the output of a special first token) and a whole text becomes one vector.</p>
+
+<p><strong>BERT learned to read by filling blanks.</strong> School exams have a "fill in the blanks" section for a good reason: a student who can fill every blank in a passage has understood it, and the passage is its own answer key. BERT (Devlin and colleagues at Google, 2018) was pre-trained on that exercise over 3,300 million words of books and Wikipedia: hide 15% of the tokens and predict them from the context on both sides (beside a second, smaller task: guessing whether one sentence follows another). No person labels anything. To fill "serves a ___ period of 60 days" well, a model has to learn that periods of notice are served, counted in days and tied to a grade. Step 3 runs the idea on four clauses of the kit's handbook with nothing but counts.</p>
+
+<p><strong>One encoder, two ways to score a question against a passage.</strong> After pre-training, an encoder is trained further for a job, and retrieval uses it in two shapes. A <em>bi-encoder</em> encodes the question and each passage separately, one vector each, and compares the two vectors afterwards by cosine. Passages can be encoded once, long before any question, and stored; a question then costs one encoding and some arithmetic, the kind an index is built to do over millions of stored vectors. The price is that the model never sees the question and the passage together: whatever a passage's one vector did not keep, no comparison can recover. A <em>cross-encoder</em> takes the question and one passage as a single input and lets attention run across both, so each word of the question can bear on each word of the passage, and one relevance score comes out. It is usually the more accurate of the two, and nothing can be computed before the question arrives: every pair is a full pass of the model, so it only ever reads a shortlist.</p>
+
+<p><strong>DocuMind uses both, in that order.</strong> Every chunk was embedded once at ingest by <code>text-embedding-005</code> under the document task type; every question is embedded under the query task type; the index returns the 20 nearest chunks. Then the Ranking API's <code>semantic-ranker-fast-004</code> reads the question beside each of the 20 and returns the request's <code>top_k</code>, 5 by default, highest score first. Retrieve with the bi-encoder, rerank with the cross-encoder. Google documents what these two models take and return, and that is all the kit depends on, not how they are built: "bi-encoder" and "cross-encoder" name the two roles they play.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127968;</div><div>
+<p><strong>The broker's cards and the site visit.</strong> A broker keeps a card for every flat on the books, written when the flat was listed: two bedrooms, third floor, near the metro, the rent. When you call, the broker writes a card for you too and pulls the twenty flats whose cards look most like yours. That is fast, because cards are compared with cards, and no card was written with you in mind. That is the bi-encoder: every flat summarised once, every tenant summarised once, matched by comparing summaries. Then you visit five of the twenty with your own needs in your head, and find the lift that stops at the second floor and the "near the metro" that is a twenty-minute walk. A visit sees the flat and you together, which no card can, and it is far too slow to make for every flat in the city. That is the cross-encoder, and DocuMind books it the same way: cards for the whole corpus, visits for the shortlist.</p></div></div>
+
+<div class="diagram" id="two-ways">
+<div class="dg-title">One encoder, two ways to score a question against a clause</div>
+<div class="band">
+<div class="lane">
+<div class="lane-h">Bi-encoder: each text alone</div>
+<div class="band">
+<div class="node code"><b>the clause</b>at ingest, once, with no question in sight</div>
+<div class="node code"><b>the question</b>at query time, with no clause in sight</div>
+</div>
+<div class="down">&darr;</div>
+<div class="node"><b>text-embedding-005</b><code>RETRIEVAL_DOCUMENT</code> for the clause, <code>RETRIEVAL_QUERY</code> for the question</div>
+<div class="down">&darr;</div>
+<div class="node"><b>two vectors of 768 numbers</b>the clause's is stored with its row and in the index</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>a cosine</b>arithmetic on two lists of numbers, fast enough to run against every chunk</div>
+</div>
+<div class="lane">
+<div class="lane-h">Cross-encoder: the pair together</div>
+<div class="node code"><b>the question and the clause</b>one input, at query time</div>
+<div class="down">&darr;</div>
+<div class="node"><b>semantic-ranker-fast-004</b>is handed the question and the clause's text together and scores them as a pair</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>one score, 0 to 1</b>for this pair alone: nothing to store, nothing to reuse for the next question</div>
+</div>
+</div>
+<div class="down">&darr;</div>
+<div class="node"><b>DocuMind runs both, in that order</b>the bi-encoder finds 20 candidates among acme's 1,628 chunks; the cross-encoder orders the 20 and the caller gets the request's top_k, 5 by default</div>
+<p class="dg-cap">The left column is the kit's retrieval: each clause was embedded at ingest under the document task type, each question is embedded under the query task type, and the two are compared by arithmetic, which is why it can run against the whole corpus. The right column is the kit's reranking: the question and a candidate's text go to the ranker together and come back as one score, which is why it runs only on the pool. The 1,628 is acme's corpus as the kit's chunker cuts it.</p>
+</div>
+
+<h4>Try the two scorers</h4>
+<p>The explorer runs a toy of each on the four handbook clauses the rest of this page uses, plus one sentence twice: LV-07's last clause on its own, and the same words swapped round. The toy bi-encoder knows 23 hand-made words on five named axes, makes each clause and the question into one vector apiece, and compares them by cosine. The toy cross-encoder is one hand-written rule that reads the pair: how many of the question's ideas a sentence of the clause holds in the question's order. Pick the second question, which is the first one's words in another order, and watch which column moves.</p>
+
+<div class="diagram" id="pairs">
+<div class="dg-title">Two scorers, one question - a toy bi-encoder and a toy cross-encoder on the handbook's clauses</div>
+<div class="pe-controls">
+<label class="pe-l">Question <select id="pe-q"><option value="0">Can I use my unused leave to shorten my notice period?</option><option value="1">Can my notice period be used to shorten my unused leave?</option><option value="2">Is earned leave paid out when I resign?</option><option value="own">Type your own below</option></select></label>
+<label class="pe-l pe-own" id="pe-own-l">Your question <input type="text" id="pe-own" maxlength="140" placeholder="e.g. Will my holidays cut my notice short?"></label>
+</div>
+<p class="pe-sum" id="pe-sum" aria-live="polite"></p>
+<div class="pe-out" id="pe-out"></div>
+<p class="dg-cap">Each row is one passage. The upper bar is the toy bi-encoder's cosine between the passage's vector, made once before any question, and the question's vector; the lower bar is the toy cross-encoder's score for the pair, the share of the question's ideas that the passage's best sentence holds in order. The first two questions have the same words, so every upper bar stays put between them: each text became one vector before the comparison, and these vectors are sums, which keep no order. The lower bars move, because the rule reads the two texts together.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the explorer is not</div>
+<p>It is two toys, not two models: 23 words, five axes and one rule, the same code as the cells in steps 4 and 5, checked against them on 54 question and passage pairs when this page was built. Words outside the 23 are ignored, and a question in the passive voice fools the rule. What carries over to the real models is the structure. A bi-encoder fixes each text's vector before it sees the other text, so whatever that vector dropped (here, all word order) no comparison can bring back; a cross-encoder reads the pair, so anything in either text can count.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: encoder, mask, embedding, bi-encoder, cross-encoder, score</h3><p>Ten words, each with what it is in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Encoder</strong></td><td data-label="Meaning">A transformer that reads a whole text at once: every token attends to every other, before and after it, and comes out as a vector shaped by both sides. BERT-base is 12 layers of it, 768 numbers wide, 110 million parameters.</td><td data-label="In the kit">No encoder runs inside the kit: <code>text-embedding-005</code> and <code>semantic-ranker-fast-004</code> are Google's, called over the network. The kit's <code>sparse_encoder.py</code> hashes words and has no model behind it.</td></tr>
+<tr><td><strong>Masked language modelling</strong></td><td data-label="Meaning">Pre-training by filling blanks: 15% of the tokens are chosen (80% of them replaced by <code>[MASK]</code>, 10% by a random token, 10% left alone) and the model predicts the originals from both sides. The text is its own answer key.</td><td data-label="In the kit">Nothing in the kit trains a model. Step 3 runs the idea on four handbook clauses, with counts.</td></tr>
+<tr><td><strong>[CLS] and [SEP]</strong></td><td data-label="Meaning">BERT's markers. <code>[CLS]</code> opens every input and its output vector stands for the whole input; <code>[SEP]</code> closes a text, so a pair goes in as <code>[CLS]</code> question <code>[SEP]</code> passage <code>[SEP]</code>.</td><td data-label="In the kit">Never seen: the Ranking API takes the question and each record as separate fields.</td></tr>
+<tr><td><strong>Embedding</strong></td><td data-label="Meaning">One vector for a whole text, pooled from its tokens' vectors. Texts that mean similar things get vectors that point the same way.</td><td data-label="In the kit">768 numbers for every chunk and every question (<code>output_dimensionality</code> 768).</td></tr>
+<tr><td><strong>Bi-encoder</strong></td><td data-label="Meaning">Two texts encoded apart, then compared by cosine or dot product. One side can be encoded long before the other exists.</td><td data-label="In the kit"><code>text-embedding-005</code>: chunks at ingest (<code>indexer.py</code>), questions at query time (<code>retriever.py</code>).</td></tr>
+<tr><td><strong>Task type</strong></td><td data-label="Meaning">The role a text is embedded for. A document vector and a query vector are made to be compared with each other.</td><td data-label="In the kit"><code>RETRIEVAL_DOCUMENT</code> for chunks, <code>RETRIEVAL_QUERY</code> for questions; stamped on every row (lesson 1.3).</td></tr>
+<tr><td><strong>Cosine, dot product</strong></td><td data-label="Meaning">The comparison: the cosine of the angle between two vectors, 1 when they point the same way. For vectors of length 1 it equals their dot product.</td><td data-label="In the kit"><code>DOT_PRODUCT_DISTANCE</code> on the index (<code>vector.tf</code>); cosine distance on the Firestore rung, turned into 1 minus the distance.</td></tr>
+<tr><td><strong>Cross-encoder</strong></td><td data-label="Meaning">The question and one passage as a single input, read together; one relevance score out. Nothing can be computed ahead, so it reads a shortlist.</td><td data-label="In the kit">The Ranking API's <code>semantic-ranker-fast-004</code> on <code>global</code>, called by <code>rerank()</code> in <code>retriever.py</code>.</td></tr>
+<tr><td><strong>Relevance score</strong></td><td data-label="Meaning">The ranker's number for one record, from 0 to 1, records returned highest first. It is not a cosine, and the two are on different scales.</td><td data-label="In the kit">Written on the chunk as <code>rerank_score</code>; it becomes the citation's score (lesson 2.3).</td></tr>
+<tr><td><strong>Pool, top_n</strong></td><td data-label="Meaning">Retrieve, then rerank: the bi-encoder's nearest candidates are the pool; the ranker orders the pool and returns top_n of it.</td><td data-label="In the kit">The pool is <code>TOP_K_RETRIEVE</code>, 20; top_n is the request's <code>top_k</code>, 5 by default and 20 at most.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Some of this comes from earlier pages: lesson B.2 measured the cosine between two embeddings, and lesson B.3 computed an attention head's weights for one sentence, the operation every layer of an encoder runs. This page adds what they are for in retrieval: the training that teaches an encoder to read, and the two shapes an encoder takes when it scores a question against a passage.</p>
+
+<h3 id="setup">Before you run anything: set up your laptop</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>Every cell on this page runs on your own laptop, in a bash shell: the Terminal on macOS or Linux, WSL or Git Bash on Windows, or Cloud Shell in a browser. The Python is 3.12, the version the kit's services run in their images (<code>python:3.12-slim</code>), inside a virtual environment of its own, <code>~/basics-venv</code>, so nothing is installed into the Python your system uses. Most cells need no account and no network. The cells that call Gemini need the Google Cloud project you create in lesson 0.1 and Application Default Credentials, and their labels say so.</p>
+
+<p>Set up the venv once. The block below finds a Python 3.12 or newer, makes the venv the first time and activates it every time after. Then it installs the two libraries the Basics pages use, at fixed versions: numpy for the arithmetic, and google-genai, at the version the kit pins, for the calls to Gemini. The last line proves both import.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in a bash shell on your laptop, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export BASICS_VENV="$HOME/basics-venv"
+PY312="$(command -v python3.12 || command -v python3)"; [ -n "$PY312" ] || PY312="py -3.12"   <span class="cm"># Windows, Git Bash: the py launcher</span>
+[ -d "$BASICS_VENV" ] || $PY312 -m venv "$BASICS_VENV"                                      <span class="cm"># the first time only</span>
+source "$BASICS_VENV/bin/activate" 2&gt;/dev/null || source "$BASICS_VENV/Scripts/activate"   <span class="cm"># macOS and Linux, else Windows</span>
+python -m pip install -q "numpy==2.5.3" "google-genai==2.22.0"                             <span class="cm"># numpy 2.5 needs Python 3.12 or newer</span>
+python -c "import sys, numpy, google.genai as g; print(sys.version.split()[0], numpy.__version__, g.__version__)"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (the first number is your Python's own patch release)</span><span class="ro">read only</span></div><pre tabindex="0">3.12.x 2.5.3 2.22.0</pre></div>
+
+<p>The cells that call Gemini need two more things: your project from lesson 0.1, and Application Default Credentials, the sign-in Google's client libraries read. Run the block below once, after lesson 0.1, in the same shell; the browser opens for the sign-in. It uses the gcloud CLI, which lesson 0.2 installs on a laptop and Cloud Shell already has. As in the kit, Gemini 3 models are called on the <code>global</code> location and the embedding model on <code>us-central1</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run once, for the cells that call Gemini (after lesson 0.1)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud auth application-default login                                <span class="cm"># once: the sign-in client libraries read</span>
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)"     <span class="cm"># the project from lesson 0.1</span>
+gcloud services enable aiplatform.googleapis.com --project "$PROJECT"   <span class="cm"># Vertex AI, where the kit calls Gemini</span>
+echo "PROJECT=$PROJECT"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">PROJECT=documind-ai-YOUR-ID</pre></div>
+
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Pre-training</span><h3>The masked-language idea: fill the blank from both sides</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_4/demo_03_the_masked_language_idea_fill_the_blank_from_both_sides.py" target="_blank" rel="noopener"><code>demo_03_the_masked_language_idea_fill_the_blank_from_both_sides.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>How BERT learned to read without labels, tried on four clauses of the kit's handbook with nothing but counts.</p></div></div>
+
+<h4>Definition</h4>
+<p>BERT was pre-trained on BooksCorpus (800 million words) and English Wikipedia (2,500 million). In every sequence it is shown, 15% of the tokens are chosen; 80% of those become <code>[MASK]</code>, 10% become a random token and 10% stay as they are, so the model can never tell which tokens it will be asked about. It must predict each chosen token's original from a vocabulary of 30,000 word pieces, and it may look both ways to do it, because nothing in an encoder's attention hides the right-hand side. A left-to-right model, the GPT style of lesson B.5, may only look left, because it writes left to right. No person labels anything: the text is the answer key.</p>
+<p>The cell runs the same exercise at toy scale. Its text is four clauses of the kit's handbook, the same four the rest of this page scores. It hides one word, leaves the blank in its sentence (so the hidden word is never counted), and asks the rest of the text which words have stood next to the blank's neighbours: first only the word on its left, then the words on both sides, one count each.</p>
+
+<h4>Do it: hide three words and ask the text for them, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in your venv (a Python cell; no network, Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from collections import Counter
+CLAUSES = {   # four clauses of the kit's handbook, evals/corpus/acme/hr_policy_2026.md
+    "NP-03": ("A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice "
+              "runs from the date the resignation is acknowledged in writing. Unused earned leave may "
+              "not be set off against the notice period."),
+    "PB-02": ("New joiners serve six months on probation at grade E2. During probation the notice "
+              "period is 15 days for either side. Probation may be extended once, by up to three "
+              "months, with written reasons."),
+    "LV-01": ("Earned leave accrues at 1.75 days per completed month. A maximum of 30 days may be "
+              "carried forward into the next calendar year; anything above 30 lapses on 31 December."),
+    "LV-07": ("Earned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be "
+              "encashed during probation and cannot be used to shorten notice."),
+}
+def sentences(text):
+    return [s for s in re.sub(r"([.;?!])\s+", r"\1\n", text).split("\n") if s]
+def words(sentence):
+    return re.findall(r"[a-z0-9]+(?:\.[0-9]+)?", sentence.lower())
+def fill(clause, n, hidden):
+    text = {(c, k): words(s) for c, t in CLAUSES.items() for k, s in enumerate(sentences(t), 1)}
+    toks = text[(clause, n)]
+    j = toks.index(hidden)
+    toks[j] = "[mask]"                     # the training text has a blank here, so the hidden word itself is never counted
+    left, right = toks[j - 1], toks[j + 1]
+    after_left = Counter(t[k + 1] for t in text.values() for k in range(len(t) - 1) if t[k] == left and t[k + 1] != "[mask]")
+    before_right = Counter(t[k] for t in text.values() for k in range(len(t) - 1) if t[k + 1] == right and t[k] != "[mask]")
+    return " ".join(toks).replace("[mask]", "[MASK]"), left, right, after_left, after_left + before_right
+def verdict(counts, hidden):
+    if not counts:
+        return "nothing in the text fits"
+    top = [w for w, n in counts.items() if n == max(counts.values())]
+    if len(top) &gt; 1:
+        return "a tie: " + ", ".join(top) + ("" if hidden in top else "; the hidden word is not among them")
+    return top[0] + (", the hidden word" if top[0] == hidden else ", not the hidden word")
+n_sentences = sum(len(sentences(t)) for t in CLAUSES.values())
+n_words = sum(len(words(s)) for t in CLAUSES.values() for s in sentences(t))
+print(f"the text: {len(CLAUSES)} clauses, {n_sentences} sentences, {n_words} words")
+for clause, n, hidden in (("NP-03", 1, "notice"), ("PB-02", 2, "15"), ("NP-03", 3, "leave")):
+    shown, left, right, one, both = fill(clause, n, hidden)
+    print(f"\n{clause}, sentence {n}: {shown}")
+    print(f"  left only   ({left} _): " + ", ".join(f"{w} {c}" for w, c in one.most_common()) + f"  -&gt; {verdict(one, hidden)}")
+    print(f"  both sides  ({left} _ {right}): " + ", ".join(f"{w} {c}" for w, c in both.most_common()) + f"  -&gt; {verdict(both, hidden)}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell, run when the page was built)</span><span class="ro">read only</span></div><pre tabindex="0">the text: 4 clauses, 11 sentences, 128 words
+
+NP-03, sentence 1: a confirmed employee at grade e3 or above serves a [MASK] period of 60 days
+  left only   (a _): confirmed 1, maximum 1  -&gt; a tie: confirmed, maximum; the hidden word is not among them
+  both sides  (a _ period): notice 2, confirmed 1, maximum 1  -&gt; notice, the hidden word
+
+PB-02, sentence 2: during probation the notice period is [MASK] days for either side
+  left only   (is _): acknowledged 1, encashed 1  -&gt; a tie: acknowledged, encashed; the hidden word is not among them
+  both sides  (is _ days): acknowledged 1, encashed 1, 60 1, 1.75 1, 30 1, 45 1  -&gt; a tie: acknowledged, encashed, 60, 1.75, 30, 45; the hidden word is not among them
+
+NP-03, sentence 3: unused earned [MASK] may not be set off against the notice period
+  left only   (earned _): leave 2  -&gt; leave, the hidden word
+  both sides  (earned _ may): leave 2, probation 1, days 1  -&gt; leave, the hidden word</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three blanks, three outcomes. In the first, the word on the left, <code>a</code>, has been followed by <code>confirmed</code> once and <code>maximum</code> once, so the left side alone ties between two wrong answers. The word on the right, <code>period</code>, has been preceded by <code>notice</code> twice, so with both sides <code>notice</code> wins, 2 against 1. In the second, both sides together offer six candidates and not one of them is <code>15</code>: the right side says a number of days goes here, and no other sentence says which, because the value belongs to this clause alone. In the third, <code>earned</code> on the left is enough; in this text it has only ever been followed by <code>leave</code>.</p>
+<p>The second blank is the line this course is built on. Language teaches a model what kind of word belongs in a blank; only the document says which one. A model that has read billions of words knows that a notice period is counted in days, and it cannot know that ACME's probationers serve 15 of them. That is why DocuMind retrieves the clause and hands it to the model rather than trusting the model's memory.</p></div>
+
+<div class="box box-amber"><div class="box-title">What the counts are not</div>
+<p>BERT does not count neighbours. Its attention reads every token of the sequence at once, not one word on each side; what it knows lives in learned weights (110 million in BERT-base), not in a table of pairs; and it predicts word pieces, so a word it never saw whole can still be spelled from parts. The counts share one thing with it, the objective: fill the blank from the context on both sides, with the text as the answer key.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; Bi-encoder</span><h3>A bi-encoder: two texts, encoded apart, compared by cosine</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_4/demo_04_a_bi_encoder_two_texts_encoded_apart_compared_by_cosine.py" target="_blank" rel="noopener"><code>demo_04_a_bi_encoder_two_texts_encoded_apart_compared_by_cosine.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>One text in, one vector out; the clauses encoded before any question exists; the question scored by arithmetic.</p></div></div>
+
+<h4>Definition</h4>
+<p>A bi-encoder is a function from one text to one vector, and nothing more: it never sees two texts at once. Similarity is computed afterwards, between vectors, usually as a cosine. That one restriction is what makes it fast at scale. The documents' vectors can be made once, ahead of time, and stored; a question then costs one more vector and some arithmetic, and an index can do that arithmetic over millions of stored vectors. The toy below is a bi-encoder you can read: 23 hand-made words, each pointing along one of five named axes (leave, exit, pay, probation, reduce) with a weight. A text's vector is the sum of its known words' vectors, scaled to length 1; every other word is ignored. A real embedding model learns its 768 axes, which nobody can name, but the shape of the job is the same.</p>
+
+<h4>Do it: a five-axis bi-encoder on the four clauses, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in your venv (a Python cell; no network, Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+CLAUSES = {   # four clauses of the kit's handbook, evals/corpus/acme/hr_policy_2026.md
+    "NP-03": ("A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice "
+              "runs from the date the resignation is acknowledged in writing. Unused earned leave may "
+              "not be set off against the notice period."),
+    "PB-02": ("New joiners serve six months on probation at grade E2. During probation the notice "
+              "period is 15 days for either side. Probation may be extended once, by up to three "
+              "months, with written reasons."),
+    "LV-01": ("Earned leave accrues at 1.75 days per completed month. A maximum of 30 days may be "
+              "carried forward into the next calendar year; anything above 30 lapses on 31 December."),
+    "LV-07": ("Earned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be "
+              "encashed during probation and cannot be used to shorten notice."),
+}
+VOCAB = {   # every word the toy knows points along one named axis, with a weight; all other words are ignored
+    "leave": {"leave": 1.0, "earned": 0.8, "unused": 0.6, "accrues": 0.6, "lapses": 0.5, "holidays": 0.9},
+    "exit": {"notice": 1.0, "resignation": 0.9, "resign": 0.9, "exit": 0.9, "quit": 0.9, "period": 0.6},
+    "pay": {"pay": 1.0, "paid": 1.0, "encashed": 1.0, "basic": 0.5},
+    "probation": {"probation": 1.0, "joiners": 0.8, "extended": 0.4},
+    "reduce": {"shorten": 1.0, "cut": 1.0, "set": 0.8, "off": 0.4},
+}
+AXES = list(VOCAB)
+WORDS = {w: (AXES.index(axis), weight) for axis, ws in VOCAB.items() for w, weight in ws.items()}
+def known(text):
+    return [w for w in re.findall(r"[a-z]+", text.lower()) if w in WORDS]
+def encode(text):                          # the bi-encoder: one text in, one vector out, no other text seen
+    v = np.zeros(len(AXES))
+    for w in known(text):
+        axis, weight = WORDS[w]
+        v[axis] += weight                  # pooling: add up the words' vectors...
+    return v / np.linalg.norm(v)           # ...and scale the sum to length 1
+D = np.array([encode(text) for text in CLAUSES.values()])     # at ingest: once per clause, then stored
+QUESTION = "Can I use my unused leave to shorten my notice period?"
+q = encode(QUESTION)                                          # at query time: once per question
+show = lambda v: "[" + ", ".join(f"{a} {x:.3f}" for a, x in zip(AXES, v)) + "]"
+print(f"the toy: {len(WORDS)} words on {len(AXES)} axes; the store: {D.shape[0]} clause vectors of {D.shape[1]} numbers")
+for name, v in zip(CLAUSES, D):
+    print(f"  {name}  {show(v)}")
+print(f"the question: {QUESTION}")
+print(f"  words it knows: {', '.join(known(QUESTION))}")
+print(f"  its vector: {show(q)}")
+print("the cosine with each stored vector, highest first (for vectors of length 1 the dot product is the cosine):")
+for name, score in sorted(zip(CLAUSES, D @ q), key=lambda p: -p[1]):
+    print(f"  {name}  {score:.3f}")
+OTHER = "Will my holidays cut my notice short?"
+print(f"the same question in other words: {OTHER}")
+print("  " + "   ".join(f"{name} {score:.3f}" for name, score in sorted(zip(CLAUSES, D @ encode(OTHER)), key=lambda p: -p[1])))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell, run when the page was built)</span><span class="ro">read only</span></div><pre tabindex="0">the toy: 23 words on 5 axes; the store: 4 clause vectors of 5 numbers
+  NP-03  [leave 0.416, exit 0.885, pay 0.000, probation 0.000, reduce 0.208]
+  PB-02  [leave 0.000, exit 0.356, pay 0.000, probation 0.934, reduce 0.000]
+  LV-01  [leave 1.000, exit 0.000, pay 0.000, probation 0.000, reduce 0.000]
+  LV-07  [leave 0.552, exit 0.375, pay 0.690, probation 0.197, reduce 0.197]
+the question: Can I use my unused leave to shorten my notice period?
+  words it knows: unused, leave, shorten, notice, period
+  its vector: [leave 0.647, exit 0.647, pay 0.000, probation 0.000, reduce 0.404]
+the cosine with each stored vector, highest first (for vectors of length 1 the dot product is the cosine):
+  NP-03  0.926
+  LV-07  0.679
+  LV-01  0.647
+  PB-02  0.230
+the same question in other words: Will my holidays cut my notice short?
+  NP-03 0.876   LV-07 0.638   LV-01 0.537   PB-02 0.212</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The store came first: four rows of five numbers, made before the question existed. LV-01 is all leave, PB-02 mostly probation, NP-03 mostly exit, and LV-07 is spread over all five axes, because the clause says several things. The question leans equally on leave and exit, with some reduce. NP-03 scores 0.926: its notice words meet the question's exit, and its last sentence adds leave and a word that shortens. LV-07, which also answers the question, scores 0.679, only 0.032 above LV-01, which does not: half of LV-07 is about encashment, and its pay axis pulls its one vector away from the question. That is the bi-encoder's weakness in one line: a clause becomes one vector, and the vector is a blend of everything the clause says.</p>
+<p>The paraphrase shares a single word with the clauses, <code>notice</code>, and still ranks them in the same order, because <code>holidays</code> sits on the leave axis and <code>cut</code> on the reduce axis: meaning by direction, not by spelling. And the cost: the four rows were paid for before the question arrived, which in the kit means at ingest; the question cost one encoding and four dot products.</p></div>
+
+<div class="box box-teal"><div class="box-title">What a trained embedding model adds</div>
+<p>Three things the toy lacks. Learned axes: hundreds of them, set by training rather than by hand, so that "resign" and "quit" land near each other without anyone listing them. Context: a trained encoder reads each word with its neighbours, so the leave in "earned leave" and the leave in "leave the company" get different vectors, where this toy gives a spelling one vector wherever it appears. And roles: a task type, so a question's vector is made to be compared with documents' vectors. What does not change is the shape: one text in, one vector out, the comparison afterwards.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Cross-encoder</span><h3>A cross-encoder: one pair, read together, scored once</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_4/demo_05_a_cross_encoder_one_pair_read_together_scored_once.py" target="_blank" rel="noopener"><code>demo_05_a_cross_encoder_one_pair_read_together_scored_once.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The question and the clause as one input, a score that belongs to the pair, and why a cross-encoder only ever reads a shortlist.</p></div></div>
+
+<h4>Definition</h4>
+<p>A cross-encoder takes the pair as its input. BERT's paper packs two texts into one sequence, <code>[CLS]</code> first text <code>[SEP]</code> second text <code>[SEP]</code>, and reads a judgement about the pair off the output vector of <code>[CLS]</code>. A BERT-style reranker is that design, trained on question and passage pairs to say how well the passage answers. Inside, attention runs across the boundary, so every word of the question can bear on every word of the passage: which grade, which way a rule runs, whether a "not" covers the part that matters. The score belongs to the pair and to nothing else, so nothing can be computed before the question arrives.</p>
+<p>The toy's rule reads the pair too. It turns each text into its ideas: the axes of its known words, in order, with repeats merged. Then it scores a clause by its best sentence: how many of the question's ideas that sentence holds in the question's order, gaps allowed, out of all of them. Lining two sequences up against each other is a property of the pair, and the bi-encoder's vectors, being sums, keep no order to line up.</p>
+
+<h4>Do it: the same pairs, read together, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in your venv (a Python cell; no network, Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+CLAUSES = {   # four clauses of the kit's handbook, evals/corpus/acme/hr_policy_2026.md
+    "NP-03": ("A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice "
+              "runs from the date the resignation is acknowledged in writing. Unused earned leave may "
+              "not be set off against the notice period."),
+    "PB-02": ("New joiners serve six months on probation at grade E2. During probation the notice "
+              "period is 15 days for either side. Probation may be extended once, by up to three "
+              "months, with written reasons."),
+    "LV-01": ("Earned leave accrues at 1.75 days per completed month. A maximum of 30 days may be "
+              "carried forward into the next calendar year; anything above 30 lapses on 31 December."),
+    "LV-07": ("Earned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be "
+              "encashed during probation and cannot be used to shorten notice."),
+}
+VOCAB = {   # every word the toy knows points along one named axis, with a weight; all other words are ignored
+    "leave": {"leave": 1.0, "earned": 0.8, "unused": 0.6, "accrues": 0.6, "lapses": 0.5, "holidays": 0.9},
+    "exit": {"notice": 1.0, "resignation": 0.9, "resign": 0.9, "exit": 0.9, "quit": 0.9, "period": 0.6},
+    "pay": {"pay": 1.0, "paid": 1.0, "encashed": 1.0, "basic": 0.5},
+    "probation": {"probation": 1.0, "joiners": 0.8, "extended": 0.4},
+    "reduce": {"shorten": 1.0, "cut": 1.0, "set": 0.8, "off": 0.4},
+}
+AXES = list(VOCAB)
+WORDS = {w: (AXES.index(axis), weight) for axis, ws in VOCAB.items() for w, weight in ws.items()}
+def known(text):
+    return [w for w in re.findall(r"[a-z]+", text.lower()) if w in WORDS]
+def encode(text):                          # the bi-encoder: one text in, one vector out, no other text seen
+    v = np.zeros(len(AXES))
+    for w in known(text):
+        axis, weight = WORDS[w]
+        v[axis] += weight                  # pooling: add up the words' vectors...
+    return v / np.linalg.norm(v)           # ...and scale the sum to length 1
+def sentences(text):
+    return [s for s in re.sub(r"([.;?!])\s+", r"\1\n", text).split("\n") if s]
+def ideas(text):                           # the axes of the words it knows, in order, repeats merged
+    out = []
+    for w in known(text):
+        axis = AXES[WORDS[w][0]]
+        if not out or out[-1] != axis:
+            out.append(axis)
+    return out
+def aligned(q, s):                         # how many of q's ideas s holds in the same order, gaps allowed
+    m = [[0] * (len(s) + 1) for _ in range(len(q) + 1)]
+    for i in range(len(q)):
+        for j in range(len(s)):
+            m[i + 1][j + 1] = m[i][j] + 1 if q[i] == s[j] else max(m[i][j + 1], m[i + 1][j])
+    return m[-1][-1]
+def cross(question, passage):              # the cross-encoder: the pair in, one score out
+    q = ideas(question)
+    best = max(sentences(passage), key=lambda s: aligned(q, ideas(s)))
+    return aligned(q, ideas(best)) / len(q), best
+QUESTION = "Can I use my unused leave to shorten my notice period?"
+q = encode(QUESTION)
+print(f"the question's ideas, in order: {' &gt; '.join(ideas(QUESTION))}")
+print(f"{'clause':8}{'bi-encoder':&gt;12}{'cross-encoder':&gt;15}")
+for name, text in sorted(CLAUSES.items(), key=lambda p: -(encode(p[1]) @ q)):
+    score, best = cross(QUESTION, text)
+    print(f"{name:8}{encode(text) @ q:12.3f}{score:15.2f}")
+    print(f"{'':8}lined up best: {best}")
+SAME, SWAPPED = "Leave cannot be used to shorten notice.", "Notice cannot be used to shorten leave."
+print("the same words, swapped:")
+for text in (SAME, SWAPPED):
+    print(f"  {text:41}{encode(text) @ q:7.3f}{cross(QUESTION, text)[0]:15.2f}")
+print("the two vectors are identical:", bool(np.array_equal(encode(SAME), encode(SWAPPED))))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell, run when the page was built)</span><span class="ro">read only</span></div><pre tabindex="0">the question's ideas, in order: leave &gt; reduce &gt; exit
+clause    bi-encoder  cross-encoder
+NP-03          0.926           1.00
+        lined up best: Unused earned leave may not be set off against the notice period.
+LV-07          0.679           1.00
+        lined up best: Leave cannot be encashed during probation and cannot be used to shorten notice.
+LV-01          0.647           0.33
+        lined up best: Earned leave accrues at 1.75 days per completed month.
+PB-02          0.230           0.33
+        lined up best: During probation the notice period is 15 days for either side.
+the same words, swapped:
+  Leave cannot be used to shorten notice.    0.980           1.00
+  Notice cannot be used to shorten leave.    0.980           0.33
+the two vectors are identical: True</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The two clauses that answer the question score 1.00: NP-03's last sentence and LV-07's last sentence each hold leave, then a word that shortens, then notice, all three of the question's ideas in its order. The two clauses that only share its topic score 0.33: LV-01 holds leave and nothing else, and PB-02's best sentence holds notice and nothing else. Where the bi-encoder put LV-07 0.032 above LV-01, the rule puts two-thirds between them, because it read the one sentence of LV-07 that answers instead of a blend of the whole clause.</p>
+<p>Then the swapped pair. The same words in another order make identical vectors, so the bi-encoder gives both sentences 0.980, though one says the opposite of the other. The rule, reading each against the question, gives 1.00 and 0.33.</p></div>
+
+<h4>Why a cross-encoder only ever reads a shortlist</h4>
+<p>A bi-encoder's work splits in two: the documents' half is done once, at ingest, and the question's half once per question, and what is left is arithmetic. A cross-encoder's work does not split, because the pair is the input. Ranking acme's 1,628 chunks against one question would take 1,628 passes of the model, and the next question as many again. The Sentence-BERT paper (Reimers and Gurevych, 2019), which made BERT-style bi-encoders practical, measured the gap: finding the most similar pair among 10,000 sentences means 49,995,000 pairs for a cross-encoder, about 65 hours of BERT on the authors' hardware, against about 5 seconds for a bi-encoder. So the two are used together: the bi-encoder narrows the corpus to a pool, and the cross-encoder reads only the pool. The kit's code, next, does exactly that.</p>
+
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The kit</span><h3>The kit's two encoders, in its own code</h3><p>Where the question is embedded and where the chunks were, how the two are compared, and what rerank() sends instead of vectors.</p></div></div>
+
+<h4>Definition</h4>
+<p>The kit runs neither encoder itself: both are Google's models, called over the network, and the kit's code decides how each is used. The API's query handler embeds the question once, retrieves the pool with that vector, then reranks the pool. The worker embedded every chunk at ingest, under the document task type; the API embeds every question under the query task type, with the same model, through a client in the same region. The index compares the two by dot product, and the Firestore rung by cosine distance turned into a score; no word of text is read at this stage. Then <code>rerank()</code> sends the question and each candidate's <em>text</em> to the Ranking API, and the ranker's order and scores replace the retrieval's. Nothing here runs today: these are read-only excerpts from the kit you clone in lesson 0.2.</p>
+
+<h4>The order of work: the bi-encoder first, the cross-encoder second</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/query: the question embedded once and the pool retrieved, then the pool reranked</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">with</span> stage(stages, <span class="st">&quot;retrieve&quot;</span>):
+        qvec = embed_query(req.query)                     <span class="cm"># once: the answer cache and the retrieval share it</span>
+        hit = _semantic_hit(req, qvec, fingerprint)
+        chunks = [] <span class="kw">if</span> hit <span class="kw">else</span> retrieve(req.query, req.tenant_id, req.top_k, req.filters, vec=qvec, backend=rbackend)
+...
+        <span class="kw">with</span> stage(stages, <span class="st">&quot;rerank&quot;</span>):
+            chunks = rerank(req.query, chunks, req.top_k, tenant_id=req.tenant_id)</pre></div>
+
+
+<h4>The bi-encoder side: documents at ingest, the question at query time</h4>
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - the document side: one model, the document task type, 768 numbers, a regional client</span><span class="ro">read only</span></div><pre tabindex="0">EMBEDDING_MODEL = os.environ.get(<span class="st">&quot;EMBEDDING_MODEL&quot;</span>, <span class="st">&quot;text-embedding-005&quot;</span>)
+EMBEDDING_VERSION = os.environ.get(<span class="st">&quot;EMBEDDING_VERSION&quot;</span>, <span class="st">&quot;1&quot;</span>)
+EMBEDDING_TASK_TYPE = <span class="st">&quot;RETRIEVAL_DOCUMENT&quot;</span>
+EMBEDDING_DIMENSIONS = <span class="nu">768</span>
+
+_embed = genai.Client(
+    enterprise=<span class="kw">True</span>,
+    project=os.environ[<span class="st">&quot;GOOGLE_CLOUD_PROJECT&quot;</span>],
+    location=<span class="st">&quot;us-central1&quot;</span>,
+)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - embed_all(): every chunk of a document, once, at ingest</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">embed_all</span>(texts: list[str]) -&gt; list[list[float]]:
+    out: list[list[float]] = []
+    <span class="kw">for</span> batch <span class="kw">in</span> batches(texts):
+        response = _embed.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=batch,
+            config={<span class="st">&quot;output_dimensionality&quot;</span>: EMBEDDING_DIMENSIONS, <span class="st">&quot;task_type&quot;</span>: EMBEDDING_TASK_TYPE},
+        )
+        vectors = [list(embedding.values) <span class="kw">for</span> embedding <span class="kw">in</span> (response.embeddings <span class="kw">or</span> [])]
+        <span class="kw">if</span> len(vectors) != len(batch) <span class="kw">or</span> any(<span class="kw">not</span> valid_vector(v) <span class="kw">for</span> v <span class="kw">in</span> vectors):
+            <span class="kw">raise</span> ValueError(<span class="st">&quot;Embedding response must contain one finite 768-dimensional vector per text&quot;</span>)
+        out.extend(vectors)
+    <span class="kw">return</span> out</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - embed_query(): the question side, at query time</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">embed_query</span>(q: str) -&gt; list[float]:
+    <span class="cm"># settings.embed_model is EMBEDDING_MODEL in the environment - the SAME variable the ingest worker stamps on</span>
+    <span class="cm"># every row (variables.tf: embedding_model). Query and document vectors come from one declared model.</span>
+    resp = _genai_client().models.embed_content(
+        model=settings.embed_model, contents=q,
+        config=types.EmbedContentConfig(task_type=<span class="st">&quot;RETRIEVAL_QUERY&quot;</span>, output_dimensionality=<span class="nu">768</span>))
+    <span class="kw">return</span> resp.embeddings[<span class="nu">0</span>].values</pre></div>
+
+<p>These are the two halves of one bi-encoder, in two services. The worker's half runs once per chunk, in batches, and its vectors are stored; the API's half runs once per question and is never stored. Both name the same model and ask for the same 768 numbers, through a client on <code>us-central1</code>. They differ in one setting, the task type, and the difference is deliberate: <code>RETRIEVAL_DOCUMENT</code> and <code>RETRIEVAL_QUERY</code> are a pair the model makes to be compared with each other. The worker stamps the model, its version and the task type on every row, and lesson 1.3 shows how the kit uses that stamp to keep anything embedded another way out of the comparison.</p>
+
+<h4>The comparison: arithmetic on two vectors</h4>
+<div class="cw"><div class="ch-bar"><span>terraform/vector.tf - the index compares the two by dot product</span><span class="ro">read only</span></div><pre tabindex="0">    config {
+      dimensions                  = <span class="nu">768</span>
+      approximate_neighbors_count = <span class="nu">150</span>
+      distance_measure_type       = <span class="st">&quot;DOT_PRODUCT_DISTANCE&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - _firestore_fallback(): the same comparison as a cosine distance, flipped into a score</span><span class="ro">read only</span></div><pre tabindex="0">    hits = (query
+            .find_nearest(<span class="st">&quot;embedding&quot;</span>, Vector(vec),
+                          distance_measure=DistanceMeasure.COSINE,
+                          limit=top_k,
+                          distance_result_field=<span class="st">&quot;d&quot;</span>).get())
+    out = []
+    <span class="kw">for</span> h <span class="kw">in</span> hits:
+        d = h.to_dict()
+        d[<span class="st">&quot;id&quot;</span>] = h.id
+        <span class="cm"># COSINE distance: smaller is closer, so flip it to a score the</span>
+        <span class="cm"># reranker can order the same way it orders Vector Search results.</span>
+        d[<span class="st">&quot;score&quot;</span>] = <span class="nu">1.0</span> - d.pop(<span class="st">&quot;d&quot;</span>, <span class="nu">1.0</span>)
+        d.pop(<span class="st">&quot;embedding&quot;</span>, <span class="kw">None</span>)          <span class="cm"># never ship 768 floats to the model</span></pre></div>
+
+<p>Two stores, one comparison. Vector Search, which answers by default, ranks by dot product; Firestore, the rung beneath it, ranks by cosine distance and flips it into <code>1.0 - distance</code>, so both hand the reranker a similarity in which higher is closer. For vectors of length 1 the two give the same order, which is why the step 7 cell scales its vectors to length 1 before it multiplies. Read the excerpt's last line: on this rung each candidate drops its embedding on the way out, and whichever path found a candidate, what the reranker and the generator read from it is its text.</p>
+
+<h4>The cross-encoder side: text, not vectors, to the Ranking API</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - rerank(): the question and each candidate&#x27;s text, not its vector, to the Ranking API</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">rerank</span>(query: str, chunks: list[dict], k: int, tenant_id: str | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; list[dict]:
+    <span class="st">&quot;&quot;&quot;The Ranking API&#x27;s order, top k - or, when it does not answer inside RERANK_TIMEOUT_S or raises at all,
+    the pool by retrieval score, logged as rerank_fallback (12 September 2026, R06). Before this a slow or absent
+    ranker was a hung request and then a 500; a worse order is a degraded answer, and the row says so.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> <span class="kw">not</span> chunks: <span class="kw">return</span> chunks
+    chunks = chunks[:<span class="nu">200</span>]          <span class="cm"># the Ranking API takes at most 200 records; the pool is TOP_K_RETRIEVE, never more</span>
+    <span class="kw">try</span>:
+        client = _ranker()
+        ranking_config = client.ranking_config_path(
+            project=settings.project_id, location=<span class="st">&quot;global&quot;</span>,
+            ranking_config=<span class="st">&quot;default_ranking_config&quot;</span>)
+        records = [discoveryengine.RankingRecord(id=str(i), content=c[<span class="st">&quot;text&quot;</span>])
+                   <span class="kw">for</span> i, c <span class="kw">in</span> enumerate(chunks)]
+        resp = client.rank(request=discoveryengine.RankRequest(
+            ranking_config=ranking_config,
+            model=settings.rerank_model,
+            top_n=k, query=query, records=records),
+            timeout=settings.rerank_timeout_s)      <span class="cm"># gapic&#x27;s deadline for the whole call, retries included</span>
+    <span class="kw">except</span> Exception <span class="kw">as</span> e:  <span class="cm"># noqa: BLE001 - a deadline, a quota, a client that will not build: one answer</span>
+        logging.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;rerank_fallback&quot;</span>, <span class="st">&quot;tenant&quot;</span>: tenant_id,
+                                    <span class="st">&quot;error&quot;</span>: type(e).__name__}))
+        <span class="kw">return</span> _by_retrieval_score(chunks, k)
+    out = []
+    <span class="kw">for</span> r <span class="kw">in</span> resp.records:
+        chunks[int(r.id)][<span class="st">&quot;rerank_score&quot;</span>] = r.score
+        out.append(chunks[int(r.id)])
+    <span class="kw">return</span> out</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/config.py - the ranker&#x27;s model and the pool&#x27;s width</span><span class="ro">read only</span></div><pre tabindex="0">    rerank_model: str = <span class="st">&quot;semantic-ranker-fast-004&quot;</span>
+...
+    top_k_retrieve: int = Field(<span class="nu">20</span>, alias=<span class="st">&quot;TOP_K_RETRIEVE&quot;</span>)</pre></div>
+
+<p>Everything the cross-encoder needs is in the request: the question, and each candidate's text as a numbered record. No vector is sent; the ranker reads words. The ranking config sits on <code>global</code>, the model is <code>semantic-ranker-fast-004</code>, and <code>top_n</code> is the request's <code>top_k</code>: 5 unless the caller asks for more, up to 20. The response comes back in the ranker's order, and each record's score is written on its chunk as <code>rerank_score</code>, the score a citation carries. The pool is cut to 200 records, the limit the kit's comment gives; Google's Ranking page now lists up to 1,000 a request, and a pool of 20 comes near neither. If the ranker raises or misses its deadline, the pool goes back in retrieval-score order (on the kit's default path, the bi-encoder's order), marked as a fallback; lesson 2.3 forces that on a lane and reads the mark.</p>
+<p>The model is a choice. Google's launch post described <code>semantic-ranker-fast-004</code> as its fastest ranker, for latency-critical use, and <code>semantic-ranker-default-004</code> as its most accurate. Both read up to 1,024 tokens of a record and truncate the rest, and since 1 September 2026 Google's Ranking page also lists 005 versions of both. The kit pins fast-004 in <code>config.py</code>, so a change is one line.</p>
+
+<div class="box box-teal"><div class="box-title">Where the course picks these up</div>
+<p>Lesson 1.3 opens the document side on a lane: the stamp on every row, the batches and the vectors carried over when a document is re-issued. Lesson 2.1 opens the question side: the query's embedding and the filters that travel with it. Lesson 2.3 runs the rerank on a lane: the pool, the scores on the citations, the clock on the stage and the fallback. This page is the idea under all three.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Live</span><h3>One question, four clauses, scored both ways on your project</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_B/lesson_B_4/demo_07_one_question_four_clauses_scored_both_ways_on_your_project.py" target="_blank" rel="noopener"><code>demo_07_one_question_four_clauses_scored_both_ways_on_your_project.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The kit's two calls from your laptop: four embeddings and a cosine each, one rank request and a score each, then the two side by side.</p></div></div>
+
+<h4>One more API</h4>
+<p>The embedding cell uses Vertex AI, which the setup switched on. The Ranking API is served by Discovery Engine, a separate API: switch it on once for your project. Enabling it costs nothing; the ranker bills per request.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run once, in the shell where PROJECT is set (after lesson 0.1)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud services enable discoveryengine.googleapis.com --project "$PROJECT" \
+  &amp;&amp; echo "discoveryengine.googleapis.com is on for $PROJECT"   # the Ranking API: free to enable, billed per request</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">discoveryengine.googleapis.com is on for documind-ai-YOUR-ID</pre></div>
+
+
+<h4>The bi-encoder side: text-embedding-005, a fraction of a paisa</h4>
+<p>The cell is the kit's two embedding calls in miniature. It embeds the four clauses in one request under <code>RETRIEVAL_DOCUMENT</code>, as the worker embeds a document's chunks, and the question under <code>RETRIEVAL_QUERY</code>, as the API embeds a question, with the kit's model, its 768 numbers and its region. Then it scales every vector to length 1 and takes the dot products: four cosines. It saves them to <code>~/b4_bi.json</code> for the comparison. The two requests carry 773 characters between them, about 0.16 paise.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in your venv, PROJECT set (a Python cell; two paid embedding requests)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, json, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import numpy as np
+from google import genai
+PROJECT = os.environ["PROJECT"]
+QUESTION = "Can I use my unused leave to shorten my notice period?"
+CLAUSES = {   # four clauses of the kit's handbook, evals/corpus/acme/hr_policy_2026.md
+    "NP-03": ("A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice "
+              "runs from the date the resignation is acknowledged in writing. Unused earned leave may "
+              "not be set off against the notice period."),
+    "PB-02": ("New joiners serve six months on probation at grade E2. During probation the notice "
+              "period is 15 days for either side. Probation may be extended once, by up to three "
+              "months, with written reasons."),
+    "LV-01": ("Earned leave accrues at 1.75 days per completed month. A maximum of 30 days may be "
+              "carried forward into the next calendar year; anything above 30 lapses on 31 December."),
+    "LV-07": ("Earned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be "
+              "encashed during probation and cannot be used to shorten notice."),
+}
+client = genai.Client(enterprise=True, project=PROJECT, location="us-central1")   # embeddings are regional, as in the kit
+def embed(texts, task):
+    r = client.models.embed_content(model="text-embedding-005", contents=texts,
+                                    config={"output_dimensionality": 768, "task_type": task})
+    return np.array([e.values for e in r.embeddings])
+D = embed(list(CLAUSES.values()), "RETRIEVAL_DOCUMENT")      # the worker's side: every chunk, once, at ingest
+q = embed([QUESTION], "RETRIEVAL_QUERY")[0]                  # the API's side: once per question
+D = D / np.linalg.norm(D, axis=1, keepdims=True)             # length 1, so the dot product below is the cosine
+q = q / np.linalg.norm(q)
+scores = D @ q
+print(f"text-embedding-005 on us-central1: {len(D)} clause vectors (RETRIEVAL_DOCUMENT) and 1 question vector (RETRIEVAL_QUERY), {D.shape[1]} numbers each")
+print("the cosine of the question with each clause, highest first:")
+for name, s in sorted(zip(CLAUSES, scores), key=lambda p: -p[1]):
+    print(f"  {name}  cosine {s:.4f}")
+json.dump({name: float(s) for name, s in zip(CLAUSES, scores)}, open(os.path.expanduser("~/b4_bi.json"), "w"))
+print("saved ~/b4_bi.json for the comparison")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (recorded from the author's run of this cell)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/bi_encoder.txt]</pre></div>
+
+
+<h4>The cross-encoder side: the Ranking API over REST, 8.5 paise</h4>
+<p>The kit calls the ranker through Google's Discovery Engine client library. Your Basics venv has only numpy and google-genai, and REST needs nothing more than libraries google-genai installed with it: <code>google-auth</code>, which turns your Application Default Credentials into an access token (through <code>requests</code>, another of them), and <code>httpx</code>, for the call itself. The path is the kit's ranking config, and the body is the kit's request (the model, the question, one record per clause with its text, and top_n) plus one flag that asks for ids and scores without the texts echoed back. The <code>X-Goog-User-Project</code> header is in Google's own example: with a person's sign-in rather than a service account, it names the project the call is billed to and counted against. Four records are one query, at USD 1 per 1,000 queries of up to 100 records each: Rs 0.085.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in your venv, PROJECT set (a Python cell; one paid rank request)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, json, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import google.auth, httpx
+from google.auth.transport.requests import Request
+PROJECT = os.environ["PROJECT"]
+QUESTION = "Can I use my unused leave to shorten my notice period?"
+CLAUSES = {   # four clauses of the kit's handbook, evals/corpus/acme/hr_policy_2026.md
+    "NP-03": ("A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice "
+              "runs from the date the resignation is acknowledged in writing. Unused earned leave may "
+              "not be set off against the notice period."),
+    "PB-02": ("New joiners serve six months on probation at grade E2. During probation the notice "
+              "period is 15 days for either side. Probation may be extended once, by up to three "
+              "months, with written reasons."),
+    "LV-01": ("Earned leave accrues at 1.75 days per completed month. A maximum of 30 days may be "
+              "carried forward into the next calendar year; anything above 30 lapses on 31 December."),
+    "LV-07": ("Earned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be "
+              "encashed during probation and cannot be used to shorten notice."),
+}
+creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+creds.refresh(Request())                                   # an access token from your Application Default Credentials
+url = (f"https://discoveryengine.googleapis.com/v1/projects/{PROJECT}/locations/global/"
+       "rankingConfigs/default_ranking_config:rank")       # the kit's ranking_config_path(), as a REST path
+body = {"model": "semantic-ranker-fast-004", "query": QUESTION,
+        "records": [{"id": name, "content": text} for name, text in CLAUSES.items()],
+        "topN": len(CLAUSES), "ignoreRecordDetailsInResponse": True}
+r = httpx.post(url, json=body, timeout=30,
+               headers={"Authorization": f"Bearer {creds.token}", "X-Goog-User-Project": PROJECT})
+if r.status_code != 200:
+    raise SystemExit(f"HTTP {r.status_code}: {r.text[:500]}")
+records = r.json()["records"]                              # highest score first
+print(f"semantic-ranker-fast-004 on global: {len(records)} records scored, highest first")
+for rec in records:
+    print(f"  {rec['id']}  score {rec.get('score', 0.0):.4f}")
+json.dump({rec["id"]: rec.get("score", 0.0) for rec in records}, open(os.path.expanduser("~/b4_cross.json"), "w"))
+print("saved ~/b4_cross.json for the comparison")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (recorded from the author's run of this cell)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/cross_encoder.txt]</pre></div>
+
+
+<h4>Side by side, Rs 0</h4>
+<p>The proof of the lesson: the same four pairs, scored both ways. The cell reads the two files, ranks the clauses by each score, and prints three things: each scorer's first choice, how many of the six pairs of clauses the two put in the same order, and how far each score spreads from its highest to its lowest.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in your venv after the two cells above (a Python cell; no network, Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from itertools import combinations
+bi = json.load(open(os.path.expanduser("~/b4_bi.json")))           # the first cell: the cosines
+cross = json.load(open(os.path.expanduser("~/b4_cross.json")))     # the second: the ranker's scores
+by_bi = sorted(bi, key=lambda n: -bi[n])
+by_cross = sorted(cross, key=lambda n: -cross[n])
+print(f"{'clause':8}{'bi-encoder cosine':&gt;19}{'rank':&gt;6}{'cross-encoder score':&gt;21}{'rank':&gt;6}")
+for n in by_bi:
+    print(f"{n:8}{bi[n]:19.4f}{by_bi.index(n) + 1:6}{cross[n]:21.4f}{by_cross.index(n) + 1:6}")
+pairs = list(combinations(by_bi, 2))
+same = sum((bi[a] - bi[b]) * (cross[a] - cross[b]) &gt; 0 for a, b in pairs)
+print(f"first choice: bi-encoder {by_bi[0]}, cross-encoder {by_cross[0]}")
+print(f"pairs of clauses the two put in the same order: {same} of {len(pairs)}")
+print(f"spread, highest minus lowest: bi-encoder {bi[by_bi[0]] - bi[by_bi[-1]]:.4f}, "
+      f"cross-encoder {cross[by_cross[0]] - cross[by_cross[-1]]:.4f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (recorded from the author's run of this cell)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/compare.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two models scored the same four pairs, and only one of them ever saw a pair. Each cosine came from two vectors the embedding model made separately, the clause's under the document task type and the question's under the query task type. Each ranker score came from one call that held the question and the clause's text together. Read the comparison by order, never across the columns by number: a cosine and a relevance score are different quantities on different scales, so a cosine beside a ranker's score says nothing on its own, however far apart they are.</p>
+<p>Then hold it against the toys of steps 4 and 5, whose test was this same question: two clauses that answer it, NP-03 and LV-07, and two that only share its topic, LV-01 and PB-02. See whether the real bi-encoder also scores a topic clause close to an answer, and whether the ranker opens a wider gap between them. That gap is what the kit pays Rs 0.085 a question for.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Where each encoder sits, and what each costs</h3><p>Done ahead or not, one call or a pool's worth, and the rupees per question at the kit's scale.</p></div></div>
+
+<p>The two encoders split the work by when it can be done. Everything below is computed from the kit and from Google's price pages (embeddings per 1,000 characters; ranking per 1,000 queries, a query being up to 100 records), at Rs 85 to the dollar.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th></th><th>Bi-encoder</th><th>Cross-encoder</th></tr></thead>
+<tbody>
+<tr><td><strong>The kit's model</strong></td><td data-label="Bi-encoder"><code>text-embedding-005</code> on <code>us-central1</code></td><td data-label="Cross-encoder"><code>semantic-ranker-fast-004</code> on <code>global</code></td></tr>
+<tr><td><strong>What it reads</strong></td><td data-label="Bi-encoder">one text at a time</td><td data-label="Cross-encoder">the question and one record together</td></tr>
+<tr><td><strong>Done ahead</strong></td><td data-label="Bi-encoder">every chunk, once, at ingest; the vectors are stored with the rows and in the index</td><td data-label="Cross-encoder">nothing: the pair is the input</td></tr>
+<tr><td><strong>Per question</strong></td><td data-label="Bi-encoder">one embedding of the question, then the index's arithmetic over every chunk</td><td data-label="Cross-encoder">one rank request over the pool of 20</td></tr>
+<tr><td><strong>Price</strong></td><td data-label="Bi-encoder">USD 0.000025 per 1,000 characters</td><td data-label="Cross-encoder">USD 1 per 1,000 queries of up to 100 records</td></tr>
+<tr><td><strong>This page's cells</strong></td><td data-label="Bi-encoder">773 characters: 0.16 paise</td><td data-label="Cross-encoder">4 records, one query: Rs 0.085</td></tr>
+<tr><td><strong>One question on a lane</strong></td><td data-label="Bi-encoder">this page's 54-character question: 0.011 paise</td><td data-label="Cross-encoder">20 records, one query: Rs 0.085</td></tr>
+<tr><td><strong>All of acme</strong></td><td data-label="Bi-encoder">1,628 chunks, 2,064,459 characters, once: Rs 4.39</td><td data-label="Cross-encoder">17 queries for every question: Rs 1.445 each</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>For this page's question the ranker costs about 741 times what the question's embedding does, and it still costs only Rs 0.085. The asymmetry is the design. The bi-encoder's expensive half, the corpus, is paid once (Rs 4.39 for acme, and afterwards only for chunks that change); every question after that is nearly free, and fast because it is arithmetic. The cross-encoder pays per question and per record, so the kit gives it the 20 candidates the bi-encoder found and nothing more. Over the whole of acme it would be 17 queries, Rs 1.445, for every question, in two requests (one takes at most 1,000 records), before the wait for 1,628 pairs to be read.</p>
+<p>Where the cross-encoder earns its price is in the two cases this page built by hand: a clause whose one vector is diluted by a second topic, and two texts with the same words and opposite meanings. Where the bi-encoder earns its place is everywhere else: it is the only one of the two that can look at the whole corpus. Neither replaces the other, and when the ranker does not answer, the kit falls back to the retrieval order, not to nothing.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eleven checks, each one block above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>0</td><td data-label="Claim">Your venv is the page's</td><td data-label="The check">the setup block</td><td data-label="Pass looks like"><code>3.12.x 2.5.3 2.22.0</code></td></tr>
+<tr><td>1</td><td data-label="Claim">Both sides fill a blank the left side cannot</td><td data-label="The check">step 3, the first blank</td><td data-label="Pass looks like">left only: a tie between <code>confirmed</code> and <code>maximum</code>; both sides: <code>notice 2</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Language gives the kind of word; the document gives the value</td><td data-label="The check">step 3, the second blank</td><td data-label="Pass looks like">six candidates, and <code>15</code> is not among them</td></tr>
+<tr><td>3</td><td data-label="Claim">A bi-encoder scores texts it encoded apart</td><td data-label="The check">step 4</td><td data-label="Pass looks like">4 stored vectors of 5 numbers; NP-03 0.926, LV-07 0.679, LV-01 0.647, PB-02 0.230</td></tr>
+<tr><td>4</td><td data-label="Claim">The same words make the same vector</td><td data-label="The check">step 5, the swapped pair</td><td data-label="Pass looks like">0.980 for both; <code>the two vectors are identical: True</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A cross-encoder scores the pair</td><td data-label="The check">step 5</td><td data-label="Pass looks like">NP-03 and LV-07 1.00; LV-01 and PB-02 0.33; the swapped pair 1.00 and 0.33</td></tr>
+<tr><td>6</td><td data-label="Claim">The kit embeds chunks and questions under two task types</td><td data-label="The check">step 6, the bi-encoder side</td><td data-label="Pass looks like"><code>RETRIEVAL_DOCUMENT</code> in indexer.py, <code>RETRIEVAL_QUERY</code> in retriever.py, one model</td></tr>
+<tr><td>7</td><td data-label="Claim">The kit reranks text, not vectors</td><td data-label="The check">step 6, rerank()</td><td data-label="Pass looks like"><code>content=c["text"]</code> in each record; <code>rerank_score</code> written back</td></tr>
+<tr><td>8</td><td data-label="Claim">The real bi-encoder</td><td data-label="The check">step 7, the first cell</td><td data-label="Pass looks like">4 clause vectors and 1 question vector of 768 numbers; four cosines</td></tr>
+<tr><td>9</td><td data-label="Claim">The real cross-encoder</td><td data-label="The check">step 7, the second cell</td><td data-label="Pass looks like">4 records scored, each from 0 to 1, highest first</td></tr>
+<tr><td>10</td><td data-label="Claim">Bi-encoder scores against cross-encoder scores for one query</td><td data-label="The check">step 7, the third cell</td><td data-label="Pass looks like">both columns side by side, with each one's first choice, the pairs in the same order and the spread</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your laptop</div>
+<p>Two small files in your home folder, <code>b4_bi.json</code> and <code>b4_cross.json</code>, written by step 7's cells and read by the comparison; delete them whenever you like. The Discovery Engine API is now on for your project; being on costs nothing, and the ranker bills per request. Step 7 made three paid requests, two to the embedding model and one to the ranker, about Rs 0.087 together. Everything else ran offline in <code>~/basics-venv</code>, and no cell installed anything. Lesson B.5 turns from the encoder to the decoder: the GPT-style model that writes the answer one token at a time, and why the same prompt can come back with different answers.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Basics &middot; Lesson B.4 Encode with BERT-style models: embeddings and rankers &middot; v5.0</p><p>Next: Lesson B.5 Generate with GPT-style models: decoding and run-to-run variance.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var D = {"axes":["leave","exit","pay","probation","reduce"],"words":{"leave":[0,1.0],"earned":[0,0.8],"unused":[0,0.6],"accrues":[0,0.6],"lapses":[0,0.5],"holidays":[0,0.9],"notice":[1,1.0],"resignation":[1,0.9],"resign":[1,0.9],"exit":[1,0.9],"quit":[1,0.9],"period":[1,0.6],"pay":[2,1.0],"paid":[2,1.0],"encashed":[2,1.0],"basic":[2,0.5],"probation":[3,1.0],"joiners":[3,0.8],"extended":[3,0.4],"shorten":[4,1.0],"cut":[4,1.0],"set":[4,0.8],"off":[4,0.4]},"passages":[["NP-03","Notice period","A confirmed employee at grade E3 or above serves a notice period of 60 days. Notice runs from the date the resignation is acknowledged in writing. Unused earned leave may not be set off against the notice period."],["PB-02","Probation","New joiners serve six months on probation at grade E2. During probation the notice period is 15 days for either side. Probation may be extended once, by up to three months, with written reasons."],["LV-01","Earned leave","Earned leave accrues at 1.75 days per completed month. A maximum of 30 days may be carried forward into the next calendar year; anything above 30 lapses on 31 December."],["LV-07","Leave on exit","Earned leave is encashed on exit at basic pay, capped at 45 days. Leave cannot be encashed during probation and cannot be used to shorten notice."],["LV-07, cut","its last clause alone","Leave cannot be used to shorten notice."],["swapped","the same words, the other way round","Notice cannot be used to shorten leave."]],"presets":["Can I use my unused leave to shorten my notice period?","Can my notice period be used to shorten my unused leave?","Is earned leave paid out when I resign?"]};
+function known(t){ var m = String(t).toLowerCase().match(/[a-z]+/g) || []; return m.filter(function(w){ return Object.prototype.hasOwnProperty.call(D.words, w); }); }
+function encode(t){ var v = D.axes.map(function(){ return 0; }), n = 0, i;
+  known(t).forEach(function(w){ v[D.words[w][0]] += D.words[w][1]; });
+  for (i = 0; i < v.length; i++) { n += v[i] * v[i]; }
+  n = Math.sqrt(n); return n ? v.map(function(x){ return x / n; }) : null; }
+function dot(a, b){ var s = 0, i; for (i = 0; i < a.length; i++) { s += a[i] * b[i]; } return s; }
+function sentences(t){ return String(t).replace(/([.;?!])\s+/g, '$1\n').split('\n').filter(function(s){ return s; }); }
+function ideas(t){ var out = []; known(t).forEach(function(w){ var a = D.axes[D.words[w][0]]; if (!out.length || out[out.length - 1] !== a) { out.push(a); } }); return out; }
+function aligned(q, s){ var m = [], i, j;
+  for (i = 0; i <= q.length; i++) { m.push([]); for (j = 0; j <= s.length; j++) { m[i].push(0); } }
+  for (i = 0; i < q.length; i++) { for (j = 0; j < s.length; j++) { m[i + 1][j + 1] = q[i] === s[j] ? m[i][j] + 1 : Math.max(m[i][j + 1], m[i + 1][j]); } }
+  return m[q.length][s.length]; }
+function cross(question, passage){ var q = ideas(question), best = null, bestN = -1;
+  sentences(passage).forEach(function(s){ var n = aligned(q, ideas(s)); if (n > bestN) { bestN = n; best = s; } });
+  return q.length ? [bestN / q.length, best] : [null, null]; }
+var root = document.getElementById('pairs'); if (!root) { return; }
+var sel = document.getElementById('pe-q'), own = document.getElementById('pe-own'), ownL = document.getElementById('pe-own-l'),
+    sum = document.getElementById('pe-sum'), out = document.getElementById('pe-out');
+var STORE = D.passages.map(function(p){ return encode(p[2]); });   /* every passage encoded once, before any question */
+function el(tag, cls, text){ var e = document.createElement(tag); if (cls) { e.className = cls; } if (text !== undefined) { e.textContent = text; } return e; }
+function bar(kind, value, digits, cls){ var row = el('div', 'pe-bar'), track = el('div', 'pe-track'), fillEl = el('div', 'pe-fill' + (cls ? ' ' + cls : ''));
+  fillEl.style.width = (value === null ? 0 : Math.max(0, Math.min(1, value)) * 100).toFixed(1) + '%';
+  track.appendChild(fillEl); row.appendChild(el('span', '', kind)); row.appendChild(track); row.appendChild(el('span', '', value === null ? '-' : value.toFixed(digits))); return row; }
+function render(){
+  var useOwn = sel.value === 'own', q = useOwn ? own.value : D.presets[Number(sel.value)], v = encode(q);
+  ownL.className = 'pe-l pe-own' + (useOwn ? ' on' : '');
+  out.textContent = '';
+  if (!v) { sum.textContent = String(q).trim() ? 'none of these words is among the toy\'s ' + Object.keys(D.words).length + ': try leave, notice, shorten, paid, probation or quit'
+                                           : 'type a question: the toy knows ' + Object.keys(D.words).length + ' words, among them leave, notice, shorten, paid, probation and quit'; return; }
+  sum.textContent = 'words it knows: ' + known(q).join(', ') + ' | vector: ' + D.axes.map(function(a, i){ return a + ' ' + v[i].toFixed(3); }).join(', ') + ' | ideas in order: ' + ideas(q).join(' > ');
+  D.passages.forEach(function(p, k){
+    var c = cross(q, p[2]), row = el('div', 'pe-row'), head = el('div', 'pe-id');
+    head.appendChild(el('b', '', p[0])); head.appendChild(document.createTextNode(' ' + p[1])); row.appendChild(head);
+    row.appendChild(bar('bi-encoder', dot(STORE[k], v), 3, ''));
+    row.appendChild(bar('cross-encoder', c[0], 2, 'x'));
+    row.appendChild(el('div', 'pe-why', c[0] ? 'lined up best: ' + c[1] : 'none of the question\'s ideas is in any sentence'));
+    out.appendChild(row);
+  });
+}
+sel.addEventListener('change', render); own.addEventListener('input', render); render();
+})();
+</script>
+</body>
+</html>

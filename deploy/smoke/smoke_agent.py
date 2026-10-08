@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Live smoke test for the A2A peer (lesson 8.4) - three protocols in one request, five checks.
+
+    make smoke-agent PROJECT=...                      # from deploy/, after documind-agent is deployed
+    DOCUMIND_AGENT_URL=https://documind-agent-NUMBER.REGION.run.app \\
+      DOCUMIND_IMPERSONATE_SA=documind-ui-sa@PROJECT.iam.gserviceaccount.com python smoke/smoke_agent.py
+
+    1. the agent card WITHOUT a token   -> refused by Cloud Run IAM (401/403): the peer is private
+    2. the agent card with a token      -> 200, and the card's address is this service's url
+    3. message/send (selected fixture) -> a completed task with the expected answer value
+    4. message/send naming tenant zeta  -> the roster's refusal, relayed by the peer (its account is on acme only)
+    5. message/send as the OUTSIDER, with a token -> 403 at the door (Cloud Run IAM). The peer has no roster of
+       its own, so IAM is the only refusal it has; a project-wide roles/run.invoker made this call ANSWER until
+       12 September 2026 (sa.tf's caller graph). Skipped, with a line, when no token can be minted as the
+       outsider (DOCUMIND_OUTSIDER_SA, or documind-outsider-sa in the member account's project).
+
+Plain urllib and JSON-RPC - no a2a-sdk in the shell. The message shape is the one the ADK-served
+A2A 1.x endpoint accepts (proven offline against a2a-sdk 1.1.2 + google-adk 2.8.0, 8 Sept 2026):
+    {"role": "user", "kind": "message", "messageId": ..., "parts": [{"kind": "text", "text": ...}]}
+The identity is the CALLER's ID token, minted for THIS service's url; the peer speaks to the lane
+as documind-agent-sa - A2A carries no identity of its own, which is what check 4 demonstrates.
+
+DOCUMIND_SMOKE_QUESTION selects the question. The default gratuity question expects five years;
+the runbook's Acme probation question expects six months. Other questions require
+DOCUMIND_SMOKE_EXPECTED_PATTERN, a case-insensitive Python regex for their expected answer.
+Known fixture questions always use their own expectation. This checks the answer value and
+task completion; the API/MCP citation checkpoints separately verify grounded retrieval.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+import uuid
+
+AGENT_URL = os.environ.get("DOCUMIND_AGENT_URL", "").rstrip("/")
+IMPERSONATE = os.environ.get("DOCUMIND_IMPERSONATE_SA", "")
+OUTSIDER = os.environ.get("DOCUMIND_OUTSIDER_SA", "")
+DEFAULT_QUESTION = "After how many years of continuous service does gratuity become payable?"
+PROBATION_QUESTION = "What is the probation period in the Acme HR policy?"
+QUESTION = os.environ.get("DOCUMIND_SMOKE_QUESTION", DEFAULT_QUESTION)
+passed, failed = [], []
+
+
+def expected_answer_pattern(question: str, custom_pattern: str = "") -> re.Pattern:
+    """Select an exact fixture; unknown questions must supply their expectation."""
+    normalize = lambda value: " ".join(value.casefold().split()).rstrip("?")
+    fixtures = {
+        normalize(DEFAULT_QUESTION): r"\b(?:five|5)(?:\s*\(\s*(?:five|5)\s*\))?[\s-]+years?\b",
+        normalize(PROBATION_QUESTION): r"\b(?:six|6)(?:\s*\(\s*(?:six|6)\s*\))?[\s-]+months?\b",
+    }
+    if not question.strip():
+        raise ValueError("DOCUMIND_SMOKE_QUESTION must not be empty")
+    pattern = fixtures.get(normalize(question)) or custom_pattern
+    if not pattern:
+        raise ValueError("Custom DOCUMIND_SMOKE_QUESTION requires DOCUMIND_SMOKE_EXPECTED_PATTERN")
+    compiled = re.compile(pattern, re.IGNORECASE)
+    if compiled.search(""):
+        raise ValueError("DOCUMIND_SMOKE_EXPECTED_PATTERN must require a nonempty answer value")
+    return compiled
+
+
+def task_answer_matches(status: int, response, text: str, expected: re.Pattern) -> bool:
+    if status != 200 or not isinstance(response, dict) or "error" in response:
+        return False
+    result = response.get("result")
+    if not isinstance(result, dict) or not isinstance(result.get("status"), dict):
+        return False
+    # Ignore presentation markup, not content, before checking the fixture value.
+    plain = re.sub(r"[*_`]", "", text or "")
+    return result["status"].get("state") == "completed" and bool(expected.search(plain))
+
+
+def ok(name, detail=""):
+    passed.append(name); print(f"  [PASS] {name}  {detail}")
+
+
+def bad(name, detail=""):
+    failed.append(name); print(f"  [FAIL] {name}  {detail}")
+
+
+def token_as(sa: str) -> str | None:
+    if not sa:
+        return None
+    try:
+        out = subprocess.run(["gcloud", "auth", "print-identity-token", "--include-email",
+                              f"--impersonate-service-account={sa}", f"--audiences={AGENT_URL}"],
+                             capture_output=True, text=True, check=True)
+        return out.stdout.strip()
+    except Exception as e:  # noqa: BLE001
+        print(f"  (could not mint a token as {sa}: {getattr(e, 'stderr', '') or e})".strip()[:300])
+        return None
+
+
+def outsider_account(impersonate: str, explicit: str = "") -> str:
+    """The eval gate's outsider (sa.tf): DOCUMIND_OUTSIDER_SA when set - smoke-chat and smoke-mcp pass it -
+    else the account the Makefile names, in the project the member account lives in. Empty when neither."""
+    if explicit:
+        return explicit
+    if "@" in impersonate:
+        return "documind-outsider-sa@" + impersonate.split("@", 1)[1]
+    return ""
+
+
+def http(path: str, token: str | None, body: dict | None = None, timeout: int = 180):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f"{AGENT_URL}{path}", data=data, method="POST" if data else "GET")
+    req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw, status = r.read().decode(), r.status
+    except urllib.error.HTTPError as e:
+        raw, status = e.read().decode(), e.code
+    try:
+        return status, json.loads(raw)
+    except ValueError:
+        return status, raw[:300]
+
+
+def send(token: str | None, text: str):
+    """message/send -> (status, task-or-error, the agent's text)."""
+    body = {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/send",
+            "params": {"message": {"role": "user", "kind": "message", "messageId": str(uuid.uuid4()),
+                                   "parts": [{"kind": "text", "text": text}]}}}
+    status, j = http("/", token, body)
+    result = j.get("result", {}) if isinstance(j, dict) else {}
+    texts = [p.get("text", "") for a in result.get("artifacts", []) for p in a.get("parts", []) if p.get("kind") == "text"]
+    if not texts:   # a Message result, or a task whose answer sits in the history
+        for m in ([result] if result.get("kind") == "message" else result.get("history", []))[::-1]:
+            if m.get("role") == "agent":
+                texts = [p.get("text", "") for p in m.get("parts", []) if p.get("kind") == "text"]
+                if texts:
+                    break
+    return status, j, "\n".join(t for t in texts if t)
+
+
+def main() -> int:
+    if not AGENT_URL:
+        print("DOCUMIND_AGENT_URL is not set - this is a LIVE test, run it after documind-agent is deployed.")
+        print(__doc__)
+        return 2
+    try:
+        expected = expected_answer_pattern(QUESTION, os.environ.get("DOCUMIND_SMOKE_EXPECTED_PATTERN", ""))
+    except (ValueError, re.error) as error:
+        print(f"STOP: {error}")
+        return 2
+    print(f"\n  DocuMind A2A peer - live smoke test\n  target: {AGENT_URL}\n  " + "-" * 56)
+    print(f"  question: {QUESTION}\n  expected answer pattern: {expected.pattern}")
+    card_path = "/.well-known/agent-card.json"
+
+    # 1. private: the card is behind IAM
+    status, _ = http(card_path, None)
+    (ok if status in (401, 403) else bad)("card refused without a token", f"status={status}")
+
+    # 2. the card, as a caller IAM admits; its address is this service
+    member = token_as(IMPERSONATE)
+    status, card = http(card_path, member)
+    if status == 200 and isinstance(card, dict):
+        ifaces = card.get("supportedInterfaces") or card.get("supported_interfaces") or []
+        addr = card.get("url") or (ifaces[0].get("url") if ifaces else "")
+        skills = [s.get("id") for s in card.get("skills", [])]
+        (ok if AGENT_URL.split("//", 1)[1] in str(addr) else bad)("agent card", f"name={card.get('name')} url={addr} skills={skills}")
+    else:
+        bad("agent card", f"status={status} {str(card)[:120]}")
+
+    # 3. completed task and the selected fixture's answer value
+    status, j, text = send(member, QUESTION)
+    result = j.get("result") if isinstance(j, dict) else None
+    task_status = result.get("status") if isinstance(result, dict) else None
+    state = task_status.get("state") if isinstance(task_status, dict) else None
+    if task_answer_matches(status, j, text, expected):
+        ok("task answered", f"state={state}  {text[:90]!r}")
+    else:
+        bad("task answered", f"status={status} state={state} expected={expected.pattern!r} "
+            f"text={text[:300]!r} err={(j.get('error') if isinstance(j, dict) else j)}")
+
+    # 4. the roster refusal, relayed: the peer's account is on acme only
+    status, j, text = send(member, f"For tenant zeta: {QUESTION}")
+    low = text.lower()
+    (ok if status == 200 and any(w in low for w in ("roster", "not on", "refus", "cannot", "not a member", "no access")) else bad)(
+        "zeta refused by the roster", f"{text[:110]!r}")
+
+    # 5. the outsider WITH a token: refused at the door. Every other surface lets this account knock and
+    #    refuses it by the roster; the peer has no roster and speaks to the lane as itself, so Cloud Run IAM
+    #    is the only refusal it has - and a project-wide roles/run.invoker made this call answer, as acme,
+    #    until 12 September 2026 (sa.tf's caller graph: ui-sa and chat-sa may call the peer, nobody else).
+    outsider_sa = outsider_account(IMPERSONATE, OUTSIDER)
+    outsider = token_as(outsider_sa) if outsider_sa else None
+    if not outsider:
+        print(f"  [SKIP] outsider refused at the door  (no token as {outsider_sa or 'documind-outsider-sa'}: "
+              f"set DOCUMIND_OUTSIDER_SA, and `make operators` grants the minting)")
+    else:
+        status, j, text = send(outsider, QUESTION)
+        detail = f"status={status}"
+        if status == 401:
+            detail += "  - the token itself was refused (audience?), which proves nothing about the door"
+        elif status != 403:
+            detail += (f"  {(text or str(j))[:100]!r}  - the peer ANSWERED an outsider: a project-wide "
+                       f"roles/run.invoker admits it; sa.tf's caller graph says only ui-sa and chat-sa may call")
+        (ok if status == 403 else bad)("outsider refused at the door", detail)
+
+    print("  " + "-" * 56 + f"\n  {len(passed)} passed, {len(failed)} failed\n")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

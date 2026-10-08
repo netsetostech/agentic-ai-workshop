@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 9.4 Compare actual backends and verify shutdown behavior - one table, the model behind each row, a floor that is not a count, zero GPU instances | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.rb-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:0 10px;}
+.pc-in{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,130px),1fr));gap:8px 12px;margin:6px 0;}
+.pc-in label{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.pc-in select{font:inherit;font-size:16px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;box-sizing:border-box;}
+.pc-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.55;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.pc-box b.h{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;margin:6px 0 4px;}
+.rb-out{margin:6px 0 0;font-size:12.5px;line-height:1.6;}
+.rb-out div{margin:0 0 4px;}
+.rb-out .pass{color:var(--teal-dark);font-weight:600;}
+.rb-out .stop{color:#9a3412;font-weight:600;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 9 &middot; Serving &middot; Lesson 9.4</div>
+<h1>Compare actual backends and verify shutdown behavior: <span>one table, the model behind each row, a floor that is not a count, and zero GPU instances</span></h1>
+<p>The chapter ends with two questions a production team asks before it keeps a self-hosted model. Is the small model good enough, and at what price? And when the day is over, is the GPU really off? The kit answers the first with <code>make compare</code>, a table of four numbers a backend. It answers the second with <code>make off</code>, which lowers four floors to zero.</p>
+<p>In this lesson you read what the table measures and what it cannot see. Then you run the kit's own comparison with a recorder beside it, which keeps what the table drops: the route each row asked for, the model that actually answered, and the price the gateway charged. Last, you switch the lane off and prove it from the instance count Google keeps, not from the floor.</p>
+<div class="hero-chips"><div class="hero-chip">make compare</div><div class="hero-chip">compare_backends.py</div><div class="hero-chip">groundedness</div><div class="hero-chip">citation precision</div><div class="hero-chip">p95</div><div class="hero-chip">Rs per 1k queries</div><div class="hero-chip">x-litellm-response-cost</div><div class="hero-chip">make off</div><div class="hero-chip">min-instances</div><div class="hero-chip">instance_count</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A table you can trust, and a GPU you can prove is off</a></li>
+<li><a href="#s2">The words: make compare, groundedness, citation precision, p95, Rs per 1k, a rate, the recorder, make off, a floor, instance_count</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The table's maths, read</a></li>
+<li><a href="#s4">The comparison, with the actual backends</a></li>
+<li><a href="#s5">Everything off</a></li>
+<li><a href="#s6">Zero GPU instances</a></li>
+<li><a href="#s7">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what <code>make compare</code> measures, where its context comes from, and why a row can be scored under the wrong model's name. You will learn why a floor of zero is not zero instances. Then you will prove it on your lane: the comparison table with the model behind every row, and zero GPU instances.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A table you can trust, and a GPU you can prove is off</h3><p>What the comparison measures, what a row cannot see, the small model's rupees, and what "off" means for a GPU.</p></div></div>
+
+<p><strong>The comparison.</strong> <code>make compare</code> takes the first 20 golden questions and asks each of them of every backend it is given, through the gateway: <code>documind-general</code> and <code>documind-slm</code> by default. For each question it retrieves once and hands every backend the same context, so that the only variable between rows is the model. Each answer comes back as JSON, and the script prints four numbers a backend:</p>
+<ul>
+<li><strong>Groundedness:</strong> the answerable rows it answered with every <code>must_contain</code> phrase.</li>
+<li><strong>Citation precision:</strong> the cited chunks the golden set expects, over all the chunks it cited.</li>
+<li><strong>p95 latency:</strong> the round trip to the gateway; the number a dashboard alerts on.</li>
+<li><strong>Rs per 1k queries:</strong> a row's mean cost, times a thousand.</li>
+</ul>
+
+<p><strong>Where the context comes from.</strong> "Retrieves once" means asking the API. <code>shared/documind_tools.retrieve()</code> posts the question to <code>/v1/query</code>, the live revision answers it with Gemini, and the comparison keeps that answer's citations. What each backend receives is those citations' quotes: the words Gemini chose. So the small model is judged on restating Gemini's evidence, not on reading the retrieved chunks.</p>
+
+<p><strong>What a row records.</strong> A row is labelled with the route it asked for, and priced at the script's own rate for that route. It keeps the answer and the token counts, but neither the model that answered nor the gateway's cost header.</p>
+<ul>
+<li><strong>When the gateway moves a request</strong> (the hook re-routing RESTRICTED text, or a fallback when a backend fails), the row still carries the route's name and price.</li>
+<li><strong>The vLLM route is the plain case.</strong> With no vLLM service deployed, <code>documind-inference</code> is answered by its fallback, the small model. The script, which has no price for that route, charges it at Gemini's rates.</li>
+</ul>
+
+<p><strong>The small model's rupees are a rate.</strong> The script derives 20.50 USD a million tokens from the L4's Rs 86,904 a month over about 50 million tokens. The bill is the GPU's hour, Rs 120.78 of it. At another volume the real price of a question can be far above or below the rate; the panel below shows how far.</p>
+
+<p><strong>Shutdown.</strong> <code>make off</code> lowers the floors: min-instances 0 on the small model, the vLLM service, the gateway and the UI. It also removes the GKE workload, then prints each floor. Three more controls sit around it: the nightly job does the same at 23:00 IST, an alarm fires after two hours of any GPU instance, and <code>make gpu-cap</code> caps the L4 quota. But a floor is not a count. An idle GPU instance may live up to 10 minutes after its last request, billed, whatever the floor says. So zero GPU instances is a measurement: Cloud Monitoring's <code>instance_count</code>, read after the idle window.</p>
+
+<div class="analogy"><div class="analogy-icon">&#129367;</div><div>
+<p><strong>A caterer's tasting in Hyderabad, and the gas meter at closing time.</strong> The caterer tries a cheaper cook against the head cook on twenty dishes. Each plate goes out with a slip naming the cook it was ordered from, priced from the menu by that name. If the new cook was busy and the head cook covered, the slip still names the new cook, at his price. And both cooks are handed the ingredients the head cook picked for his own version of the dish.</p>
+<p>At closing, the manager sets the minimum staff to nobody and goes home. The burners stay lit until the last cook leaves, up to ten minutes later, and the gas is paid for. The only proof the kitchen is off is the meter.</p>
+<p>The tasting is <code>make compare</code>, and the slip is the row's label and price. Covering is the gateway's fallback or re-route, and the head cook's ingredients are the quotes from the API's answer. The minimum staff is min-instances, the burners are the GPU instance, and the meter is <code>instance_count</code>.</p></div></div>
+
+<h4>The table's rupees, and the bill's</h4>
+<p>The table prices the small model at its rate, but the bill is the GPU's hour. Pick a volume, the tokens in each question and answer, the hours your traffic spans and the days. The boxes show the table's rupees per 1,000 questions, the bill's, and Gemini's for the same tokens.</p>
+
+<div class="diagram pc" id="rb">
+<div class="dg-title">A rate and a bill: rupees per 1,000 questions to the small model, and to Gemini</div>
+<div class="pc-in"><label>Questions<select id="rb-q"><option value="100">100 a day</option><option value="1000" selected>1,000 a day</option><option value="10000">10,000 a day</option><option value="50000">50,000 a day</option></select></label>
+<label>Tokens in<select id="rb-in"><option value="500">500 in</option><option value="1000" selected>1,000 in</option><option value="2000">2,000 in</option></select></label>
+<label>Tokens out<select id="rb-out"><option value="60" selected>60 out</option><option value="200">200 out</option></select></label>
+<label>Traffic spans<select id="rb-win"><option value="10" selected>10 hours a day</option><option value="24">round the clock</option></select></label>
+<label>Days a month<select id="rb-days"><option value="22" selected>22 (working days)</option><option value="30">30 (every day)</option></select></label></div>
+<div class="rb-cols">
+<div class="pc-box"><b class="h">The table: the rate</b><div class="rb-out" id="rb-table" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The bill: the GPU's hour</b><div class="rb-out" id="rb-bill" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">Gemini, the same tokens</b><div class="rb-out" id="rb-gem" aria-live="polite"></div></div>
+</div>
+<p class="dg-cap">The rate and Gemini's prices are the script's own table, which matches <code>config.yaml</code> for these two routes. The hour is Google's price for the L4 shape <code>make deploy-slm</code> deploys in <code>us-central1</code>, and the 10 idle minutes are Cloud Run's limit for a GPU instance. The sums are compared with a Python version on all 96 combinations.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It assumes one instance keeps up with the traffic (the service allows one, four requests at a time), and that the traffic fills its window with no idle gaps. It prices the small model's instance only: not the gateway or the API around it.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: make compare, groundedness, citation precision, p95, Rs per 1k, a rate, the recorder, make off, a floor, instance_count</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>make compare</strong></td><td data-label="Meaning">The kit's backend comparison: the first 20 golden questions, one retrieval each, every backend through the gateway.</td><td data-label="On your lane"><code>documind-general</code> and <code>documind-slm</code> by default</td></tr>
+<tr><td><strong>Groundedness</strong></td><td data-label="Meaning">Answered, with every <code>must_contain</code> phrase, over the answerable rows.</td><td data-label="On your lane">step 4</td></tr>
+<tr><td><strong>Citation precision</strong></td><td data-label="Meaning">Cited chunks the golden set names, over all cited chunks.</td><td data-label="On your lane">a chunk id carries its clause code: <code>acme:hr_policy_2026#NP-03</code></td></tr>
+<tr><td><strong>p95 latency</strong></td><td data-label="Meaning">The 95th percentile of the sorted round trips.</td><td data-label="On your lane">on 20 rows, the 19th</td></tr>
+<tr><td><strong>Rs per 1k queries</strong></td><td data-label="Meaning">A row's mean cost times 1,000, at the script's own prices.</td><td data-label="On your lane">the small model's is a rate</td></tr>
+<tr><td><strong>A rate</strong></td><td data-label="Meaning">A price per token, derived from an hourly bill at an assumed volume.</td><td data-label="On your lane">Rs 86,904 a month over about 50 million tokens</td></tr>
+<tr><td><strong>The recorder</strong></td><td data-label="Meaning">This lesson's addition: for each row, the route asked, the model that answered and the gateway's cost header.</td><td data-label="On your lane">beside <code>make compare</code>'s own pass</td></tr>
+<tr><td><strong>make off</strong></td><td data-label="Meaning">Four floors to zero, the GKE workload removed, the floors printed.</td><td data-label="On your lane">the nightly job does the same at 23:00 IST</td></tr>
+<tr><td><strong>A floor</strong></td><td data-label="Meaning">min-instances: how many instances Cloud Run keeps, busy or not.</td><td data-label="On your lane">0 on the small model since <code>make deploy-slm</code></td></tr>
+<tr><td><strong>instance_count</strong></td><td data-label="Meaning">Cloud Monitoring's gauge of a service's instances, active or idle, sampled every minute.</td><td data-label="On your lane">the only proof of zero</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a floor is a setting, and an instance count is a fact. <code>make off</code> changes the setting. Only the count, read after the idle window, says the GPU stopped.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_09/lesson_9_4/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_09/lesson_9_4/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_09/lesson_9_4/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code> and <code>NUMBER</code> set by the setup above.</p>
+<ul>
+<li><strong>The gateway from lesson 9.1, the small model from lesson 9.2, and the API answering.</strong> The comparison asks the API for each question's context.</li>
+<li><strong>The kit's Python, with requests and google-auth,</strong> and credentials that can act as the UI's account. The comparison mints its tokens the way <code>make compare</code> does.</li>
+<li><strong>About five minutes for the comparison,</strong> and ten more before the zero check.</li>
+<li><strong>What it costs.</strong> The comparison asks for 80 answers: 20 from the API, which uses Gemini, 20 from <code>documind-general</code>, and 40 from the small model, on its own route and on the vLLM route's fallback. The GPU wakes and bills its instance's whole life: the cold start, the answers, and up to 10 idle minutes. At Rs 120.78 an hour that is a few tens of rupees.</li>
+<li><strong>What it changes.</strong> It writes <code>compare.csv</code> in the kit's folder. <code>make off</code> sets four floors to 0. The GPU services' are 0 already; the UI's is set to 0 too, whatever it was, so its next visitor may wait for a cold start.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The table's maths, read</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_09/lesson_9_4/demo_03_the_table_s_maths_read.py" target="_blank" rel="noopener"><code>demo_03_the_table_s_maths_read.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The script's own check of its sums, then what a row reads, where its context comes from, and how it is priced. No network.</p></div></div>
+
+<h4>Definition</h4>
+<p>For each question, <code>live()</code> retrieves once, then asks every backend and writes one row each:</p>
+<div class="cw"><div class="ch-bar"><span>services/slm/compare_backends.py - live(): one retrieval, then every backend, one row each</span><span class="ro">read only</span></div><pre tabindex="0">        got = documind_tools.retrieve(r[<span class="st">&quot;question&quot;</span>], tenant_id=r[<span class="st">&quot;tenant&quot;</span>], top_k=<span class="nu">6</span>, brain=<span class="st">&quot;direct&quot;</span>)
+        chunks = got.get(<span class="st">&quot;citations&quot;</span>, [])
+        <span class="kw">for</span> backend <span class="kw">in</span> args.backends.split(<span class="st">&quot;,&quot;</span>):
+            t0 = time.time()
+            <span class="kw">try</span>:
+                draft, tok_in, tok_out = ask(backend, r[<span class="st">&quot;question&quot;</span>], chunks)
+            <span class="kw">except</span> Exception <span class="kw">as</span> exc:                      <span class="cm"># noqa: BLE001 - a row, not the run</span>
+                print(f<span class="st">&quot;  {backend} {r[&#x27;id&#x27;]}: {type(exc).__name__}&quot;</span>, file=sys.stderr)
+                draft, tok_in, tok_out = {<span class="st">&quot;answer&quot;</span>: <span class="st">&quot;&quot;</span>, <span class="st">&quot;citations&quot;</span>: [], <span class="st">&quot;answerable&quot;</span>: <span class="kw">False</span>}, <span class="nu">0</span>, <span class="nu">0</span>
+            ms = int((time.time() - t0) * <span class="nu">1000</span>)
+            answer = (draft.get(<span class="st">&quot;answer&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>).lower()
+            answered = bool(draft.get(<span class="st">&quot;answerable&quot;</span>)) <span class="kw">and</span> bool(answer)
+            grounded = answered <span class="kw">and</span> all(m.lower() <span class="kw">in</span> answer <span class="kw">for</span> m <span class="kw">in</span> r.get(<span class="st">&quot;must_contain&quot;</span>, []))
+            out.writerow([backend, r[<span class="st">&quot;id&quot;</span>], r[<span class="st">&quot;shape&quot;</span>], r.get(<span class="st">&quot;answerable&quot;</span>, <span class="kw">True</span>), ms, tok_in, tok_out,
+                          f<span class="st">&quot;{cost_inr(backend, tok_in, tok_out):.4f}&quot;</span>, int(answered), int(grounded),
+                          <span class="st">&quot;;&quot;</span>.join(cited_ids(draft, chunks)), <span class="st">&quot;;&quot;</span>.join(r.get(<span class="st">&quot;must_retrieve&quot;</span>, []))])</pre></div>
+
+<p>Each backend gets the route's name and a context built from the citations' quotes:</p>
+<div class="cw"><div class="ch-bar"><span>services/slm/compare_backends.py - ask(): the route by name, the context from the citations&#x27; quotes</span><span class="ro">read only</span></div><pre tabindex="0">    context = <span class="st">&quot;\n&quot;</span>.join(f<span class="st">&quot;[Source {i}] {c.get(&#x27;quote&#x27;) or c.get(&#x27;text&#x27;, &#x27;&#x27;)}&quot;</span> <span class="kw">for</span> i, c <span class="kw">in</span> enumerate(chunks, <span class="nu">1</span>))
+    r = requests.post(url, headers={<span class="st">&quot;Authorization&quot;</span>: f<span class="st">&quot;Bearer {key}&quot;</span>}, timeout=<span class="nu">120</span>, json={
+        <span class="st">&quot;model&quot;</span>: backend, <span class="st">&quot;response_format&quot;</span>: {<span class="st">&quot;type&quot;</span>: <span class="st">&quot;json_object&quot;</span>},
+        <span class="st">&quot;messages&quot;</span>: [{<span class="st">&quot;role&quot;</span>: <span class="st">&quot;system&quot;</span>, <span class="st">&quot;content&quot;</span>: SYSTEM},
+                     {<span class="st">&quot;role&quot;</span>: <span class="st">&quot;user&quot;</span>, <span class="st">&quot;content&quot;</span>: f<span class="st">&quot;Context:\n{context}\n\nQuestion: {question}&quot;</span>}]})</pre></div>
+
+<p>The citations come from the API's own answer, and a failed request becomes an empty list:</p>
+<div class="cw"><div class="ch-bar"><span>shared/documind_tools.py - retrieve(): the API&#x27;s own answer, and what a failure becomes</span><span class="ro">read only</span></div><pre tabindex="0">        resp = requests.post(f<span class="st">&quot;{RAG_API_URL}/v1/query&quot;</span>, json=payload, headers=headers,
+                             timeout=RAG_TIMEOUT_S)
+        resp.raise_for_status()
+    <span class="kw">except</span> requests.RequestException <span class="kw">as</span> exc:
+        logger.warning(<span class="st">&quot;retrieve failed: %s&quot;</span>, exc)
+        <span class="kw">return</span> {<span class="st">&quot;error&quot;</span>: <span class="st">&quot;document retrieval is unavailable&quot;</span>,
+                <span class="st">&quot;citations&quot;</span>: [], <span class="st">&quot;answerable&quot;</span>: <span class="kw">False</span>, <span class="st">&quot;confidence&quot;</span>: <span class="st">&quot;low&quot;</span>}</pre></div>
+
+<p>The first cell is the script's own check of its sums, on a fixture. The second reads the script, the tools module and <code>config.yaml</code>, and prints what a row can and cannot see.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the script's own check of its maths; no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python services/slm/compare_backends.py --selftest</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own selftest)</span><span class="ro">read only</span></div><pre tabindex="0">backend            rows  groundedness  cite-precision   p95 ms  Rs/1k queries
+------------------------------------------------------------------------------
+documind-general      3         0.500           0.667     1200          42.00
+documind-slm          3         1.000           0.500     3100        1951.33
+
+selftest OK - groundedness excludes refusal rows, precision is per cited chunk, p95 is the 95th latency, Rs/1k is mean cost x 1000</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (reads the script, the tools module and config.yaml; no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re
+rd = lambda p: open(p, encoding="utf-8").read()
+cb, dt, cfg, mk = rd("services/slm/compare_backends.py"), rd("shared/documind_tools.py"), rd("services/litellm/config.yaml"), rd("Makefile")
+ask = cb.split("def ask(", 1)[1].split("\ndef ", 1)[0]
+backends = re.search(r"BACKENDS:-([\w,-]+)\}", mk).group(1)
+print(f"a row asks the gateway for a route by name: {backends.replace(',', ', ')} (make compare's default)")
+print("  its context: the citations' quotes of the API's own answer - retrieve() posts to "
+      + re.search(r'requests\.post\(f"\{RAG_API_URL\}(/v1/\w+)"', dt).group(1))
+wait = re.search(r'"RAG_TIMEOUT_S", "(\d+)"', dt).group(1)
+print(f"  if that answer takes more than {wait} s, the row's context is empty, and only the log says so")
+reads = [k for k in ("model", "x-litellm-response-cost") if f'"{k}")' in ask or f'["{k}"]' in ask]
+print("from the gateway's reply a row keeps the answer and the token counts, and reads "
+      + (", ".join(reads) if reads else "neither the model that answered nor x-litellm-response-cost"))
+prices = {k: (float(a), float(b)) for k, a, b in re.findall(r'"(documind-[a-z]+)": \(([\d.]+), ([\d.]+)\)', cb)}
+rates, group = {}, None
+for line in cfg.splitlines():
+    m = re.match(r"  - model_name: (\S+)", line)
+    group = m.group(1) if m else group
+    m = re.match(r"\s+(input|output)_cost_per_token: ([\d.]+)", line)
+    if m:
+        rates.setdefault(group, {})[m.group(1)] = float(m.group(2)) * 1e6
+print("its price is the script's own, by the route asked (USD a million tokens, in / out):")
+for route, r in rates.items():
+    pin, pout = prices.get(route, prices["documind-general"])
+    note = "" if route in prices else "  &lt;- no entry: documind-general's"
+    print(f"  {route:19} table {pin:5.2f} / {pout:5.2f}   config.yaml {r['input']:5.2f} / {r['output']:5.2f}{note}")
+n = 20
+print(f"p95 on {n} rows is sorted row {max(0, int(round(0.95 * n)) - 1) + 1} of {n}: the slowest row never shows")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell, run on the kit's own files)</span><span class="ro">read only</span></div><pre tabindex="0">a row asks the gateway for a route by name: documind-general, documind-slm (make compare's default)
+  its context: the citations' quotes of the API's own answer - retrieve() posts to /v1/query
+  if that answer takes more than 20 s, the row's context is empty, and only the log says so
+from the gateway's reply a row keeps the answer and the token counts, and reads neither the model that answered nor x-litellm-response-cost
+its price is the script's own, by the route asked (USD a million tokens, in / out):
+  documind-general    table  1.50 /  7.50   config.yaml  1.50 /  7.50
+  documind-reasoning  table  1.50 /  7.50   config.yaml  2.00 / 12.00  &lt;- no entry: documind-general's
+  documind-slm        table 20.50 / 20.50   config.yaml 20.50 / 20.50
+  documind-sensitive  table  1.50 /  7.50   config.yaml 20.50 / 20.50  &lt;- no entry: documind-general's
+  documind-inference  table  1.50 /  7.50   config.yaml  6.80 /  6.80  &lt;- no entry: documind-general's
+  documind-gke        table 20.50 / 20.50   config.yaml 20.50 / 20.50
+p95 on 20 rows is sorted row 19 of 20: the slowest row never shows</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The sums check themselves.</strong> Refusal rows stay out of groundedness, precision counts cited chunks, p95 is a sorted row, and the rupees are the mean cost times a thousand.</li>
+<li><strong>Every backend reads what Gemini chose to quote.</strong> The context is the quotes of the API's answer. If that answer takes more than 20 seconds, the row's context is empty and every backend refuses it, so the table shows a model failure where the API was only slow.</li>
+<li><strong>A row reads neither the model that answered nor the gateway's cost header.</strong> Its name and its price are the route's.</li>
+<li><strong>Three of <code>config.yaml</code>'s six routes have no price in the script.</strong> They fall to <code>documind-general</code>'s: <code>documind-reasoning</code> (Gemini Pro, 2.00 and 12.00), <code>documind-sensitive</code> (the small model, 20.50) and <code>documind-inference</code> (6.80).</li>
+<li><strong>p95 on 20 rows is the 19th sorted row.</strong> The slowest row, which for a model that sleeps is its cold start, never shows.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>The comparison, with the actual backends</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_09/lesson_9_4/demo_04_the_comparison_with_the_actual_backends.py" target="_blank" rel="noopener"><code>demo_04_the_comparison_with_the_actual_backends.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>make compare's own pass on three routes, the vLLM route included, with a recorder that keeps what the table drops.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make compare</code> sets up the gateway, a token for it and the API, then runs the script twice: once for the rows, once for the table.</p>
+<div class="cw"><div class="ch-bar"><span>Makefile - make compare: the gateway, a token for it, and the API to retrieve from</span><span class="ro">read only</span></div><pre tabindex="0">compare: guard-project
+	@NUMBER=$$(gcloud projects describe $(PROJECT) --format=<span class="st">&#x27;value(projectNumber)&#x27;</span>); \
+	GW=https://documind-gateway-$$NUMBER.$(REGION).run.app; \
+	TOKEN=$$(gcloud auth print-identity-token --include-email --impersonate-service-account=documind-ui-sa@$(PROJECT).iam.gserviceaccount.com --audiences=$$GW); \
+	LITELLM_URL=$$GW LITELLM_ID_TOKEN=$$TOKEN RAG_API_URL=https://documind-api-$$NUMBER.$(REGION).run.app \
+	DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$(PROJECT).iam.gserviceaccount.com GOOGLE_CLOUD_PROJECT=$(PROJECT) \
+	  $(PY) services/slm/compare_backends.py --rows $${ROWS:-<span class="nu">20</span>} --backends $${BACKENDS:-documind-general,documind-slm} &gt; compare.csv &amp;&amp; \
+	  $(PY) services/slm/compare_backends.py --summary compare.csv</pre></div>
+
+<p>The cell sets the same environment and runs the same functions: <code>live()</code> writes <code>compare.csv</code>, and <code>summarise()</code> and <code>print_summary()</code> print the table. It adds one thing, a recorder wrapped around <code>requests.post</code>, which keeps each gateway reply's model and cost header. It asks three routes: the two defaults, and <code>documind-inference</code>, the vLLM route lesson 9.3 inspected.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (20 questions to the API, then to three routes; the GPU wakes; about five minutes)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import collections, contextlib, csv, os, subprocess, sys
+P, R = os.environ["PROJECT"], os.environ["REGION"]
+N = subprocess.run(["gcloud", "projects", "describe", P, "--format=value(projectNumber)"], capture_output=True, text=True, check=True).stdout.strip()
+GW, API, UI = f"https://documind-gateway-{N}.{R}.run.app", f"https://documind-api-{N}.{R}.run.app", f"documind-ui-sa@{P}.iam.gserviceaccount.com"
+tok = subprocess.run(["gcloud", "auth", "print-identity-token", "--include-email", f"--impersonate-service-account={UI}", f"--audiences={GW}"],
+                     capture_output=True, text=True, check=True).stdout.strip()
+os.environ.update(LITELLM_URL=GW, LITELLM_ID_TOKEN=tok, RAG_API_URL=API, DOCUMIND_IMPERSONATE_SA=UI, GOOGLE_CLOUD_PROJECT=P)   # make compare's
+sys.path.insert(0, "services/slm")
+import requests
+import compare_backends as cb
+seen, post = [], requests.post                    # what the table does not keep: the model that answered, and the gateway's price
+
+
+def recorded(url, **kw):
+    r = post(url, **kw)
+    if url.endswith("/v1/chat/completions"):
+        seen.append((kw["json"]["model"], r.json().get("model"), float(r.headers.get("x-litellm-response-cost") or 0)))
+    return r
+
+
+requests.post = recorded
+BACKENDS = "documind-general,documind-slm,documind-inference"
+args = type("Args", (), {"golden": "evals/golden.jsonl", "rows": 20, "backends": BACKENDS})
+with open("compare.csv", "w", newline="", encoding="utf-8") as f, contextlib.redirect_stdout(f):
+    cb.live(args)                                 # make compare's own pass, row for row
+rows = list(csv.DictReader(open("compare.csv", encoding="utf-8")))
+cb.print_summary(cb.summarise(rows))
+print("\nwhat answered each route - the gateway's reply, which the table does not keep:")
+for (asked, served), n in sorted(collections.Counter((a, s) for a, s, _ in seen).items(), key=lambda x: BACKENDS.index(x[0][0])):
+    print(f"  {asked:19} {served:26} {n:&gt;3} rows")
+print("the rupees for these rows, the gateway's price against the table's:")
+for b in BACKENDS.split(","):
+    gw, tb = sum(c for a, _, c in seen if a == b) * cb.USD_INR, sum(float(r["cost_inr"]) for r in rows if r["backend"] == b)
+    print(f"  {b:19} Rs {gw:6.2f}   Rs {tb:6.2f}")
+slm = sorted(int(r["latency_ms"]) for r in rows if r["backend"] == "documind-slm")
+print(f"the slowest documind-slm row: {slm[-1] / 1000:.1f} s; the p95 the table prints is row {int(round(0.95 * len(slm)))} of {len(slm)}, "
+      f"{slm[int(round(0.95 * len(slm))) - 1] / 1000:.1f} s")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own compare_backends.py, against a stand-in API, gateway and small model: your numbers, times and rupees are your lane's)</span><span class="ro">read only</span></div><pre tabindex="0">backend            rows  groundedness  cite-precision   p95 ms  Rs/1k queries
+------------------------------------------------------------------------------
+documind-general     20         1.000           1.000     1500          38.69
+documind-slm         20         0.850           1.000     3100         262.77
+documind-inference   20         0.850           1.000     3400          38.50
+
+what answered each route - the gateway's reply, which the table does not keep:
+  documind-general    gemini-3.6-flash            20 rows
+  documind-slm        ollama_chat/documind-slm    20 rows
+  documind-inference  ollama_chat/documind-slm    20 rows
+the rupees for these rows, the gateway's price against the table's:
+  documind-general    Rs   0.77   Rs   0.77
+  documind-slm        Rs   5.26   Rs   5.26
+  documind-inference  Rs   5.26   Rs   0.77
+the slowest documind-slm row: 55.7 s; the p95 the table prints is row 19 of 20, 3.1 s</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The comparison table.</strong> That is the first proof. Gemini grounded all 20 rows and the small model 17: the stand-in gives a partial answer on lk-02, refuses lk-08, and states half of the join jn-03. Your rows are your lane's. Citation precision is 1.000 for both, because every context holds only chunks the golden set expects.</li>
+<li><strong><code>documind-inference</code> was the small model on every row, not vLLM.</strong> No vLLM service exists, so its fallback answered. The table shows the small model's groundedness under vLLM's name, and prices it at Gemini's rates: Rs 0.77 for the 20 rows, where the gateway charged Rs 5.26.</li>
+<li><strong>For the other two routes, the model that answered was the route's own, and the two prices agree.</strong> On your lane, read those lines first. A row whose model differs from its route was moved by the hook or by a fallback, and the table scored it under the wrong name.</li>
+<li><strong>The cold start hid.</strong> The slowest small-model row took 55.7 s, and the table's p95 is 3.1 s.</li>
+<li><strong>The rupees per 1,000 questions:</strong> Rs 38.69 for Gemini and Rs 262.77 for the small model, at its rate. The panel above shows what the bill would be.</li>
+</ul></div>
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Prove</span><h3>Everything off</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_09/lesson_9_4/demo_05_everything_off.py" target="_blank" rel="noopener"><code>demo_05_everything_off.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>make off: four floors to zero, the GKE workload removed, and the floors it prints.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make off</code> runs each switch, and carries on past one that fails, such as the vLLM service that does not exist:</p>
+<div class="cw"><div class="ch-bar"><span>Makefile - make off: four floors to zero, the GKE workload removed, then the floors printed</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The four switches in one, then the lines that prove it. The documind-off Cloud Run job runs the same thing at 23:00</span>
+<span class="cm"># IST every night (terraform/off.tf), so a forgotten GPU costs an evening, not a month; off-now runs that job by hand.</span>
+off: guard-project
+	-$(MAKE) slm-off PROJECT=$(PROJECT)
+	-$(MAKE) vllm-off PROJECT=$(PROJECT)
+	-$(MAKE) gateway-off PROJECT=$(PROJECT)
+	-gcloud run services update documind-ui --region $(REGION) --project $(PROJECT) --min-instances <span class="nu">0</span> --quiet
+	-$(MAKE) gke-down PROJECT=$(PROJECT)</pre></div>
+
+<p>Then it prints each service's floor: the min-instances annotation on its revision template, or <code>absent</code> for a service that does not exist.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit, when the comparison is done</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make off PROJECT="$PROJECT"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own lines; the gcloud, kubectl and make lines between them are left out, vllm-off's error among them: no documind-vllm service, and make ignores it)</span><span class="ro">read only</span></div><pre tabindex="0">...
+documind-slm scaled to zero
+...
+documind-gateway scaled to zero
+...
+vLLM workload removed; the cluster and any Standard lab node remain (gke.tf) - make down removes them
+documind-slm: min-instances 0
+documind-vllm: min-instances absent
+documind-gateway: min-instances 0
+documind-ui: min-instances 0</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Four floors read 0, or absent for the vLLM service.</strong> The GKE workload was removed (the lab cluster had none), and the lab cluster stays until <code>make down</code>.</li>
+<li><strong>The small model's floor was 0 already:</strong> <code>make deploy-slm</code> set it. A floor of 0 means Cloud Run may stop the instance, not that it has.</li>
+<li><strong>The instance the comparison woke is still up,</strong> and billing, until its idle window ends.</li>
+</ul></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>Zero GPU instances</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_09/lesson_9_4/demo_06_zero_gpu_instances.py" target="_blank" rel="noopener"><code>demo_06_zero_gpu_instances.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Cloud Monitoring's instance_count for each service, read at least 10 minutes after make off.</p></div></div>
+
+<h4>Definition</h4>
+<p>The kit reads an instance count in one place, the two-hour alarm:</p>
+<div class="cw"><div class="ch-bar"><span>terraform/alerts.tf - the one place the kit reads an instance count</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Cost control (10 September 2026): a GPU service left warm. instance_count is a gauge of a service&#x27;s container</span>
+<span class="cm"># instances, active or idle; a warm L4 instance is $1.42 an hour (11.1) and looks perfectly healthy for four weeks.</span>
+<span class="cm"># Two hours above zero is the alarm - the nightly job in off.tf is the switch, this is the earlier warning, and</span>
+<span class="cm"># make gpu-cap is the ceiling under both. A session runs two hours too, so the alarm fires near the end of one;</span>
+<span class="cm"># that is the reminder, not a bug.</span></pre></div>
+
+<p>The cell asks Cloud Monitoring for the same gauge directly, over the last 45 minutes: one point a minute per service, summed over active and idle instances. It prints the last minute each service had an instance. A GPU service with an instance in the last three minutes is still up; a sample can take two minutes to show. Wait at least 10 minutes after <code>make off</code> before you run it.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, at least 10 minutes after make off (reads Cloud Monitoring; changes nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, subprocess, time, urllib.parse, urllib.request
+from datetime import datetime, timedelta, timezone
+P = os.environ["PROJECT"]
+tok = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True, check=True).stdout.strip()
+now = datetime.fromtimestamp(time.time(), timezone.utc).replace(second=0, microsecond=0)
+iso = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")
+q = urllib.parse.urlencode({"filter": 'metric.type="run.googleapis.com/container/instance_count" AND resource.type="cloud_run_revision"',
+                            "interval.startTime": iso(now - timedelta(minutes=45)), "interval.endTime": iso(now),
+                            "aggregation.alignmentPeriod": "60s", "aggregation.perSeriesAligner": "ALIGN_MAX",
+                            "aggregation.crossSeriesReducer": "REDUCE_SUM", "aggregation.groupByFields": "resource.label.service_name"})
+req = urllib.request.Request(f"https://monitoring.googleapis.com/v3/projects/{P}/timeSeries?{q}", headers={"Authorization": f"Bearer {tok}"})
+last = {}
+for s in json.load(urllib.request.urlopen(req, timeout=60)).get("timeSeries", []):
+    up = [p["interval"]["endTime"] for p in s.get("points", []) if int(p["value"].get("int64Value", 0)) &gt; 0]
+    last[s["resource"]["labels"]["service_name"]] = max(up) if up else None
+GPU = ("documind-slm", "documind-vllm")
+print(f"instance_count per service, {iso(now - timedelta(minutes=45))[11:16]} to {iso(now)[11:16]} UTC, one point a minute (Cloud Monitoring):")
+for name in GPU + ("documind-gateway", "documind-ui"):
+    t = last.get(name)
+    what = f"last instance at {t[11:16]} UTC" if t else "no instance in the window"
+    print(f"  {name:17} " + (f"{what:28}  a GPU service" if name in GPU else what))
+fresh = iso(now - timedelta(minutes=3))           # a sample shows up to 120 s after it is taken
+still = [n for n in GPU if last.get(n) and last[n] &gt;= fresh]
+print("GPU services with an instance in the last 3 minutes: " + (", ".join(still) if still else "none - zero GPU instances"))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell, against a stand-in Cloud Monitoring: your times are your lane's)</span><span class="ro">read only</span></div><pre tabindex="0">instance_count per service, 09:40 to 10:25 UTC, one point a minute (Cloud Monitoring):
+  documind-slm      last instance at 10:13 UTC    a GPU service
+  documind-vllm     no instance in the window     a GPU service
+  documind-gateway  last instance at 10:09 UTC
+  documind-ui       no instance in the window
+GPU services with an instance in the last 3 minutes: none - zero GPU instances</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Zero GPU instances.</strong> That is the second proof: no GPU service had an instance in the last three minutes.</li>
+<li><strong>The small model's last instance was at 10:13, about nine minutes after its last answer.</strong> That was the idle window, billed at Rs 120.78 an hour while the floor said 0. The stand-in's times are illustrations; yours are your lane's.</li>
+<li><strong>The gateway stopped at 10:09.</strong> It runs on CPU, and its bill ran by request.</li>
+<li><strong>Neither backstop would have acted.</strong> The alarm waits two hours, and the nightly job would have changed nothing, because every floor was already 0.</li>
+<li><strong>This completes the chapter's gate:</strong> <code>make smoke-gateway</code> in lesson 9.1, <code>make smoke-slm</code> in lesson 9.2, and zero GPU instances here.</li>
+</ul></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>One retrieval for every backend,</strong> so that the only variable between rows is the model.</li>
+<li><strong>p95, not the mean:</strong> the number a dashboard alerts on.</li>
+<li><strong>The small model's rupees are a rate, and the script says so.</strong> Idle time is the variable.</li>
+<li><strong><code>make off</code> is four switches in one, then the lines that prove it.</strong> The nightly job makes a forgotten GPU cost an evening, not a month.</li>
+<li><strong>The alarm reads the instance count, not the floor:</strong> two hours above zero.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The selftest and the read</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The comparison</td><td data-label="Costs">20 answers from the API, 20 from Gemini and 40 from the small model, plus the GPU's life</td><td data-label="On your lane">a few rupees of Gemini, and the L4 at Rs 120.78 an hour for its instance's life, the cold start and the idle window included</td></tr>
+<tr><td><code>make off</code></td><td data-label="Costs">four service updates, and the GKE workload's removal</td><td data-label="On your lane">free</td></tr>
+<tr><td>The zero check</td><td data-label="Costs">one Cloud Monitoring read</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>A row names the route, not the model that answered.</strong> Its price comes from the script's own table, and the gateway's reply and cost header are never read. A row the hook or a fallback moved is scored and priced under the wrong name.</li>
+<li><strong>The context is Gemini's quotes.</strong> <code>retrieve()</code> asks the API for its answer, and the comparison keeps its citations' quotes. A question Gemini refused gives every backend an empty context.</li>
+<li><strong>A slow API becomes a failed model.</strong> After 20 seconds <code>retrieve()</code> returns no citations and the row's context is empty, and only a log line says so.</li>
+<li><strong>Three routes have no price in the script.</strong> <code>documind-reasoning</code>, <code>documind-sensitive</code> and <code>documind-inference</code> fall to <code>documind-general</code>'s rates.</li>
+<li><strong>The table never scores a refusal.</strong> Groundedness leaves out the rows the documents cannot answer, and the first 20 golden rows are all answerable. So a backend that answers everything scores as well as one that refuses correctly.</li>
+<li><strong>p95 on 20 rows hides a cold start.</strong> It is the 19th sorted row.</li>
+<li><strong><code>make off</code> prints floors, not instances.</strong> Nothing but the two-hour alarm reads an instance count.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The script's sums</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>selftest OK</code></td></tr>
+<tr><td>2</td><td data-label="Claim">What a row cannot see</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>reads neither the model that answered nor x-litellm-response-cost</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The comparison table</td><td data-label="The check">step 4</td><td data-label="Pass looks like">three rows of four numbers</td></tr>
+<tr><td>4</td><td data-label="Claim">What answered each route</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>documind-inference</code> answered by <code>ollama_chat/documind-slm</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The two prices</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the gateway's and the table's, side by side</td></tr>
+<tr><td>6</td><td data-label="Claim">The floors</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>documind-slm: min-instances 0</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The idle window</td><td data-label="The check">step 6</td><td data-label="Pass looks like">the small model's last instance, minutes after its last answer</td></tr>
+<tr><td>8</td><td data-label="Claim">Zero GPU instances</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>none - zero GPU instances</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>compare.csv</code> holds the comparison's 60 rows. Every floor is 0, and the GKE workload is gone; the lab cluster remains until <code>make down</code>. No GPU instance is running. That ends Module 9: the gateway routes and authorizes, the small model serves behind it, and the lane can prove it is off. Module 10 turns to agent patterns, starting with where an agent reasons.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 9 Serving &middot; Lesson 9.4 Compare actual backends and verify shutdown behavior &middot; v5.0</p><p>Next: Lesson 10.1 Choose where the agent reasons: observe-think-act and ReAct.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var root = document.getElementById('rb'); if (!root) return;
+var RATE = 2.05e-05, GEM_IN = 1.5e-06, GEM_OUT = 7.5e-06, HOUR = 1.42092, INR = 85, TAIL = 0.16666666666666666;
+function bill(qpd, tin, tout, win, days){ var qs = qpd * days, hours = Math.min(24, win + TAIL) * days;
+return [(tin + tout) * RATE * INR * 1000, hours * HOUR * INR / qs * 1000, (tin * GEM_IN + tout * GEM_OUT) * INR * 1000, (tin + tout) * qs, hours]; }
+window.__rb = {bill: bill};
+var $ = function(id){ return document.getElementById(id); };
+function line(out, cls, text){ var d = document.createElement('div'); if (cls) { d.className = cls; } d.textContent = text; out.appendChild(d); }
+function rs(x){ return 'Rs ' + (x < 100 ? x.toFixed(2) : Math.round(x).toLocaleString('en-IN')); }
+function show(){ var q = Number($('rb-q').value), tin = Number($('rb-in').value), tout = Number($('rb-out').value), win = Number($('rb-win').value), days = Number($('rb-days').value);
+var r = bill(q, tin, tout, win, days), a = $('rb-table'), b = $('rb-bill'), g = $('rb-gem'); a.textContent = ''; b.textContent = ''; g.textContent = '';
+line(a, '', (tin + tout).toLocaleString('en-IN') + ' tokens a question, at the script\'s 20.50 USD a million, in and out.');
+line(a, 'pass', rs(r[0]) + ' per 1,000 questions.');
+var mt = r[3] / 1e6;
+line(a, '', 'The kit derived that rate from Rs 86,904 a month over about 50 million tokens; this pattern is ' + (mt < 100 ? mt.toFixed(1) : Math.round(mt).toLocaleString('en-IN')) + ' million a month.');
+line(b, '', 'One L4 instance lives ' + (win === 24 ? 'all day' : win + ' hours a day, plus up to 10 idle minutes') + ', on ' + days + ' days: ' + Math.round(r[4]) + ' hours at $' + HOUR.toFixed(4) + '.');
+line(b, 'pass', rs(r[1]) + ' per 1,000 questions.');
+var ratio = r[1] / r[0];
+line(b, ratio > 1 ? 'stop' : '', ratio > 1 ? 'The table understates the bill ' + ratio.toFixed(1) + ' times: the idle GPU is paid for, and no row counts it.' : 'The table overstates the bill ' + (1 / ratio).toFixed(1) + ' times: more tokens go through each GPU hour than the rate assumed.');
+line(g, '', 'The same tokens at documind-general\'s 1.50 in and 7.50 out.');
+line(g, 'pass', rs(r[2]) + ' per 1,000 questions.');
+line(g, '', r[2] < r[1] ? 'Cheaper than the small model\'s real bill by ' + (r[1] / r[2]).toFixed(1) + ' times.' : 'Dearer than the small model\'s real bill: at this volume the GPU pays for itself.'); }
+['rb-q', 'rb-in', 'rb-out', 'rb-win', 'rb-days'].forEach(function(id){ $(id).addEventListener('change', show); });
+show();
+})();
+</script>
+</body>
+</html>

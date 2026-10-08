@@ -1,0 +1,144 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Restricts</span><h3>The restricts, the per-request backend, and the stages block</h3><p>What reaches the index, which store the request went to and why, and the clocks and counts every answer carries.</p></div></div>
+
+<h4>Definition</h4>
+<p>On the vector backend <code>_dense_retrieve()</code> builds the restricts in a fixed order: the tenant, then <code>current</code> when <code>RETRIEVAL_CURRENT_ONLY</code> is on, then each caller filter as a namespace. Under hybrid mode the same list goes with the sparse vector, and the tenant restrict is inserted exactly once. The ids come back with scores and are hydrated from Firestore in the index's order, thirty per query, each marked <code>found_by: vector</code>. Which backend a request goes to is decided per request: the deployment's default, unless the tenant pins another, and a managed store is refused for a tenant whose text must stay in India, with <code>policy_fallback: 1</code> on the row. The answer's <code>stages</code> carries the decision and the clocks.</p>
+
+<h4>The code</h4>
+@@restricts@@
+@@hybrid_filters@@
+@@backend_for@@
+
+<h4>Do it: the tenant's pin and policy, then a full stages block, Rs 0 plus one question</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (two reads, one question)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python commands/lane.py tenant-backend acme
+python commands/lane.py tenant-policy acme
+
+curl -s -X POST $API/v1/query -H "Authorization: Bearer $(tok $API)" -H "Content-Type: application/json" \
+  -d '{"query":"How many days of earned leave can I carry forward?","tenant_id":"acme","stream":false,"top_k":3}' \
+  | python -c "import json,sys; j=json.load(sys.stdin); print(json.dumps(j['stages'], indent=1)); print('citations', len(j['citations']), '| cache_hit', j.get('cache_hit'), '| latency_ms', j['latency_ms'])"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your milliseconds differ; rerank_fallback appears only when the Ranking API stood down)</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector
+acme: data_region=any
+{
+ "policy_fallback": 0,
+ "retrieval_backend": "vector",
+ "retrieve_ms": 612,
+ "pool": 20,
+ "graph_chunks": 0,
+ "managed_chunks": 0,
+ "vector_chunks": 20,
+ "rerank_ms": 388,
+ "generate_ms": 1742
+}
+citations 3 | cache_hit none | latency_ms 2760</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The tenant is pinned to the kit's own index (this lesson's verified preflight did that) and its data may be held anywhere, so no policy fallback applied and the request went where the pin said. The stages block is the answer's own account: the retrieval took the first clock, pooled twenty candidates, all from the index; the reranker took the second and cut them to the three you asked for; the model took the third. A day of these blocks on the usage rows is how lesson 2.3 reads p95 per stage; one of them is how you read a single answer.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Current</span><h3>Current is the ledger's filter, never the caller's</h3><p>Two mechanisms keep a retired version out of an answer, and the handbook's three versions prove it.</p></div></div>
+
+<h4>Definition</h4>
+<p>Lesson 1.7 left three versions of the handbook on your lane: version 1 current, revision 2 and revision 3 retired with their vectors still on the rows. Nothing a caller sends can reach the retired ones. On the index they are gone: the worker removed their datapoints at the swap, and when <code>RETRIEVAL_CURRENT_ONLY</code> is on the query also carries <code>current: true</code>. On the Firestore rung the same setting adds the equality filter. And whichever path answered, <code>prefer_current()</code> drops any row whose flag is false before the reranker sees it, and <code>newest_per_source()</code> keeps one version per source. The revisions said 90 days; the answer says 60, and the citation's row is current.</p>
+
+<h4>The code</h4>
+@@prefer_current@@
+@@current_setting@@
+
+<h4>Do it: the question the revisions answered differently</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one question, then the cited row read off Firestore)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -s -X POST $API/v1/query -H "Authorization: Bearer $(tok $API)" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false}' \
+  | python -c "import json,sys; j=json.load(sys.stdin); print(j['answer'][:80]); print('cited', j['citations'][0]['chunk_id'])" | tee /tmp/q51.txt
+
+python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+db = firestore.Client(project=os.environ["PROJECT"])
+cid = open("/tmp/q51.txt").read().split("cited ")[-1].strip()
+row = db.collection("chunks").document(cid).get().to_dict() or {}
+print("the cited row:", row.get("locator"), "| current:", row.get("current"), "| doc_key:", str(row.get("doc_key"))[:13] + "...", "| text starts:", row.get("text", "")[:60].replace("\n", " "))
+uri = f"gs://{os.environ['PROJECT']}-uploads/acme/hr_policy_2026.md"
+rows = [r.to_dict() for r in db.collection("chunks").where("tenant_id", "==", "acme").where("source_uri", "==", uri).where("locator", "==", "NP-03").stream()]
+print("NP-03 rows on the lane:", len(rows), "| current:", sum(bool(r.get("current")) for r in rows), "| saying 90 days:", sum("90 days" in r.get("text", "") for r in rows), "(retired, never cited)")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">A confirmed employee at grade E3 or above serves a notice period of 60 days ... [Source 1]
+cited acme:%%SHA1_12%%...#1
+the cited row: NP-03 | current: True | doc_key: acme_%%SHA1_8%%... | text starts: NP-03 — Notice period A confirmed employee at grade E3 or above
+NP-03 rows on the lane: 3 | current: 1 | saying 90 days: 2 (retired, never cited)</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three rows for one clause, two of them saying 90 days, and the answer said 60 with a citation to the one current row. The caller sent no filter for that and could not have: <code>current</code> is not an allowed key, and the two retired rows are out of the index and out of the pool by the ledger's decision alone. This is what "one current version" from lesson 1.7 means at the reading end.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>The cache shares the vector, the pool is not the answer, and what a question costs</h3><p>Why the handler embeds exactly once, what the two sizes on a request mean, and the rupee line.</p></div></div>
+
+<h4>One vector, two uses</h4>
+<p>The handler embeds the question once and hands the vector to the answer cache before the retrieval. With <code>SEMANTIC_CACHE=on</code> the cache looks for an earlier, near-enough question of the same tenant under the same corpus fingerprint and the same scope (the filters, the <code>top_k</code>, the prompt version); a hit is served with <code>cache_hit: semantic</code>, no reranker, no model, and the vector was the only cost. A miss goes on to retrieval with the same vector. Because the cache is keyed on the fingerprint from lesson 1.7, a reindex makes every earlier answer a miss without anyone clearing anything; and because the scope includes the filters, a filtered question never gets an unfiltered answer.</p>
+@@cache_lookup@@
+
+<h4>Two sizes</h4>
+<p>A request's <code>top_k</code> (default 5, at most 20) is how many citations the caller wants back. <code>TOP_K_RETRIEVE</code> (20 by default) is how many candidates retrieval pools for the reranker. The reranker orders the pool and cuts it to <code>top_k</code>; the model reads what survives. Asking for three citations does not make retrieval cheaper, and asking for twenty does not make it wider; the pool is the knob the ablation in lesson 2.2 moves.</p>
+@@sizes@@
+
+<h4>What a question costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The query vector</td><td data-label="Costs">one embedding call: the question's characters at the rate lesson 1.3 quoted</td><td data-label="On your lane">a few hundredths of a paisa per question</td></tr>
+<tr><td>The roster and filter checks</td><td data-label="Costs">one Firestore read; nothing for a 400</td><td data-label="On your lane">the two refusals in step 5 cost nothing</td></tr>
+<tr><td>The index query</td><td data-label="Costs">nothing per query; the deployed index bills by the hour (lesson 1.4)</td><td data-label="On your lane">every question on this page</td></tr>
+<tr><td>Hydration</td><td data-label="Costs">one Firestore read per pooled candidate</td><td data-label="On your lane">20 reads a question</td></tr>
+<tr><td>The reranker and the model</td><td data-label="Costs">the Ranking API per record; the generator per token</td><td data-label="On your lane">lessons 2.3 and 6.x price them; a rupee or two for this page</td></tr>
+<tr><td>A cache hit</td><td data-label="Costs">the vector only</td><td data-label="On your lane">none seen: the cache is off unless you turned it on</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The asymmetry to remember: everything that decides whether a question may be asked at all costs a read, and everything that decides what it costs happens after. The API refuses cheaply and spends only on questions it has already authorized.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Direct retrieval and the API both use the verified index</td><td data-label="The check">the cell in step 3</td><td data-label="Pass looks like">non-empty direct candidates; <code>retrieval_backend: vector</code> and <code>vector_chunks</code> above zero; overlap/order reported separately</td></tr>
+<tr><td>2</td><td data-label="Claim">The query vector is the declared pair under the query profile</td><td data-label="The check"><code>embed_query()</code> in step 3, <code>/version</code> from lesson 1.3</td><td data-label="Pass looks like"><code>RETRIEVAL_QUERY</code>, 768, <code>settings.embed_model</code></td></tr>
+<tr><td>3</td><td data-label="Claim">One identity, two tenants, two answers</td><td data-label="The check">step 4's first two calls</td><td data-label="Pass looks like">Rs 40,000 cited to acme's handbook; Rs 25,000 to zeta's</td></tr>
+<tr><td>4</td><td data-label="Claim">The roster refuses before any work</td><td data-label="The check">step 4's third call</td><td data-label="Pass looks like"><code>outsider on acme: 403</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A header is not an identity</td><td data-label="The check">step 4's fourth call</td><td data-label="Pass looks like">the same answer with a false <code>x-user-email</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Two filter keys, a 400 for any other key or a malformed value</td><td data-label="The check">step 5</td><td data-label="Pass looks like">two 400s naming the rule; <code>doc_type: policy</code> an empty pool; <code>kind: text</code> an answer</td></tr>
+<tr><td>7</td><td data-label="Claim">The backend is chosen per request</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>retrieval_backend=vector</code>, <code>data_region=any</code>, <code>policy_fallback: 0</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The stages block accounts for the answer</td><td data-label="The check">step 6</td><td data-label="Pass looks like">stage clocks, a non-empty pool, <code>vector_chunks</code> above zero; 20 is the default candidate limit</td></tr>
+<tr><td>9</td><td data-label="Claim">Retired rows are never cited</td><td data-label="The check">step 7</td><td data-label="Pass looks like">60 days, the cited row <code>current: True</code>, two 90-day rows retired</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h3 id="restore-pin">Finish: restore the saved tenant pin</h3>
+<p><strong>Run only after steps 3&ndash;9.</strong> Restore the value saved before the demo, which may be <code>rag_engine</code>, another backend or <code>default</code>. The last option removes the explicit pin. Do not assume every lane originally used RAG Engine, and do not place this command beside the setup command.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; end of lesson only; restore the original Acme pin</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, warnings
+from pathlib import Path
+warnings.filterwarnings("ignore", category=UserWarning)
+from shared.tenancy import backend_for, set_backend
+project = os.environ["PROJECT"]
+os.environ["GOOGLE_CLOUD_PROJECT"] = project
+path = Path("operator-evidence/lesson51/pin-before.json")
+if not path.exists():
+    raise SystemExit("STOP: no saved pin; inspect the current tenant setting before changing it.")
+before = json.loads(path.read_text())
+if before["project"] != project:
+    raise SystemExit("STOP: saved pin belongs to another project.")
+current = backend_for("acme") or "default"
+if current not in ("vector", before["backend"]):
+    raise SystemExit("STOP: the pin changed independently; do not overwrite it.")
+print("Acme restored:", set_backend("acme", before["backend"]))
+print("Allow up to 60 seconds for the API's tenant-setting cache.")
+PY</pre></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The preflight saved settings and the original Acme pin under <code>operator-evidence/lesson51/</code>; the demo selected <code>vector</code>, and the final block restored that saved pin. The query cells read the corpus and created query embeddings without changing document vectors. If you used the optional repair, the corrected API revision and deployed-index setting remain in place. Lesson 2.2 compares dense and hybrid retrieval.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 2 Retrieval &middot; Lesson 2.1 Apply query embeddings and authorized filters &middot; v5.0</p><p>Next: Lesson 2.2 Compare dense and hybrid retrieval.</p></div>

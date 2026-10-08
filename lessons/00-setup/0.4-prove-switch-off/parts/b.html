@@ -1,0 +1,140 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The UI</span><h3>The UI: the smoke's question, asked by you</h3><p>Before any command, use the lane the way a person does, and notice which identity is asking.</p></div></div>
+
+<p>The smoke test in step 5 asks one question. Ask it yourself first, in the browser, so that you know what a working answer looks like before a script judges one. The UI's address is built from your project number and region, the same way the setup block built <code>API</code>:</p>
+
+%%CELL_UI%%
+%%OUT_UI%%
+
+<p>Open it in a browser signed in to Google as the account you gave <code>make up</code> as <code>ADMIN_EMAILS</code>. Identity-Aware Proxy asks you to sign in, then the Streamlit UI loads. The sidebar shows your email, and on the Chat page, the tenant your email belongs to:</p>
+
+@@ui_tenant@@
+
+<p><code>tenant_for()</code> is a reverse lookup: it searches every roster for your email and returns the first tenant it finds. <code>make roster</code> put your email on acme's roster in lesson 0.3, so the sidebar reads <strong>Tenant: acme</strong>. Nothing in the browser ever sends a tenant; your email decides it.</p>
+
+<p>Now type the smoke's question into <em>Ask DocuMind...</em>:</p>
+
+<div class="box"><p><strong>%%SMOKE_Q%%</strong></p></div>
+
+<p>It is golden row %%GOLDEN_ID%% of <code>evals/golden.jsonl</code>, and that row says what a right answer holds: it must contain <strong>%%MUST%%</strong>, and the evidence must come from <code>%%MUST_DOC%%</code>, the Payment of Gratuity Act, 1972, which sits in all three tenants' corpora. Check both: the phrase in the answer, and the Act among the sources under it. The sidebar's <em>Cost this session</em> panel prices the turn in dollars and rupees, from the tokens the API reports.</p>
+
+<p>Two things happened that the page does not show. If the first load took several seconds, that was a cold start: <code>documind-ui</code> had no instance running, because its floor is 0, and your request started one. Step 9 measures the opposite moment, the last instance going away. And your question went to the API as <em>you</em>: the UI forwards the IAP assertion that names your email, and the API checks your email against acme's roster.</p>
+
+<p>The shell is a different caller. The setup block's <code>tok</code> function mints a token for <code>documind-ui-sa</code>, the UI's own service account, which <code>make roster</code> put on all three golden rosters. That is why a shell call may name any of the three tenants, and it is also why the shell must name one: the account belongs to three, and nothing guesses which. Step 6 shows what happens when the smoke names none.</p>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit</span><h3>make preflight: what the lane stands on</h3><p>%%N_PREFLIGHT%% checks, read-only, each one naming its own fix.</p></div></div>
+
+<p><code>make preflight</code> is one line of the Makefile: it hands four variables to a shell script and runs it.</p>
+
+@@mk_preflight@@
+
+<p>The script is short enough to read whole. It checks the tools (<code>gcloud</code>, <code>terraform</code>, <code>make</code>, <code>python</code>), that Terraform is at least 1.9, that gcloud is signed in, that the project exists and has billing, that the state bucket exists, that %%N_APIS%% APIs are enabled, and that the one Python package <code>make roster</code> needs is importable. Every check is a read, and every <code>MISS</code> line carries the command that fixes it.</p>
+
+@@preflight_sh@@
+
+<p>Run it with your state bucket. The script's own usage line names the bucket after the project, <code>&lt;project&gt;-tfstate</code>, and the cell uses that name unless you have already exported another. Do not leave <code>TFSTATE_BUCKET</code> off: the Makefile's default, <code>documind-tfstate</code>, is a bucket name only one project in the world can own, and it is not yours.</p>
+
+%%CELL_PREFLIGHT%%
+%%OUT_PREFLIGHT%%
+
+<p>Read it as a checklist. Every line should say <code>ok</code>, and the summary should say <code>preflight clean</code>. The advice after it, <em>next: make plan, then make up</em>, is the script speaking to a project that has no lane yet; yours has one, so read the line as "nothing the lane stands on has moved". That is what preflight is for on a running lane: a billing account unlinked, an API disabled, an expired sign-in or an old Terraform in a new shell shows up here, as one <code>MISS</code> with its fix, before a <code>make</code> target stops halfway. The last line names the one thing no command can check from the shell: the OAuth consent screen that IAP needs.</p>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The kit</span><h3>make smoke: one line per check</h3><p>A cited answer, the index that found it, and a refusal, read from the script that asserts them.</p></div></div>
+
+<p><code>make smoke</code> is the shortest target in the Makefile, and its header advertises it with one variable:</p>
+
+@@mk_smoke@@
+
+<p>No <code>guard-project</code>, and no variables passed: <code>smoke.py</code> reads everything from its environment. These are the names it reads, and what it does when one is missing:</p>
+
+@@smoke_env@@
+
+<p>Three of them decide who is asking and about what. <code>DOCUMIND_PROJECT</code> gives the identity: without <code>DOCUMIND_IMPERSONATE_SA</code>, the script impersonates <code>documind-ui-sa</code> in that project. <code>DOCUMIND_TENANT</code> gives the tenant, and its default is <code>%%SMOKE_TENANT%%</code>. Hold on to that default; step 6 is about it. Run the script with no URL at all and it refuses, then prints its own checklist. This costs nothing and touches nothing: <code>main()</code> returns before it mints a token or opens a connection.</p>
+
+%%CELL_NOURL%%
+%%OUT_NOURL%%
+
+<div class="box"><p><strong>Lesson numbers in the kit's comments.</strong> The kit's comments name lessons by the numbers of the course it was first written for: "12.8", "8.5's gate", "4.6's cell 5", "Module 11's three". The workshop's numbers are the manifest's, and <code>deploy/INDEX.md</code> maps every kit file to the lessons on this site that show it. Read a number inside an excerpt as a pointer to history, not to a page here.</p></div>
+
+<p>Now the checks themselves, in the order they run. The first two need nothing but a token: <code>/health</code> must answer 200 with <code>"ok"</code>, and <code>/ready</code> must answer 200, a 404 being tolerated for a service that has no such route.</p>
+
+@@smoke_first@@
+
+<p>The third is the one that proves retrieval. Its comment tells a story worth remembering: the first version asked a question the corpus could not answer, the API refused it correctly, and the test counted the refusal as a pass. Now the question is golden row %%GOLDEN_ID%%, and the check passes only when the answer is <code>answerable</code> and carries citations.</p>
+
+@@smoke_query@@
+
+<p>The vector-tier check asserts only when the request ran on the kit's own index, which is why the setup section pinned acme there. With the pin, <code>stages.retrieval_backend</code> says <code>vector</code>, and the check demands that at least one chunk of the pool came from the index rather than from the Firestore rung beneath it.</p>
+
+@@smoke_vector@@
+
+<p>The last required check asks the same question with no token at all. A service that answers everybody would pass every check above it, so this one asserts a refusal: 401 or 403, and anything else is a failure.</p>
+
+@@smoke_door@@
+
+<p>Run it with the three variables, the tenant included. <code>API</code>, <code>PROJECT</code> and <code>TENANT</code> come from the setup block; <code>TENANT</code> is acme.</p>
+
+%%CELL_GREEN%%
+%%OUT_GREEN%%
+
+<p>Read it top to bottom. Each <code>[PASS]</code> line is one check, with the evidence beside it: the bodies of <code>/health</code> and <code>/ready</code>, the start of the cited answer, how many chunks the index supplied, and the status the anonymous call received. A <code>[ -- ]</code> line is a check that did not apply and says why: the semantic cache is off on the lane, so there is nothing to assert. The <code>[info]</code> lines are BigQuery counts the script prints and never asserts. The summary counts passes and failures, and the script exits 0 only with no failure, so <code>make</code> reports nothing after it.</p>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; A failure</span><h3>Break it once: a tenant nobody lists</h3><p>The same smoke without <code>DOCUMIND_TENANT</code>: one check fails, and you follow it to the code that printed it and the code that refused.</p></div></div>
+
+<p>Run the smoke again without the tenant, which the Makefile's header example leaves out too. Keep the URL and the project, so the smoke still has an identity to ask with. <code>env -u</code> makes sure no <code>DOCUMIND_TENANT</code> survives from an earlier shell, and the last command prints <code>make</code>'s own exit status.</p>
+
+%%CELL_BROKEN%%
+%%OUT_BROKEN%%
+
+<p><strong>Read the failure in order.</strong> The health and readiness lines still pass, so the token got through Cloud Run's door and the service is up. The query line fails, and it says two things: the status, 403, and the body, the API's own words, <code>not a member of this tenant</code>. The vector-tier line is simply absent, because there was no answer to inspect. The anonymous call is still refused, so the door is still shut to strangers. The summary counts one failure; <code>smoke.py</code> exits 1, and <code>make</code> reports <code>Error 1</code> on the recipe line and exits 2 itself. One failure, and everything around it working, is the shape of a configuration mistake, not an outage.</p>
+
+<p><strong>Find the line that printed it.</strong> It is the last branch of check 3 in step 5: any status other than 200 becomes <code>bad("query", f"status={st} body={body[:120]}")</code>. So the body is the API's response, cut at 120 characters, and the words in it came from the API.</p>
+
+<p><strong>Find the line that refused.</strong> The API's handler for a question does one thing before anything else: it checks the roster.</p>
+
+@@query_door@@
+@@enforce@@
+
+<p>A 403 with these words means the API knows exactly who is asking (the token verified) and that this identity is not on the roster of the tenant the question names. It is not the door, which refuses before the API runs, and it is not the token, which the API refuses with a 401 because it does not know who is asking.</p>
+
+<p><strong>Find why.</strong> The question named a tenant because <code>smoke.py</code> always sends one: <code>DOCUMIND_TENANT</code>, and without it, <code>%%SMOKE_TENANT%%</code>. Its own docstring predicted this failure:</p>
+
+@@smoke_identity@@
+
+<p><strong>Check the roster.</strong> Which tenants is <code>documind-ui-sa</code> on? <code>make roster</code> decides, through one function in <code>commands/lane.py</code>, and its dry run prints the plan without touching Firestore:</p>
+
+@@roster_plan@@
+%%CELL_PLAN%%
+%%OUT_PLAN%%
+
+<p>The UI's account is on acme, zeta and globex, and no line names <code>%%SMOKE_TENANT%%</code>. The plan is what <code>make roster</code> wrote in lesson 0.3. To see the rosters as they are now, read them from Firestore with the kit's own module:</p>
+
+%%CELL_ROSTER%%
+%%OUT_ROSTER%%
+
+<p><code>%%SMOKE_TENANT%%</code> has no members; acme lists the service accounts and your email. <strong>The repair</strong> is the variable, not the roster: run step 5's command again, with <code>DOCUMIND_TENANT="$TENANT"</code>, and its <code>[PASS]</code> lines come back. Putting <code>documind-ui-sa</code> on a roster called <code>%%SMOKE_TENANT%%</code> would not repair it. The roster check would pass, and check 3 would fail one step later as <em>refused or uncited</em>, because that tenant has no documents to answer from: a refused caller turned into a refused answer.</p>
+
+<div class="box box-amber"><div class="box-title">Three refusals, three places</div>
+<p><strong>No token, or an account not allowed to invoke the service:</strong> Cloud Run's own 403, before the API runs; the anonymous check in step 5 and the last line of step 7 show it. <strong>A token that cannot be accepted</strong> (the wrong audience, expired, no email in it): a 401, from Cloud Run's door or from the API's <code>verify_iap</code>, because nobody can say who is asking. <strong>A verified caller on the wrong roster:</strong> the 403 above, with the API's words, <code>not a member of this tenant</code>. Read the status and the body together and you know which of the three you are looking at before you open a single log.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; REST</span><h3>REST: /health, /ready and /version by hand</h3><p>The three GETs the smoke and the restore both use, and what each one can and cannot prove.</p></div></div>
+
+<p>Call them yourself, with the setup block's token, then call <code>/health</code> once more with no token at all:</p>
+
+%%CELL_REST%%
+%%OUT_REST%%
+
+<p>Here is what answers. <code>/health</code> is one line, and <code>/version</code> returns the configuration the revision was deployed with:</p>
+
+@@health_version@@
+
+<p><code>/ready</code> does more work: it builds the Gemini client and the Firestore client, and on a deployment whose default backend is <code>vector</code> it reaches the Vector Search endpoint. A <code>/health</code> of 200 beside a failing <code>/ready</code> is a service that runs but cannot reach what it reads from.</p>
+
+@@ready@@
+
+<p>None of the three takes the caller's identity: no <code>verify_iap</code>, no tenant. The token gets you through Cloud Run's door, and that is all they need, which is why <code>rag_resume</code> can use them in step 11 to prove a restored shell reaches the API. The fourth line shows the door itself: with no token, Cloud Run refuses before the API runs. Read <code>/version</code> field by field once, because it is the first thing to check when an answer changes and nobody deployed: the generator model, the prompt and its version, the retrieval mode and default backend, the graph switch, the embedding the query vectors come from, the ledger's pre-filter, the semantic cache, and the commit the image was built from.</p>

@@ -1,0 +1,125 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Fallback</span><h3>A failure forced on a candidate: the ranker silent, the stream still served, the line in the log</h3><p>The stream's own rerank branch, a candidate whose ranker deadline is a millisecond, the citations and tokens that still arrive, the flag in done, and the line that names the cause.</p></div></div>
+
+<h4>Definition</h4>
+<p>The stream reranks on the same function as the query and reads the same mark: when the Ranking API does not answer inside <code>RERANK_TIMEOUT_S</code>, the pool by retrieval score stands in, every chunk is marked, and the handler puts <code>rerank_fallback 1</code> into the stages that <code>done</code> carries and the row logs. The caller sees citations in the retriever's order and tokens as usual; the log has one <code>rerank_fallback</code> line with the error's type. The way to see it without harming anyone is the candidate from lesson 2.3, a revision that takes no traffic with a deadline of one millisecond, asked on the stream this time; the undo removes the variable, because the live service does not set it. The same block reads the startup event the lane has never written, <code>telemetry_not_instrumented</code>, because a fallback that has never fired is worth one line of proof too.</p>
+
+<h4>The code</h4>
+@@stream_rerank@@
+@@rerank_fell_back@@
+@@telemetry_guard@@
+
+<h4>Do it: the ranker silent for one revision, the stream read, the line read, the undo</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one new revision, no traffic; one stream to it; two log reads; the undo)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
+  --update-env-vars RERANK_TIMEOUT_S=0.001 --quiet
+export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
+curl -N -s -X POST "$CAND/v1/stream" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","top_k":3}' \
+  | python -c "
+import sys, json
+ev, n, text = None, {}, []
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith('event: '): ev = line[7:]; n[ev] = n.get(ev, 0) + 1
+    elif line.startswith('data: ') and ev == 'token': text.append(json.loads(line[6:])['t'])
+    elif line.startswith('data: ') and ev == 'done': s = json.loads(line[6:])['stages']; print('done.stages: rerank_fallback', s.get('rerank_fallback', 0), '| rerank_ms', s['rerank_ms'], '| pool', s['pool'], '| vector_chunks', s['vector_chunks'])
+print('events:', n, '| the answer:', ' '.join(''.join(text).split())[:70], '...')"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="rerank_fallback"' \
+  --project "$PROJECT" --freshness 10m --limit 2 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)'
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="telemetry_not_instrumented"' \
+  --project "$PROJECT" --freshness 7d --limit 1 --format='value(timestamp,jsonPayload.error)'
+gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate --remove-env-vars RERANK_TIMEOUT_S --quiet
+gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate --quiet</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (a RetryError names the same deadline through a retry; the telemetry read prints nothing)</span><span class="ro">read only</span></div><pre tabindex="0">done.stages: rerank_fallback 1 | rerank_ms 1x | pool 20 | vector_chunks 20
+events: {'citation': 3, 'token': 3x, 'done': 1} | the answer: A confirmed employee in grade E3 must serve a notice period of ...
+2026-09-2xT1x:xx:xx.xxxxxxZ	acme	DeadlineExceeded</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The ranker had one millisecond, did not make it, and the stream did not notice in any way a caller could see: three citations came first, then the tokens, then <code>done</code>. Only <code>done.stages</code> said what happened, <code>rerank_fallback 1</code>, and the log named the error, which is the whole design: a worse order served on time, counted where a person will look. The telemetry read printed nothing because the instrumentation loaded on every revision the lane has run, and a line that is absent when it should be is as much a proof as one that is present. Then the variable came out and the tag went.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Table</span><h3>Every failure and what it degrades to</h3><p>Eight named fallbacks in the API, where each one lives, what stands in, what the caller sees, and where it is counted; and the three things that do not degrade.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Log event</th><th>Where, and when</th><th>What stands in</th><th>The caller sees</th><th>Counted</th></tr></thead>
+<tbody>
+<tr><td><code>routing_fallback</code></td><td data-label="Where">main.py <code>choose_model_for()</code>: the classifier failed, with <code>ROUTING</code> on</td><td data-label="What stands in">the generator model</td><td data-label="The caller sees">nothing; <code>model</code> is the default</td><td data-label="Counted">the log only</td></tr>
+<tr><td><code>tier_exhausted</code></td><td data-label="Where">generator.py: a 429 from a routed tier, on the stream only before the first token</td><td data-label="What stands in">the default model, called or streamed again</td><td data-label="The caller sees"><code>model</code> names the default</td><td data-label="Counted">the log; the row's model</td></tr>
+<tr><td><code>vector_search_fallback</code></td><td data-label="Where">retriever.py: the index raised (lesson 2.4)</td><td data-label="What stands in">Firestore's own vector index, same predicates</td><td data-label="The caller sees"><code>vector_chunks 0</code> under <code>retrieval_backend vector</code></td><td data-label="Counted">the log; <code>make smoke</code> refuses it</td></tr>
+<tr><td><code>rerank_fallback</code></td><td data-label="Where">retriever.py <code>rerank()</code>: the Ranking API past its deadline or in error (lesson 2.3, step 6 here)</td><td data-label="What stands in">the pool by retrieval score</td><td data-label="The caller sees"><code>rerank_fallback 1</code> in the stages; scores that are distances</td><td data-label="Counted">the row; the view sums <code>rerank_fallbacks</code></td></tr>
+<tr><td><code>semantic_cache_failed</code></td><td data-label="Where">main.py <code>_semantic_hit()</code>: the answer cache could not be read</td><td data-label="What stands in">a miss: retrieval and the model run</td><td data-label="The caller sees"><code>cache_hit none</code></td><td data-label="Counted">the log only</td></tr>
+<tr><td><code>semantic_cache_store_failed</code></td><td data-label="Where">main.py <code>_semantic_store()</code>: the answer could not be stored</td><td data-label="What stands in">nothing: the answer was already served</td><td data-label="The caller sees">nothing</td><td data-label="Counted">the log only</td></tr>
+<tr><td><code>budget_record_failed</code></td><td data-label="Where">main.py <code>_record()</code>: the month's counter could not be written</td><td data-label="What stands in">nothing: the row still carries the cost</td><td data-label="The caller sees">nothing</td><td data-label="Counted">the log; the breaker reads one answer short</td></tr>
+<tr><td><code>telemetry_not_instrumented</code></td><td data-label="Where">main.py at startup: the instrumentation did not load</td><td data-label="What stands in">answers without gen_ai spans</td><td data-label="The caller sees">nothing</td><td data-label="Counted">one log line per revision start</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three things do not degrade, on purpose. A prompt the guard blocks is a 400 before the stream starts, because a refusal dressed as an answer would hide the rate. A finished answer the guard blocks is one <code>error</code> event on the stream and a 502 on the query, after the row has said <code>blocked_response</code>. And a reply the generator cannot parse is a 502 on the query, never a refusal, which lesson 3.5 forced; on the stream there is no schema to fail, and a model that returns nothing simply ends the stream with <code>done</code> and no tokens. The managed stores' own fallbacks, <code>rag_engine_fallback</code> and <code>vertex_search_fallback</code>, take the same shape and belong to Module 7.</p>
+
+<h4>The code</h4>
+@@routing_fallback@@
+@@tier_stream@@
+@@cache_failed@@
+@@record_fn@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Nothing ran here; the table is the map. Read it as one rule applied eight times: every place the request depends on something outside the container has a stand-in that serves, a name in the log, and, where the answer's quality changed, a count on the row. The two blocks and the 502 are the places where serving would be the wrong thing to do, and each says so to the caller instead.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What a stream costs, what its row says, and who reads it</h3><p>The rupee line, the rows by surface, the UI's own reader of the same events, and the two clocks a product manager will ask about.</p></div></div>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Stream</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>A cited answer</td><td data-label="Costs">the same tokens as the query's, priced on the row by <code>cost.price()</code>; the connection itself is Cloud Run time, billed by the request's duration</td><td data-label="On your lane">step 3, under a rupee</td></tr>
+<tr><td>The citations</td><td data-label="Costs">nothing extra: they are the packed list the prompt already paid for</td><td data-label="On your lane">five events, no tokens</td></tr>
+<tr><td>The empty pool</td><td data-label="Costs">nothing: no model, no tokens</td><td data-label="On your lane">step 4</td></tr>
+<tr><td>A cache hit</td><td data-label="Costs">nothing: the stored answer as one token, backend <code>cache</code></td><td data-label="On your lane">not on this lane; <code>SEMANTIC_CACHE</code> off</td></tr>
+<tr><td>The guard, on</td><td data-label="Costs">two Model Armor calls a question, and the first token delayed to the last</td><td data-label="On your lane">Module 4</td></tr>
+<tr><td>The candidate</td><td data-label="Costs">nothing idle; one stream at the generator's rate</td><td data-label="On your lane">step 6, then reverted</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The rows by surface, and the reader in the UI</h4>
+<p><code>make usage</code> groups the rows by the surface that wrote them, and a stream row is a query row with <code>event: stream</code>: the UI's chat page labels its streams <code>brain: ui</code>, and a request from a notebook or curl that names no brain is recorded as <code>ui</code> too, so the surface table counts the event, not who sent it. The UI reads the events with an iterator of a dozen lines, the same three names, and renders the sources as the citation events arrive and the answer as the tokens do, which is lesson 3.8's page. The two clocks worth keeping apart when someone asks whether the product is fast: the time to the first token, which is what the reader of a chat feels and which no row records, and <code>latency_ms</code>, which is when the model stopped. Step 3 measured both; a slow first token with a fast <code>done</code> points at retrieval and the ranker, the reverse at a long answer.</p>
+
+<h4>The code</h4>
+@@ui_iter@@
+@@usage_surface@@
+
+<h4>Do it: the day by surface, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (one log read)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make usage PROJECT=$PROJECT HOURS=24 | sed -n '/^by surface/,/^$/p'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your counts; the stream row is this lesson's)</span><span class="ro">read only</span></div><pre tabindex="0">by surface
+event                  answers    tok_in  tok_out       USD       INR  p95 ms  unans
+------------------------------------------------------------------------------------
+query                       NN     xxxxx     xxxx    0.0xxx      x.xx    4xxx   0.xx
+stream                       4      xxxx      xxx    0.0xxx      x.xx    4xxx   0.25</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The day's rows split by surface, and the stream rows were this lesson's: four of them, one unanswerable, priced like any query's, because a stream changes when the caller gets the answer and not what it costs. The UI's reader is the same dozen lines you wrote in step 3, which is why lesson 3.8 can render a cited answer as it streams without knowing anything about the model.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The citations come before the first token</td><td data-label="The check">step 3</td><td data-label="Pass looks like">first citation before first token, both before done</td></tr>
+<tr><td>2</td><td data-label="Claim">A stream cites the packed set; a query cites what the model used</td><td data-label="The check">step 3, the last lines</td><td data-label="Pass looks like">5 citation events; 3 citations on the query</td></tr>
+<tr><td>3</td><td data-label="Claim">done carries the envelope and the same stages as a query</td><td data-label="The check">step 3</td><td data-label="Pass looks like">tokens, model, backend, cache_hit, prompt; a stages block with the three clocks</td></tr>
+<tr><td>4</td><td data-label="Claim">An empty pool is one token and no model</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>events: {'token': 1, 'done': 1}</code>, <code>backend none</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Stream rows carry the same columns as query rows</td><td data-label="The check">step 4, the log read</td><td data-label="Pass looks like">answerable, backend, tokens, pool and guard on each row</td></tr>
+<tr><td>6</td><td data-label="Claim">The guard is off, honestly</td><td data-label="The check">step 5</td><td data-label="Pass looks like">every row <code>off</code>; no guard line</td></tr>
+<tr><td>7</td><td data-label="Claim">A silent ranker leaves the stream served and flagged</td><td data-label="The check">step 6</td><td data-label="Pass looks like">citations and tokens delivered; <code>rerank_fallback 1</code>; a <code>DeadlineExceeded</code> line</td></tr>
+<tr><td>8</td><td data-label="Claim">The tracing has loaded on every revision</td><td data-label="The check">step 6, the second read</td><td data-label="Pass looks like">nothing printed</td></tr>
+<tr><td>9</td><td data-label="Claim">The variable and the tag are gone</td><td data-label="The check">step 6, the undo</td><td data-label="Pass looks like">one revision at 100 percent on the next describe</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. A candidate revision took no traffic, answered one stream with its ranker silenced, and lost its variable before the tag was dropped. The streams you ran are usage rows with <code>event: stream</code>, one of them unanswerable, and the transcript sits at <code>/tmp/stream63.txt</code>. Lesson 3.8 puts a screen in front of all of this: the upload, the versions list, and the chat that renders these events as they arrive.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Generation &middot; Lesson 3.7 Stream answers and handle failures &middot; v5.0</p><p>Next: Lesson 3.8 Complete the Streamlit upload-to-answer journey.</p></div>

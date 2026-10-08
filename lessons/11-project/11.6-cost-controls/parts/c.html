@@ -1,0 +1,97 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Switch off</span><h3>Off at night, and the ceiling under it</h3><p>A session-day floor, <code>make off</code>, the nightly job's entry, the instances at zero, and one card as the ceiling.</p></div></div>
+
+<h4>Definition</h4>
+<p>A session day puts a floor of one on the UI, so the first learner of the morning does not wait for a cold start.</p>
+<ol>
+<li>The first line sets that floor.</li>
+<li><code>make off</code> then runs its four switches: <code>slm-off</code>, <code>vllm-off</code>, <code>gateway-off</code> and the UI's floor. It removes the Autopilot workload, if there is one, and prints each service's floor. On a lane that never deployed the GPU services, their switches fail and are ignored, and those services read <code>absent</code>.</li>
+<li>The last line reads the nightly job's entry in Cloud Scheduler: its schedule, its time zone, its state and its last run.</li>
+</ol>
+@@night@@
+
+<h4>Do it: the floor, then the switch</h4>
+%%CELL_OFF%%
+%%OUT_OFF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>make off</code> floored the UI from one to zero, and the GPU-shaped services are absent on a Core lane. The last line is the 23:00 job: <code>0 23 * * *</code> in Asia/Kolkata, enabled, with the time it last ran. It floors the same four services every night whether or not anyone runs <code>make off</code>.</p></div>
+
+<h4>Do it: the instances, after fifteen minutes</h4>
+<p>A floor of zero lets the service scale to zero, but an idle instance can stay up for up to fifteen minutes after its last request. The cell waits, then reads the UI's instance count from Cloud Monitoring for the last half hour, a sample a minute.</p>
+%%CELL_COUNT%%
+%%OUT_COUNT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One idle instance stayed up while the floor held it, and after <code>make off</code> the count went to zero and stayed there. That is the second proof: zero instances after <code>make off</code>. If yours still reads one, the instance has not been idle long enough; run the cell again.</p></div>
+
+<h4>Do it: the ceiling</h4>
+<p><code>make gpu-cap</code> writes a consumer quota override on the L4 quotas in <code>us-central1</code>, capping them at one card. <code>--max-instances</code> belongs to one service. The quota belongs to the project, so a second GPU service, a GPU candidate or a typo cannot allocate a second card. Lowering a quota needs no approval; raising it again does.</p>
+%%CELL_CAP%%
+%%OUT_CAP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The L4 quota in <code>us-central1</code> now reads <code>effective 1</code>, with the default beside it and the override that set it. <code>make gpu-cap-off</code> removes the override. Keep the cap unless you run more than one GPU service on purpose.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the controls look like this, what they cost, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Degrade, do not stop.</strong> The breaker makes answers cheaper and a little worse, and the service stays up. A budget that stopped DocuMind would turn a finance question into an outage.</li>
+<li><strong>A replay instead of a spend.</strong> <code>SPEND_PCT</code> shows what the lane does at any spend without spending anything, on a candidate that takes no traffic.</li>
+<li><strong>The API keeps its own counter.</strong> <code>tenant_daily</code> answers a day late, so the breaker reads a Firestore document that every answer adds to (<code>budget.py</code>'s docstring).</li>
+<li><strong>Floors are explicit, and end the day at zero.</strong> <code>off.tf</code> puts it in rupees: a forgotten L4 costs an evening, at Rs 121 an hour, not a month, at Rs 86,904.</li>
+<li><strong>A quota under <code>max-instances</code>.</strong> <code>max-instances</code> is one service's limit and the quota is the project's, so one typo cannot double the GPU bill (<code>gpu_quota.py</code>'s docstring).</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The controls</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The month so far</td><td data-label="Costs">reads: Cloud Run, Firestore, Cloud Billing, Service Usage</td><td data-label="On your lane">free</td></tr>
+<tr><td>The tier at 85 percent</td><td data-label="Costs">three candidate revisions with no traffic; six answers and six classifier calls, one of them on Pro</td><td data-label="On your lane">a few rupees</td></tr>
+<tr><td>Off at night</td><td data-label="Costs">the UI's one idle instance for about twenty minutes, then reads</td><td data-label="On your lane">a rupee or two</td></tr>
+<tr><td>The ceiling</td><td data-label="Costs">one quota override</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The breaker's 100 percent action is only a comment.</strong> <code>breakers.py</code> says min-instances 0 at 100 percent and declares <code>BUDGET_FLOOR_PCT = 100</code>, and nothing in the kit reads it. Past 100 percent the lane routes exactly as it does at 80.</li>
+<li><strong><code>make candidate</code> cannot replay a spend.</strong> It carries <code>ROUTING</code> but not <code>SPEND_PCT</code> or <code>BUDGET_USD</code>, which is why step 5 uses <code>gcloud</code>. Because environment variables carry over, a replay left on the template rides into the next revision.</li>
+<li><strong>The router's per-tier settings never apply.</strong> <code>router.py</code>'s <code>ROUTING_TABLE</code> gives each tier a thinking budget and an output cap (COMPLEX: 8,192 and 16,384). The request path imports only <code>classify()</code>, and the generator answers every tier with thinking <code>LOW</code> and <code>max_answer_tokens</code> 2,048.</li>
+<li><strong>The classifier's call is priced nowhere, and the class is recorded nowhere.</strong> The usage row carries the answer's tokens and the model. A routed question's flash-lite call is on no row, and neither is its class.</li>
+<li><strong>The two budgets never meet.</strong> The breaker reads model spend in dollars against <code>BUDGET_USD</code>, and the billing budget reads the whole bill in the account's currency against <code>BUDGET_AMOUNT</code>. The billing budget acts on nothing. Its Pub/Sub topic is off by default (<code>budget_pubsub</code>), and when declared, nothing in the kit reads it.</li>
+<li><strong>The off switch knows four services.</strong> <code>documind-mcp</code> and <code>documind-agent</code> also take <code>MIN_INSTANCES</code> (<code>lesson-7.2.sh</code>, <code>lesson-8.4.sh</code>), and neither the 23:00 job nor <code>make off</code> floors them.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The routing table</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>85%</code>: flash-lite, flash-lite, <code>gemini-3.6-flash</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The 100 percent action is a comment</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>BUDGET_FLOOR_PCT = 100 ... read by nothing</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The month so far</td><td data-label="The check">step 4</td><td data-label="Pass looks like">your counter's percent and <code>normal</code>; the billing budget's lines</td></tr>
+<tr><td>4</td><td data-label="Claim">Normal routing</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>gemini-3.1-flash-lite</code>, <code>gemini-3.6-flash</code>, <code>gemini-3.1-pro-preview</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The tier at 85 percent</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>gemini-3.1-flash-lite</code>, <code>gemini-3.1-flash-lite</code>, <code>gemini-3.6-flash</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The candidate undone</td><td data-label="The check">step 5</td><td data-label="Pass looks like">the live revision at <code>100</code></td></tr>
+<tr><td>7</td><td data-label="Claim">Floors at zero, and the nightly job</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>documind-ui: min-instances 0</code>; <code>0 23 * * *</code> <code>ENABLED</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Zero instances, and one card as the ceiling</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>zero instances since</code>; <code>effective 1 (default ..., override 1)</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Here is what this lesson left on your lane:</p>
+<ul>
+<li>A candidate revision was made, routed six questions (one to Pro), and was undone. The live revision never moved.</li>
+<li>The counter grew by those six answers' costs.</li>
+<li>The UI's floor went to one and back to zero.</li>
+<li>The L4 quota in <code>us-central1</code> is capped at one card; <code>make gpu-cap-off</code> removes the override.</li>
+</ul>
+<p>Lesson 11.7 reproduces the agent failures production shows and no eval row does, each with a drill that restores itself.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 11 Project &middot; Lesson 11.6 Exercise model routing, budgets and shutdown controls &middot; v5.0</p><p>Next: Lesson 11.7 Reproduce the agent failures production shows and no eval row does.</p></div>

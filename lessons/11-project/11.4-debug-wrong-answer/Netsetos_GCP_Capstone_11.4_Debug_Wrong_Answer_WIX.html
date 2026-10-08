@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 11.4 Debug a wrong answer through the complete pipeline - the trail an answer leaves, and the cause it names | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.pc-in{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 12px;margin:6px 0;}
+.pc-in label{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.pc-in select{font:inherit;font-size:16px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.pc-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.55;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.pc-box b.h{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;margin:6px 0 4px;}
+.fs-grid{display:grid;grid-template-columns:minmax(0,10em) minmax(0,1fr);gap:4px 10px;font-size:12.5px;}
+.fs-grid b{color:var(--navy);font-weight:600;}
+.fs-grid .pass{color:var(--teal-dark);font-weight:600;}
+.fs-grid .stop{color:#9a3412;font-weight:600;}
+.fs-grid .skip{color:var(--slate-light);}
+.fs-grid code{font-size:11.5px;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 11 &middot; Project &middot; Lesson 11.4</div>
+<h1>Debug a wrong answer through the complete pipeline: <span>read the trail, rule out, name the cause</span></h1>
+<p>An acme employee asks for the E3 notice period and DocuMind says 90 days, where the golden set says 60. Something between the question and the answer made that happen, and guessing where is slow. Every DocuMind answer carries a trail. It says whether the answer cache served it, which store retrieved it and whether a fallback rung stood in, how many chunks the reranker saw and who ordered them, and which version of which document each citation came from. The log's fallback events and the ledger's versions sit beside it. In this lesson you break one answer on purpose, then trace it using only the marks the answer and the lane recorded. You rule out each stage in the order the answer was made, name the cause, and put the lane back.</p>
+<div class="hero-chips"><div class="hero-chip">stages</div><div class="hero-chip">cache_hit</div><div class="hero-chip">vector_chunks</div><div class="hero-chip">the pool</div><div class="hero-chip">the chunk id's version</div><div class="hero-chip">make sources</div><div class="hero-chip">the two probes</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">An answer leaves a trail</a></li>
+<li><a href="#s2">The words: trail, stages, rung, pool, version, ledger, probe</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The trail, as the kit writes it down</a></li>
+<li><a href="#s4">A right answer, and its trail</a></li>
+<li><a href="#s5">Break it: a version reaches the lane</a></li>
+<li><a href="#s6">Trace it, name the cause, put it back</a></li>
+<li><a href="#s7">Why the trail looks like this, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn to read an answer's trail in the order the answer was made. From the marks alone, you will tell a wrong version, a fallback rung and a pool too small apart. Then you will prove it: you make a wrong answer on your own lane, and a cell traces it to its cause without being told what you changed.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>An answer leaves a trail</h3><p>Five stages make an answer, and each leaves a mark you can read afterwards.</p></div></div>
+
+<p><strong>An answer is made in five stages, in order.</strong></p>
+<ol>
+<li><strong>The answer cache.</strong> With <code>SEMANTIC_CACHE=on</code>, a question asked before, under the same corpus, is answered from the stored reply, and nothing else runs.</li>
+<li><strong>The store.</strong> The tenant's pin, or else the deployment's default, names one. When it fails, a fallback rung stands in:
+<ul>
+<li>for the index, Firestore's own vector search;</li>
+<li>for a managed store, the kit's index, when the tenant's data may not leave India.</li>
+</ul></li>
+<li><strong>The pool.</strong> These are the candidates retrieval hands on. There are <code>TOP_K_RETRIEVE</code> of them: 20, unless a revision sets another number.</li>
+<li><strong>The reranker.</strong> The Ranking API puts the pool in order. When it does not answer in time, retrieval's own score orders it.</li>
+<li><strong>The model.</strong> It writes from the chunks that fit the prompt, and cites them.</li>
+</ol>
+<p>Underneath all five is the version: the bytes of the document the chunks were cut from.</p>
+
+<p><strong>Each stage leaves a mark.</strong></p>
+<ul>
+<li><strong>The cache</strong> writes <code>cache_hit</code> on the answer.</li>
+<li><strong>The store and its rungs</strong> write three fields in <code>stages</code>. <code>retrieval_backend</code> says which store was chosen. <code>vector_chunks</code> says how many chunks the index itself returned. <code>policy_fallback</code> is 1 when the tenant's data region overruled the choice. When the index fails, the log records <code>vector_search_fallback</code> with the error.</li>
+<li><strong>The pool</strong> is <code>stages.pool</code>.</li>
+<li><strong>The reranker</strong> writes <code>stages.rerank_fallback</code>, and the log records <code>rerank_fallback</code>.</li>
+<li><strong>The version</strong> is inside every citation's <code>chunk_id</code>, <code>acme:&lt;sha256&gt;#&lt;n&gt;</code>. The ledger says which version is current.</li>
+<li><strong>The model</strong> leaves <code>answerable</code> and the citations. Whether the answer follows them is <code>make judge</code>'s question.</li>
+</ul>
+
+<p><strong>Read the marks in the order the answer was made, and stop at the first one that is off.</strong> A mark after a broken one proves little. If the Firestore rung returned a pool of ten, that explains a missing clause better than anything the reranker did.</p>
+<p>Three causes this course has built each leave their own marks:</p>
+<ul>
+<li><strong>A version.</strong> The answer cites the version the ledger holds, but the ledger holds something other than what you meant.</li>
+<li><strong>A fallback rung.</strong> <code>vector_chunks</code> is 0 under <code>vector</code>, <code>rerank_fallback</code> or <code>policy_fallback</code> is 1, or there is an event in the log.</li>
+<li><strong>A pool too small.</strong> The pool holds fewer than the 20 the ablation decided.</li>
+</ul>
+
+<p><strong>A degraded pipeline often answers right.</strong> That is what the rungs are for. In the panel below, 5 of the 7 cases still answer right, and all but the first still move a mark. So read the marks, not only the answer: they show a degraded lane before its answers go wrong.</p>
+
+<div class="analogy"><div class="analogy-icon">&#129514;</div><div>
+<p><strong>A path lab's report.</strong> A doctor does not believe a haemoglobin value on a report. The lab does not repeat the test blind. The report already says:</p>
+<ul>
+<li>which analyser ran the sample, the main one or the backup;</li>
+<li>how much sample there was;</li>
+<li>the reagent lot and its date;</li>
+<li>whether the value was copied from last week's report;</li>
+<li>who signed it.</li>
+</ul>
+<p>The lab reads these in the order the sample moved, and stops at the first one that is wrong. The backup analyser often gives the right value, which is exactly why the report says it was used. Those are DocuMind's fallback rung, pool, version, answer cache and judge.</p></div></div>
+
+<h4>Break one thing, read the trail</h4>
+<p>Choose a break. The panel shows:</p>
+<ul>
+<li>the answer, and whether golden row lk-06 would pass it;</li>
+<li>the trail on the answer, and the log's events;</li>
+<li>the six links, read in order;</li>
+<li>what the trace names as the cause.</li>
+</ul>
+
+<div class="diagram pc" id="tr">
+<div class="dg-title">One question to acme under 7 cases, one with nothing broken: the answer, its trail, and the first link that is off</div>
+<div class="pc-box"><b class="h">The lane</b>
+<div class="pc-in"><label>What is broken<select id="tr-break"></select></label></div>
+<div class="fs-grid" id="tr-out" aria-live="polite"></div></div>
+<p class="dg-cap">The 7 answers come from the kit's own <code>query()</code> in <code>rag-api/main.py</code>, run at build time on a stand-in lane. The lane holds the handbook's two versions, cut by the kit's chunker and labelled as lesson 10.4's relabel leaves them: version 1 <code>policy</code>, revision 2 <code>unknown</code>. The filter case asks for <code>form</code>, which rag-api accepts and no row holds on any tenant. It is not one of the registry's seven classes, because each of those is held on acme. The index, Firestore, the Ranking API and Gemini are stood in; the model is a reader that answers from the packed clause. The six links are step 6's trace cell, run on each answer.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows the kit's rules on a stand-in lane that holds one document. On your lane the index, the reranker and the model are real, acme holds many documents, and the numbers differ. For example, the Firestore rung's pool here is 10 of 20, because the handbook's retired version sits beside its current one. On your lane it depends on how many retired rows lie near the question.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: trail, stages, rung, pool, version, ledger, probe</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Trail</strong></td><td data-label="Meaning">The marks an answer leaves: on the answer, in the log, in the ledger.</td><td data-label="On your lane">every answer: <code>stages</code>, <code>cache_hit</code>, each citation's <code>chunk_id</code></td></tr>
+<tr><td><strong><code>stages</code></strong></td><td data-label="Meaning">The answer's record of how it was made: the store, its rungs, the pool, the reranker, the clocks.</td><td data-label="On your lane">10 keys; the usage row carries all but <code>vector_chunks</code></td></tr>
+<tr><td><strong>Rung</strong></td><td data-label="Meaning">The way down when a store fails: the index to Firestore's vector search, the Ranking API to retrieval's score, a managed store to the kit's index.</td><td data-label="On your lane">logged as <code>vector_search_fallback</code>, <code>rerank_fallback</code>, and others</td></tr>
+<tr><td><strong><code>found_by</code></strong></td><td data-label="Meaning">Which rung put a chunk in the pool.</td><td data-label="On your lane"><code>vector</code> on acme, counted as <code>vector_chunks</code></td></tr>
+<tr><td><strong>Pool</strong></td><td data-label="Meaning">The candidates the reranker sees.</td><td data-label="On your lane"><code>TOP_K_RETRIEVE</code>: 20, which the deploy does not set</td></tr>
+<tr><td><strong>Version</strong></td><td data-label="Meaning">One upload's bytes, named by their SHA-256.</td><td data-label="On your lane">in every chunk id: <code>acme:&lt;sha256&gt;#&lt;n&gt;</code></td></tr>
+<tr><td><strong>Ledger</strong></td><td data-label="Meaning">Which version of each source is current, since when, and what it declares.</td><td data-label="On your lane"><code>make sources</code>, <code>GET /v1/sources</code></td></tr>
+<tr><td><strong>Golden set's version</strong></td><td data-label="Meaning">The bytes the golden rows were written against: the file in <code>evals/corpus/</code>.</td><td data-label="On your lane">the handbook's version 1, <code>497809ffbaa6</code></td></tr>
+<tr><td><strong>Probe</strong></td><td data-label="Meaning">A read-only check you may run during an incident.</td><td data-label="On your lane"><code>verify-vector-index.py</code>, <code>check-firestore-fallback.py</code></td></tr>
+<tr><td><strong>Miss list, groundedness</strong></td><td data-label="Meaning">The instruments for the two links the trail cannot settle. <code>make ablate</code> says where a missing anchor went: "ranked out", or "not retrieved at depth N". <code>make judge</code> scores whether an answer follows its citations.</td><td data-label="On your lane">the pool's and the model's</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a clean trail with a wrong answer points at the corpus, and a degraded trail with a right answer is luck the next question may not have.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_11/lesson_11_4/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_11/lesson_11_4/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_11/lesson_11_4/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>ME</code> set, and the operator venv from Modules 1 and 2.</p>
+<ul>
+<li><code>check-firestore-fallback.py</code> imports the API's own modules, so it needs that venv.</li>
+<li><code>verify-vector-index.py</code> reads Terraform's state. Run it in the checkout where <code>make up</code> ran; anywhere else it stops at <code>terraform output</code>.</li>
+</ul>
+<p>Step 5 changes acme's handbook for everyone on your lane. It stays changed for the few minutes until step 6 restores it.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Read</span><h3>The trail, as the kit writes it down</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_11/lesson_11_4/demo_03_the_trail_as_the_kit_writes_it_down.py" target="_blank" rel="noopener"><code>demo_03_the_trail_as_the_kit_writes_it_down.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>What the answer carries, what the log records, and which line writes each.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell reads rag-api's source and prints the map you will trace with:</p>
+<ul>
+<li>the fields every answer carries beyond the contract;</li>
+<li>the keys of <code>stages</code>;</li>
+<li>the values of <code>found_by</code>;</li>
+<li>the fields of <code>GET /version</code>;</li>
+<li>every event a degraded answer leaves in the log, with its file and line.</li>
+</ul>
+<p>Nothing is called. The map is read from the kit, so it changes when the kit does.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - query(): the pool, and each rung&#x27;s share of it, onto the answer</span><span class="ro">read only</span></div><pre tabindex="0">    stages[<span class="st">&quot;pool&quot;</span>] = len(chunks)                          <span class="cm"># what the reranker sees: TOP_K_RETRIEVE, as served</span>
+    stages[<span class="st">&quot;graph_chunks&quot;</span>] = sum(<span class="nu">1</span> <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;found_by&quot;</span>) == <span class="st">&quot;graph&quot;</span>)   <span class="cm"># 4.6&#x27;s walk, counted</span>
+    stages[<span class="st">&quot;managed_chunks&quot;</span>] = sum(<span class="nu">1</span> <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;found_by&quot;</span>) <span class="kw">in</span> MANAGED_BACKENDS)   <span class="cm"># P9.4 / R4: the store&#x27;s share of the pool</span>
+    stages[<span class="st">&quot;vector_chunks&quot;</span>] = sum(<span class="nu">1</span> <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;found_by&quot;</span>) == <span class="st">&quot;vector&quot;</span>)   <span class="cm"># the ANN tier&#x27;s share (16 September 2026): 0 while retrieval_backend is `vector` means the Firestore rung answered</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - the index&#x27;s rung: the error logged, then the Firestore rung asked</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">except</span> Exception <span class="kw">as</span> e:
+        <span class="cm"># The chaos rung. An undeployed or unreachable index raises here;</span>
+        <span class="cm"># Firestore holds the same vectors, so answer from there and say so</span>
+        <span class="cm"># in the log rather than returning nothing. Hybrid takes the same rung:</span>
+        <span class="cm"># an outage degrades to dense, logged - it never 500s.</span>
+        logging.warning(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;vector_search_fallback&quot;</span>,
+                                    <span class="st">&quot;tenant&quot;</span>: tenant_id, <span class="st">&quot;error&quot;</span>: str(e)[:<span class="nu">200</span>]}))
+        <span class="kw">return</span> prefer_current(_firestore_fallback(vec, tenant_id, settings.top_k_retrieve, filters))</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - prefer_current(): a retired version never reaches the reranker</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">prefer_current</span>(chunks: list[dict]) -&gt; list[dict]:
+    <span class="st">&quot;&quot;&quot;Version-chain dedupe, BEFORE the reranker (12.5&#x27;s ledger). A chunk the ledger has retired is never a
+    source, whether or not its successor was retrieved - the model is not asked to reconcile v1 with v2.
+    Chunks without the field (a lane older than the ledger) pass through; a no-op until the flag is stamped.
+    Then one version per source: the newest-per-source guard closes the swap window on its own.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> newest_per_source([c <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;current&quot;</span>) <span class="kw">is</span> <span class="kw">not</span> <span class="kw">False</span>])</pre></div>
+
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the trail as the kit writes it down; no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import ast, re
+root = "services/rag-api/"
+main, ret = (open(root + f, encoding="utf-8").read() for f in ("main.py", "retriever.py"))
+tree = ast.parse(open(root + "schemas.py", encoding="utf-8").read())
+env = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "RAGResponse")
+print("the envelope on every answer, beyond the contract (schemas.py, RAGResponse):")
+print("  " + ", ".join(n.target.id for n in env.body if isinstance(n, ast.AnnAssign)))
+q = main[main.index("def query("):main.index("def _record(")]
+keys = set(re.findall(r'stages\["(\w+)"\]', q)) | {n + "_ms" for n in re.findall(r'stage\(stages, "(\w+)"\)', q)}
+print("stages, as query() fills them (main.py):")
+print("  " + ", ".join(sorted(keys)))
+print("found_by, the rung that put a chunk in the pool (retriever.py):")
+print("  " + ", ".join(sorted(set(re.findall(r'found_by"\]? ?[:=] ?"(\w+)"', ret)))))
+v = main[main.index("def version():"):main.index('@app.get("/v1/sources")')]
+print("GET /version, what is serving (main.py):")
+print("  " + ", ".join(re.findall(r'"(\w+)":', v)))
+print("the events a degraded answer leaves in documind-api's log:")
+for f in ("main.py", "retriever.py", "generator.py", "cache_manager.py"):
+    for i, line in enumerate(open(root + f, encoding="utf-8"), 1):
+        for ev in re.findall(r'"event": "(\w+(?:fallback|stale|ignored|exhausted|truncated))"', line):
+            print(f"  {ev:24} {f}:{i}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell run on the kit's own main.py, retriever.py, schemas.py, generator.py and cache_manager.py)</span><span class="ro">read only</span></div><pre tabindex="0">the envelope on every answer, beyond the contract (schemas.py, RAGResponse):
+  model, backend, cost_usd, tokens_in, tokens_out, cached_tokens, latency_ms, stages, cache_hit
+stages, as query() fills them (main.py):
+  generate_ms, graph_chunks, managed_chunks, policy_fallback, pool, rerank_fallback, rerank_ms, retrieval_backend, retrieve_ms, vector_chunks
+found_by, the rung that put a chunk in the pool (retriever.py):
+  firestore, graph, rag_engine, vector, vertex_search
+GET /version, what is serving (main.py):
+  model_backend, generator_model, prompt, retrieval_mode, retrieval_backend, retrieval_graph, graph_backend, embedding, retrieval_current_only, semantic_cache, git_sha
+the events a degraded answer leaves in documind-api's log:
+  routing_fallback         main.py:101
+  retrieval_pin_ignored    main.py:140
+  rag_engine_fallback      retriever.py:207
+  rag_engine_fallback      retriever.py:219
+  vertex_search_fallback   retriever.py:311
+  vector_search_fallback   retriever.py:391
+  rerank_fallback          retriever.py:512
+  tier_exhausted           generator.py:304
+  generation_truncated     generator.py:402
+  tier_exhausted           generator.py:493
+  cache_stale              cache_manager.py:119</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The map has 10 keys in <code>stages</code>, 5 values of <code>found_by</code>, and 9 kinds of event on 11 lines.</p>
+<ul>
+<li><strong>Three keys name the store.</strong> <code>retrieval_backend</code> is the store chosen. <code>vector_chunks</code> is how many chunks the index itself returned. <code>policy_fallback</code> says whether the tenant's data region overruled the choice.</li>
+<li><strong>Two keys cover the rest of retrieval.</strong> <code>pool</code> is what the reranker saw. <code>rerank_fallback</code> appears only when the Ranking API did not answer.</li>
+<li><strong>The version is not in <code>stages</code>.</strong> It is in every citation's <code>chunk_id</code>, and <code>prefer_current()</code> guarantees it is a version the ledger calls current.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Baseline</span><h3>A right answer, and its trail</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_11/lesson_11_4/demo_04_a_right_answer_and_its_trail.py" target="_blank" rel="noopener"><code>demo_04_a_right_answer_and_its_trail.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The question the golden set asks twice, answered by the live revision, and every mark on the answer.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>ask131</code> asks acme's E3 notice-period question as <code>documind-ui-sa</code>. It is the question golden rows lk-06 and vr-01 ask. The whole answer is kept in <code>~/ask131-LABEL.json</code>, and the cell prints:</p>
+<ul>
+<li>the answer;</li>
+<li>each citation, with the version its chunk id carries;</li>
+<li>the trail: <code>cache_hit</code>, the backend that answered, and the five <code>stages</code> fields that cover the store, the pool and the reranker.</li>
+</ul>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the question, the answer and its trail)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ask131() {   # ask131 LABEL: acme's E3 notice-period question as documind-ui-sa - the answer and its trail, kept in ~/ask131-LABEL.json
+LABEL="$1" python - &lt;&lt;'PY'
+import json, os, subprocess, urllib.request
+label, P, API = os.environ["LABEL"], os.environ["PROJECT"], os.environ["API"]
+tok = subprocess.run(["gcloud", "auth", "print-identity-token", "--include-email", f"--audiences={API}",
+                      f"--impersonate-service-account=documind-ui-sa@{P}.iam.gserviceaccount.com"],
+                     capture_output=True, text=True, check=True).stdout.strip()
+body = json.dumps({"query": "What is the notice period for a confirmed E3?", "tenant_id": "acme"}).encode()
+req = urllib.request.Request(API + "/v1/query", data=body, headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+ans = json.load(urllib.request.urlopen(req, timeout=120))
+json.dump(ans, open(os.path.expanduser(f"~/ask131-{label}.json"), "w"), indent=1)
+s = ans["stages"]
+print(ans["answer"])
+for n, c in enumerate(ans["citations"], 1):
+    version, chunk = c["chunk_id"].split(":", 1)[1].split("#")
+    print(f"  [{n}] {c['source_uri'].rsplit('/', 1)[-1]}  version {version[:12]}  chunk {chunk}  {c['quote']!r}")
+print(f"  cache_hit {ans['cache_hit']} | backend {ans['backend']} | answerable {ans['answerable']}")
+print(f"  store {s.get('retrieval_backend')} | vector_chunks {s.get('vector_chunks')} | pool {s.get('pool')} | "
+      f"rerank_fallback {s.get('rerank_fallback', 0)} | policy_fallback {s.get('policy_fallback')}")
+print(f"  kept in ~/ask131-{label}.json")
+PY
+}
+ask131 before</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's rag-api on a stand-in lane; your version hash is the one in your ledger)</span><span class="ro">read only</span></div><pre tabindex="0">A confirmed employee at grade E3 or above serves a notice period of 60 days [1].
+  [1] hr_policy_2026.md  version 497809ffbaa6  chunk 1  'serves a notice period of 60 days'
+  cache_hit none | backend vertex | answerable True
+  store vector | vector_chunks 20 | pool 20 | rerank_fallback 0 | policy_fallback 0
+  kept in ~/ask131-before.json</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Sixty days, as the golden set says, and a clean trail:</p>
+<ul>
+<li>the answer cache did not serve it;</li>
+<li>the index returned all 20 of the pool. acme is pinned to <code>vector</code>, so <code>vector_chunks</code> equal to <code>pool</code> means the index answered, not the Firestore rung;</li>
+<li>the Ranking API put the pool in order.</li>
+</ul>
+<p>The citation's version, <code>497809ffbaa6</code>, is the first twelve characters of the SHA-256 of <code>evals/corpus/acme/hr_policy_2026.md</code> in your checkout. Keep <code>~/ask131-before.json</code>: it is the trail to compare against.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Break</span><h3>Break it: a version reaches the lane</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_11/lesson_11_4/demo_05_break_it_a_version_reaches_the_lane.py" target="_blank" rel="noopener"><code>demo_05_break_it_a_version_reaches_the_lane.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The kit's own re-issue of the handbook, then the same question.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make reindex</code> re-issues one document under an object name. Here it uploads the kit's <code>evals/demo/hr_policy_2026_v2.md</code> as <code>acme/hr_policy_2026.md</code>. That is revision 2: it declares <code>Effective from: 2026-10-01</code> and changes clause NP-03 to 90 days. This is the kit's own demo re-issue, which lesson 1.3 also ran. The script first checks that the golden set is sound, then waits for the worker's line.</p>
+<ul>
+<li><strong>If your lane re-issued revision 2 in the last 30 days,</strong> its rows are still kept. The worker reactivates them without embedding anything: <code>ingest_reactivated</code>, embedded 0.</li>
+<li><strong>Otherwise it ingests revision 2 afresh:</strong> <code>ingest_ok</code>, with 281 vectors reused by hash and 2 embedded.</li>
+</ul>
+<p>Either way, the ledger's current version of the handbook becomes revision 2. The cell's first line notes the time, which the trace needs.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (revision 2 re-issued, then the same question)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export SINCE131="$(date -u +%FT%TZ)"     # the trace reads the log from here
+make reindex PROJECT="$PROJECT" TENANT=acme FILE=evals/demo/hr_policy_2026_v2.md NAME=hr_policy_2026.md
+ask131 after</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the reindex lines are the shape reindex.sh prints for a lane that re-issued revision 2 inside 30 days; the answer is the kit's rag-api on the stand-in lane)</span><span class="ro">read only</span></div><pre tabindex="0">&gt;&gt; gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md - waiting for the worker (up to 5 min)
+&gt;&gt; event doc_key chunks reused embedded retired effective_from
+&gt;&gt; ingest_reactivated	acme_5560308823a62dc8...	283	283	0	283
+&gt;&gt; the gate, scoped to this document, on a candidate: make eval-live PROJECT=documind-ai-YOUR-ID SOURCE=hr_policy_2026.md API=&lt;candidate url&gt;
+From 1 October 2026, a confirmed employee at grade E3 or above serves a notice period of 90 days [1].
+  [1] hr_policy_2026.md  version 5560308823a6  chunk 1  'serves a notice period of 90 days'
+  cache_hit none | backend vertex | answerable True
+  store vector | vector_chunks 20 | pool 20 | rerank_fallback 0 | policy_fallback 0
+  kept in ~/ask131-after.json</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>This is the symptom: 90 days, from 1 October 2026. Compare it with <code>~/ask131-before.json</code> and almost nothing moved: the same store, all 20 from the index, the same reranker, the same clause (<code>chunk 1</code>, NP-03). Only the version in the chunk id changed, to <code>5560308823a6</code>.</p>
+<p>From here, pretend you did not make this change. A user has reported 90 days, and step 6 finds out why from the marks alone.</p></div>
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Trace</span><h3>Trace it, name the cause, put it back</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_11/lesson_11_4/demo_06_trace_it_name_the_cause_put_it_back.py" target="_blank" rel="noopener"><code>demo_06_trace_it_name_the_cause_put_it_back.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Six links in order, the ledger and the two probes, then version 1 again.</p></div></div>
+
+<h4>Definition</h4>
+<p>The trace cell knows only the reported answer, <code>~/ask131-after.json</code>, and what the lane records. It reads:</p>
+<ul>
+<li><code>/version</code>;</li>
+<li>the revision's <code>TOP_K_RETRIEVE</code>, from Cloud Run;</li>
+<li>documind-api's fallback events since the break.</li>
+</ul>
+<p>For the first citation it reads four more things:</p>
+<ul>
+<li>the chunk's own row in Firestore;</li>
+<li>the ledger's row for its source, from <code>GET /v1/sources</code> (the rows <code>make sources</code> prints);</li>
+<li>the bucket's generation of the object;</li>
+<li>the SHA-256 of the same file in your checkout's <code>evals/corpus/</code>: the bytes the golden set was written against.</li>
+</ul>
+<p>Then <code>read_trail()</code> reads the six links in order, and <code>cause()</code> names the first one that is off.</p>
+
+<h4>Do it: the trace</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (the trace: reads only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import hashlib, json, os, subprocess, urllib.request
+from google.cloud import firestore
+P, R, API, SINCE = os.environ["PROJECT"], os.environ["REGION"], os.environ["API"], os.environ["SINCE131"]
+def gcloud(*a):
+    return subprocess.run(["gcloud", *a], capture_output=True, text=True, check=True).stdout
+tok = gcloud("auth", "print-identity-token", "--include-email", f"--audiences={API}",
+             f"--impersonate-service-account=documind-ui-sa@{P}.iam.gserviceaccount.com").strip()
+def api(path):
+    return json.load(urllib.request.urlopen(urllib.request.Request(API + path, headers={"Authorization": "Bearer " + tok}), timeout=60))
+DECIDED = 20      # the pool's depth: config.py's TOP_K_RETRIEVE default, the number evals/ablate.py decided
+RUNG_EVENTS = ("vector_search_fallback", "rag_engine_fallback", "vertex_search_fallback", "retrieval_pin_ignored")
+CAUSE = {"the answer cache": "the answer cache", "the store and its rungs": "a fallback rung", "the pool": "a pool too small",
+         "the reranker": "a fallback rung", "the version": "a version", "the model": "the model"}
+
+def read_trail(ans, top_k, events, v):
+    """The marks, in the order the answer was made: (link, True clean / False off / None not reached, what it says)."""
+    s, hit, none = ans["stages"], ans["cache_hit"] != "none", ans["backend"] == "none"
+    pool, backend, fell = s.get("pool", 0), s.get("retrieval_backend"), [e for e in events if e in RUNG_EVENTS]
+    marks = [("the answer cache", not hit, "served from the answer cache: an earlier answer, retrieval never ran" if hit
+              else "cache_hit none: retrieval ran")]
+    if hit:
+        marks += [(link, None, "not reached: retrieval never ran") for link in ("the store and its rungs", "the pool", "the reranker")]
+    else:
+        own = s.get("vector_chunks", 0) if backend == "vector" else pool
+        marks.append(("the store and its rungs", not fell and not s.get("policy_fallback") and own == pool,
+                      f"{backend}: {own} of the pool's {pool} from its own index; "
+                      + (f"fell back: {', '.join(fell)}" if fell else "no fallback event")
+                      + ("; the tenant's data_region sent it to the kit's index" if s.get("policy_fallback") else "")))
+        why = (f" (TOP_K_RETRIEVE={top_k} on the revision)" if top_k &lt; DECIDED else
+               " (nothing retrieved: a filter, or no such document)" if not pool else " (retired rows or a filter took the rest)")
+        marks.append(("the pool", pool &gt;= DECIDED, f"{pool} of the {DECIDED} the ablation decided" + ("" if pool &gt;= DECIDED else why)))
+        marks.append(("the reranker", None if not pool else not s.get("rerank_fallback"),
+                      "not reached: nothing to order" if not pool else
+                      "the Ranking API did not answer: the pool stood in by retrieval score" if s.get("rerank_fallback")
+                      else "the Ranking API ordered the pool"))
+    if not v:
+        marks.append(("the version", None, "no citation to trace"))
+    elif v["cited"] != v["ledger"]:
+        marks.append(("the version", False, f"cites {v['cited'][:12]}, a version the ledger has retired; its current is {v['ledger'][:12]}"))
+    elif not v["bucket_agrees"]:
+        marks.append(("the version", False, "the bucket holds a newer object than the ledger: the last upload never landed"))
+    elif v["golden"] and v["ledger"] != v["golden"]:
+        marks.append(("the version", False, f"{v['source']}: the ledger's current since {v['since'][:16]} is {v['ledger'][:12]}, "
+                      f"not the golden set's {v['golden'][:12]}" + (f"; it declares effective_from {v['effective']}" if v["effective"] else "")))
+    else:
+        marks.append(("the version", True, f"cites {v['cited'][:12]}, the ledger's current and the golden set's"))
+    if none or hit:
+        marks.append(("the model", None, "not called: " + ("the empty-pool refusal" if none else "a stored answer")))
+    elif not ans["answerable"]:
+        marks.append(("the model", False, f"refused with {pool} chunks in the pool: read what was packed, then make judge"))
+    else:
+        n = len(ans["citations"])
+        marks.append(("the model", True, f"answered from {n} citation{'s' if n != 1 else ''}; groundedness is make judge's"))
+    return marks
+
+def cause(marks):
+    off = [(n, link) for n, (link, ok, _) in enumerate(marks, 1) if ok is False]
+    if not off:
+        return "CAUSE: no link is off - the answer is what the lane holds; if it is still wrong, the golden set or the question is"
+    n, link = off[0]
+    return f"CAUSE: {CAUSE[link]} (link {n}) - every link before it is clean"
+ans = json.load(open(os.path.expanduser("~/ask131-after.json")))           # the answer that was reported
+ver = api("/version")
+print(f"serving: {ver['git_sha']}, {ver['generator_model']} via {ver['model_backend']}, prompt {ver['prompt']}, "
+      f"{ver['embedding']}, current-only {ver['retrieval_current_only']}, answer cache {ver['semantic_cache']}")
+svc = json.loads(gcloud("run", "services", "describe", "documind-api", "--region", R, "--project", P, "--format", "json"))
+env = {e["name"]: e.get("value") for e in svc["spec"]["template"]["spec"]["containers"][0].get("env", [])}
+top_k = int(env.get("TOP_K_RETRIEVE") or 20)                                # config.py's default when the revision sets none
+ors = " OR ".join('jsonPayload.event="%s"' % e for e in RUNG_EVENTS + ("rerank_fallback", "cache_stale"))
+flt = (f'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" '
+       f'AND timestamp&gt;="{SINCE}" AND ({ors})')
+events = [e["jsonPayload"]["event"] for e in json.loads(gcloud("logging", "read", flt, "--project", P, "--format", "json") or "[]")]
+print(f"events since the break: {', '.join(events) or 'none'}")
+v = None
+if ans["citations"]:
+    c = ans["citations"][0]
+    name = c["source_uri"].split("/", 3)[3]                                   # acme/hr_policy_2026.md
+    row = firestore.Client(project=P).collection("chunks").document(c["chunk_id"]).get().to_dict() or {}
+    led = next(s for s in api("/v1/sources?tenant_id=" + name.split("/")[0])["sources"] if s["name"] == name)
+    gen = gcloud("storage", "objects", "describe", c["source_uri"], "--format=value(generation)").strip()
+    frozen = "evals/corpus/" + name                                           # the bytes the golden set was written against
+    v = {"source": name, "cited": c["chunk_id"].split(":", 1)[1].split("#")[0], "ledger": led["doc_key"].split("_", 1)[1],
+         "golden": hashlib.sha256(open(frozen, "rb").read()).hexdigest() if os.path.exists(frozen) else None,
+         "since": led["indexed_at"] or "", "effective": row.get("effective_from"), "bucket_agrees": gen == led["generation"]}
+print("the trail of ~/ask131-after.json, in the order the answer was made:")
+marks = read_trail(ans, top_k, events, v)
+for n, (link, ok, said) in enumerate(marks, 1):
+    print(f"  {n} {link:24} {'clean' if ok else '-' if ok is None else 'OFF':5}  {said}")
+print(cause(marks))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's rag-api, a fake gcloud and a fake Firestore; your times and hashes are your lane's)</span><span class="ro">read only</span></div><pre tabindex="0">serving: COMMIT, gemini-3.6-flash via vertex, prompt documind-rag@v3, text-embedding-005@1, current-only off, answer cache off
+events since the break: none
+the trail of ~/ask131-after.json, in the order the answer was made:
+  1 the answer cache         clean  cache_hit none: retrieval ran
+  2 the store and its rungs  clean  vector: 20 of the pool's 20 from its own index; no fallback event
+  3 the pool                 clean  20 of the 20 the ablation decided
+  4 the reranker             clean  the Ranking API ordered the pool
+  5 the version              OFF    acme/hr_policy_2026.md: the ledger's current since 2026-09-23T10:41 is 5560308823a6, not the golden set's 497809ffbaa6; it declares effective_from 2026-10-01
+  6 the model                clean  answered from 1 citation; groundedness is make judge's
+CAUSE: a version (link 5) - every link before it is clean</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The four pipeline links are clean, and the fifth is off:</p>
+<ul>
+<li>the answer cache did not serve the answer;</li>
+<li>the index answered, with no fallback event since the break;</li>
+<li>the pool is the 20 the ablation decided;</li>
+<li>the Ranking API put it in order.</li>
+</ul>
+<p>So the lane served what it holds, faithfully, and what it holds is the problem. Since the break, the ledger's current version of the handbook has been <code>5560308823a6</code>, not the golden set's <code>497809ffbaa6</code>, and that version declares it applies from 1 October 2026. The model link says only that the answer came from one citation. Whether the words follow the clause is <code>make judge</code>'s question; here they plainly do.</p>
+<p>That is the proof: a wrong answer, traced to its cause (a version) by a cell nobody told what changed.</p>
+<p>If <code>events since the break</code> shows <code>cache_stale</code>, your acme has a context cache packed before the break. The kit refused the stale pack and answered uncached: one more mark that the corpus moved.</p></div>
+
+<h4>Do it: the versions view and the two probes</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the versions view and the two probes; reads only)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make sources PROJECT="$PROJECT" TENANT_ONLY=acme | grep -E "^source|hr_policy_2026"
+python commands/verify-vector-index.py --deploy-root "$DEMO_ROOT" --project "$PROJECT" --region "$REGION"
+GOOGLE_CLOUD_PROJECT="$PROJECT" python commands/check-firestore-fallback.py</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (make sources and both probes are the kit's own, on the stand-in lane; your ids, counts and times differ)</span><span class="ro">read only</span></div><pre tabindex="0">source                                       status                  gen chunks reused embed retired effective  embedding              indexed_at
+acme/hr_policy_2026.md                       indexed    1758624067215604    283    283     0     283 -          text-embedding-005@1   2026-09-23T10:41:07
+Project: documind-ai-YOUR-ID (NUMBER)
+Terraform index: projects/documind-ai-YOUR-ID/locations/asia-south1/indexes/1234567890123456789
+Terraform endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321
+API index: projects/NUMBER/locations/asia-south1/indexes/1234567890123456789
+API endpoint: projects/NUMBER/locations/asia-south1/indexEndpoints/9876543210987654321
+Index dimensions: 768; update method: STREAM_UPDATE
+Global vector count: 1745
+Deployment: documind_chunks_v1
+Deployment sync time: 2026-09-23T10:42:18.000Z
+PASS: the expected index is attached to the expected endpoint.
+This verifies attachment and configuration; ingestion and query checks are separate.
+{"project": "documind-ai-YOUR-ID", "collection": "chunks", "source_uri": "gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md", "source_status": "indexed", "source_doc_key": "acme_5560308823a62dc812a39ca44b777bd73ccd12146b02f1f9506a3d15ed208c71"}
+STOP: HR source ledger does not match the selected local HR file; review the source version.</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/check-firestore-fallback.py - the probe holds the ledger to the handbook in your checkout</span><span class="ro">read only</span></div><pre tabindex="0">    require(source.get(<span class="st">&quot;status&quot;</span>) == <span class="st">&quot;indexed&quot;</span>, <span class="st">&quot;HR source ledger is not indexed; inspect source ingestion in this project.&quot;</span>)
+    require(source.get(<span class="st">&quot;tenant_id&quot;</span>) == tenant <span class="kw">and</span> source.get(<span class="st">&quot;gcs_uri&quot;</span>) == uri
+            <span class="kw">and</span> source.get(<span class="st">&quot;doc_key&quot;</span>) == doc_key <span class="kw">and</span> source.get(<span class="st">&quot;sha256&quot;</span>) == digest,
+            <span class="st">&quot;HR source ledger does not match the selected local HR file; review the source version.&quot;</span>)</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three instruments, one story:</p>
+<ul>
+<li><strong><code>make sources</code></strong> shows the handbook indexed at the time of the break: reused 283, embedded 0, which is a reactivation. After a fresh ingest you would see 281 and 2. Its effective column says <code>-</code>, although the chunks declare 2026-10-01: a reactivation records the date only from the object's name, never from its text (step 7).</li>
+<li><strong>The vector probe passes.</strong> The index Terraform declared is attached and deployed once, so the store link's verdict holds for the infrastructure too.</li>
+<li><strong>The Firestore probe stops.</strong> It holds the ledger to the handbook in your checkout, and the ledger now names another version. A probe written for the rung has become a version check.</li>
+</ul></div>
+
+<h4>Do it: put version 1 back</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (version 1 back, the question again, the probe again)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make reindex PROJECT="$PROJECT" TENANT=acme FILE=evals/corpus/acme/hr_policy_2026.md
+ask131 restored
+GOOGLE_CLOUD_PROJECT="$PROJECT" python commands/check-firestore-fallback.py | tail -1</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the reindex lines are the shape reindex.sh prints; the rest is the kit's rag-api and probe on the stand-in lane)</span><span class="ro">read only</span></div><pre tabindex="0">&gt;&gt; gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md - waiting for the worker (up to 5 min)
+&gt;&gt; event doc_key chunks reused embedded retired effective_from
+&gt;&gt; ingest_reactivated	acme_497809ffbaa603c4...	283	283	0	283
+&gt;&gt; the gate, scoped to this document, on a candidate: make eval-live PROJECT=documind-ai-YOUR-ID SOURCE=hr_policy_2026.md API=&lt;candidate url&gt;
+A confirmed employee at grade E3 or above serves a notice period of 60 days [1].
+  [1] hr_policy_2026.md  version 497809ffbaa6  chunk 1  'serves a notice period of 60 days'
+  cache_hit none | backend vertex | answerable True
+  store vector | vector_chunks 20 | pool 20 | rerank_fallback 0 | policy_fallback 0
+  kept in ~/ask131-restored.json
+PASS: both Firestore filter modes verified. Evidence: operator-evidence/firestore-combined-filters.json</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>These are version 1's bytes again. The worker finds a version it retired minutes ago and reactivates it, embedding nothing. The answer is 60 days again, citing version <code>497809ffbaa6</code>, and the Firestore probe passes both current modes. Revision 2's rows are retired again, and kept for 30 days.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the trail looks like this, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>The marks ride on the answer.</strong> <code>stages</code> goes back with every answer, and the usage row carries the same fields, all but one (see below). The caller, <code>make eval-live</code>'s report and <code>tenant_daily</code> therefore read one set of facts. A trace that needs log access is a trace fewer people can run.</li>
+<li><strong>A version is named by its bytes.</strong> The chunk id carries the upload's SHA-256, so a citation says exactly which bytes answered, and the ledger says which bytes are current. Two uploads of the same bytes are one version, which is why the undo embeds nothing.</li>
+<li><strong>Retired versions are kept, not deleted.</strong> The rows stay for 30 days, so an undo only flips a flag. <code>prefer_current()</code> keeps them out of every answer meanwhile.</li>
+<li><strong>Read in order, and stop at the first mark that is off.</strong> A mark after a broken one tells you about the broken one, not about itself.</li>
+<li><strong>The probes read and never write.</strong> That makes them safe to run on the live lane during an incident.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The map</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>A right answer</td><td data-label="Costs">one retrieval, one rerank, one flash call</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The break</td><td data-label="Costs">the upload and the worker (a reactivation embeds nothing, a fresh ingest two chunks); one answer</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The trace and the probes</td><td data-label="Costs">reads only: Cloud Logging, Firestore, Cloud Run, the bucket, the index; two Firestore vector queries</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>Put back</td><td data-label="Costs">a reactivation, one answer, the probe again</td><td data-label="On your lane">under a rupee</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>A reactivated version forgets the date it declares.</strong> On the undo path, the worker records the source with <code>effective_from_of(msg.name, None)</code>: the date comes from the object's name, never from its text. So <code>make sources</code> showed <code>-</code> for revision 2 while its chunks carry 2026-10-01. A fresh ingest of the same bytes records the date.</li>
+<li><strong>Nothing holds back a version dated in the future.</strong> <code>effective_from</code> reaches the prompt, in each source's header and in the dated rule. The dated rule only settles which source to follow when sources disagree. Nothing compares the date with today, so revision 2 answered from the moment it landed, whatever date it declares.</li>
+<li><strong>The Firestore rung's pool is shared with retired rows.</strong> <code>RETRIEVAL_CURRENT_ONLY</code> is off by default on the lane (in <code>lesson-12.2.sh</code>), so <code>find_nearest</code> spends its 20 slots on current and retired rows alike, and <code>prefer_current()</code> drops the retired ones afterwards. A retired row carries the same vector as the current row it was copied from, so each sits beside its twin. In the panel the rung's pool is 10 of 20. The index is not affected, because the worker removes a retired version's datapoints.</li>
+<li><strong>The usage row does not carry <code>vector_chunks</code>.</strong> The answer does, but <code>usage_row()</code> leaves it out. <code>tenant_daily</code> cannot count the answers the Firestore rung served for a <code>vector</code> tenant; only the log's <code>vector_search_fallback</code> events do.</li>
+<li><strong><code>/version</code> does not say how deep the pool is.</strong> <code>TOP_K_RETRIEVE</code> exists only in the revision's environment, which is why the trace reads it from Cloud Run.</li>
+<li><strong>The Firestore probe is pinned to the frozen handbook.</strong> It refuses any other version of acme's handbook, a legitimate re-issue included. After a real release it keeps stopping until the checkout's <code>evals/corpus/</code> moves with the release.</li>
+</ul></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The trail's map</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>pool</code>, <code>vector_chunks</code>, <code>rerank_fallback</code> in <code>stages</code>; <code>vector_search_fallback</code> with its line</td></tr>
+<tr><td>2</td><td data-label="Claim">A right answer, clean trail</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>60 days</code>, <code>vector_chunks 20 | pool 20 | rerank_fallback 0</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The version in the citation</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>version 497809ffbaa6</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The break landed</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>ingest_reactivated</code> (or <code>ingest_ok</code>) for revision 2's doc_key</td></tr>
+<tr><td>5</td><td data-label="Claim">The wrong answer</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>90 days</code>, the same trail, <code>version 5560308823a6</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The cause named</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>5 the version OFF</code>, <code>CAUSE: a version (link 5)</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The probes agree</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>PASS: the expected index is attached</code>; <code>STOP: HR source ledger does not match</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Put back</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>60 days</code> again; <code>PASS: both Firestore filter modes verified</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>acme's handbook was re-issued as revision 2, then restored to version 1: two worker lines, and no embeddings if revision 2 was inside its 30 days. Revision 2's rows are retired again and kept for 30 days. Three questions were asked as <code>documind-ui-sa</code>, and their usage rows are in documind-api's log. <code>~/ask131-*.json</code> holds the three answers, and <code>operator-evidence/</code> holds the probes' evidence. Lesson 11.5 reconciles those usage rows with the reports and alerts built on them.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 11 Project &middot; Lesson 11.4 Debug a wrong answer through the complete pipeline &middot; v5.0</p><p>Next: Lesson 11.5 Reconcile usage events, reports and alerts.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var root = document.getElementById('tr'); if (!root) return;
+var D = {"none": {"label": "Nothing broken", "answer": "A confirmed employee at grade E3 or above serves a notice period of 60 days [1].", "right": true, "cache_hit": "none", "backend": "vertex", "stages": {"retrieval_backend": "vector", "vector_chunks": 20, "pool": 20, "rerank_fallback": null, "policy_fallback": 0}, "version": "497809ffbaa6 (version 1)", "events": [], "marks": [["the answer cache", true, "cache_hit none: retrieval ran"], ["the store and its rungs", true, "vector: 20 of the pool's 20 from its own index; no fallback event"], ["the pool", true, "20 of the 20 the ablation decided"], ["the reranker", true, "the Ranking API ordered the pool"], ["the version", true, "cites 497809ffbaa6, the ledger's current and the golden set's"], ["the model", true, "answered from 1 citation; groundedness is make judge's"]], "cause": "CAUSE: no link is off - the answer is what the lane holds; if it is still wrong, the golden set or the question is"}, "version": {"label": "The handbook re-issued: revision 2 is current", "answer": "From 1 October 2026, a confirmed employee at grade E3 or above serves a notice period of 90 days [1].", "right": false, "cache_hit": "none", "backend": "vertex", "stages": {"retrieval_backend": "vector", "vector_chunks": 20, "pool": 20, "rerank_fallback": null, "policy_fallback": 0}, "version": "5560308823a6 (revision 2)", "events": [], "marks": [["the answer cache", true, "cache_hit none: retrieval ran"], ["the store and its rungs", true, "vector: 20 of the pool's 20 from its own index; no fallback event"], ["the pool", true, "20 of the 20 the ablation decided"], ["the reranker", true, "the Ranking API ordered the pool"], ["the version", false, "acme/hr_policy_2026.md: the ledger's current since 2026-09-23T10:41 is 5560308823a6, not the golden set's 497809ffbaa6; it declares effective_from 2026-10-01"], ["the model", true, "answered from 1 citation; groundedness is make judge's"]], "cause": "CAUSE: a version (link 5) - every link before it is clean"}, "index": {"label": "The index unreachable: a wrong VECTOR_DEPLOYED_INDEX_ID", "answer": "A confirmed employee at grade E3 or above serves a notice period of 60 days [1].", "right": true, "cache_hit": "none", "backend": "vertex", "stages": {"retrieval_backend": "vector", "vector_chunks": 0, "pool": 10, "rerank_fallback": null, "policy_fallback": 0}, "version": "497809ffbaa6 (version 1)", "events": ["vector_search_fallback: 404 Deployed index documind_missing was not found on the index endpoint"], "marks": [["the answer cache", true, "cache_hit none: retrieval ran"], ["the store and its rungs", false, "vector: 0 of the pool's 10 from its own index; fell back: vector_search_fallback"], ["the pool", false, "10 of the 20 the ablation decided (retired rows or a filter took the rest)"], ["the reranker", true, "the Ranking API ordered the pool"], ["the version", true, "cites 497809ffbaa6, the ledger's current and the golden set's"], ["the model", true, "answered from 1 citation; groundedness is make judge's"]], "cause": "CAUSE: a fallback rung (link 2) - every link before it is clean"}, "ranker": {"label": "The Ranking API timing out: RERANK_TIMEOUT_S=0.001", "answer": "A confirmed employee at grade E3 or above serves a notice period of 60 days [1].", "right": true, "cache_hit": "none", "backend": "vertex", "stages": {"retrieval_backend": "vector", "vector_chunks": 20, "pool": 20, "rerank_fallback": 1, "policy_fallback": 0}, "version": "497809ffbaa6 (version 1)", "events": ["rerank_fallback: DeadlineExceeded"], "marks": [["the answer cache", true, "cache_hit none: retrieval ran"], ["the store and its rungs", true, "vector: 20 of the pool's 20 from its own index; no fallback event"], ["the pool", true, "20 of the 20 the ablation decided"], ["the reranker", false, "the Ranking API did not answer: the pool stood in by retrieval score"], ["the version", true, "cites 497809ffbaa6, the ledger's current and the golden set's"], ["the model", true, "answered from 1 citation; groundedness is make judge's"]], "cause": "CAUSE: a fallback rung (link 4) - every link before it is clean"}, "pool": {"label": "A shallow pool: TOP_K_RETRIEVE=2", "answer": "A confirmed employee at grade E3 or above serves a notice period of 60 days [1].", "right": true, "cache_hit": "none", "backend": "vertex", "stages": {"retrieval_backend": "vector", "vector_chunks": 2, "pool": 2, "rerank_fallback": null, "policy_fallback": 0}, "version": "497809ffbaa6 (version 1)", "events": [], "marks": [["the answer cache", true, "cache_hit none: retrieval ran"], ["the store and its rungs", true, "vector: 2 of the pool's 2 from its own index; no fallback event"], ["the pool", false, "2 of the 20 the ablation decided (TOP_K_RETRIEVE=2 on the revision)"], ["the reranker", true, "the Ranking API ordered the pool"], ["the version", true, "cites 497809ffbaa6, the ledger's current and the golden set's"], ["the model", true, "answered from 1 citation; groundedness is make judge's"]], "cause": "CAUSE: a pool too small (link 3) - every link before it is clean"}, "filter": {"label": "A filter nothing matches: doc_type form", "answer": "The corpus holds nothing near this question: no passage of this tenant's current documents was retrieved, so there is nothing to answer from and nothing to cite. Check that the document you expect is ingested and current, or ask with the words it uses.", "right": false, "cache_hit": "none", "backend": "none", "stages": {"retrieval_backend": "vector", "vector_chunks": 0, "pool": 0, "rerank_fallback": null, "policy_fallback": 0}, "version": "none", "events": [], "marks": [["the answer cache", true, "cache_hit none: retrieval ran"], ["the store and its rungs", true, "vector: 0 of the pool's 0 from its own index; no fallback event"], ["the pool", false, "0 of the 20 the ablation decided (nothing retrieved: a filter, or no such document)"], ["the reranker", null, "not reached: nothing to order"], ["the version", null, "no citation to trace"], ["the model", null, "not called: the empty-pool refusal"]], "cause": "CAUSE: a pool too small (link 3) - every link before it is clean"}, "cache": {"label": "The answer cache on, the question asked twice", "answer": "A confirmed employee at grade E3 or above serves a notice period of 60 days [1].", "right": true, "cache_hit": "semantic", "backend": "cache", "stages": {"retrieval_backend": "vector", "vector_chunks": 0, "pool": 0, "rerank_fallback": null, "policy_fallback": 0}, "version": "497809ffbaa6 (version 1)", "events": [], "marks": [["the answer cache", false, "served from the answer cache: an earlier answer, retrieval never ran"], ["the store and its rungs", null, "not reached: retrieval never ran"], ["the pool", null, "not reached: retrieval never ran"], ["the reranker", null, "not reached: retrieval never ran"], ["the version", true, "cites 497809ffbaa6, the ledger's current and the golden set's"], ["the model", null, "not called: a stored answer"]], "cause": "CAUSE: the answer cache (link 1) - every link before it is clean"}}, ORDER = ["none", "version", "index", "ranker", "pool", "filter", "cache"], $ = function(id){ return document.getElementById(id); };
+function el(tag, cls, text){ var e = document.createElement(tag); if (cls) { e.className = cls; } e.textContent = text; return e; }
+function row(out, name, text, cls){ out.appendChild(el('b', '', name)); out.appendChild(el('span', cls || '', text)); }
+function render(){ var d = D[$('tr-break').value], s = d.stages, out = $('tr-out'); out.textContent = '';
+row(out, 'The answer', d.answer, d.right ? 'pass' : 'stop');
+row(out, 'Against lk-06', d.right ? 'right: 60 days, as the golden set says' : 'WRONG: the golden set says 60 days', d.right ? 'pass' : 'stop');
+row(out, 'The trail', 'cache_hit ' + d.cache_hit + ' | backend ' + d.backend + ' | store ' + s.retrieval_backend + ' | vector_chunks ' + s.vector_chunks +
+' | pool ' + s.pool + ' | rerank_fallback ' + (s.rerank_fallback || 0) + ' | policy_fallback ' + s.policy_fallback + ' | cited ' + d.version);
+row(out, 'The log', d.events.length ? d.events.join('; ') : 'no fallback event', d.events.length ? 'stop' : 'skip');
+d.marks.forEach(function(m, i){ row(out, (i + 1) + ' ' + m[0], (m[1] === true ? 'clean: ' : m[1] === false ? 'OFF: ' : 'not reached: ') +
+m[2].replace(/^not reached: /, ''), m[1] === true ? 'pass' : m[1] === false ? 'stop' : 'skip'); });
+row(out, 'The trace says', d.cause.replace(/^CAUSE: /, ''), /no link is off/.test(d.cause) ? 'pass' : 'stop'); }
+ORDER.forEach(function(k){ var o = el('option', '', D[k].label); o.value = k; $('tr-break').appendChild(o); });
+$('tr-break').addEventListener('change', render);
+$('tr-break').value = 'version'; render();
+})();
+</script>
+</body>
+</html>

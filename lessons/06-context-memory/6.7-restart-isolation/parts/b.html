@@ -1,0 +1,76 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>ME</code> and <code>tok</code>. You need <code>~/graph-venv</code> from lesson 5.4. Step 3's first cell adds FastAPI and lesson 6.6's connector to it, and makes it if it is missing. The chat service must be running in your region, with the UI beside it. Step 4 changes one setting on <code>documind-chat</code>, which makes a new revision, and moves all traffic to it. Step 5 needs you in a browser.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Isolation</span><h3>Isolation, on the kit's own app</h3><p>Eight callers against the kit's chat app, run on your machine, then a restart.</p></div></div>
+
+<h4>Definition</h4>
+<p>On your lane only one account can call the chat service from a shell, so the callers isolation is about cannot all be made there. You can run the kit's app on your machine instead, under FastAPI's <code>TestClient</code>, which runs it in-process with its own start-up and routes. Two things are stood in. The token check lets a bearer name alice, bob, carol, the outsider or nobody. The roster puts alice and bob in acme and carol in zeta. The model can answer only from the history it is sent: it recalls saffron if an earlier question in that history contains it. Everything else is the kit's: the request model, the door, the thread id, the LangChain brain and the checkpointer, in memory.</p>
+
+<h4>The code</h4>
+@@request@@
+@@thread@@
+@@turn@@
+
+<h4>Do it: the venv</h4>
+%%CELL_VENV%%
+%%OUT_VENV%%
+
+<h4>Do it: eight callers</h4>
+%%CELL_ISO%%
+%%OUT_ISO%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Alice's second turn found the word; her new session did not. Bob, in her tenant, used the same session name and reached <code>acme:bob@acme.example:lesson113</code>, another thread. Carol reached zeta's. The body that named zeta changed nothing: <code>ChatRequest</code> has no tenant field, so the key was dropped and the roster decided. The colon never reached the thread id, because the request model refused it with a 422. The roster refused the outsider (403), and the identity check refused the token that named nobody (401).</p>
+<p>That left four threads, each under its own tenant and person. Then the app restarted, built a new memory checkpointer, and alice's word was gone. That is the failure step 4 must not show on your lane.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Durability</span><h3>A conversation across a redeploy</h3><p>A word to two brains, a new revision of the chat service, and the word asked for again.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell gives the word to the LangChain brain and to the ADK brain, each in its own session. Then it redeploys the chat service: it changes one setting, <code>LESSON113_RESTART</code>, which makes a new revision, and moves all traffic to it. Every instance that served the first turns is replaced. Then it asks both brains for the word. It prints the serving revision before and after, and saves the sessions and the time of the redeploy for step 6.</p>
+
+<h4>The code</h4>
+@@lifespan@@
+
+<h4>Do it</h4>
+%%CELL_REDEPLOY%%
+%%OUT_REDEPLOY%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The revision changed, so every instance was new. The LangChain brain still had the word. The new instance opened its pool at start-up and read the thread from Cloud SQL, and the model was sent the whole conversation. This is the first half of the lesson's proof.</p>
+<p>The ADK brain did not have it: its session was in the old instance's memory. With a minimum of zero instances, every quiet spell does the same to ADK's conversations.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Isolation, live</span><h3>Another person finds nothing</h3><p>You, through the UI, asking for a word you never gave.</p></div></div>
+
+<h4>Definition</h4>
+<p>From your shell, every call is <code>documind-ui-sa</code>. The other person on your lane is you. The UI forwards your IAP assertion, and the chat service takes your email from it. Open the UI, sign in, choose a brain other than direct in the sidebar, and ask for the word.</p>
+
+<h4>Do it</h4>
+%%CELL_UI%%
+%%OUT_UI%%
+<ol>
+<li>Open that address, and sign in with the account the line names.</li>
+<li>In the sidebar, set <strong>Brain</strong> to <code>langchain</code>. It starts on <code>direct</code>, which does not reach the chat service.</li>
+<li>Ask: <em>Which word did I ask you to remember?</em></li>
+</ol>
+
+<div class="box box-teal"><div class="box-title">Expected</div>
+<p>An answer that has no word from you, and under it a caption beginning <code>brain: langchain</code>.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You asked as yourself, in a session the UI made for your browser, so your question reached <code>acme:</code> your email <code>:</code> that session. <code>documind-ui-sa</code>'s thread, with saffron in it, has a different key, and nothing in your request could name it. This is the second half of the proof: another person finds nothing. Had the UI let you type step 4's session name, you would still have reached a thread of your own, as bob did in step 3.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The rows</span><h3>The rows behind both</h3><p>Step 4's sessions split at the redeploy, and each person's threads.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell connects as in lesson 6.6. For step 4's two sessions, it reads the checkpoints and when they were written, split at the time of the redeploy. Then it counts each person's threads: yours and <code>documind-ui-sa</code>'s.</p>
+
+<h4>Do it</h4>
+%%CELL_ROWS%%
+%%OUT_ROWS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The LangChain session has checkpoints on both sides of the redeploy, some written by the old revision and some by the new, in one thread. The ADK session has no rows at all. Your thread sits under your own email, beside <code>documind-ui-sa</code>'s. Two people, two sets of rows, one table.</p></div>

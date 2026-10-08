@@ -1,0 +1,127 @@
+<div class="box box-amber"><div class="box-title">The names this lesson reads off the API</div>
+<p>The guard, the answer cache, the router and the ranker's deadline live in the API's environment, each with a default the page names; a name the service does not set is unset rather than exported empty. <code>/version</code> reports the cache and the model.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT, once per shell</span><button class="cp" type="button">copy</button></div><pre tabindex="0">svc_env() { gcloud run services describe "$1" --region "$REGION" --project "$PROJECT" \
+  --format='value(spec.template.spec.containers[0].env)' | tr ';' '\n' | grep "'name': '$2'" | sed -nE "s/.*'value': '([^']*)'.*/\1/p"; }
+setenv() { v="$(svc_env documind-api "$1")"; if [ -n "$v" ]; then export "$1=$v"; else unset "$1"; fi; }
+for N in ARMOR ARMOR_TEMPLATE SEMANTIC_CACHE ROUTING RERANK_TIMEOUT_S; do setenv "$N"; done
+echo "guard: ${ARMOR:-off (default)}  template: ${ARMOR_TEMPLATE:-%%ARMOR_TEMPLATE%% (default)}  cache: ${SEMANTIC_CACHE:-off (default)}  routing: ${ROUTING:-off (default)}  rerank timeout: ${RERANK_TIMEOUT_S:-%%TIMEOUT%% (default)}"
+curl -s "$API/version" -H "Authorization: Bearer $(tok "$API")" | python -c "import sys, json; j = json.load(sys.stdin); print('version:', j['generator_model'], '|', j['prompt'], '| semantic_cache', j['semantic_cache'])"</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (a lane deployed by make up leaves all four off)</span><span class="ro">read only</span></div><pre tabindex="0">guard: off (default)  template: %%ARMOR_TEMPLATE%% (default)  cache: off (default)  routing: off (default)  rerank timeout: %%TIMEOUT%% (default)
+version: %%GEN_MODEL%% | %%PROMPT%% | semantic_cache off</pre></div></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Stream</span><h3>A stream in curl: the raw events, their order, and a clock on each</h3><p>The handler that writes the events, the generator that yields the packed list once and then the text, and a cell that times the first citation, the first token and done.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>generate_stream()</code> yields three kinds of thing: <code>packed</code> once, with the list the budget kept; <code>token</code> for each piece of text from <code>generate_content_stream</code>; and <code>usage</code> at the end from the last chunk's metadata, which carries the totals. The handler turns the packed list into citation events with the fields a <code>Citation</code> carries, sends each token as it comes unless the guard is holding them, and closes with <code>done</code>. The cell asks the notice-period question on the stream, records the millisecond each event kind first arrived, saves the raw transcript for the reader, and asks the same question on the query to set the two citation counts side by side.</p>
+
+<h4>The code</h4>
+@@gen_stream_doc@@
+@@gen_stream@@
+@@stream_events@@
+@@stream_done@@
+
+<h4>Do it: one stream, timed, then the query's citations beside it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (a Python cell; one stream and one query, two rupees)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, json, time, subprocess, urllib.request
+PROJECT, API = os.environ["PROJECT"], os.environ["API"]
+Q = os.environ.get("Q", "What is the notice period for a confirmed E3?")
+tok = subprocess.run(["gcloud", "auth", "print-identity-token", "--include-email", f"--audiences={API}",
+                      f"--impersonate-service-account=documind-ui-sa@{PROJECT}.iam.gserviceaccount.com"], capture_output=True, text=True, check=True).stdout.strip()
+H = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
+req = urllib.request.Request(f"{API}/v1/stream", method="POST", headers=H, data=json.dumps({"query": Q, "tenant_id": "acme", "top_k": 5}).encode())
+t0 = time.perf_counter(); ev = None; first = {}; cits, tokens, done, raw = [], [], {}, []
+with urllib.request.urlopen(req, timeout=180) as r:
+    for line in r:
+        line = line.decode("utf-8").rstrip("\n"); raw.append(line)
+        if line.startswith("event: "):
+            ev = line[7:]; first.setdefault(ev, round((time.perf_counter() - t0) * 1000))
+        elif line.startswith("data: "):
+            d = json.loads(line[6:])
+            if ev == "citation": cits.append(d)
+            elif ev == "token": tokens.append(d["t"])
+            elif ev == "done": done = d
+open("/tmp/stream63.txt", "w", encoding="utf-8").write("\n".join(raw) + "\n")
+print(f"first citation at {first.get('citation')} ms | first token at {first.get('token')} ms | done at {first.get('done')} ms | the API's own latency_ms {done.get('latency_ms')}")
+print(f"{len(cits)} citation events, then {len(tokens)} token events, then done")
+for c in cits:
+    print(f"   citation {c['n']} #{str(c['chunk_id']).rsplit('#', 1)[-1]:>3} {c['source'].split('/')[-1][:22]:22} kind {c['kind']} effective_from {c.get('effective_from')} quote {c['quote'][:34]!r}")
+print("the answer:", " ".join("".join(tokens).split())[:120], "...")
+print("done:", {k: done.get(k) for k in ("tokens_in", "tokens_out", "cached_tokens", "model", "backend", "cache_hit", "prompt")})
+print("stages:", done.get("stages"))
+req = urllib.request.Request(f"{API}/v1/query", method="POST", headers=H, data=json.dumps({"query": Q, "tenant_id": "acme", "stream": False, "top_k": 5}).encode())
+j = json.load(urllib.request.urlopen(req, timeout=180))
+print(f"the query's answer to the same question: {len(j['citations'])} citations, the ones the model used; the stream's {len(cits)} were the packed set")
+print("saved /tmp/stream63.txt: paste it into the reader in step 1")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (your milliseconds and words; the order, the five citations and the three clocks are the point)</span><span class="ro">read only</span></div><pre tabindex="0">first citation at 1xxx ms | first token at 2xxx ms | done at 4xxx ms | the API's own latency_ms 4xxx
+5 citation events, then 3x token events, then done
+   citation 1 #  1 hr_policy_2026.md      kind text effective_from None quote 'NP-03 — Notice period\nA confirmed em'
+   citation 2 #  4 hr_policy_2026.md      kind text effective_from None quote '...'
+   ...
+the answer: A confirmed employee in grade E3 must serve a notice period of ... [1] ...
+done: {'tokens_in': 1xxx, 'tokens_out': 4xx, 'cached_tokens': 0, 'model': '%%GEN_MODEL%%', 'backend': 'vertex', 'cache_hit': 'none', 'prompt': '%%PROMPT%%'}
+stages: {'policy_fallback': 0, 'retrieval_backend': 'vector', 'retrieve_ms': 6xx, 'pool': 20, 'graph_chunks': 0, 'managed_chunks': 0, 'vector_chunks': 20, 'rerank_ms': 3xx, 'generate_ms': 2xxx}
+the query's answer to the same question: 3 citations, the ones the model used; the stream's 5 were the packed set
+saved /tmp/stream63.txt: paste it into the reader in step 1</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three clocks the caller feels, one the API keeps. The citations arrived when retrieval and reranking were done, about a second in; the first token arrived when the model began, another second later; and <code>done</code> came when it stopped, which is the only number <code>latency_ms</code> measures. The five citations were the packed set, every chunk the model was shown, and the query's three were the ones it chose to cite, which is the difference between knowing the sources before the answer and knowing which sources the answer used. The tokens were prose with the packed positions in brackets, and the envelope in <code>done</code> was the query's minus the price, which the row carries.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Shapes</span><h3>What a stream's citations are, and the streams of one token</h3><p>The citation event from a packed chunk, the two cases that send one token and no model call, and the rows the three streams left.</p></div></div>
+
+<h4>Definition</h4>
+<p>A citation event is built from the packed chunk's own fields, the same nine a <code>Citation</code> carries, so the UI renders a figure or a video segment from the stream exactly as from the query. Two streams never reach the model. An answer-cache hit, when <code>SEMANTIC_CACHE</code> is on, sends the stored answer's citations, then the stored answer as one token, then <code>done</code> with backend <code>cache</code> and cost zero; the UI cannot tell, the row can. An empty pool sends no citation, one token that is the refusal the API writes itself, and <code>done</code> with backend <code>none</code>; the row's <code>answerable false</code> feeds the alert. The cell streams the empty pool with the same filter lessons 5.x used, and then reads the rows the streams of this step and the last have written, with the columns that tell them apart.</p>
+
+<h4>The code</h4>
+@@empty_token@@
+@@stream_row@@
+
+<h4>Do it: the empty pool as one token, then the stream rows</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one stream that costs nothing; one log read)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">curl -N -s -X POST "$API/v1/stream" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
+  -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","filters":{"doc_type":"policy"}}' \
+  | python -c "
+import sys, json
+ev, n = None, {}
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith('event: '): ev = line[7:]; n[ev] = n.get(ev, 0) + 1
+    elif line.startswith('data: ') and ev == 'token': print('the one token:', json.loads(line[6:])['t'][:88], '...')
+    elif line.startswith('data: ') and ev == 'done': d = json.loads(line[6:]); print('done: backend', d['backend'], '| tokens_in', d['tokens_in'], '| pool', d['stages']['pool'], '| rerank_ms', d['stages']['rerank_ms'], '| generate_ms', d['stages']['generate_ms'])
+print('events:', n)"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="stream"' \
+  --project "$PROJECT" --freshness 15m --limit 3 --format='value(jsonPayload.answerable,jsonPayload.model_backend,jsonPayload.tokens_in,jsonPayload.tokens_out,jsonPayload.pool,jsonPayload.guard,jsonPayload.brain)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (newest row first; the second stream is step 3's)</span><span class="ro">read only</span></div><pre tabindex="0">the one token: The corpus holds nothing near this question: no passage of this tenant's current documents was ...
+done: backend none | tokens_in 0 | pool 0 | rerank_ms 0 | generate_ms 0
+events: {'token': 1, 'done': 1}
+False	none	0	0	0	off	ui
+True	vertex	1xxx	4xx	20	off	ui</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The filter emptied the pool, and the stream did what the query does in the same case, without a model: no citation events, because nothing was packed, one token carrying the API's own refusal, and a <code>done</code> whose backend is <code>none</code> and whose rerank and generate clocks read zero because they never ran. The rows told the same story in the columns lesson 2.3 read: the empty stream with <code>answerable False</code> and no tokens, the cited one with its pool of twenty and the model's tokens, both with the guard <code>off</code>. Both also read <code>ui</code> in the brain column, although curl sent no label: the API records a request that names no brain as <code>ui</code>, so that column cannot tell a shell from the UI. The row's <code>user</code> can, and lesson 3.8 reads it.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Guard</span><h3>The guard: a prompt refused before the stream, an answer held until it is screened</h3><p>Model Armor on both sides of the model, why the stream holds its tokens when the guard is on, and what each verdict does to the events and the row.</p></div></div>
+
+<h4>Definition</h4>
+<p>The guard is a setting, <code>ARMOR</code>, and a template, and it is imported only when the setting is on, so a revision that never asked for it neither pays for its client nor fails on a template it does not have. On, it sits on both sides of the model. Before retrieval it screens the prompt, because an injection that reaches the retriever has already chosen which documents the model reads; a block is a 400 with the reason and a <code>guard</code> line, and the stream never starts. After generation it screens the finished answer, and a token stream cannot be screened, so the stream holds every token, screens the whole once, and then sends either all of them or one <code>error</code> event; the row is logged first, with <code>blocked_response</code>, so the rate is counted even when the caller sees nothing. Off, as on your lane, every row says <code>guard: off</code>, and the tokens go out as they come. Turning it on needs the template in Model Armor and the role on the service account, which Module 4 does; here you read the two doors and the column.</p>
+
+<h4>The code</h4>
+@@screen_prompt@@
+@@screen_response@@
+@@held@@
+@@guard_client@@
+
+<h4>Read the lane, Rs 0</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (two log reads)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND (jsonPayload.event="query" OR jsonPayload.event="stream")' \
+  --project "$PROJECT" --freshness 24h --limit 200 --format='value(jsonPayload.guard)' | sort | uniq -c
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="guard"' \
+  --project "$PROJECT" --freshness 7d --limit 3 --format='value(timestamp,jsonPayload.verdict,jsonPayload.reason)'</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (every row off; no guard line in a week)</span><span class="ro">read only</span></div><pre tabindex="0">     NN off</pre></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every answer of the day carried the guard's verdict, and every verdict was <code>off</code>, which is the honest column for a lane that has not installed the template: not <code>pass</code>, which would claim a screening that did not happen. The two doors are in the code above, and the stream's held list is the part that costs something when the guard is on: the first token waits for the last, and the feature this lesson is about is traded for the screen. That trade is Module 4's to make.</p></div>
