@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 0.5 Set up the cloud lane end to end: clone in Cloud Shell, create the infrastructure with Terraform, deploy every service and the UI - one runbook, start to switch-off | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+/* the three phases: one rail, three stations; it stacks on a phone */
+.rail{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:22px 0 26px;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card);}
+.rail-st{padding:16px 16px 14px;border-right:1px solid var(--border);min-width:0;position:relative;}
+.rail-st:last-child{border-right:0;}
+.rail-st .rn{font-family:var(--display);font-size:30px;line-height:1;color:var(--teal);}
+.rail-st h4{margin:8px 0 4px;font-size:16px;color:var(--navy);}
+.rail-st p{margin:0 0 8px;font-size:var(--small-size);line-height:1.5;color:var(--slate);}
+.rail-st .rw{font-family:var(--mono);font-size:12px;color:var(--teal-dark);background:var(--teal-light);border-radius:6px;padding:4px 7px;display:inline-block;overflow-wrap:anywhere;}
+.rail-st:nth-child(2){background:#f8fafc;}
+.rail-st:nth-child(3){background:var(--teal-light);}
+@media (max-width:640px){
+  .rail{grid-template-columns:1fr;}
+  .rail-st{border-right:0;border-bottom:1px solid var(--border);}
+  .rail-st:last-child{border-bottom:0;}
+}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 0 &middot; Setup &middot; Lesson 0.5</div>
+<h1>Set up the cloud lane end to end: <span>one Cloud Shell, one checked Terraform plan, 7 services and the UI</span></h1>
+<p>Lessons 0.1 to 0.4 take the lane apart and explain every piece. This page is the other half: one runbook, in order, that takes you from an empty browser tab to a working DocuMind in your own Google Cloud project. You copy the kit into Cloud Shell, create the infrastructure with Terraform through the kit's checked plan, deploy every service and the UI behind Google sign-in, prove it answers with citations, and switch it off again. Use it when you need a lane today; go back to 0.3 and 0.4 when you want to know why each line is there.</p>
+<div class="hero-chips"><div class="hero-chip">Cloud Shell only</div><div class="hero-chip">git clone to ~/deploy_module_rag</div><div class="hero-chip">40 APIs</div><div class="hero-chip">State in your own bucket</div><div class="hero-chip">make plan, then make up</div><div class="hero-chip">7 Cloud Run services</div><div class="hero-chip">UI behind IAP</div><div class="hero-chip">Rs 44.05 an hour, then off</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">The three phases: copy, create, deploy</a></li>
+<li><a href="#s2">The words: Cloud Shell, kit, lane, state, plan, IAP, roster</a></li>
+<li><a href="#setup">Before you run anything: open Cloud Shell and keep it alive</a></li>
+<li><a href="#s3">Phase 1: copy the kit into Cloud Shell</a></li>
+<li><a href="#s4">A project, billing and a budget</a></li>
+<li><a href="#s5">The session block: one set of variables for every command</a></li>
+<li><a href="#s6">Phase 2: APIs, the state bucket and terraform init</a></li>
+<li><a href="#s7">CI trust and Google sign-in, before the plan</a></li>
+<li><a href="#s8">make preflight, then make plan: read before you apply</a></li>
+<li><a href="#s9">Phase 3: make up applies the plan and deploys everything</a></li>
+<li><a href="#s10">When make up stops: the three known places</a></li>
+<li><a href="#s11">Seed the lane: operators, the corpus, the vectors</a></li>
+<li><a href="#s12">Prove it: the smoke, the gate and the UI in a browser</a></li>
+<li><a href="#s13">What bills by the hour, and how to stop it</a></li>
+<li><a href="#s14">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will stand up the whole DocuMind lane from Cloud Shell in one sitting: clone the kit, create every resource with one reviewed Terraform plan, build and deploy 7 services, put the UI behind Google sign-in, load the corpus, and prove it with <code>make smoke</code>. Then you switch it off, so the lane costs you only the hours you used.</p></div>
+
+<div class="box box-amber"><div class="box-title">This lane costs money while it exists</div>
+<p>From the end of the Terraform apply, a handful of resources bill every hour whether anyone uses them or not: Rs 44.05 an hour if Vector Search picks a SMALL shard, Rs 111.10 if it picks MEDIUM (about Rs 1,057 to Rs 2,666 a day), at Mumbai list prices. Cloud Build minutes, Gemini calls and Document AI pages come on top. Use a project made for the course, put a budget on it in step 4, and finish with step 13.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>The three phases: copy, create, deploy</h3><p>What happens where, and why it happens in this order.</p></div></div>
+
+<p>Standing up a lane is three different jobs done by three different tools, and the order matters because each one needs what the one before it produced.</p>
+
+<div class="rail">
+<div class="rail-st"><div class="rn">1</div><h4>Copy</h4><p>git puts the kit, every service, the Terraform and the Makefile, in your Cloud Shell home directory. Nothing in your project changes.</p><span class="rw">~/deploy_module_rag</span></div>
+<div class="rail-st"><div class="rn">2</div><h4>Create</h4><p>Terraform reads <code>terraform/</code>, plans every resource, and creates them: accounts, buckets, Firestore, Vector Search, SQL, Spanner, network, alerts.</p><span class="rw">make plan</span></div>
+<div class="rail-st"><div class="rn">3</div><h4>Deploy</h4><p>Cloud Build turns each service into an image; gcloud deploys each image to Cloud Run as its own account; the UI goes behind IAP.</p><span class="rw">make up</span></div>
+</div>
+
+<p><strong>Copy</strong> is local and free. The kit is a folder of code: the services under <code>services/</code>, the infrastructure under <code>terraform/</code>, and a <code>Makefile</code> whose targets drive everything else. Cloud Shell is the place to keep it because it already has <code>gcloud</code>, <code>terraform</code>, <code>make</code>, <code>git</code> and Python, it is already signed in as you, and its home directory survives between sessions.</p>
+
+<p><strong>Create</strong> is Terraform's job. Terraform compares what the kit declares with what your project already has, writes down the difference as a <em>plan</em>, and, once you approve it, makes the project match. The kit wraps this in a guard: <code>make plan</code> saves the plan and checks it, refusing any plan that would delete or replace a resource, and <code>make up</code> applies only that saved, checked plan. Terraform records what it created in a <em>state</em> file, which the kit keeps in a bucket in your own project so a new Cloud Shell session, or a teammate, sees the same lane.</p>
+
+<p><strong>Deploy</strong> starts where Terraform stops. Terraform creates the places services will run and the accounts they will run as; it does not build code. After the apply, <code>make up</code> continues with Cloud Build, which turns each service's source into an image in Artifact Registry, then a gcloud script per service that deploys it to Cloud Run with its flags, its account and its environment, then the steps that make the lane usable: the vector indexes ready, the roster written, the managed stores, the BigQuery view.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127959;</div><div>
+<p><strong>Opening a branch office.</strong> Copying the kit is collecting the architect's drawings and the fit-out manual into your bag. Terraform is the builder who reads the drawings, shows you a signed list of every wall and door before starting, and keeps the site register (the state) in the office safe so the next builder knows what is already there. The deploy is moving the staff in: each one with their own ID card, at their own desk, with a receptionist (IAP) at the front door who only lets in people on the list.</p></div></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 0 &middot; The words</span><h3>The words: Cloud Shell, kit, lane, state, plan, IAP, roster</h3><p>Every term the commands below use, in one table.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>What it means here</th><th>Where you meet it</th></tr></thead>
+<tbody>
+<tr><td>Cloud Shell</td><td data-label="What it means here">A small Linux machine Google runs for you in the browser, signed in as your account, with 5 GB of home directory that persists</td><td data-label="Where you meet it">Every command on this page</td></tr>
+<tr><td>Kit</td><td data-label="What it means here">The DocuMind deploy folder: services, Terraform, Makefile, evals, smoke tests. Published as the public learner repository</td><td data-label="Where you meet it"><code>~/deploy_module_rag</code></td></tr>
+<tr><td>Lane</td><td data-label="What it means here">One complete, running copy of DocuMind in one Google Cloud project</td><td data-label="Where you meet it">Your project, <code>documind-ai-YOUR-ID</code></td></tr>
+<tr><td>Terraform state</td><td data-label="What it means here">Terraform's record of every resource it created and its last known settings</td><td data-label="Where you meet it"><code>gs://documind-ai-YOUR-ID-tfstate</code></td></tr>
+<tr><td>Plan</td><td data-label="What it means here">The list of changes Terraform would make, saved to a file so the apply does exactly that and nothing else</td><td data-label="Where you meet it"><code>make plan</code>, step 8</td></tr>
+<tr><td>Service account</td><td data-label="What it means here">An identity a program runs as. Each service gets its own, with only the roles its code needs</td><td data-label="Where you meet it"><code>documind-api-sa</code>, <code>documind-ui-sa</code>, and the rest</td></tr>
+<tr><td>ADC</td><td data-label="What it means here">Application Default Credentials: the sign-in Terraform and the kit's Python use, separate from <code>gcloud</code>'s own</td><td data-label="Where you meet it">The session block, step 5</td></tr>
+<tr><td>IAP</td><td data-label="What it means here">Identity-Aware Proxy: Google's sign-in in front of the UI. It decides which people may reach the page at all</td><td data-label="Where you meet it">Step 7 and step 12</td></tr>
+<tr><td>Roster</td><td data-label="What it means here">Firestore documents that say which signed-in person belongs to which tenant. IAP lets you in; the roster decides what you see</td><td data-label="Where you meet it"><code>make roster</code>, run by <code>make up</code></td></tr>
+<tr><td>Tenant</td><td data-label="What it means here">One customer's documents and users. The kit seeds three: acme, zeta and globex</td><td data-label="Where you meet it"><code>TENANT=acme</code></td></tr>
+<tr><td>Smoke test</td><td data-label="What it means here">A short end-to-end check: health, an answer with citations, and a refusal without a token</td><td data-label="Where you meet it"><code>make smoke</code>, step 12</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h3 id="setup">Before you run anything: open Cloud Shell and keep it alive</h3>
+
+<p>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">the Google Cloud console</a> signed in as the account that owns your billing account, and click <em>Activate Cloud Shell</em> in the top bar. When the terminal opens, start a <code>tmux</code> session. <code>make up</code> runs for a long time, and Cloud Shell drops idle browser connections; inside tmux the command keeps running and you reattach to it.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">tmux new -s documind            <span class="cm"># later, after a disconnect: tmux attach -t documind</span>
+gcloud --version | head -n 1
+gcloud config get-value account
+terraform version | head -n 1; make --version | head -n 1; git --version
+python3 --version</pre></div>
+
+
+<p>If the Cloud Shell machine itself is recycled, after a long idle period, tmux is gone but your home directory is not: the kit, its virtual environment and Terraform's saved inputs are still there. Reattach with a new tmux session and run the session block of step 5 again.</p>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Phase 1 &middot; Copy</span><h3>Phase 1: copy the kit into Cloud Shell</h3><p>One clone, one virtual environment, the right Terraform.</p></div></div>
+
+<p>The kit is published as its own public repository, and every command in the course expects it at <code>~/deploy_module_rag</code>. Clone it once; afterwards a <code>git pull</code> brings every update. If the directory already exists from an earlier session, the block pulls instead of cloning, so it is safe to run again.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: get the kit</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="$HOME/deploy_module_rag" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+ls</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>expected - the kit&#x27;s top level</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+INDEX.md  INDEXING.md  INFRASTRUCTURE.md  Makefile  README.md  UNOWNED.md  cloudbuild.yaml  commands  evals
+extract_documind.py  gke  mk  operators  run-service.yaml  services  shared  smoke  terraform  validate.py  workshop_demos</pre></div>
+
+
+<p>Write the commit down with your notes. If something behaves differently from this page later, the commit says which version of the kit you ran.</p>
+
+<p>Next, the operator environment: a Python virtual environment the Makefile's Python steps use, with the kit's pinned packages, and a Terraform new enough for the kit's backend (1.9 or newer). The kit ships a helper script with one function for each.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the operator venv and Terraform</span><button class="cp" type="button">copy</button></div><pre tabindex="0">cd "$DEMO_ROOT"
+[ -d "$HOME/rag-shell-venv" ] || python3 -m venv "$HOME/rag-shell-venv"
+source "$HOME/rag-shell-venv/bin/activate" &amp;&amp; python --version
+source commands/session-restart.sh
+rag_install_python_dependencies
+rag_require_terraform
+terraform version | head -n 1</pre></div>
+
+
+<p>Before you spend anything, run the offline check. It compiles every service, checks every Dockerfile and dependency pin, and validates the Terraform, all without touching a project. If this is red, a live deploy will not be green either.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the offline dry run, Rs 0</span><button class="cp" type="button">copy</button></div><pre tabindex="0">cd "$DEMO_ROOT" &amp;&amp; make dryrun</pre></div>
+
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>A project, billing and a budget</h3><p>A project made for the course, so tearing it down later touches nothing else.</p></div></div>
+
+<p>Lesson 0.1 explains this step in full. In short: list your billing accounts, pick the open one, create a project whose ID starts with <code>documind-ai-</code>, and link it. Project IDs are global, 6 to 30 characters, lower case, digits and hyphens, starting with a letter; add your initials and a number to make yours unique.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: create the project and link billing</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud billing accounts list
+export BILLING=XXXXXX-XXXXXX-XXXXXX     <span class="cm"># yours: the ACCOUNT_ID of the OPEN account above</span>
+export PROJECT=documind-ai-YOUR-ID      <span class="cm"># yours: unique, starts with documind-ai-</span>
+gcloud projects create "$PROJECT" --name="DocuMind lane" --set-as-default
+gcloud billing projects link "$PROJECT" --billing-account="$BILLING"</pre></div>
+
+
+<p>Then set the budget, in the console, before anything bills: <em>Billing &rarr; Budgets &amp; alerts &rarr; Create budget</em>, scoped to this project, with alerts at 50, 90 and 100 percent sent to you. A budget does not stop spending; it tells you. Step 13 is what stops it.</p>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>The session block: one set of variables for every command</h3><p>Run it now, and again in every new Cloud Shell session.</p></div></div>
+
+<p>Every command from here on reads the same handful of variables: the project, the region the services run in, your address (the person IAP will let in and the first name on the roster), the state bucket and its prefix, and the project number that appears in every Cloud Run URL. The block sets them all from <code>gcloud</code>'s own configuration, so after a restart it puts you back exactly where you were.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the session block, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="$HOME/deploy_module_rag"
+cd "$DEMO_ROOT" &amp;&amp; source "$HOME/rag-shell-venv/bin/activate"
+gcloud config set project "${PROJECT:-$(gcloud config get-value project 2&gt;/dev/null)}"
+gcloud config set run/region asia-south1
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)"
+export REGION="$(gcloud config get-value run/region 2&gt;/dev/null)"; export REGION="${REGION:-asia-south1}"
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export ADMIN_EMAILS="$ME" TENANT=acme
+export TFSTATE_BUCKET="$PROJECT-tfstate" TFSTATE_PREFIX="documind/$PROJECT"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+echo "PROJECT=$PROJECT REGION=$REGION NUMBER=$NUMBER ME=$ME"
+echo "state: gs://$TFSTATE_BUCKET/$TFSTATE_PREFIX"</pre></div>
+
+
+<p>The region is <code>asia-south1</code>, Mumbai, as the rest of the course uses. Pass it to every <code>make</code> command: the Makefile's own default is <code>us-central1</code>, and a lane split across two regions is a lane whose URLs and image paths do not match.</p>
+
+<p>Terraform and the kit's Python sign in through Application Default Credentials, not through <code>gcloud</code>'s login. Cloud Shell usually provides them; check, and log in only if the check says so.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: check ADC, and log in only if it is missing</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings; warnings.filterwarnings("ignore", category=UserWarning)
+import google.auth
+try:
+    credentials, _ = google.auth.default()
+    print("adc ok:", type(credentials).__name__)
+except Exception as e:
+    print(f"adc NOT ok ({str(e)[:90]}) - run the two gcloud lines below")
+PY
+<span class="cm"># only if it printed NOT ok:</span>
+<span class="cm"># gcloud auth application-default login --no-launch-browser</span>
+<span class="cm"># gcloud auth application-default set-quota-project "$PROJECT"</span></pre></div>
+
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>Phase 2: APIs, the state bucket and terraform init</h3><p>Three things Terraform needs before it can plan anything.</p></div></div>
+
+<p>A new project has almost every Google API switched off. <code>make apis</code> switches on the 40 the kit uses, in one call, from the kit's own list. It takes a minute or two and bills nothing.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: enable the kit&#x27;s APIs</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make apis PROJECT="$PROJECT"
+gcloud services list --enabled --project="$PROJECT" --format='value(config.name)' | wc -l</pre></div>
+
+
+<p>Then the state bucket. Terraform will keep its record of the lane here rather than on the Cloud Shell disk, so the record survives a lost session and is versioned, so an accident can be undone. You create this bucket yourself, by hand, because Terraform cannot store its state in a bucket it has not created yet.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the state bucket, and Terraform connected to it</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud storage buckets create "gs://$TFSTATE_BUCKET" --project="$PROJECT" --location=asia-south1 --uniform-bucket-level-access
+gcloud storage buckets update "gs://$TFSTATE_BUCKET" --versioning
+terraform -chdir=terraform init -input=false \
+  -backend-config="bucket=$TFSTATE_BUCKET" -backend-config="prefix=$TFSTATE_PREFIX"</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>expected - the last line of terraform init</span><span class="ro">read only</span></div><pre tabindex="0">Terraform has been successfully initialized!</pre></div>
+
+
+<div class="box box-red"><div class="box-title">Init once, with these values, and never with others</div>
+<p>On a lane that already exists, do not run <code>init</code> again with a different bucket or prefix, and never reach for <code>-migrate-state</code>, <code>state rm</code> or an empty backend to get past an error. An empty state on an existing project means Terraform believes nothing exists and would try to create everything twice. Check with <code>terraform -chdir=terraform state list</code> first; the kit's <code>INFRASTRUCTURE.md</code> covers recovery.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>CI trust and Google sign-in, before the plan</h3><p>Two inputs the plan needs from you, and one console page Terraform cannot fill in.</p></div></div>
+
+<p>The kit's Terraform sets up Workload Identity Federation, so that a GitHub Actions workflow can deploy to this project later without a stored key. It needs to know which repository to trust, by name and by its numeric ID. Use a repository you own: a fork of the learner repository, or an empty one made for this. The helper saves your confirmed project, billing and CI inputs, and every later plan is checked against them.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: save the project and CI inputs</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export GH_REPO=YOUR-GITHUB-USER/YOUR-REPO     <span class="cm"># a repository you own</span>
+export GH_REPO_ID="$(curl -s "https://api.github.com/repos/$GH_REPO" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+echo "trusting $GH_REPO, id $GH_REPO_ID"
+python commands/infrastructure.py prepare --project "$PROJECT" --region "$REGION" \
+  --github-repository "$GH_REPO" --github-repository-id "$GH_REPO_ID" --deploy-ref refs/heads/main</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">PASS: saved confirmed inputs to /home/you/deploy_module_rag/terraform/runbook-project.auto.tfvars.json
+CI trust: YOUR-GITHUB-USER/YOUR-REPO (ID NUMBER) / refs/heads/main</pre></div>
+
+
+<p>The saved inputs file stays in your Cloud Shell and is never committed. For a private repository, read the ID with <code>gh api repos/$GH_REPO --jq .id</code> instead of the public API.</p>
+
+<p><strong>Google sign-in for the UI.</strong> IAP shows a Google sign-in screen, and that screen needs an OAuth consent screen. Open <em>Google Auth Platform &rarr; Branding</em> in the console, set an app name and your support address, and save. Then check whether your project sits inside an organization:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: organization or not</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud projects describe "$PROJECT" --format='value(parent.type,parent.id)'   <span class="cm"># empty: no organization</span></pre></div>
+
+
+<p>If it printed an organization, IAP manages its own OAuth client and you are done here. If it printed nothing, a personal account with no organization, create the client yourself: <em>Google Auth Platform &rarr; Clients &rarr; Create client</em>, type <em>Web application</em>, then give its ID and secret to IAP. The file holds a secret, so it lives in your home directory for a moment and is deleted straight after.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: only without an organization</span><button class="cp" type="button">copy</button></div><pre tabindex="0">cat &gt; "$HOME/iap-oauth.yaml" &lt;&lt;'EOF'
+accessSettings:
+  oauthSettings:
+    clientId: CLIENT_ID
+    clientSecret: CLIENT_SECRET
+EOF
+<span class="cm"># edit the two values in $HOME/iap-oauth.yaml first (cloudshell edit ~/iap-oauth.yaml)</span>
+gcloud iap settings set "$HOME/iap-oauth.yaml" --project="$PROJECT" &amp;&amp; rm "$HOME/iap-oauth.yaml"</pre></div>
+
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>make preflight, then make plan: read before you apply</h3><p>A read-only check of everything the apply stands on, then the one plan you will approve.</p></div></div>
+
+<p><code>make preflight</code> creates nothing. It checks the tools and their versions, your sign-in, the project, the billing link, the state bucket, the APIs and the one Python package the roster needs, and for anything missing it says what to run. Every line should read <code>ok</code>.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: preflight, read-only</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make preflight PROJECT="$PROJECT" TFSTATE_BUCKET="$TFSTATE_BUCKET" REGION="$REGION"</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">  ok    gcloud on PATH
+  ok    terraform on PATH
+  ok    make on PATH
+  ok    python on PATH
+  ok    terraform VERSION (backend.tf wants &gt;= 1.9)
+  ok    signed in as you@example.com
+  ok    project documind-ai-YOUR-ID exists
+  ok    billing linked
+  ok    state bucket gs://documind-ai-YOUR-ID-tfstate
+  ok    APIs enabled
+  ok    google-cloud-firestore for make roster
+
+preflight clean - next: make plan, then make up</pre></div>
+
+
+<p>Now the plan. <code>make plan</code> runs <code>terraform plan</code> with your saved inputs, writes the plan to a file, and then inspects it the way a reviewer would: it refuses the plan if it is incomplete, if its inputs differ from the ones you confirmed, if it would delete or replace anything, or if it would change an existing CI trust. A plan that passes is recorded as the selected plan, and that file is the only thing <code>make up</code> will apply.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the plan, saved and checked</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make plan PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" 2&gt;&amp;1 | tee "$HOME/plan.log"
+grep -E '^(PASS|CI trust|STOP|Plan:)|Reviewed plan|Review the' "$HOME/plan.log"</pre></div>
+
+
+<p>Look for three things: a <code>Plan: N to add, 0 to change, 0 to destroy</code> line (on a blank project, everything is an add), the <code>PASS: no deletes/replacements</code> line, and your repository on the <code>CI trust</code> line. Then read the plan by resource type, which is far easier than scrolling through Terraform's text:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the plan, counted by resource type</span><button class="cp" type="button">copy</button></div><pre tabindex="0">PLAN="$(python -c "import json; print(json.load(open('terraform/runbook-selected-plan.json'))['plan'])")"
+terraform -chdir=terraform show -json "$PLAN" &gt; "$HOME/plan.json" &amp;&amp; echo "saved plan: $(basename "$PLAN")"
+python - &lt;&lt;'PY'
+import json, os, warnings; warnings.filterwarnings("ignore", category=UserWarning)
+from collections import Counter
+plan = json.load(open(os.path.expanduser("~/plan.json"), encoding="utf-8"))
+changes = [rc for rc in plan["resource_changes"] if rc["mode"] == "managed"]
+print("actions:", dict(Counter("/".join(rc["change"]["actions"]) for rc in changes)))
+types = Counter(rc["type"] for rc in changes if rc["change"]["actions"] != ["no-op"])
+for t, n in sorted(types.items(), key=lambda x: (-x[1], x[0])):
+    print(f"{n:4d}  {t}")
+print(f"{sum(types.values()):4d}  in all")
+PY</pre></div>
+
+
+<p>The biggest groups are IAM bindings and service accounts, then Firestore indexes, buckets and alert policies. The few that bill by the hour are near the bottom with a count of one or two: the Vector Search index endpoint and its deployed index, the Spanner instance, the two Cloud SQL instances, the GKE cluster and its node pool, and the VPC connector. Step 13 prices each one.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Phase 3 &middot; Deploy</span><h3>Phase 3: make up applies the plan and deploys everything</h3><p>One command, 9 stages after the apply, and the longest wait of the day.</p></div></div>
+
+<p>Here is the whole of <code>make up</code>, from the kit's Makefile. The first line applies the checked plan; the second runs the deploy stages in order.</p>
+
+<div class="cw"><div class="ch-bar"><span>deploy/Makefile - the up target</span><span class="ro">read only</span></div><pre tabindex="0">up: guard-project
+	$(INFRA) apply $(INFRA_FLAGS) $(INFRA_PLAN)
+	$(MAKE) drift secrets build deploy-services wait-index roster managed-stores bq-views vector-status</pre></div>
+
+
+<p>In order: <code>drift</code> compares the lane with the plan, <code>secrets</code> writes the first versions of the secrets Terraform declared empty, <code>build</code> runs Cloud Build for every image, <code>deploy-services</code> deploys them to Cloud Run, <code>wait-index</code> waits for Firestore's vector indexes to be READY, <code>roster</code> puts you and the UI's account on the tenants, <code>managed-stores</code> creates the RAG Engine corpora, <code>bq-views</code> creates the BigQuery reporting view, and <code>vector-status</code> prints how many vectors the search index holds: zero for now, by design.</p>
+
+<p>The services, and the order they come up in: the ingest worker first, because the upload subscription already points at its URL, then the API, then everything that calls the API. Each one is deployed by its own script under <code>commands/</code>, the same script the lesson that teaches it shows.</p>
+
+<div class="cw"><div class="ch-bar"><span>deploy/Makefile - what make up builds and deploys</span><span class="ro">read only</span></div><pre tabindex="0">SERVICES   = ingest api admin ui chat mcp agent
+SCRIPTS    = commands/lesson-<span class="nu">12.5</span>.sh commands/lesson-<span class="nu">12.2</span>.sh commands/lesson-<span class="nu">12.3</span>.sh \
+             commands/lesson-<span class="nu">12.4</span>.sh commands/lesson-<span class="nu">12.8</span>.sh \
+             commands/lesson-<span class="nu">7.2</span>.sh commands/lesson-<span class="nu">8.4</span>.sh</pre></div>
+
+
+<p>Run it inside tmux. The Terraform apply creates a few hundred resources, some of which (Vector Search, Cloud SQL, Spanner, the GKE cluster) take many minutes on their own, and seven Cloud Build runs follow. Expect well over an hour on a blank project.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell, inside tmux: apply and deploy</span><button class="cp" type="button">copy</button></div><pre tabindex="0">time make up PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" 2&gt;&amp;1 | tee "$HOME/up.log"
+tail -n 25 "$HOME/up.log"</pre></div>
+
+
+<p>If your connection drops, reattach with <code>tmux attach -t documind</code>; the command kept running. If <code>make up</code> stops <em>during the apply</em>, the plan it applied is used up: fix the cause, then <code>make plan</code>, review, and <code>make up</code> again. Terraform keeps everything the first run created, so the second plan only adds what is missing. If it stops <em>after the apply</em>, in one of the deploy stages, you do not need a new plan at all: step 10 runs only the stages that were left.</p>
+
+<p>When it finishes, count the services and the account each runs as:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the services, and who each runs as</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services list --project "$PROJECT" --region "$REGION" \
+  --format='table(metadata.name:label=SERVICE, spec.template.spec.serviceAccountName:label=RUNS_AS)'
+gcloud run services list --project "$PROJECT" --region "$REGION" --format='value(metadata.name)' | wc -l</pre></div>
+
+
+<p>A complete deploy shows 7 rows: <code>documind-ingest</code>, <code>documind-api</code>, <code>documind-admin</code>, <code>documind-ui</code>, <code>documind-chat</code>, <code>documind-mcp</code>, <code>documind-agent</code>, each running as its own <code>documind-&lt;service&gt;-sa</code> account. On today's kit a first <code>make up</code> stops partway through the deploy stage with two of them up; step 10 says why and finishes the job.</p>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Phase 3 &middot; Deploy</span><h3>When make up stops: the three known places</h3><p>One stop you should expect on today's kit, two you might meet, and the repair for each.</p></div></div>
+
+<p>None of these loses work. Terraform's state keeps every resource the apply created, and Artifact Registry keeps every image the build pushed, so each repair runs only the stages that were left.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Where it stops</th><th>What you see</th><th>Why</th><th>The repair</th></tr></thead>
+<tbody>
+<tr><td><code>deploy-services</code>, third script</td><td data-label="What you see"><code>commands/lesson-12.3.sh (DEPLOY block)</code>, then gcloud refusing <code>--file</code>; only ingest and api are deployed</td><td data-label="Why">The admin console's deploy block still carries notebook lines: a <code>--file</code> flag <code>gcloud builds submit</code> does not have, <code>us-central1</code> where the others use <code>REGION</code>, and a placeholder group. The loop stops there, so the four scripts after it never run</td><td data-label="The repair">Expected on the current kit. The three blocks below: the four services after it, the admin console by hand, the rest of <code>make up</code></td></tr>
+<tr><td><code>build</code></td><td data-label="What you see">A 403 from Cloud Build naming a <code>-compute@developer</code> account</td><td data-label="Why">On newer projects Cloud Build runs as the default compute account, which has no rights on the build bucket or Artifact Registry</td><td data-label="The repair">The three grants below, then <code>make build deploy-services</code></td></tr>
+<tr><td><code>bq-views</code></td><td data-label="What you see"><code>Field name retrieve_ms does not exist</code></td><td data-label="Why">The view reads fields of the API's usage rows, and BigQuery only knows them after the API has answered once</td><td data-label="The repair">Carry on to steps 11 and 12; after the first answer run <code>make bq-views vector-status</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>The admin script.</strong> First, the four services whose scripts come after it. <code>SCRIPTS</code> on the command line replaces the Makefile's list, and the images are already in Artifact Registry from the <code>build</code> stage, so this only deploys.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: ui, chat, mcp and agent, from the images make up built</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export GIT_SHA="$(git rev-parse --short HEAD)"
+make deploy-services PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" GIT_SHA="$GIT_SHA" \
+  SCRIPTS="commands/lesson-12.4.sh commands/lesson-12.8.sh commands/lesson-7.2.sh commands/lesson-8.4.sh"</pre></div>
+
+
+<p>Then the admin console, with the script's own flags and the three lines corrected for your lane: your region, the image the build stage pushed, your address in <code>ADMIN_EMAILS</code>, and the service's own IAP audience. The kit declares the console internal (<code>--ingress=internal-and-cloud-load-balancing</code>), so it is not reachable from the internet and needs no IAP grant here.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: documind-admin, the script&#x27;s flags with this lane&#x27;s values</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run deploy documind-admin --project="$PROJECT" --region="$REGION" --quiet \
+  --image="$REGION-docker.pkg.dev/$PROJECT/documind/admin:$GIT_SHA" \
+  --no-allow-unauthenticated --ingress=internal-and-cloud-load-balancing \
+  --service-account="documind-admin-sa@$PROJECT.iam.gserviceaccount.com" \
+  --set-env-vars="^|^GOOGLE_CLOUD_PROJECT=$PROJECT|ADMIN_EMAILS=$ADMIN_EMAILS|AUDIT_BUCKET=$PROJECT-audit|IAP_AUDIENCE=/projects/$NUMBER/locations/$REGION/services/documind-admin" \
+  --set-secrets="COOKIE_SECRET=cookie-secret:latest" \
+  --session-affinity --cpu-boost
+for role in roles/bigquery.dataViewer roles/bigquery.jobUser; do
+  gcloud projects add-iam-policy-binding "$PROJECT" --condition=None --format=none \
+    --member="serviceAccount:documind-admin-sa@$PROJECT.iam.gserviceaccount.com" --role="$role"
+done</pre></div>
+
+
+<p>Last, the stages <code>make up</code> never reached. <code>bq-views</code> and <code>vector-status</code> wait for step 12, for the reason in the table.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the rest of make up</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make wait-index roster managed-stores PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS"
+gcloud run services list --project "$PROJECT" --region "$REGION" --format='value(metadata.name)' | wc -l</pre></div>
+
+
+<p>The count is now 7. If you would rather fix the script itself, so the next <code>make up</code> runs clean, make the same three corrections in <code>commands/lesson-12.3.sh</code> and drop its <code>gcloud builds submit</code> lines, since the <code>build</code> stage already builds the admin image. Keep the change local: the next <code>git pull</code> may bring the kit's own fix.</p>
+
+<p><strong>A Cloud Build 403.</strong> Grant the account the 403 named, if it names a different one, then build and deploy again:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: only after a Cloud Build 403</span><button class="cp" type="button">copy</button></div><pre tabindex="0">BUILDER="serviceAccount:$NUMBER-compute@developer.gserviceaccount.com"
+gcloud storage buckets add-iam-policy-binding "gs://${PROJECT}_cloudbuild" --member="$BUILDER" --role=roles/storage.objectViewer --format=none
+gcloud artifacts repositories add-iam-policy-binding documind --location="$REGION" --project="$PROJECT" --member="$BUILDER" --role=roles/artifactregistry.writer --format=none
+gcloud projects add-iam-policy-binding "$PROJECT" --member="$BUILDER" --role=roles/logging.logWriter --condition=None --format=none
+make build deploy-services PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS"</pre></div>
+
+
+<p><strong>The BigQuery view.</strong> Why it waits for an answer, in the kit's own words:</p>
+
+<div class="cw"><div class="ch-bar"><span>deploy/Makefile - bq-views, and why it can stop make up</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The SQL that terraform does not own. tenant_daily is a VIEW over the log sink (12.3) and</span>
+<span class="cm"># was, until 2026-09-05, applied by nobody - the file existed and the view did not.</span>
+<span class="cm"># The view reads fields the API logs (12.2&#x27;s usage_row), and BigQuery types a sink table&#x27;s jsonPayload</span>
+<span class="cm"># from the rows it has seen: run this after an API at this version has answered once (make smoke), or</span>
+<span class="cm"># the CREATE fails on &quot;Field name retrieve_ms does not exist&quot; - a refusal, never a column of NULLs.</span>
+bq-views: guard-project
+	bq --project_id=$(PROJECT) query --use_legacy_sql=false &lt; terraform/sql/tenant_daily.sql</pre></div>
+
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Phase 3 &middot; Deploy</span><h3>Seed the lane: operators, the corpus, the vectors</h3><p>A lane with no documents answers nothing. Three commands fill it.</p></div></div>
+
+<p>First, the operator grant. The smoke test and the eval gate call the API as the UI's service account, and the gate's refusal rows call it as an outsider account; both need you to be allowed to mint tokens as those accounts. Project Owner does not include that permission, which is why the kit grants it explicitly.</p>
+
+<div class="cw"><div class="ch-bar"><span>deploy/Makefile - the operators target</span><span class="ro">read only</span></div><pre tabindex="0">operators: guard-project
+	@<span class="kw">for</span> who <span class="kw">in</span> $$(echo <span class="st">&quot;$(ADMIN_EMAILS)&quot;</span> | tr <span class="st">&#x27;,&#x27;</span> <span class="st">&#x27; &#x27;</span>); do \
+	  <span class="kw">for</span> sa <span class="kw">in</span> documind-ui-sa documind-outsider-sa; do \
+	    gcloud iam service-accounts add-iam-policy-binding $$sa@$(PROJECT).iam.gserviceaccount.com \
+	      --project=$(PROJECT) --member=<span class="st">&quot;user:$$who&quot;</span> --role=roles/iam.serviceAccountTokenCreator \
+	      --condition=<span class="kw">None</span> --quiet &gt;/dev/null &amp;&amp; echo <span class="st">&quot;&gt;&gt; $$who may mint tokens as $$sa&quot;</span>; \
+	  done; \
+	done</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: let yourself mint tokens as the UI and the outsider</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make operators PROJECT="$PROJECT" ADMIN_EMAILS="$ADMIN_EMAILS"</pre></div>
+
+
+<p>Then the corpus. <code>make ingest-corpus</code> uploads the three tenants' synthetic documents and the real Acts, one folder per tenant, into the uploads bucket. Every object that lands is an event: the ingest worker parses it, chunks it, embeds it and writes it to Firestore and Vector Search. The upload is quick; the indexing behind it takes a while, so <code>make wait-vectors</code> blocks until the search index holds at least 200 vectors, or tells you why not after 20 minutes.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: load the corpus and wait for the index</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make ingest-corpus PROJECT="$PROJECT"
+make wait-vectors PROJECT="$PROJECT" REGION="$REGION" WANT=200
+make vector-status PROJECT="$PROJECT" REGION="$REGION"</pre></div>
+
+
+<p>Finally, pin the tenant you will test with to the vector index, so the smoke test checks the tier you expect it to:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: acme on the vector tier</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make tenant-backend PROJECT="$PROJECT" TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+
+
+<p>While you wait, the worker's log is worth watching: each document ends on an <code>ingest_ok</code> line with its chunk count. <code>make dlq</code> peeks at the dead-letter queue without acknowledging anything; an empty queue is what you want.</p>
+
+<!-- ============================ STEP 12 ============================ -->
+<div class="step" id="s12"><div class="step-n">12</div><div><span class="kicker">Phase 3 &middot; Prove it</span><h3>Prove it: the smoke, the gate and the UI in a browser</h3><p>Three proofs, from the cheapest to the one you can show someone.</p></div></div>
+
+<p><strong>The smoke test.</strong> It checks health, asks a golden question as a tenant member and expects an answer with citations, and asks again with no token, which must be refused. It costs one Gemini answer.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the smoke test</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export API="https://documind-api-$NUMBER.$REGION.run.app"
+make smoke DOCUMIND_API_URL="$API" DOCUMIND_PROJECT="$PROJECT" DOCUMIND_TENANT="$TENANT"</pre></div>
+
+
+<p>If <code>bq-views</code> stopped <code>make up</code> earlier, the API has now answered once, so finish the last two stages:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the stages make up could not finish before the first answer</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make bq-views vector-status PROJECT="$PROJECT" REGION="$REGION"</pre></div>
+
+
+<p><strong>The eval gate.</strong> <code>make eval-live</code> runs the whole golden set against the deployed API: answer quality thresholds, the rows that must be answered, the rows that must be refused, and tenant isolation, which must be 100 percent. It makes one Gemini call per row, so it costs more than the smoke; run it once now and again after any change you care about.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the golden set against the live API</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make eval-live PROJECT="$PROJECT" REGION="$REGION"</pre></div>
+
+
+<p><code>make smoke-all</code> runs every smoke the kit has. Two of them, <code>smoke-gateway</code> and <code>smoke-slm</code>, test optional services this page does not deploy, so on this lane expect those two to fail and the rest to pass.</p>
+
+<p><strong>The UI.</strong> Print the address and open it in a browser:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: the UI&#x27;s address, and what a stranger gets</span><button class="cp" type="button">copy</button></div><pre tabindex="0">echo "https://documind-ui-$NUMBER.$REGION.run.app"
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://documind-ui-$NUMBER.$REGION.run.app/" | cut -d'?' -f1</pre></div>
+
+
+<div class="cw"><div class="ch-bar"><span>expected - the curl, which carries no Google sign-in</span><span class="ro">read only</span></div><pre tabindex="0">302 https://accounts.google.com/o/oauth2/v2/auth</pre></div>
+
+
+<p>Signed in as the address in <code>ADMIN_EMAILS</code>, you land on the chat page with <em>Tenant: acme</em> in the sidebar. Ask <em>What is the notice period?</em> and the answer comes back with numbered citations you can open. In a private window, signed in as any other Google account, IAP turns you away before the page loads. That difference, one person in and everyone else out, is the proof that the front door works.</p>
+
+<div class="box box-teal"><div class="box-title">Optional services, deployed separately</div>
+<p>The LiteLLM gateway (<code>make deploy-gateway</code>), a small model on a Cloud Run GPU (<code>make deploy-slm</code>), and Gemma on vLLM (<code>make build-vllm deploy-vllm</code>, which needs a Hugging Face token) belong to later modules. They are not part of <code>make up</code>, and the GPU ones bill by the hour while an instance is warm. Deploy them when the lesson that teaches them asks you to.</p></div>
+
+<!-- ============================ STEP 13 ============================ -->
+<div class="step" id="s13"><div class="step-n">13</div><div><span class="kicker">Phase 3 &middot; Switch off</span><h3>What bills by the hour, and how to stop it</h3><p>Six items bill while they exist, used or idle. Two commands and one deletion stop them.</p></div></div>
+
+<p>Cloud Run services cost nothing while they have no instances. These do, every hour, from the moment the apply creates them. Sizes are read from the kit's Terraform; prices are Mumbai list prices read on 7 October 2026, at Rs 85 to the dollar. The Vector Search line depends on the shard size the service picks for the index, which <code>vector-status</code> and lesson 0.3 show you how to read.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Item</th><th>Declared in</th><th>Size</th><th>Rs an hour</th></tr></thead>
+<tbody>
+<tr><td>Vector Search deployed index</td><td data-label="Declared in"><code>vector.tf</code></td><td data-label="Size">1 replica on the shard&#x27;s machine</td><td data-label="Rs an hour">9.58 (SMALL) / 76.62 (MEDIUM)</td></tr>
+<tr><td>Spanner graph instance</td><td data-label="Declared in"><code>spanner.tf</code></td><td data-label="Size">Enterprise, 100 processing units</td><td data-label="Rs an hour">14.64</td></tr>
+<tr><td>Cloud SQL, two instances</td><td data-label="Declared in"><code>cloudsql.tf, gateway.tf</code></td><td data-label="Size">2 x db-f1-micro, 10 GB SSD each</td><td data-label="Rs an hour">2.62</td></tr>
+<tr><td>GKE cluster fee</td><td data-label="Declared in"><code>gke.tf</code></td><td data-label="Size">a regional Standard cluster</td><td data-label="Rs an hour">8.50</td></tr>
+<tr><td>GKE lab node</td><td data-label="Declared in"><code>gke.tf</code></td><td data-label="Size">1 x e2-standard-2, 30 GB pd-standard</td><td data-label="Rs an hour">7.01</td></tr>
+<tr><td>Serverless VPC Access connector</td><td data-label="Declared in"><code>network.tf</code></td><td data-label="Size">2 x e2-micro, its minimum</td><td data-label="Rs an hour">1.71</td></tr>
+<tr><td>All of them</td><td data-label="Declared in">the lane</td><td data-label="Size">idle, no traffic</td><td data-label="Rs an hour"><strong>44.05 (SMALL) / 111.10 (MEDIUM)</strong></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>There are three ways to stop, from gentlest to final.</p>
+
+<p><code>make off</code> scales the services, the gateway and the GPU services to zero instances. It is what the lane's 23:00 IST job does every night. It does <em>not</em> stop the six items above; they bill until they are deleted.</p>
+
+<p><code>make down</code> deletes the Cloud Run services first, then runs <code>terraform destroy</code>, and at the end prints what it could not remove: Firestore (delete protection), buckets that still hold objects, the protected managed search stores, and the BigQuery views.</p>
+
+<p>Deleting the project removes everything, including what <code>make down</code> left. Google keeps a deleted project recoverable for 30 days and stops billing it at once.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash - Cloud Shell: switch off, tear down, delete</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make off PROJECT="$PROJECT" REGION="$REGION"       <span class="cm"># tonight: services to zero (the hourly items still bill)</span>
+make down PROJECT="$PROJECT" REGION="$REGION"      <span class="cm"># done for now: services deleted, terraform destroy</span>
+gcloud projects delete "$PROJECT"                  <span class="cm"># done for good: everything, billing stops</span></pre></div>
+
+
+<p>To come back after <code>make down</code>, you do not repeat steps 3 to 7: the kit, the venv, the state bucket and your saved inputs are all still there. Run the session block of step 5, then step 8 and step 9 again. After a project deletion, start again from step 4 with a new project ID.</p>
+
+<!-- ============================ STEP 14 ============================ -->
+<div class="step" id="s14"><div class="step-n">14</div><div><span class="kicker">Check</span><h3>Verify it yourself: the checklist</h3><p>Each claim this page makes, the command that proves it, and what a pass looks like.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The kit is in Cloud Shell</td><td data-label="The check"><code>git -C ~/deploy_module_rag log -1</code></td><td data-label="Pass looks like">A commit, and <code>make dryrun</code> green</td></tr>
+<tr><td>2</td><td data-label="Claim">The project bills to your account, with a budget</td><td data-label="The check"><code>gcloud billing projects describe "$PROJECT"</code>; Budgets &amp; alerts</td><td data-label="Pass looks like"><code>billingEnabled: true</code>; a budget scoped to the project</td></tr>
+<tr><td>3</td><td data-label="Claim">The APIs are on</td><td data-label="The check">The count in step 6</td><td data-label="Pass looks like">40 or more</td></tr>
+<tr><td>4</td><td data-label="Claim">Terraform's state is in your bucket</td><td data-label="The check"><code>terraform -chdir=terraform state list | wc -l</code></td><td data-label="Pass looks like">A few hundred resources after <code>make up</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The applied plan deleted nothing</td><td data-label="The check"><code>grep PASS ~/plan.log</code></td><td data-label="Pass looks like"><code>PASS: no deletes/replacements</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Every service is up, as its own account</td><td data-label="The check">The services list in step 9</td><td data-label="Pass looks like">7 rows, each <code>documind-&lt;service&gt;-sa</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The index holds the corpus</td><td data-label="The check"><code>make vector-status</code></td><td data-label="Pass looks like">200 vectors or more</td></tr>
+<tr><td>8</td><td data-label="Claim">The API answers with citations, and refuses without a token</td><td data-label="The check"><code>make smoke</code></td><td data-label="Pass looks like">Every line PASS</td></tr>
+<tr><td>9</td><td data-label="Claim">The golden set passes, isolation at 100 percent</td><td data-label="The check"><code>make eval-live</code></td><td data-label="Pass looks like">Every threshold met</td></tr>
+<tr><td>10</td><td data-label="Claim">The UI lets you in and keeps strangers out</td><td data-label="The check">The curl in step 12; your browser; a private window</td><td data-label="Pass looks like">302 to Google; <em>Tenant: acme</em>; the stranger refused</td></tr>
+<tr><td>11</td><td data-label="Claim">You can stop the bill</td><td data-label="The check"><code>make down</code>, then <code>gcloud projects delete</code></td><td data-label="Pass looks like">The project listed as DELETE_REQUESTED</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Everything, from nothing. Cloud Shell holds the kit at <code>~/deploy_module_rag</code>, its virtual environment and your saved Terraform inputs. Your project has billing, a budget and 40 APIs; its state bucket holds Terraform's record of the lane: the service accounts and their roles, the buckets, Firestore and its indexes, Vector Search with its deployed index, two Cloud SQL instances, Spanner, BigQuery, a GKE cluster, the network, the alerts and the budget. Artifact Registry holds the images; Cloud Run runs 7 services, the UI behind IAP; the roster puts you on acme; the corpus is indexed. From the end of the apply until you delete the project, the items of step 13 bill every hour.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 0 Setup &middot; Lesson 0.5 Set up the cloud lane end to end: clone in Cloud Shell, create the infrastructure with Terraform, deploy every service and the UI &middot; v5.0</p><p>Next: Lesson 1.1 Understand source, tenant, page and chunk contracts.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+</body>
+</html>
