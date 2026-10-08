@@ -1,0 +1,509 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 0 &middot; Setup &middot; Lesson 0.5</div>
+<h1>Set up the cloud lane end to end: <span>one Cloud Shell, one checked Terraform plan, %%N_SERVICES%% services and the UI</span></h1>
+<p>Lessons 0.1 to 0.4 take the lane apart and explain every piece. This page is the other half: one runbook, in order, that takes you from an empty browser tab to a working DocuMind in your own Google Cloud project. You copy the kit into Cloud Shell, create the infrastructure with Terraform through the kit's checked plan, deploy every service and the UI behind Google sign-in, prove it answers with citations, and switch it off again. Use it when you need a lane today; go back to 0.3 and 0.4 when you want to know why each line is there.</p>
+<div class="hero-chips"><div class="hero-chip">Cloud Shell only</div><div class="hero-chip">git clone to ~/deploy_module_rag</div><div class="hero-chip">40 APIs</div><div class="hero-chip">State in your own bucket</div><div class="hero-chip">make plan, then make up</div><div class="hero-chip">%%N_SERVICES%% Cloud Run services</div><div class="hero-chip">UI behind IAP</div><div class="hero-chip">Rs %%HOUR_SMALL%% an hour, then off</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">The three phases: copy, create, deploy</a></li>
+<li><a href="#s2">The words: Cloud Shell, kit, lane, state, plan, IAP, roster</a></li>
+<li><a href="#setup">Before you run anything: open Cloud Shell and keep it alive</a></li>
+<li><a href="#s3">Phase 1: copy the kit into Cloud Shell</a></li>
+<li><a href="#s4">A project, billing and a budget</a></li>
+<li><a href="#s5">The session block: one set of variables for every command</a></li>
+<li><a href="#s6">Phase 2: APIs, the state bucket and terraform init</a></li>
+<li><a href="#s7">CI trust and Google sign-in, before the plan</a></li>
+<li><a href="#s8">make preflight, then make plan: read before you apply</a></li>
+<li><a href="#s9">Phase 3: make up applies the plan and deploys everything</a></li>
+<li><a href="#s10">When make up stops: the three known places</a></li>
+<li><a href="#s11">Seed the lane: operators, the corpus, the vectors</a></li>
+<li><a href="#s12">Prove it: the smoke, the gate and the UI in a browser</a></li>
+<li><a href="#s13">What bills by the hour, and how to stop it</a></li>
+<li><a href="#s14">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will stand up the whole DocuMind lane from Cloud Shell in one sitting: clone the kit, create every resource with one reviewed Terraform plan, build and deploy %%N_SERVICES%% services, put the UI behind Google sign-in, load the corpus, and prove it with <code>make smoke</code>. Then you switch it off, so the lane costs you only the hours you used.</p></div>
+
+<div class="box box-amber"><div class="box-title">This lane costs money while it exists</div>
+<p>From the end of the Terraform apply, a handful of resources bill every hour whether anyone uses them or not: Rs %%HOUR_SMALL%% an hour if Vector Search picks a SMALL shard, Rs %%HOUR_MEDIUM%% if it picks MEDIUM (about Rs %%DAY_SMALL%% to Rs %%DAY_MEDIUM%% a day), at Mumbai list prices. Cloud Build minutes, Gemini calls and Document AI pages come on top. Use a project made for the course, put a budget on it in step 4, and finish with step 13.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>The three phases: copy, create, deploy</h3><p>What happens where, and why it happens in this order.</p></div></div>
+
+<p>Standing up a lane is three different jobs done by three different tools, and the order matters because each one needs what the one before it produced.</p>
+
+<div class="rail">
+<div class="rail-st"><div class="rn">1</div><h4>Copy</h4><p>git puts the kit, every service, the Terraform and the Makefile, in your Cloud Shell home directory. Nothing in your project changes.</p><span class="rw">~/deploy_module_rag</span></div>
+<div class="rail-st"><div class="rn">2</div><h4>Create</h4><p>Terraform reads <code>terraform/</code>, plans every resource, and creates them: accounts, buckets, Firestore, Vector Search, SQL, Spanner, network, alerts.</p><span class="rw">make plan</span></div>
+<div class="rail-st"><div class="rn">3</div><h4>Deploy</h4><p>Cloud Build turns each service into an image; gcloud deploys each image to Cloud Run as its own account; the UI goes behind IAP.</p><span class="rw">make up</span></div>
+</div>
+
+<p><strong>Copy</strong> is local and free. The kit is a folder of code: the services under <code>services/</code>, the infrastructure under <code>terraform/</code>, and a <code>Makefile</code> whose targets drive everything else. Cloud Shell is the place to keep it because it already has <code>gcloud</code>, <code>terraform</code>, <code>make</code>, <code>git</code> and Python, it is already signed in as you, and its home directory survives between sessions.</p>
+
+<p><strong>Create</strong> is Terraform's job. Terraform compares what the kit declares with what your project already has, writes down the difference as a <em>plan</em>, and, once you approve it, makes the project match. The kit wraps this in a guard: <code>make plan</code> saves the plan and checks it, refusing any plan that would delete or replace a resource, and <code>make up</code> applies only that saved, checked plan. Terraform records what it created in a <em>state</em> file, which the kit keeps in a bucket in your own project so a new Cloud Shell session, or a teammate, sees the same lane.</p>
+
+<p><strong>Deploy</strong> starts where Terraform stops. Terraform creates the places services will run and the accounts they will run as; it does not build code. After the apply, <code>make up</code> continues with Cloud Build, which turns each service's source into an image in Artifact Registry, then a gcloud script per service that deploys it to Cloud Run with its flags, its account and its environment, then the steps that make the lane usable: the vector indexes ready, the roster written, the managed stores, the BigQuery view.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127959;</div><div>
+<p><strong>Opening a branch office.</strong> Copying the kit is collecting the architect's drawings and the fit-out manual into your bag. Terraform is the builder who reads the drawings, shows you a signed list of every wall and door before starting, and keeps the site register (the state) in the office safe so the next builder knows what is already there. The deploy is moving the staff in: each one with their own ID card, at their own desk, with a receptionist (IAP) at the front door who only lets in people on the list.</p></div></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 0 &middot; The words</span><h3>The words: Cloud Shell, kit, lane, state, plan, IAP, roster</h3><p>Every term the commands below use, in one table.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>What it means here</th><th>Where you meet it</th></tr></thead>
+<tbody>
+<tr><td>Cloud Shell</td><td data-label="What it means here">A small Linux machine Google runs for you in the browser, signed in as your account, with 5 GB of home directory that persists</td><td data-label="Where you meet it">Every command on this page</td></tr>
+<tr><td>Kit</td><td data-label="What it means here">The DocuMind deploy folder: services, Terraform, Makefile, evals, smoke tests. Published as the public learner repository</td><td data-label="Where you meet it"><code>~/deploy_module_rag</code></td></tr>
+<tr><td>Lane</td><td data-label="What it means here">One complete, running copy of DocuMind in one Google Cloud project</td><td data-label="Where you meet it">Your project, <code>documind-ai-YOUR-ID</code></td></tr>
+<tr><td>Terraform state</td><td data-label="What it means here">Terraform's record of every resource it created and its last known settings</td><td data-label="Where you meet it"><code>gs://documind-ai-YOUR-ID-tfstate</code></td></tr>
+<tr><td>Plan</td><td data-label="What it means here">The list of changes Terraform would make, saved to a file so the apply does exactly that and nothing else</td><td data-label="Where you meet it"><code>make plan</code>, step 8</td></tr>
+<tr><td>Service account</td><td data-label="What it means here">An identity a program runs as. Each service gets its own, with only the roles its code needs</td><td data-label="Where you meet it"><code>documind-api-sa</code>, <code>documind-ui-sa</code>, and the rest</td></tr>
+<tr><td>ADC</td><td data-label="What it means here">Application Default Credentials: the sign-in Terraform and the kit's Python use, separate from <code>gcloud</code>'s own</td><td data-label="Where you meet it">The session block, step 5</td></tr>
+<tr><td>IAP</td><td data-label="What it means here">Identity-Aware Proxy: Google's sign-in in front of the UI. It decides which people may reach the page at all</td><td data-label="Where you meet it">Step 7 and step 12</td></tr>
+<tr><td>Roster</td><td data-label="What it means here">Firestore documents that say which signed-in person belongs to which tenant. IAP lets you in; the roster decides what you see</td><td data-label="Where you meet it"><code>make roster</code>, run by <code>make up</code></td></tr>
+<tr><td>Tenant</td><td data-label="What it means here">One customer's documents and users. The kit seeds three: acme, zeta and globex</td><td data-label="Where you meet it"><code>TENANT=acme</code></td></tr>
+<tr><td>Smoke test</td><td data-label="What it means here">A short end-to-end check: health, an answer with citations, and a refusal without a token</td><td data-label="Where you meet it"><code>make smoke</code>, step 12</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h3 id="setup">Before you run anything: open Cloud Shell and keep it alive</h3>
+
+<p>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">the Google Cloud console</a> signed in as the account that owns your billing account, and click <em>Activate Cloud Shell</em> in the top bar. When the terminal opens, start a <code>tmux</code> session. <code>make up</code> runs for a long time, and Cloud Shell drops idle browser connections; inside tmux the command keeps running and you reattach to it.</p>
+
+<!--BASH bash - Cloud Shell, once per session-->
+tmux new -s documind            # later, after a disconnect: tmux attach -t documind
+gcloud --version | head -n 1
+gcloud config get-value account
+terraform version | head -n 1; make --version | head -n 1; git --version
+python3 --version
+<!--/BASH-->
+
+<p>If the Cloud Shell machine itself is recycled, after a long idle period, tmux is gone but your home directory is not: the kit, its virtual environment and Terraform's saved inputs are still there. Reattach with a new tmux session and run the session block of step 5 again.</p>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Phase 1 &middot; Copy</span><h3>Phase 1: copy the kit into Cloud Shell</h3><p>One clone, one virtual environment, the right Terraform.</p></div></div>
+
+<p>The kit is published as its own public repository, and every command in the course expects it at <code>~/deploy_module_rag</code>. Clone it once; afterwards a <code>git pull</code> brings every update. If the directory already exists from an earlier session, the block pulls instead of cloning, so it is safe to run again.</p>
+
+<!--BASH bash - Cloud Shell: get the kit-->
+export DEMO_ROOT="$HOME/deploy_module_rag" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi
+cd "$DEMO_ROOT" && git log -1 --format='kit %h, %cd' --date=short
+ls
+<!--/BASH-->
+
+<!--EXPECT expected - the kit's top level-->
+kit COMMIT, YYYY-MM-DD
+INDEX.md  INDEXING.md  INFRASTRUCTURE.md  Makefile  README.md  UNOWNED.md  cloudbuild.yaml  commands  evals
+extract_documind.py  gke  mk  operators  run-service.yaml  services  shared  smoke  terraform  validate.py  workshop_demos
+<!--/EXPECT-->
+
+<p>Write the commit down with your notes. If something behaves differently from this page later, the commit says which version of the kit you ran.</p>
+
+<p>Next, the operator environment: a Python virtual environment the Makefile's Python steps use, with the kit's pinned packages, and a Terraform new enough for the kit's backend (1.9 or newer). The kit ships a helper script with one function for each.</p>
+
+<!--BASH bash - Cloud Shell: the operator venv and Terraform-->
+cd "$DEMO_ROOT"
+[ -d "$HOME/rag-shell-venv" ] || python3 -m venv "$HOME/rag-shell-venv"
+source "$HOME/rag-shell-venv/bin/activate" && python --version
+source commands/session-restart.sh
+rag_install_python_dependencies
+rag_require_terraform
+terraform version | head -n 1
+<!--/BASH-->
+
+<p>Before you spend anything, run the offline check. It compiles every service, checks every Dockerfile and dependency pin, and validates the Terraform, all without touching a project. If this is red, a live deploy will not be green either.</p>
+
+<!--BASH bash - Cloud Shell: the offline dry run, Rs 0-->
+cd "$DEMO_ROOT" && make dryrun
+<!--/BASH-->
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>A project, billing and a budget</h3><p>A project made for the course, so tearing it down later touches nothing else.</p></div></div>
+
+<p>Lesson 0.1 explains this step in full. In short: list your billing accounts, pick the open one, create a project whose ID starts with <code>documind-ai-</code>, and link it. Project IDs are global, 6 to 30 characters, lower case, digits and hyphens, starting with a letter; add your initials and a number to make yours unique.</p>
+
+<!--BASH bash - Cloud Shell: create the project and link billing-->
+gcloud billing accounts list
+export BILLING=XXXXXX-XXXXXX-XXXXXX     # yours: the ACCOUNT_ID of the OPEN account above
+export PROJECT=documind-ai-YOUR-ID      # yours: unique, starts with documind-ai-
+gcloud projects create "$PROJECT" --name="DocuMind lane" --set-as-default
+gcloud billing projects link "$PROJECT" --billing-account="$BILLING"
+<!--/BASH-->
+
+<p>Then set the budget, in the console, before anything bills: <em>Billing &rarr; Budgets &amp; alerts &rarr; Create budget</em>, scoped to this project, with alerts at 50, 90 and 100 percent sent to you. A budget does not stop spending; it tells you. Step 13 is what stops it.</p>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>The session block: one set of variables for every command</h3><p>Run it now, and again in every new Cloud Shell session.</p></div></div>
+
+<p>Every command from here on reads the same handful of variables: the project, the region the services run in, your address (the person IAP will let in and the first name on the roster), the state bucket and its prefix, and the project number that appears in every Cloud Run URL. The block sets them all from <code>gcloud</code>'s own configuration, so after a restart it puts you back exactly where you were.</p>
+
+<!--BASH bash - Cloud Shell: the session block, once per session-->
+export DEMO_ROOT="$HOME/deploy_module_rag"
+cd "$DEMO_ROOT" && source "$HOME/rag-shell-venv/bin/activate"
+gcloud config set project "${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
+gcloud config set run/region asia-south1
+export PROJECT="$(gcloud config get-value project 2>/dev/null)"
+export REGION="$(gcloud config get-value run/region 2>/dev/null)"; export REGION="${REGION:-asia-south1}"
+export ME="$(gcloud config get-value account 2>/dev/null)"
+export ADMIN_EMAILS="$ME" TENANT=acme
+export TFSTATE_BUCKET="$PROJECT-tfstate" TFSTATE_PREFIX="documind/$PROJECT"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+echo "PROJECT=$PROJECT REGION=$REGION NUMBER=$NUMBER ME=$ME"
+echo "state: gs://$TFSTATE_BUCKET/$TFSTATE_PREFIX"
+<!--/BASH-->
+
+<p>The region is <code>asia-south1</code>, Mumbai, as the rest of the course uses. Pass it to every <code>make</code> command: the Makefile's own default is <code>us-central1</code>, and a lane split across two regions is a lane whose URLs and image paths do not match.</p>
+
+<p>Terraform and the kit's Python sign in through Application Default Credentials, not through <code>gcloud</code>'s login. Cloud Shell usually provides them; check, and log in only if the check says so.</p>
+
+<!--BASH bash - Cloud Shell: check ADC, and log in only if it is missing-->
+python - <<'PY'
+import warnings; warnings.filterwarnings("ignore", category=UserWarning)
+import google.auth
+try:
+    credentials, _ = google.auth.default()
+    print("adc ok:", type(credentials).__name__)
+except Exception as e:
+    print(f"adc NOT ok ({str(e)[:90]}) - run the two gcloud lines below")
+PY
+# only if it printed NOT ok:
+# gcloud auth application-default login --no-launch-browser
+# gcloud auth application-default set-quota-project "$PROJECT"
+<!--/BASH-->
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>Phase 2: APIs, the state bucket and terraform init</h3><p>Three things Terraform needs before it can plan anything.</p></div></div>
+
+<p>A new project has almost every Google API switched off. <code>make apis</code> switches on the 40 the kit uses, in one call, from the kit's own list. It takes a minute or two and bills nothing.</p>
+
+<!--BASH bash - Cloud Shell: enable the kit's APIs-->
+make apis PROJECT="$PROJECT"
+gcloud services list --enabled --project="$PROJECT" --format='value(config.name)' | wc -l
+<!--/BASH-->
+
+<p>Then the state bucket. Terraform will keep its record of the lane here rather than on the Cloud Shell disk, so the record survives a lost session and is versioned, so an accident can be undone. You create this bucket yourself, by hand, because Terraform cannot store its state in a bucket it has not created yet.</p>
+
+<!--BASH bash - Cloud Shell: the state bucket, and Terraform connected to it-->
+gcloud storage buckets create "gs://$TFSTATE_BUCKET" --project="$PROJECT" --location=asia-south1 --uniform-bucket-level-access
+gcloud storage buckets update "gs://$TFSTATE_BUCKET" --versioning
+terraform -chdir=terraform init -input=false \
+  -backend-config="bucket=$TFSTATE_BUCKET" -backend-config="prefix=$TFSTATE_PREFIX"
+<!--/BASH-->
+
+<!--EXPECT expected - the last line of terraform init-->
+Terraform has been successfully initialized!
+<!--/EXPECT-->
+
+<div class="box box-red"><div class="box-title">Init once, with these values, and never with others</div>
+<p>On a lane that already exists, do not run <code>init</code> again with a different bucket or prefix, and never reach for <code>-migrate-state</code>, <code>state rm</code> or an empty backend to get past an error. An empty state on an existing project means Terraform believes nothing exists and would try to create everything twice. Check with <code>terraform -chdir=terraform state list</code> first; the kit's <code>INFRASTRUCTURE.md</code> covers recovery.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>CI trust and Google sign-in, before the plan</h3><p>Two inputs the plan needs from you, and one console page Terraform cannot fill in.</p></div></div>
+
+<p>The kit's Terraform sets up Workload Identity Federation, so that a GitHub Actions workflow can deploy to this project later without a stored key. It needs to know which repository to trust, by name and by its numeric ID. Use a repository you own: a fork of the learner repository, or an empty one made for this. The helper saves your confirmed project, billing and CI inputs, and every later plan is checked against them.</p>
+
+<!--BASH bash - Cloud Shell: save the project and CI inputs-->
+export GH_REPO=YOUR-GITHUB-USER/YOUR-REPO     # a repository you own
+export GH_REPO_ID="$(curl -s "https://api.github.com/repos/$GH_REPO" | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+echo "trusting $GH_REPO, id $GH_REPO_ID"
+python commands/infrastructure.py prepare --project "$PROJECT" --region "$REGION" \
+  --github-repository "$GH_REPO" --github-repository-id "$GH_REPO_ID" --deploy-ref refs/heads/main
+<!--/BASH-->
+
+<!--EXPECT expected-->
+PASS: saved confirmed inputs to /home/you/deploy_module_rag/terraform/runbook-project.auto.tfvars.json
+CI trust: YOUR-GITHUB-USER/YOUR-REPO (ID NUMBER) / refs/heads/main
+<!--/EXPECT-->
+
+<p>The saved inputs file stays in your Cloud Shell and is never committed. For a private repository, read the ID with <code>gh api repos/$GH_REPO --jq .id</code> instead of the public API.</p>
+
+<p><strong>Google sign-in for the UI.</strong> IAP shows a Google sign-in screen, and that screen needs an OAuth consent screen. Open <em>Google Auth Platform &rarr; Branding</em> in the console, set an app name and your support address, and save. Then check whether your project sits inside an organization:</p>
+
+<!--BASH bash - Cloud Shell: organization or not-->
+gcloud projects describe "$PROJECT" --format='value(parent.type,parent.id)'   # empty: no organization
+<!--/BASH-->
+
+<p>If it printed an organization, IAP manages its own OAuth client and you are done here. If it printed nothing, a personal account with no organization, create the client yourself: <em>Google Auth Platform &rarr; Clients &rarr; Create client</em>, type <em>Web application</em>, then give its ID and secret to IAP. The file holds a secret, so it lives in your home directory for a moment and is deleted straight after.</p>
+
+<!--BASH bash - Cloud Shell: only without an organization-->
+cat > "$HOME/iap-oauth.yaml" <<'EOF'
+accessSettings:
+  oauthSettings:
+    clientId: CLIENT_ID
+    clientSecret: CLIENT_SECRET
+EOF
+# edit the two values in $HOME/iap-oauth.yaml first (cloudshell edit ~/iap-oauth.yaml)
+gcloud iap settings set "$HOME/iap-oauth.yaml" --project="$PROJECT" && rm "$HOME/iap-oauth.yaml"
+<!--/BASH-->
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Phase 2 &middot; Create</span><h3>make preflight, then make plan: read before you apply</h3><p>A read-only check of everything the apply stands on, then the one plan you will approve.</p></div></div>
+
+<p><code>make preflight</code> creates nothing. It checks the tools and their versions, your sign-in, the project, the billing link, the state bucket, the APIs and the one Python package the roster needs, and for anything missing it says what to run. Every line should read <code>ok</code>.</p>
+
+<!--BASH bash - Cloud Shell: preflight, read-only-->
+make preflight PROJECT="$PROJECT" TFSTATE_BUCKET="$TFSTATE_BUCKET" REGION="$REGION"
+<!--/BASH-->
+
+<!--EXPECT expected-->
+  ok    gcloud on PATH
+  ok    terraform on PATH
+  ok    make on PATH
+  ok    python on PATH
+  ok    terraform VERSION (backend.tf wants >= 1.9)
+  ok    signed in as you@example.com
+  ok    project documind-ai-YOUR-ID exists
+  ok    billing linked
+  ok    state bucket gs://documind-ai-YOUR-ID-tfstate
+  ok    APIs enabled
+  ok    google-cloud-firestore for make roster
+
+preflight clean - next: make plan, then make up
+<!--/EXPECT-->
+
+<p>Now the plan. <code>make plan</code> runs <code>terraform plan</code> with your saved inputs, writes the plan to a file, and then inspects it the way a reviewer would: it refuses the plan if it is incomplete, if its inputs differ from the ones you confirmed, if it would delete or replace anything, or if it would change an existing CI trust. A plan that passes is recorded as the selected plan, and that file is the only thing <code>make up</code> will apply.</p>
+
+<!--BASH bash - Cloud Shell: the plan, saved and checked-->
+make plan PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" 2>&1 | tee "$HOME/plan.log"
+grep -E '^(PASS|CI trust|STOP|Plan:)|Reviewed plan|Review the' "$HOME/plan.log"
+<!--/BASH-->
+
+<p>Look for three things: a <code>Plan: N to add, 0 to change, 0 to destroy</code> line (on a blank project, everything is an add), the <code>PASS: no deletes/replacements</code> line, and your repository on the <code>CI trust</code> line. Then read the plan by resource type, which is far easier than scrolling through Terraform's text:</p>
+
+<!--BASH bash - Cloud Shell: the plan, counted by resource type-->
+PLAN="$(python -c "import json; print(json.load(open('terraform/runbook-selected-plan.json'))['plan'])")"
+terraform -chdir=terraform show -json "$PLAN" > "$HOME/plan.json" && echo "saved plan: $(basename "$PLAN")"
+python - <<'PY'
+import json, os, warnings; warnings.filterwarnings("ignore", category=UserWarning)
+from collections import Counter
+plan = json.load(open(os.path.expanduser("~/plan.json"), encoding="utf-8"))
+changes = [rc for rc in plan["resource_changes"] if rc["mode"] == "managed"]
+print("actions:", dict(Counter("/".join(rc["change"]["actions"]) for rc in changes)))
+types = Counter(rc["type"] for rc in changes if rc["change"]["actions"] != ["no-op"])
+for t, n in sorted(types.items(), key=lambda x: (-x[1], x[0])):
+    print(f"{n:4d}  {t}")
+print(f"{sum(types.values()):4d}  in all")
+PY
+<!--/BASH-->
+
+<p>The biggest groups are IAM bindings and service accounts, then Firestore indexes, buckets and alert policies. The few that bill by the hour are near the bottom with a count of one or two: the Vector Search index endpoint and its deployed index, the Spanner instance, the two Cloud SQL instances, the GKE cluster and its node pool, and the VPC connector. Step 13 prices each one.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Phase 3 &middot; Deploy</span><h3>Phase 3: make up applies the plan and deploys everything</h3><p>One command, %%N_UP_STEPS%% stages after the apply, and the longest wait of the day.</p></div></div>
+
+<p>Here is the whole of <code>make up</code>, from the kit's Makefile. The first line applies the checked plan; the second runs the deploy stages in order.</p>
+
+@@up@@
+
+<p>In order: <code>drift</code> compares the lane with the plan, <code>secrets</code> writes the first versions of the secrets Terraform declared empty, <code>build</code> runs Cloud Build for every image, <code>deploy-services</code> deploys them to Cloud Run, <code>wait-index</code> waits for Firestore's vector indexes to be READY, <code>roster</code> puts you and the UI's account on the tenants, <code>managed-stores</code> creates the RAG Engine corpora, <code>bq-views</code> creates the BigQuery reporting view, and <code>vector-status</code> prints how many vectors the search index holds: zero for now, by design.</p>
+
+<p>The services, and the order they come up in: the ingest worker first, because the upload subscription already points at its URL, then the API, then everything that calls the API. Each one is deployed by its own script under <code>commands/</code>, the same script the lesson that teaches it shows.</p>
+
+@@services@@
+
+<p>Run it inside tmux. The Terraform apply creates a few hundred resources, some of which (Vector Search, Cloud SQL, Spanner, the GKE cluster) take many minutes on their own, and seven Cloud Build runs follow. Expect well over an hour on a blank project.</p>
+
+<!--BASH bash - Cloud Shell, inside tmux: apply and deploy-->
+time make up PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" 2>&1 | tee "$HOME/up.log"
+tail -n 25 "$HOME/up.log"
+<!--/BASH-->
+
+<p>If your connection drops, reattach with <code>tmux attach -t documind</code>; the command kept running. If <code>make up</code> stops <em>during the apply</em>, the plan it applied is used up: fix the cause, then <code>make plan</code>, review, and <code>make up</code> again. Terraform keeps everything the first run created, so the second plan only adds what is missing. If it stops <em>after the apply</em>, in one of the deploy stages, you do not need a new plan at all: step 10 runs only the stages that were left.</p>
+
+<p>When it finishes, count the services and the account each runs as:</p>
+
+<!--BASH bash - Cloud Shell: the services, and who each runs as-->
+gcloud run services list --project "$PROJECT" --region "$REGION" \
+  --format='table(metadata.name:label=SERVICE, spec.template.spec.serviceAccountName:label=RUNS_AS)'
+gcloud run services list --project "$PROJECT" --region "$REGION" --format='value(metadata.name)' | wc -l
+<!--/BASH-->
+
+<p>A complete deploy shows %%N_SERVICES%% rows: %%SERVICE_LIST%%, each running as its own <code>documind-&lt;service&gt;-sa</code> account. On today's kit a first <code>make up</code> stops partway through the deploy stage with two of them up; step 10 says why and finishes the job.</p>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Phase 3 &middot; Deploy</span><h3>When make up stops: the three known places</h3><p>One stop you should expect on today's kit, two you might meet, and the repair for each.</p></div></div>
+
+<p>None of these loses work. Terraform's state keeps every resource the apply created, and Artifact Registry keeps every image the build pushed, so each repair runs only the stages that were left.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Where it stops</th><th>What you see</th><th>Why</th><th>The repair</th></tr></thead>
+<tbody>
+<tr><td><code>deploy-services</code>, third script</td><td data-label="What you see"><code>commands/lesson-12.3.sh (DEPLOY block)</code>, then gcloud refusing <code>--file</code>; only ingest and api are deployed</td><td data-label="Why">The admin console's deploy block still carries notebook lines: a <code>--file</code> flag <code>gcloud builds submit</code> does not have, <code>us-central1</code> where the others use <code>REGION</code>, and a placeholder group. The loop stops there, so the four scripts after it never run</td><td data-label="The repair">Expected on the current kit. The three blocks below: the four services after it, the admin console by hand, the rest of <code>make up</code></td></tr>
+<tr><td><code>build</code></td><td data-label="What you see">A 403 from Cloud Build naming a <code>-compute@developer</code> account</td><td data-label="Why">On newer projects Cloud Build runs as the default compute account, which has no rights on the build bucket or Artifact Registry</td><td data-label="The repair">The three grants below, then <code>make build deploy-services</code></td></tr>
+<tr><td><code>bq-views</code></td><td data-label="What you see"><code>Field name retrieve_ms does not exist</code></td><td data-label="Why">The view reads fields of the API's usage rows, and BigQuery only knows them after the API has answered once</td><td data-label="The repair">Carry on to steps 11 and 12; after the first answer run <code>make bq-views vector-status</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>The admin script.</strong> First, the four services whose scripts come after it. <code>SCRIPTS</code> on the command line replaces the Makefile's list, and the images are already in Artifact Registry from the <code>build</code> stage, so this only deploys.</p>
+
+<!--BASH bash - Cloud Shell: ui, chat, mcp and agent, from the images make up built-->
+export GIT_SHA="$(git rev-parse --short HEAD)"
+make deploy-services PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" GIT_SHA="$GIT_SHA" \
+  SCRIPTS="commands/lesson-12.4.sh commands/lesson-12.8.sh commands/lesson-7.2.sh commands/lesson-8.4.sh"
+<!--/BASH-->
+
+<p>Then the admin console, with the script's own flags and the three lines corrected for your lane: your region, the image the build stage pushed, your address in <code>ADMIN_EMAILS</code>, and the service's own IAP audience. The kit declares the console internal (<code>--ingress=internal-and-cloud-load-balancing</code>), so it is not reachable from the internet and needs no IAP grant here.</p>
+
+<!--BASH bash - Cloud Shell: documind-admin, the script's flags with this lane's values-->
+gcloud run deploy documind-admin --project="$PROJECT" --region="$REGION" --quiet \
+  --image="$REGION-docker.pkg.dev/$PROJECT/documind/admin:$GIT_SHA" \
+  --no-allow-unauthenticated --ingress=internal-and-cloud-load-balancing \
+  --service-account="documind-admin-sa@$PROJECT.iam.gserviceaccount.com" \
+  --set-env-vars="^|^GOOGLE_CLOUD_PROJECT=$PROJECT|ADMIN_EMAILS=$ADMIN_EMAILS|AUDIT_BUCKET=$PROJECT-audit|IAP_AUDIENCE=/projects/$NUMBER/locations/$REGION/services/documind-admin" \
+  --set-secrets="COOKIE_SECRET=cookie-secret:latest" \
+  --session-affinity --cpu-boost
+for role in roles/bigquery.dataViewer roles/bigquery.jobUser; do
+  gcloud projects add-iam-policy-binding "$PROJECT" --condition=None --format=none \
+    --member="serviceAccount:documind-admin-sa@$PROJECT.iam.gserviceaccount.com" --role="$role"
+done
+<!--/BASH-->
+
+<p>Last, the stages <code>make up</code> never reached. <code>bq-views</code> and <code>vector-status</code> wait for step 12, for the reason in the table.</p>
+
+<!--BASH bash - Cloud Shell: the rest of make up-->
+make wait-index roster managed-stores PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS"
+gcloud run services list --project "$PROJECT" --region "$REGION" --format='value(metadata.name)' | wc -l
+<!--/BASH-->
+
+<p>The count is now %%N_SERVICES%%. If you would rather fix the script itself, so the next <code>make up</code> runs clean, make the same three corrections in <code>commands/lesson-12.3.sh</code> and drop its <code>gcloud builds submit</code> lines, since the <code>build</code> stage already builds the admin image. Keep the change local: the next <code>git pull</code> may bring the kit's own fix.</p>
+
+<p><strong>A Cloud Build 403.</strong> Grant the account the 403 named, if it names a different one, then build and deploy again:</p>
+
+<!--BASH bash - Cloud Shell: only after a Cloud Build 403-->
+BUILDER="serviceAccount:$NUMBER-compute@developer.gserviceaccount.com"
+gcloud storage buckets add-iam-policy-binding "gs://${PROJECT}_cloudbuild" --member="$BUILDER" --role=roles/storage.objectViewer --format=none
+gcloud artifacts repositories add-iam-policy-binding documind --location="$REGION" --project="$PROJECT" --member="$BUILDER" --role=roles/artifactregistry.writer --format=none
+gcloud projects add-iam-policy-binding "$PROJECT" --member="$BUILDER" --role=roles/logging.logWriter --condition=None --format=none
+make build deploy-services PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS"
+<!--/BASH-->
+
+<p><strong>The BigQuery view.</strong> Why it waits for an answer, in the kit's own words:</p>
+
+@@bqviews@@
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Phase 3 &middot; Deploy</span><h3>Seed the lane: operators, the corpus, the vectors</h3><p>A lane with no documents answers nothing. Three commands fill it.</p></div></div>
+
+<p>First, the operator grant. The smoke test and the eval gate call the API as the UI's service account, and the gate's refusal rows call it as an outsider account; both need you to be allowed to mint tokens as those accounts. Project Owner does not include that permission, which is why the kit grants it explicitly.</p>
+
+@@operators@@
+
+<!--BASH bash - Cloud Shell: let yourself mint tokens as the UI and the outsider-->
+make operators PROJECT="$PROJECT" ADMIN_EMAILS="$ADMIN_EMAILS"
+<!--/BASH-->
+
+<p>Then the corpus. <code>make ingest-corpus</code> uploads the three tenants' synthetic documents and the real Acts, one folder per tenant, into the uploads bucket. Every object that lands is an event: the ingest worker parses it, chunks it, embeds it and writes it to Firestore and Vector Search. The upload is quick; the indexing behind it takes a while, so <code>make wait-vectors</code> blocks until the search index holds at least 200 vectors, or tells you why not after 20 minutes.</p>
+
+<!--BASH bash - Cloud Shell: load the corpus and wait for the index-->
+make ingest-corpus PROJECT="$PROJECT"
+make wait-vectors PROJECT="$PROJECT" REGION="$REGION" WANT=200
+make vector-status PROJECT="$PROJECT" REGION="$REGION"
+<!--/BASH-->
+
+<p>Finally, pin the tenant you will test with to the vector index, so the smoke test checks the tier you expect it to:</p>
+
+<!--BASH bash - Cloud Shell: acme on the vector tier-->
+make tenant-backend PROJECT="$PROJECT" TENANT=acme RETRIEVAL_BACKEND=vector
+<!--/BASH-->
+
+<p>While you wait, the worker's log is worth watching: each document ends on an <code>ingest_ok</code> line with its chunk count. <code>make dlq</code> peeks at the dead-letter queue without acknowledging anything; an empty queue is what you want.</p>
+
+<!-- ============================ STEP 12 ============================ -->
+<div class="step" id="s12"><div class="step-n">12</div><div><span class="kicker">Phase 3 &middot; Prove it</span><h3>Prove it: the smoke, the gate and the UI in a browser</h3><p>Three proofs, from the cheapest to the one you can show someone.</p></div></div>
+
+<p><strong>The smoke test.</strong> It checks health, asks a golden question as a tenant member and expects an answer with citations, and asks again with no token, which must be refused. It costs one Gemini answer.</p>
+
+<!--BASH bash - Cloud Shell: the smoke test-->
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+make smoke DOCUMIND_API_URL="$API" DOCUMIND_PROJECT="$PROJECT" DOCUMIND_TENANT="$TENANT"
+<!--/BASH-->
+
+<p>If <code>bq-views</code> stopped <code>make up</code> earlier, the API has now answered once, so finish the last two stages:</p>
+
+<!--BASH bash - Cloud Shell: the stages make up could not finish before the first answer-->
+make bq-views vector-status PROJECT="$PROJECT" REGION="$REGION"
+<!--/BASH-->
+
+<p><strong>The eval gate.</strong> <code>make eval-live</code> runs the whole golden set against the deployed API: answer quality thresholds, the rows that must be answered, the rows that must be refused, and tenant isolation, which must be 100 percent. It makes one Gemini call per row, so it costs more than the smoke; run it once now and again after any change you care about.</p>
+
+<!--BASH bash - Cloud Shell: the golden set against the live API-->
+make eval-live PROJECT="$PROJECT" REGION="$REGION"
+<!--/BASH-->
+
+<p><code>make smoke-all</code> runs every smoke the kit has. Two of them, <code>smoke-gateway</code> and <code>smoke-slm</code>, test optional services this page does not deploy, so on this lane expect those two to fail and the rest to pass.</p>
+
+<p><strong>The UI.</strong> Print the address and open it in a browser:</p>
+
+<!--BASH bash - Cloud Shell: the UI's address, and what a stranger gets-->
+echo "https://documind-ui-$NUMBER.$REGION.run.app"
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://documind-ui-$NUMBER.$REGION.run.app/" | cut -d'?' -f1
+<!--/BASH-->
+
+<!--EXPECT expected - the curl, which carries no Google sign-in-->
+302 https://accounts.google.com/o/oauth2/v2/auth
+<!--/EXPECT-->
+
+<p>Signed in as the address in <code>ADMIN_EMAILS</code>, you land on the chat page with <em>Tenant: acme</em> in the sidebar. Ask <em>What is the notice period?</em> and the answer comes back with numbered citations you can open. In a private window, signed in as any other Google account, IAP turns you away before the page loads. That difference, one person in and everyone else out, is the proof that the front door works.</p>
+
+<div class="box box-teal"><div class="box-title">Optional services, deployed separately</div>
+<p>The LiteLLM gateway (<code>make deploy-gateway</code>), a small model on a Cloud Run GPU (<code>make deploy-slm</code>), and Gemma on vLLM (<code>make build-vllm deploy-vllm</code>, which needs a Hugging Face token) belong to later modules. They are not part of <code>make up</code>, and the GPU ones bill by the hour while an instance is warm. Deploy them when the lesson that teaches them asks you to.</p></div>
+
+<!-- ============================ STEP 13 ============================ -->
+<div class="step" id="s13"><div class="step-n">13</div><div><span class="kicker">Phase 3 &middot; Switch off</span><h3>What bills by the hour, and how to stop it</h3><p>Six items bill while they exist, used or idle. Two commands and one deletion stop them.</p></div></div>
+
+<p>Cloud Run services cost nothing while they have no instances. These do, every hour, from the moment the apply creates them. Sizes are read from the kit's Terraform; prices are Mumbai list prices read on 7 October 2026, at Rs %%USD_INR%% to the dollar. The Vector Search line depends on the shard size the service picks for the index, which <code>vector-status</code> and lesson 0.3 show you how to read.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Item</th><th>Declared in</th><th>Size</th><th>Rs an hour</th></tr></thead>
+<tbody>
+%%COST_ROWS%%
+<tr><td>All of them</td><td data-label="Declared in">the lane</td><td data-label="Size">idle, no traffic</td><td data-label="Rs an hour"><strong>%%HOUR_SMALL%% (SMALL) / %%HOUR_MEDIUM%% (MEDIUM)</strong></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>There are three ways to stop, from gentlest to final.</p>
+
+<p><code>make off</code> scales the services, the gateway and the GPU services to zero instances. It is what the lane's 23:00 IST job does every night. It does <em>not</em> stop the six items above; they bill until they are deleted.</p>
+
+<p><code>make down</code> deletes the Cloud Run services first, then runs <code>terraform destroy</code>, and at the end prints what it could not remove: Firestore (delete protection), buckets that still hold objects, the protected managed search stores, and the BigQuery views.</p>
+
+<p>Deleting the project removes everything, including what <code>make down</code> left. Google keeps a deleted project recoverable for 30 days and stops billing it at once.</p>
+
+<!--BASH bash - Cloud Shell: switch off, tear down, delete-->
+make off PROJECT="$PROJECT" REGION="$REGION"       # tonight: services to zero (the hourly items still bill)
+make down PROJECT="$PROJECT" REGION="$REGION"      # done for now: services deleted, terraform destroy
+gcloud projects delete "$PROJECT"                  # done for good: everything, billing stops
+<!--/BASH-->
+
+<p>To come back after <code>make down</code>, you do not repeat steps 3 to 7: the kit, the venv, the state bucket and your saved inputs are all still there. Run the session block of step 5, then step 8 and step 9 again. After a project deletion, start again from step 4 with a new project ID.</p>
+
+<!-- ============================ STEP 14 ============================ -->
+<div class="step" id="s14"><div class="step-n">14</div><div><span class="kicker">Check</span><h3>Verify it yourself: the checklist</h3><p>Each claim this page makes, the command that proves it, and what a pass looks like.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The kit is in Cloud Shell</td><td data-label="The check"><code>git -C ~/deploy_module_rag log -1</code></td><td data-label="Pass looks like">A commit, and <code>make dryrun</code> green</td></tr>
+<tr><td>2</td><td data-label="Claim">The project bills to your account, with a budget</td><td data-label="The check"><code>gcloud billing projects describe "$PROJECT"</code>; Budgets &amp; alerts</td><td data-label="Pass looks like"><code>billingEnabled: true</code>; a budget scoped to the project</td></tr>
+<tr><td>3</td><td data-label="Claim">The APIs are on</td><td data-label="The check">The count in step 6</td><td data-label="Pass looks like">40 or more</td></tr>
+<tr><td>4</td><td data-label="Claim">Terraform's state is in your bucket</td><td data-label="The check"><code>terraform -chdir=terraform state list | wc -l</code></td><td data-label="Pass looks like">A few hundred resources after <code>make up</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The applied plan deleted nothing</td><td data-label="The check"><code>grep PASS ~/plan.log</code></td><td data-label="Pass looks like"><code>PASS: no deletes/replacements</code></td></tr>
+<tr><td>6</td><td data-label="Claim">Every service is up, as its own account</td><td data-label="The check">The services list in step 9</td><td data-label="Pass looks like">%%N_SERVICES%% rows, each <code>documind-&lt;service&gt;-sa</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The index holds the corpus</td><td data-label="The check"><code>make vector-status</code></td><td data-label="Pass looks like">200 vectors or more</td></tr>
+<tr><td>8</td><td data-label="Claim">The API answers with citations, and refuses without a token</td><td data-label="The check"><code>make smoke</code></td><td data-label="Pass looks like">Every line PASS</td></tr>
+<tr><td>9</td><td data-label="Claim">The golden set passes, isolation at 100 percent</td><td data-label="The check"><code>make eval-live</code></td><td data-label="Pass looks like">Every threshold met</td></tr>
+<tr><td>10</td><td data-label="Claim">The UI lets you in and keeps strangers out</td><td data-label="The check">The curl in step 12; your browser; a private window</td><td data-label="Pass looks like">302 to Google; <em>Tenant: acme</em>; the stranger refused</td></tr>
+<tr><td>11</td><td data-label="Claim">You can stop the bill</td><td data-label="The check"><code>make down</code>, then <code>gcloud projects delete</code></td><td data-label="Pass looks like">The project listed as DELETE_REQUESTED</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Everything, from nothing. Cloud Shell holds the kit at <code>~/deploy_module_rag</code>, its virtual environment and your saved Terraform inputs. Your project has billing, a budget and 40 APIs; its state bucket holds Terraform's record of the lane: the service accounts and their roles, the buckets, Firestore and its indexes, Vector Search with its deployed index, two Cloud SQL instances, Spanner, BigQuery, a GKE cluster, the network, the alerts and the budget. Artifact Registry holds the images; Cloud Run runs %%N_SERVICES%% services, the UI behind IAP; the roster puts you on acme; the corpus is indexed. From the end of the apply until you delete the project, the items of step 13 bill every hour.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 0 Setup &middot; Lesson 0.5 Set up the cloud lane end to end: clone in Cloud Shell, create the infrastructure with Terraform, deploy every service and the UI &middot; v5.0</p><p>Next: Lesson 1.1 Understand source, tenant, page and chunk contracts.</p></div>
