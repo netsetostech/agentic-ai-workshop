@@ -1,12 +1,14 @@
-"""Build lesson 0.5 from its part, the shared template and verbatim kit excerpts.
+"""Build lesson 0.5 from its three parts, the shared template and verbatim kit excerpts.
 
-Set up the cloud lane end to end, in one sitting, from Cloud Shell: copy the kit into ~/deploy_module_rag, create the
-infrastructure with Terraform through the kit's checked plan (make plan, then make up), and deploy every service and
-the UI behind IAP; then prove it with make smoke and switch it off. Lessons 0.1 to 0.4 teach each part slowly; this page
-is the one runbook that strings them together, for a learner (or an instructor) who has to stand a lane up today.
+Set up the cloud lane end to end from Cloud Shell, in three phases that each end in a checkpoint. Phase 1 (part a):
+the project, the tools, Python 3.12 in ~/rag-shell-venv and the kit cloned from main into ~/deploy_module_rag, with
+the settings saved to ~/rag-env.sh. Phase 2 (part b): the APIs, the state bucket, one saved Terraform plan, its apply
+and the vector index check. Phase 3 (part c): pin GIT_SHA, the kit's regression gate, seven images under that tag,
+the seven Cloud Run services with the UI and admin console behind IAP, the tenant rosters, and the checks.
 
-At build time: the Makefile's up target and service list are quoted verbatim (pagebuild.block), and the standing cost
-comes from lessons/00-setup/standing_cost.py, the one source 0.1, 0.3 and 0.4 state it from, so the four pages agree.
+At build time: the Makefile's service list, the roster target and commands/lane.py's roster_plan are quoted verbatim
+(pagebuild.block), and the standing cost comes from lessons/00-setup/standing_cost.py, the one source 0.1, 0.3 and 0.4
+state it from, so the pages agree.
 
     python pagekit/build.py 0.5
 """
@@ -17,14 +19,14 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from pagekit.pagebuild import block, filler, finish, part, window  # noqa: E402
+from pagekit.pagebuild import block, filler, finish, part, window  # noqa: E402,F401
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import standing_cost as sc  # noqa: E402
 
 LESSON = "0.5"
 title = ("<title>Lesson 0.5 Set up the cloud lane end to end: clone in Cloud Shell, create the infrastructure with "
-         "Terraform, deploy every service and the UI - one runbook, start to switch-off | Netsetos</title>\n")
+         "Terraform, deploy every service and the UI - three phases, one pinned commit, the rosters | Netsetos</title>\n")
 
 EXTRA_CSS = """/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
 html,body{scrollbar-width:none;-ms-overflow-style:none;}
@@ -45,45 +47,35 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
   .rail-st{border-right:0;border-bottom:1px solid var(--border);}
   .rail-st:last-child{border-bottom:0;}
 }
+/* why a block differs from the earlier runbook: one quiet line under the step, not a warning */
+.fixnote{margin:10px 0 18px;padding:8px 12px;border-left:3px solid var(--teal);background:#f8fafc;border-radius:0 8px 8px 0;font-size:var(--small-size);line-height:1.55;color:var(--slate);}
+.fixnote-t{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--teal-dark);margin-right:4px;}
 """
 
-PART = part(LESSON, "a")
+PARTS = [part(LESSON, name) for name in ("a", "b", "c")]
 
 # ---------------------------------------------------------------- verbatim kit excerpts
 EXCERPTS = {
-    "up": ("deploy/Makefile - the up target", block("Makefile", "up: guard-project", n=3)),
-    "services": ("deploy/Makefile - what make up builds and deploys", block("Makefile", "SERVICES   =", n=4)),
-    "operators": ("deploy/Makefile - the operators target", block("Makefile", "operators: guard-project", n=8)),
-    "bqviews": ("deploy/Makefile - bq-views, and why it can stop make up", block("Makefile", "# The SQL that terraform does not own.", n=7)),
+    "services": ("deploy/Makefile - the seven services", block("Makefile", "SERVICES   =", n=4)),
+    "roster_target": ("deploy/mk/ingestion.mk - the roster target", block("mk/ingestion.mk", "roster: guard-project", n=2)),
+    "roster_plan": ("deploy/commands/lane.py - roster_plan, what the roster writes", block("commands/lane.py", "def roster_plan")),
 }
-UP = EXCERPTS["up"][1]
-assert "drift secrets build deploy-services wait-index roster managed-stores bq-views vector-status" in UP, UP
 SERVICES = EXCERPTS["services"][1].split("=", 1)[1].split("\n")[0].split()
 assert SERVICES == ["ingest", "api", "admin", "ui", "chat", "mcp", "agent"], SERVICES
-UP_STEPS = UP.splitlines()[-1].split("$(MAKE)")[1].split()
+PLAN = EXCERPTS["roster_plan"][1]
+assert 'GOLDEN_TENANTS' in PLAN and 'policies = [("acme", "any"), ("zeta", "any"), ("globex", "in")]' in PLAN, PLAN
+assert 'GOLDEN_TENANTS = ("acme", "zeta", "globex")' in (Path(__file__).resolve().parents[3] / "deploy/commands/lane.py").read_text()
+
 
 # ---------------------------------------------------------------- the standing cost, shared with 0.1, 0.3 and 0.4
 def rs(x: float) -> str:
     return f"{x:,.2f}"
 
 
-rows = []
-for key, label, where, size, _ in sc.ITEMS:
-    small, medium = sc.item_usd(key, "small") * sc.USD_INR, sc.item_usd(key, "medium") * sc.USD_INR
-    cost = rs(small) if abs(small - medium) < 1e-9 else f"{rs(small)} (SMALL) / {rs(medium)} (MEDIUM)"
-    rows.append(f'<tr><td>{html.escape(label)}</td><td data-label="Declared in"><code>{html.escape(where)}</code></td>'
-                f'<td data-label="Size">{html.escape(size)}</td><td data-label="Rs an hour">{cost}</td></tr>')
-COST_ROWS = "\n".join(rows)
-H_SMALL, H_MED = rs(sc.HOURLY["small"] * sc.USD_INR), rs(sc.HOURLY["medium"] * sc.USD_INR)
 NUMBERS = {
     "N_SERVICES": str(len(SERVICES)),
-    "SERVICE_LIST": ", ".join(f"<code>documind-{s}</code>" for s in SERVICES),
-    "UP_STEPS": ", ".join(f"<code>{s}</code>" for s in UP_STEPS),
-    "N_UP_STEPS": str(len(UP_STEPS)),
-    "HOUR_SMALL": H_SMALL, "HOUR_MEDIUM": H_MED,
+    "HOUR_SMALL": rs(sc.HOURLY["small"] * sc.USD_INR), "HOUR_MEDIUM": rs(sc.HOURLY["medium"] * sc.USD_INR),
     "DAY_SMALL": f"{sc.PER_DAY['small']:,}", "DAY_MEDIUM": f"{sc.PER_DAY['medium']:,}",
-    "USD_INR": str(sc.USD_INR),
-    "COST_ROWS": COST_ROWS,
 }
 
 
@@ -91,7 +83,7 @@ NUMBERS = {
 def bash(label: str, code: str) -> str:
     out = []
     for line in html.escape(code.strip("\n"), quote=False).split("\n"):
-        out.append(re.sub(r"(^|\s)(#[^\n]*)$", r'\1<span class="cm">\2</span>', line))
+        out.append(re.sub(r"(^|\s)(#[^\n'\"]*)$", r'\1<span class="cm">\2</span>', line))
     return ('<div class="cw"><div class="ch-bar"><span>' + html.escape(label) + '</span>'
             '<button class="cp" type="button">copy</button></div><pre tabindex="0">' + "\n".join(out) + "</pre></div>\n")
 
@@ -101,17 +93,13 @@ def expected(label: str, text: str) -> str:
             '<pre tabindex="0">' + html.escape(text.strip("\n"), quote=False) + "</pre></div>\n")
 
 
-BLOCKS = {}
-for m in re.finditer(r"<!--BASH (.*?)-->\n(.*?)\n<!--/BASH-->", PART, re.S):
-    BLOCKS[m.group(0)] = bash(m.group(1).strip(), m.group(2))
-for m in re.finditer(r"<!--EXPECT (.*?)-->\n(.*?)\n<!--/EXPECT-->", PART, re.S):
-    BLOCKS[m.group(0)] = expected(m.group(1).strip(), m.group(2))
+def render(text: str) -> str:
+    text = re.sub(r"<!--BASH (.*?)-->\n(.*?)\n<!--/BASH-->", lambda m: bash(m.group(1).strip(), m.group(2)), text, flags=re.S)
+    text = re.sub(r"<!--EXPECT (.*?)-->\n(.*?)\n<!--/EXPECT-->", lambda m: expected(m.group(1).strip(), m.group(2)), text, flags=re.S)
+    text = filler(EXCERPTS)(text)
+    for k, v in NUMBERS.items():
+        text = text.replace(f"%%{k}%%", v)
+    return text
 
-body = PART
-for raw, rendered in BLOCKS.items():
-    body = body.replace(raw, rendered)
-body = filler(EXCERPTS)(body)
-for k, v in NUMBERS.items():
-    body = body.replace(f"%%{k}%%", v)
 
-finish(LESSON, title, EXTRA_CSS, body)
+finish(LESSON, title, EXTRA_CSS, "".join(render(p) for p in PARTS))
