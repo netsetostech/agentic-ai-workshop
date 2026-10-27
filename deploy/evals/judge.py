@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """make judge: the lane's own answers, scored by a second judge. Module 10 (10.4 Vertex AI Evaluation).
 
-    make judge PROJECT=...                                # the deployed API's answers to the 64 golden rows
+    make judge PROJECT=...                                # the deployed API's answers to the 65 golden rows
     make judge PROJECT=... API_B=https://candidate---...  # + pairwise: the candidate revision against the live one
     make judge PROJECT=... CHAT_URL=https://documind-chat-...   # + trajectories: /v1/chat's tool_calls, three brains
     python evals/judge.py --selftest                      # the assembly and the trajectory maths, offline
 
 run_eval.py is the gate: nine thresholds and fifteen required rows, no model in the loop, green or red. This is the OTHER judge -
-Gemini reading the same 64 answers for groundedness (is the answer supported by the context it cites?)
+Gemini reading the same 65 answers for groundedness (is the answer supported by the context it cites?)
 and fulfilment (did it answer what was asked?) through Vertex AI Evaluation, with bring-your-own
 responses: nothing here generates; every response was produced by the deployed service, so the score
 is a score of the lane, not of a prompt in a notebook. Every run is an Experiments run named by the
@@ -203,7 +203,7 @@ def template_hash(names: list[str]) -> str:
 
 
 def evaluate(df, experiment: str, run_name: str, pairwise: bool, project: str, location: str = "us-central1",
-             judge_model: str = "") -> dict:
+             judge_model: str = "", save_rows: str = "", judged: list[dict] | None = None) -> dict:
     """Pointwise groundedness and fulfilment (or its successor); pairwise question-answering quality when a baseline column exists.
 
     12 September 2026: the judge is named. --judge-model pins the autorater when the SDK exposes AutoraterConfig
@@ -235,6 +235,10 @@ def evaluate(df, experiment: str, run_name: str, pairwise: bool, project: str, l
     result = EvalTask(dataset=df, metrics=metrics, experiment=experiment, **kwargs).evaluate(experiment_run_name=run_name)
     summary = dict(result.summary_metrics)
     summary["run_name"] = run_name             # what Experiments recorded, template hash included
+    try:
+        summary["ratings"] = ratings_count(result.metrics_table)
+    except Exception:  # noqa: BLE001 - a table this SDK shapes differently: the means still print
+        pass
     # By shape, from the per-row table: a refusal row has no context to be grounded in, so the overall mean
     # mixes what the judge can score with what it cannot. The answerable shapes are the number that means something.
     try:
@@ -244,7 +248,65 @@ def evaluate(df, experiment: str, run_name: str, pairwise: bool, project: str, l
             summary[f"groundedness/mean[{shape}]"] = float(sub[col].mean())
     except Exception:  # noqa: BLE001 - the summary is the contract; the breakdown is a courtesy
         pass
+    if save_rows:              # --save-rows (lesson 4.5): the same table, row by row, beside the rows it rates
+        try:
+            print(f"  per-row ratings: {write_ratings(save_rows, result.metrics_table, judged or [], run_name)} rows written to {save_rows}")
+        except Exception as e:  # noqa: BLE001 - the run is recorded; a file that cannot be written is said, not raised
+            print(f"  per-row ratings: not written - {type(e).__name__}: {e}")
     return summary
+
+
+def ratings_count(table) -> tuple[int, int]:
+    """(ratings the Evaluation service returned, ratings asked for): every score and pairwise choice in the per-row
+    table. A request that failed leaves its cell empty, and a mean of nothing is NaN. On 23 October 2026, three days
+    after Gemini 2.5 retired on Vertex AI, the service's default judge answered 404 to all 195 requests of lesson
+    12.3's verdict, and the run printed NaN and exited 0."""
+    cols = [c for c in table.columns if str(c).endswith(("/score", "/pairwise_choice"))]
+    return sum(int(table[c].notna().sum()) for c in cols), len(cols) * len(table)
+
+
+def _plain(value, key: str):
+    """A metrics_table cell as JSON: a score as a float, anything else as text, a value the service did not return
+    (NaN, pandas' NA) as null."""
+    try:
+        if value is None or value != value:
+            return None
+    except TypeError:          # pandas' NA has no truth value
+        return None
+    if key == "score":
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
+
+
+def write_ratings(path: str, table, judged: list[dict], run_name: str) -> int:
+    """--save-rows: one JSON line per row the judge rated - the row as main() holds it (its question, the context and
+    the answer the judge read), then `run` and `ratings`: each metric's score and explanation, and a pair's choice.
+    The summary is a mean; setting the judge beside people (lesson 4.5) needs it row by row. A metric's columns are
+    found by suffix, as the by-shape block finds groundedness/score, because their prefix moves between SDK
+    versions. Rows are matched by id, or by position if the table carries none."""
+    cols = {}
+    for c in table.columns:
+        for suffix, key in (("/score", "score"), ("/explanation", "explanation"), ("/pairwise_choice", "choice")):
+            if str(c).endswith(suffix):
+                cols[c] = (str(c)[: -len(suffix)].rsplit("/", 1)[-1], key)
+    by_id = {r.get("id"): r for r in judged}
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    n = 0
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        for i, rec in enumerate(table.to_dict("records")):
+            rid = rec.get("id") if "id" in rec else (judged[i].get("id") if i < len(judged) else None)
+            ratings: dict[str, dict] = {}
+            for c, (metric, key) in cols.items():
+                ratings.setdefault(metric, {})[key] = _plain(rec.get(c), key)
+            row = by_id.get(rid) or {"id": rid, "shape": rec.get("shape")}
+            f.write(json.dumps({**row, "run": run_name, "ratings": ratings}, ensure_ascii=False, default=str) + "\n")
+            n += 1
+    return n
 
 
 # ----------------------------------------------------------------------------- selftest
@@ -267,9 +329,14 @@ def selftest() -> int:
     assert trajectory_metrics([{"tool_name": "calculate_cost"}, {"tool_name": "retrieve"}], ref) == {"exact": 0, "in_order": 1, "any_order": 1, "calls": 2}
     assert trajectory_metrics([], ref) == {"exact": 0, "in_order": 0, "any_order": 0, "calls": 0}
     assert normalise("Sixty days") == "60 days"
+    import pandas as pd
+    nan = float("nan")
+    table = pd.DataFrame({"id": ["lk-06", "rf-04"], "groundedness/score": [1.0, nan], "instruction_following/score": [nan, nan],
+                          "pairwise_question_answering_quality/pairwise_choice": ["CANDIDATE", nan]})
+    assert ratings_count(table) == (2, 6) and ratings_count(table[["id", "instruction_following/score"]]) == (0, 2)
     print("selftest: the cited chunk's text replaces its quote as the context and a miss keeps the quote; the prompt the "
           "judge reads carries the context then the question; the frame carries the six judge columns plus the baseline; "
-          "the trajectory maths is right on the three cases")
+          "the trajectory maths is right on the three cases; a failed request is a rating not returned")
     return 0
 
 
@@ -288,6 +355,9 @@ def main() -> int:
     ap.add_argument("--trajectory-rows", type=int, default=6)
     ap.add_argument("--no-vertex", action="store_true", help="collect and print, skip the Evaluation service")
     ap.add_argument("--reuse", default="", help="a JSON file: load the collected rows from it if it exists, else collect and write it")
+    ap.add_argument("--no-enrich", action="store_true",
+                    help="judge each row's context as it stands, with no store read: a frozen row keeps the text its readers labelled (lesson 4.5)")
+    ap.add_argument("--save-rows", default="", help="a JSONL file: every rated row, with each metric's score and explanation (lesson 4.5)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
@@ -303,7 +373,8 @@ def main() -> int:
     # Evaluation service should not have to ask the lane again. The file holds the rows as collected.
     if a.reuse and os.path.isfile(a.reuse):
         rows = json.load(open(a.reuse, encoding="utf-8"))
-        print(f"  {len(rows)} rows reused from {a.reuse} (delete it to collect again)")
+        print(f"  {len(rows)} rows reused from {a.reuse} (under make judge-frozen these are the frozen rows, kept; to "
+              f"collect afresh, name another --reuse file)")
     else:
         rows = collect(a.api_url, golden, token, member, a.rows)
         if a.reuse:
@@ -328,9 +399,12 @@ def main() -> int:
                   f"a 401 is the token's audience (the candidate URL must be one the API accepts), a 500 is the model")
             return 1
         baseline, rows = rows, cand                         # the candidate is judged; the live revision is the baseline
-    hit = enrich_context([r for r in rows if r["status"] == 200], a.project)
-    cited = sum(len(r.get("cited") or []) for r in rows if r["status"] == 200)
-    print(f"  context: {hit}/{cited} cited chunks read in full from the store" + ("" if hit else " - the judge reads the quotes only"))
+    if a.no_enrich:
+        print("  context: as each row holds it (--no-enrich: no store read)")
+    else:
+        hit = enrich_context([r for r in rows if r["status"] == 200], a.project)
+        cited = sum(len(r.get("cited") or []) for r in rows if r["status"] == 200)
+        print(f"  context: {hit}/{cited} cited chunks read in full from the store" + ("" if hit else " - the judge reads the quotes only"))
     df = to_frame([r for r in rows if r["status"] == 200], baseline=baseline)
     if not a.chat_url:
         print("  trajectories: off (no --chat-url)")
@@ -344,6 +418,8 @@ def main() -> int:
                       + (f"  errors {sum(1 for t in b if t.get('error'))}" if any(t.get("error") for t in b) else ""))
     if a.no_vertex:
         print(df.head(3).to_string())
+        if a.save_rows:
+            print("  per-row ratings: none - --no-vertex rates nothing")
         return 0
     if not a.project:
         print("--project is required for the Evaluation service")
@@ -352,12 +428,20 @@ def main() -> int:
     # with the first's half-made run). The label groups runs by the revision that answered; the time keeps them apart.
     label = a.label or revision_sha(a.api_url, a.project) or os.environ.get("GIT_SHA", "dev")
     run_name = f"api-{label}-{time.strftime('%Y%m%d-%H%M')}" + ("-vs-candidate" if a.api_b else "")
-    summary = evaluate(df, a.experiment, run_name, pairwise=bool(a.api_b), project=a.project, judge_model=a.judge_model)
+    summary = evaluate(df, a.experiment, run_name, pairwise=bool(a.api_b), project=a.project, judge_model=a.judge_model,
+                       save_rows=a.save_rows, judged=[r for r in rows if r["status"] == 200])
     print(f"\n  Experiments run {a.experiment}/{summary.get('run_name', run_name)}:")
     for k in sorted(summary):
         if k.endswith("/mean") or "/mean[" in k or k.endswith("/std") or "win_rate" in k or k == "row_count":
             v = summary[k]
             print(f"    {k:48} {v:.3f}" if isinstance(v, (int, float)) else f"    {k:48} {v}")
+    got, asked = summary.get("ratings", (0, 0))
+    if asked and not got:
+        print(f"\n  the judge rated nothing: all {asked} requests to the Evaluation service failed (their errors are above), "
+              "so every mean is NaN and this run is no verdict. Run it again once the service answers.")
+        return 1
+    if got < asked:
+        print(f"\n  the judge rated {got} of {asked}: the means leave out the {asked - got} requests that failed (above)")
     print("\n  the gate (run_eval.py) still decides; this judge explains. Where they disagree, read the row.")
     return 0
 

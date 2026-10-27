@@ -26,9 +26,9 @@ The `CI trust:` line names your own CI repository and its numeric id; replace th
 `NUMBER` if they should not appear on the page.
 
 **Cost:** nothing bills by the hour until `make up`'s apply. From then on the lane costs what step 10 of the page computes:
-Rs 44.05 an hour if the service picks a SMALL shard for the vector index, Rs 111.10 an hour if it picks MEDIUM, at the
-Mumbai (asia-south1) list prices of `lessons/00-setup/standing_cost.py`, read on 7 October 2026 and shared with 0.1 and
-0.4. The builds add Cloud Build minutes, not priced on the page. `make down` (lesson 0.4) ends it; keep the lane up if
+Rs 44.05 an hour with the SMALL shard `vector.tf` declares for a new index (Rs 111.10 an hour on MEDIUM, which only an
+index created before 8 October 2026 can have), at the Mumbai (asia-south1) list prices of
+`lessons/00-setup/standing_cost.py`, read on 7 October 2026 and shared with 0.1 and 0.4. The builds add Cloud Build minutes, not priced on the page. `make down` (lesson 0.4) ends it; keep the lane up if
 lesson 0.4's run list follows.
 
 **Times** below are estimates for planning, not measurements; `make up`'s real duration is one of the recordings.
@@ -54,7 +54,7 @@ lesson 0.4's run list follows.
 | 2 | `plan_by_type.txt` | the step 6 block "after make plan and before make up" (the `PLAN=...` line, `terraform show -json`, the Python cell), piped: append `\| scrub > ~/lesson-0.3/plan_by_type.txt` to a `{ ...; }` group around the three commands | `actions: {'create': 234}`, then 55 type lines equal to the page's computed window, then `234  in all` | under a minute | Rs 0 |
 | 3 | `make_up_tail.txt` | `tmux new -s up`, then `{ time make up PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ADMIN_EMAILS" 2>&1 ; } 2>&1 \| tee ~/up.log` (the braces put `time`'s report in the log), then `tail -n 30 ~/up.log \| scrub > ~/lesson-0.3/make_up_tail.txt` | the `>> no drift` line, the roster lines, the managed stores, the `vector-status` YAML (0 datapoints), then `real`/`user`/`sys` | one to two hours (estimate) | the hourly rows start here (above) |
 | 4 | `run_services.txt` | the two `gcloud run services list` lines of step 8, `\| scrub` | 7 rows, each `RUNS_AS documind-<service>-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com`, then `7` | seconds | Rs 0 |
-| 5 | `vector_shard.txt` | the three lines of step 8 "The shard size the service chose", `\| scrub` | `SHARD_SIZE_SMALL` or `SHARD_SIZE_MEDIUM`, then the machine and `1`; this decides which Vector Search line of step 10 applies | seconds | Rs 0 |
+| 5 | `vector_shard.txt` | the three lines of step 8 "The shard size of your index", `\| scrub` | `SHARD_SIZE_SMALL` (a blank project's index is new, so `vector.tf`'s SMALL), then `e2-standard-2` and `1`; anything else means the declaration did not apply: say so | seconds | Rs 0 |
 | 6 | `ui_unauthenticated.txt` | the `curl ... \| cut -d'?' -f1` line of step 9 | `302 https://accounts.google.com/...` (cut at the query string, which carries the OAuth client id) | seconds | Rs 0 |
 | 7 | `iap_policy.txt` | the `gcloud iap web get-iam-policy` line of step 9, `\| scrub` | a binding of `roles/iap.httpsResourceAccessor` with `user:you@example.com` | seconds | Rs 0 |
 | 8 | `ui_signed_in.txt` | by hand, in a browser: open `https://documind-ui-NUMBER.asia-south1.run.app`; (a) signed in as yourself: write down the sidebar (your address as `you@example.com`, `Tenant: acme`); (b) in a private window, a Google account not in `ADMIN_EMAILS`: write down the heading and first line of IAP's refusal page; (c) one line: whether the project had an organization and whether the custom OAuth client of step 3 was needed | three short notes, in plain words | a few minutes | Rs 0 |
@@ -69,9 +69,10 @@ The page's prose around each window describes the kit as it reads today. If a re
 as it is and tell the coordinator; do not edit a recording to match the page. Three things worth watching on this run
 (details in the coordinator's report for lesson 0.3):
 
-- `make up`'s deploy step runs `commands/lesson-12.3.sh` third. Its DEPLOY block calls `gcloud builds submit` with a
-  `--file` flag gcloud does not have, names `us-central1` where the others use `REGION`, and binds a placeholder group.
-  If it stops there, `documind-ui`, `documind-chat`, `documind-mcp` and `documind-agent` are not deployed.
+- `make up`'s deploy step runs `commands/lesson-12.3.sh` third, the admin console. Its DEPLOY block was rewritten on
+  8 October 2026 (no second build, `REGION`, IAP on the service with IAP's agent as invoker and one grant per
+  `ADMIN_EMAILS` address) and this is its first run on a lane: if `make up` stops there, record the error, and note
+  that `documind-ui`, `documind-chat`, `documind-mcp` and `documind-agent` are then not deployed.
 - `make up`'s `bq-views` step creates a view over the log sink's table, which exists only after the API has answered
   once; on a blank project it may stop `make up` before `vector-status`.
 - A build that stops at `storage.objects.get` with a 403: the page's step 7 has the three grants. Record whether it

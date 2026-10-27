@@ -29,6 +29,11 @@ Manual browser actions and long asynchronous waits pause at a named checkpoint. 
 
 After upgrading from a previous layout, run the lesson's finish file first, then set this lesson number in `workshop_demos/setup/start_new_session.py` and run it. It archives evidence; it does not delete your fixtures. Old progress is never silently treated as completion of the new section files.
 
+## Finish and restore
+
+- [cleanup/demo_06_diagnose_a_first_failure_one_loosened_row.py](cleanup/demo_06_diagnose_a_first_failure_one_loosened_row.py) — At lesson end: Repair it
+- [setup/finish.py](setup/finish.py) — Run the listed cleanup sections in order, even after a failure; retain evidence and restore saved settings.
+
 ## Functions, observations and effects
 
 The numbered functions below correspond to the source examples. Numerical sample output is illustrative. These files have offline/source checks; live IAM, ingestion, model output and deployed resources must be verified in your workstation.
@@ -43,6 +48,8 @@ Install what is missing, open a new terminal so its PATH is fresh, and check. Ea
 
 Operation: bash — run in a terminal on your laptop, after installing the tools.
 
+IDE adaptation: Print the version's first line with sed instead of head: gcloud and terraform go on writing after it, and under the demo shell's pipefail their SIGPIPE when head closed first failed the cell with exit 141, by chance (23 October 2026). The line printed is the same.
+
 Expected shape, not a promised result:
 
 ```text
@@ -51,7 +58,7 @@ Expected shape, not a promised result:
 
 ### demo_04_the_rs_0_lane_the_notice_period_question_with_citations.py
 
-The lane gets a venv of its own, ~/rag-local-venv. Its packages are the chat service's, LangChain, LangGraph, Chroma and the Ollama client among them, installed on top of the service's image pins as services/chat/requirements-local.txt asks. Keeping them out of ~/rag-shell-venv leaves the operator pins exactly where rag_check_python_dependencies expects them, and every later session runs that check; the kit's CI keeps the chat service's pins in a venv of their own for the same reason. Then Ollama pulls the model, once. Start it in the second terminal, so the first stays free for questions. One line in this block matters more than it looks. The recipe seeds from the kit's root and serves from services/chat, and the store's default path, ./documind_chroma, is relative, so the two commands would open two different directories: the service would find an empty store and answer local corpus is empty. Exporting one absolute path as DOCUMIND_CHROMA_DIR gives both commands the same directory. From the first terminal. The health check first: it names the profile, and the brains this service can run. From the first terminal. The health check first: it names the profile, and the brains this service can run. The service has 4 brains (langchain, langgraph, adk and direct), and langchain is the default: a tool loop in which the model decides when to search. This lesson asks the direct brain, which has no loop at all: one retrieve() for the top 5, then one call to the model with those quotes as its only context. It does not depend on a small model choosing the right tool, which the comment in profile.py warns it sometimes will not. Module 5 compares the brains. Press Ctrl+C in the second terminal. The directory stays on disk, and a Python cell can open it the way the service does, with the same build_store() and the same retrieve():
+The lane gets a venv of its own, ~/rag-local-venv. Its packages are the chat service's, LangChain, LangGraph, Chroma and the Ollama client among them, installed on top of the service's image pins as services/chat/requirements-local.txt asks. Keeping them out of ~/rag-shell-venv leaves the operator pins exactly where rag_check_python_dependencies expects them, and every later session runs that check; the kit's CI keeps the chat service's pins in a venv of their own for the same reason. Then Ollama pulls the model, once. Start it in the second terminal, so the first stays free for questions. From the first terminal. The health check first: it names the profile, and the brains this service can run. From the first terminal. The health check first: it names the profile, and the brains this service can run. The service has 4 brains (langchain, langgraph, adk and direct), and langchain is the default: a tool loop in which the model decides when to search. This lesson asks the direct brain, which has no loop at all: one retrieve() for the top 5, then one call to the model with those quotes as its only context. It does not depend on a small model choosing the right tool, which the comment in profile.py warns it sometimes will not. Module 5 compares the brains. Press Ctrl+C in the second terminal. The directory stays on disk, and a Python cell can open it the way the service does, with the same build_store() and the same retrieve():
 
 **`step_01_install_the_lane_once(session)` — The Rs 0 lane: the notice-period question, with citations / Install the lane, once**
 
@@ -61,9 +68,11 @@ Operation: bash — run once, in a second terminal, which the lane will keep: it
 
 **`step_02_start_the_lane(session)` — The Rs 0 lane: the notice-period question, with citations / Start the lane**
 
-Start it in the second terminal, so the first stays free for questions. One line in this block matters more than it looks. The recipe seeds from the kit's root and serves from services/chat, and the store's default path, ./documind_chroma, is relative, so the two commands would open two different directories: the service would find an empty store and answer local corpus is empty. Exporting one absolute path as DOCUMIND_CHROMA_DIR gives both commands the same directory.
+Start it in the second terminal, so the first stays free for questions.
 
 Operation: bash — run in the second terminal, and leave it running.
+
+IDE adaptation: Start the lane as an owned background process with a health check (up to ten minutes: the first run seeds acme's corpus first), instead of a shell that never returns. PY names the lane's venv: the helpers export PY as the IDE interpreter, which lacks the lane's packages.
 
 Expected shape, not a promised result:
 
@@ -101,6 +110,8 @@ Press Ctrl+C in the second terminal. The directory stays on disk, and a Python c
 
 Operation: bash — run in the first terminal after Ctrl+C has stopped the lane: read the store directly.
 
+IDE adaptation: Stop this session's own lane process (the page's Ctrl+C) before reading the store directly.
+
 Expected shape, not a promised result:
 
 ```text
@@ -136,7 +147,7 @@ kit-only checkout: no curriculum notebooks under Module */ - nothing to extract 
   DocuMind AI — Tier-A offline dry run
   ------------------------------------------------------------
   [SKIP] extract       kit-only checkout (the learner repo): deploy/ is the extracted tree, nothing to compare  (Ns)
-  [PASS] py_compile    125 python files parse  (Ns)
+  [PASS] py_compile    150 python files parse  (Ns)
   [PASS] imports       all local imports resolve  (Ns)
   [PASS] shared-deps   every google.cloud client a shared module opens is pinned by its importers  (Ns)
   [PASS] requirements  11 files, all deps pinned  (Ns)
@@ -161,7 +172,7 @@ kit-only checkout: no curriculum notebooks under Module */ - nothing to extract 
 
 ### demo_06_diagnose_a_first_failure_one_loosened_row.py
 
-The most common way an eval suite rots, made on purpose, caught, read and repaired. Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. One line changed: the row's must_contain went from ["60"] to []. Now run the gate. Repair it
+The most common way an eval suite rots, made on purpose, caught, read and repaired. Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. One line changed: the row's must_contain went from ["60"] to []. Now run the gate.
 
 **`step_01_diagnose_a_first_failure_one_loosened_row(session)` — Diagnose a first failure: one loosened row / Diagnose a first failure: one loosened row**
 
@@ -186,7 +197,7 @@ Expected shape, not a promised result:
 
 ```text
 diff --git a/evals/golden.jsonl b/evals/golden.jsonl
-index 50b46d6..e2d97fb 100644
+index 6177059..8f889ca 100644
 --- a/evals/golden.jsonl
 +++ b/evals/golden.jsonl
 @@ -6 +6 @@
@@ -200,6 +211,8 @@ Git sees it. This is what the clone is for: every change you make to the kit is 
 
 Operation: bash — run in the first terminal.
 
+IDE adaptation: Read the gate's refusal as the cell's answer: with lk-06 loosened, make dryrun fails falsifiable and exits non-zero, which stopped the demo before Repair it and left evals/golden.jsonl loosened (23 October 2026). The step fails if the dryrun passes or fails for any other reason.
+
 Expected shape, not a promised result:
 
 ```text
@@ -208,7 +221,7 @@ kit-only checkout: no curriculum notebooks under Module */ - nothing to extract 
   DocuMind AI — Tier-A offline dry run
   ------------------------------------------------------------
   [SKIP] extract       kit-only checkout (the learner repo): deploy/ is the extracted tree, nothing to compare  (Ns)
-  [PASS] py_compile    125 python files parse  (Ns)
+  [PASS] py_compile    150 python files parse  (Ns)
   [PASS] imports       all local imports resolve  (Ns)
   [PASS] shared-deps   every google.cloud client a shared module opens is pinned by its importers  (Ns)
   [PASS] requirements  11 files, all deps pinned  (Ns)
@@ -232,7 +245,11 @@ kit-only checkout: no curriculum notebooks under Module */ - nothing to extract 
   1 problem(s). The golden set cannot judge the model until it judges itself.
 ```
 
-**`step_04_repair_it(session)` — Diagnose a first failure: one loosened row / Repair it**
+### cleanup/demo_06_diagnose_a_first_failure_one_loosened_row.py
+
+At lesson end: Repair it
+
+**`step_01_repair_it(session)` — Diagnose a first failure: one loosened row / Repair it**
 
 Repair it
 
@@ -251,8 +268,12 @@ Expected shape, not a promised result:
   The golden set is sound. It can go red, and it still contains the rows that would.
 ```
 
+### setup/finish.py
+
+Run the listed cleanup sections in order, even after a failure; retain evidence and restore saved settings.
+
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_0.2_Local_Environment_WIX.html`. All 39 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `8085442943c65c12c22f9b8bcad6a06e9f4e71bc`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_0.2_Local_Environment_WIX.html`. All 39 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `594d2c7c68d214d7e4283d448fdeef74fd783ae4`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

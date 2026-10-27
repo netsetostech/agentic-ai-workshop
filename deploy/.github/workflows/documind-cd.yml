@@ -180,10 +180,23 @@ jobs:
       # root of the source it uploads. rag-api imports shared/ (the answer contract, the IAP
       # verifier), so its context is the kit root - which has no root Dockerfile, on purpose.
       # cloudbuild.yaml names the Dockerfile explicitly; every service builds this way.
+      # The source goes to the bucket make build-access made and granted this account (named here, so gcloud does
+      # not list the project's buckets, which the account may not). The build runs --async and the step polls its
+      # status: following the log would mean reading Cloud Logging, and no role of this account reads logs.
       - name: Build
         run: |
-          gcloud builds submit --config=cloudbuild.yaml \
-            --substitutions=_IMAGE="$REGION-docker.pkg.dev/$PROJECT/documind/rag-api:$TAG" .
+          BUILD=$(gcloud builds submit --async --format='value(id)' --config=cloudbuild.yaml \
+            --gcs-source-staging-dir="gs://${PROJECT}_cloudbuild/source" \
+            --substitutions=_IMAGE="$REGION-docker.pkg.dev/$PROJECT/documind/rag-api:$TAG" .)
+          echo "build $BUILD: https://console.cloud.google.com/cloud-build/builds/$BUILD?project=$PROJECT"
+          while :; do
+            STATUS=$(gcloud builds describe "$BUILD" --format='value(status)')
+            case "$STATUS" in
+              SUCCESS) echo "build $BUILD: SUCCESS"; break ;;
+              QUEUED|PENDING|WORKING) sleep 15 ;;
+              *) echo "build $BUILD: $STATUS (its log: the link above)"; exit 1 ;;
+            esac
+          done
 
       - name: Create a release
         run: |

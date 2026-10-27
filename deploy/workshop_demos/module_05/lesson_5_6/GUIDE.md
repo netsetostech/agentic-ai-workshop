@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_5.6_Case_Desk_WIX.html`, reviewed at blob `ffa6d70e006958e3f835fa26f78e425518dd3f27`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_5.6_Case_Desk_WIX.html`, reviewed at blob `d41b06026831d76b5b450c3369ea00f4f4c42666`. Learners read that page on the course site; this guide keeps its prose.
 
 Some questions are not DocuMind's to answer. A disclosure of sexual harassment at work, a complaint about how a person is treated, a request about one's own personal data, wages still unpaid after leaving, and "let me talk to a person" belong to the people the law or the company names. In this lesson the kit finds those questions by rule, before any search or model runs, and answers each one with a fixed text. The text is the same at rag-api's door and at the chat service's door. The person can then raise a case that only the right people can read. On your lane you load acme's queues, see that its gate already has its rules with nothing switched on, and give its Internal Committee the roles that read POSH cases. Then you send a disclosure through every door, and raise, confirm and close a case as the eval accounts. Last, you read the records, the audit events and the log rows the Desk leaves behind.
 

@@ -54,7 +54,6 @@ cd "${DEMO_ROOT:-$HOME/deploy_module_rag}"
 "$HOME/rag-local-venv/bin/python" -m pip install -q -r services/chat/requirements.txt -r services/chat/requirements-local.txt
 ollama pull gemma3:4b
 source "$HOME/rag-local-venv/bin/activate"
-export DOCUMIND_CHROMA_DIR="$PWD/documind_chroma"    # without it the service opens services/chat/documind_chroma, empty
 make chat-local
 
 # terminal 1, run 4: the health check
@@ -83,10 +82,11 @@ computed from the kit (the last column above).
 
 What to look for while running, because the page leans on it:
 
-- Run 3: if `DOCUMIND_CHROMA_DIR` is not exported, the seed fills `$DEMO_ROOT/documind_chroma` and the service opens
-  `services/chat/documind_chroma`, which is empty; run 5 then answers `local corpus is empty - run: python -m
-  shared.local_corpus` with no citations. The page tells learners to export it; see the coordinator note in the
-  lesson's pull request about fixing the kit's recipe instead.
+- Run 3: make echoes both commands with `DOCUMIND_CHROMA_DIR` set to the clone's `documind_chroma`
+  (`/home/you/deploy_module_rag/documind_chroma` once your home directory is replaced), so the seed fills that
+  directory and the service opens it. A clone from before the kit's fix echoes the two commands without it, and run 5
+  then answers `local corpus is empty - run: python -m shared.local_corpus` with no citations: pull the published kit
+  and run 3 again.
 - Run 5: the five citations should match the build's own read of the store (the `expected` window under the direct
   read in step 4): `acme:hr_policy_2026#NP-03` at 1.000, then four statute windows. The answer's wording is
   gemma3:4b's; it should say 60 days.

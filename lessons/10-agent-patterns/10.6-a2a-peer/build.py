@@ -68,7 +68,7 @@ setup = setup_section()
 AGP, DEP84, DOCK = "services/agent/agent.py", "commands/lesson-8.4.sh", "services/agent/Dockerfile"
 EXCERPTS = {
     "peer": ("services/agent/agent.py - the peer: the lane's tools, discovered over MCP, and a credential minted per call",
-             block(AGP, "def build_agent() -> LlmAgent:", n=22)),
+             block(AGP, "def build_agent() -> LlmAgent:", n=23)),
     "token": ("services/agent/agent.py - the token for documind-mcp: the metadata server's, as documind-agent-sa",
               block(AGP, "    return {\"Authorization\": f\"Bearer {google.oauth2.id_token.fetch_id_token(request, MCP_URL)}\"}", n=1)),
     "serve": ("services/agent/agent.py - served over A2A: the card and message/send, from the agent",
@@ -77,7 +77,7 @@ EXCERPTS = {
               block(DEP84, "for sa in documind-ui-sa documind-chat-sa; do", n=5)),
 }
 assert "header_provider=_mcp_headers," in EXCERPTS["peer"][1] and "tools=[lane]," in EXCERPTS["peer"][1]
-assert "app = to_a2a(agent, host=_host, port=_port, protocol=_protocol)" in EXCERPTS["serve"][1]
+assert "app = to_a2a(agent, host=_host, port=_port, protocol=_protocol, agent_executor_factory=_chain_factory())" in EXCERPTS["serve"][1]
 fill = filler(EXCERPTS, window)
 
 # ------------------------------------------------------------------ the kit's facts the page states

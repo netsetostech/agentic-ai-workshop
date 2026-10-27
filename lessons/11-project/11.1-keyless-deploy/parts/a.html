@@ -1,0 +1,85 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 11 &middot; Project &middot; Lesson 11.1</div>
+<h1>Build and deploy using <span>keyless identity</span></h1>
+<p>At lesson 0.3's step 3 your lane was told to trust one GitHub repository, on one branch. This lesson uses that trust. A run of <code>documind-cd.yml</code> on your fork asks GitHub for a signed token that names the repository, its id and the branch. Google checks those three against <code>terraform/wif.tf</code> and lets the run become <code>sa-documind-cicd</code> for about an hour: long enough to build the API's image and put it on a revision that takes no traffic. No key is made, stored or copied anywhere, so there is none to leak. You will set the workflow's %%N_VARS_W%% variables from your lane with <code>make ci-vars</code>, put a person in front of production, dispatch from <code>main</code> and watch it build and deploy, dispatch from a branch and watch it refused, then read the trust, the audit trail and the key count back from Google.</p>
+<div class="hero-chips"><div class="hero-chip">no key: nothing to leak</div><div class="hero-chip">%%N_CLAUSES%% claims checked: repository_id, repository, ref</div><div class="hero-chip">bound by the immutable id</div><div class="hero-chip">about an hour as sa-documind-cicd</div><div class="hero-chip">%%N_ROLES%% roles, actAs on %%N_ACTAS%% accounts</div><div class="hero-chip">make ci-vars: %%N_VARS%% variables, no secret</div><div class="hero-chip">a branch: refused at auth</div><div class="hero-chip">make keys-check: zero keys</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A pass at the gate, not a key in a drawer</a></li>
+<li><a href="#s2">The words: federation, OIDC token, claim, pool, provider, mapping, condition, STS, binding, impersonation, key, variable, environment, ref</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Your fork and your project, as GitHub and the console show them</a></li>
+<li><a href="#s4">What makes it keyless: the trust, the account and the workflow</a></li>
+<li><a href="#s5">Four variables from your lane, and a person in front of production</a></li>
+<li><a href="#s6">A build and a deploy from main, with no key</a></li>
+<li><a href="#s7">A branch dispatch, refused at the auth step</a></li>
+<li><a href="#s8">What Google holds, and who did what</a></li>
+<li><a href="#s9">What may stop the first dispatch, the trust that cannot move, and the path without GitHub</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a GitHub run gets a Google credential without any key, and what stops every other run from getting one. Then you will prove it on your lane: an image built and a candidate revision deployed from your fork's <code>main</code>, a branch dispatch refused at the auth step, and zero user-managed keys on every account in the project.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A pass at the gate, not a key in a drawer</h3><p>Why a key is the wrong shape for a pipeline, what a run proves instead, and the checks it must pass.</p></div></div>
+
+<p><strong>A key is a credential that does not care who holds it.</strong> The quick way to let GitHub Actions deploy into a project is to make a key for a service account, a JSON file with a private key inside, and paste it into the repository as a secret. It works on the first try, and it is the wrong shape. The key does not expire unless someone deletes it. It works from any machine it is copied to, so a log line, a careless workflow or a laptop backup that leaks it leaks the deploy rights with it. And nothing in the key says which run used it. The kit's own key check puts it in one line: a key is a credential that does not expire and works wherever it is copied.</p>
+
+<p><strong>Federation swaps the key for proof.</strong> GitHub signs a short statement for every job that asks for one: which repository is running, its numeric id, which branch, which workflow. Workload identity federation lets Google trust that signature. The run hands its signed token to Google's token service, which checks it against the rules your lane wrote down in <code>wif.tf</code>, and if they hold, issues a credential that expires in about an hour. Nothing is stored in the repository, so there is nothing in it to steal. A token that leaks is useless within the hour, and only that repository's runs, on that branch, can ever get a new one.</p>
+
+<p><strong>%%N_CLAUSES_CAP%% checks in the condition, and one on the account.</strong> The provider's condition in <code>wif.tf</code> is %%N_CLAUSES_W%% equalities. The repository's numeric id, because a name can be given up and claimed by someone else, and an id cannot. The repository's name, kept so the logs read well. The ref, the branch, because without it anyone who can push a branch to your fork could add a workflow file and deploy. A separate check sits on the account itself: only a federated identity whose repository id is yours may become <code>sa-documind-cicd</code>. The kit's comment calls the id and the ref the two checks that tutorials stop before.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128273;</div><div>
+<p><strong>A gate pass, not a duplicate key.</strong> You could give the electrician a duplicate key to your flat. It opens the door for whoever holds it, on any day, until you change the lock, and you would never know who had it copied. Most housing societies work the other way. The guard at the gate checks the visitor against an entry you approved in advance (which flat, which person, which day) and writes a pass that is void by evening. A service-account key in a GitHub secret is the duplicate key. Workload identity federation is the gate: GitHub vouches for which repository and which branch is at the door, Google's token service checks that against the entries <code>wif.tf</code> gave it, and the pass it writes lasts about an hour. Nothing was handed over in advance, so there is nothing to copy.</p></div></div>
+
+<h4>Try it: would this run get a credential?</h4>
+<p>The panel takes one token, as GitHub would sign it, through the two checks your lane holds: the provider's condition, which Google's token service evaluates at the workflow's auth step, and the binding on <code>sa-documind-cicd</code>, which IAM checks when the run first asks for the account's own token. Pick a run, or edit the claims. The last control changes the trust itself, to the repository's name alone, the shape <code>wif.tf</code> had before the kit repaired it: first with today's binding by id, then with a binding by name as well.</p>
+
+<div class="diagram wi" id="wi">
+<div class="dg-title">Would this run get a credential? wif.tf's condition and binding, against one GitHub token</div>
+<p class="wi-trust">Your lane's trust, named at lesson 0.3's step 3: repository <code>%%TRUST_REPO%%</code>, id <code>REPO_ID</code>, ref <code>%%TRUST_REF%%</code>.</p>
+<div class="wi-pre" role="group" aria-label="Runs to try">%%WI_BUTTONS%%</div>
+<div class="wi-in">
+<label class="wide" for="wi-repo">the token's repository<input id="wi-repo" type="text" value="%%TRUST_REPO%%" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+<label for="wi-id">its repository_id<input id="wi-id" type="text" value="REPO_ID" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+<label for="wi-ref">its ref<input id="wi-ref" type="text" value="%%TRUST_REF%%" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+<label for="wi-job">the job<select id="wi-job">%%WI_JOBS%%</select></label>
+<label class="wide" for="wi-pol">the trust<select id="wi-pol">%%WI_POLICIES%%</select></label>
+</div>
+<div id="wi-out" aria-live="polite"></div>
+<p class="dg-cap">Built when this page was built, from the kit you clone. The condition is <code>wif.tf</code>'s own three lines, joined as Terraform joins them, and the plan guard's parser in <code>commands/infrastructure.py</code> accepts it; the binding is the file's <code>principalSet</code> member; the mapping copies each claim into the attribute the binding reads. The panel compares strings exactly, as the provider does, and before this page was written node ran it on every run above under all three trusts, and on hand edits, against a Python evaluation of the same text. What the account may do comes from <code>sa.tf</code>'s <code>cicd_roles</code> and <code>cicd_actas</code> and <code>wif.tf</code>'s token grants.</p>
+</div>
+
+<p>Under <code>wif.tf</code> as it is, %%N_PASS_KIT_W%% of the %%N_PRESETS_W%% runs get a credential: your fork's <code>main</code>, and the same run's <code>promote</code> job, whose subject names the <code>%%ENV_NAME%%</code> environment instead of the branch. The condition never reads the subject, so that job still passes. Every other run stops at the auth step. A renamed fork stops too: the name clause fails closed, and the trust has to be changed on purpose. Now switch the trust to the name only. A branch and a tag of your fork get the account, because nothing pins the ref, while the claimed name is still stopped, one step later, by the binding's repository id. Bind by the name as well and whoever claims your old name gets it too. That is the trick <code>wif.tf</code>'s comment describes, and the reason both the condition and the binding are keyed on the id.</p>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It calls nothing. A real token is signed by GitHub and carries more claims than these four (the workflow, the commit, the run's id, the actor), and the provider ignores every claim its condition and mapping do not name. The comparisons are exact: a name in another case, a trailing space or a short ref such as <code>main</code> fails, as it would at the provider. Step 7 sends a real branch run to your lane's provider and records what it answers.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: federation, OIDC token, claim, pool, provider, mapping, condition, STS, binding, impersonation, key, variable, environment, ref</h3><p>Fourteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Workload identity federation</strong></td><td data-label="Meaning">Google trusting tokens that another identity provider signs, and exchanging each for a short-lived Google credential. No key changes hands.</td><td data-label="On your lane"><code>terraform/wif.tf</code>, applied by <code>make up</code></td></tr>
+<tr><td><strong>GitHub's OIDC token</strong></td><td data-label="Meaning">A signed JSON Web Token that GitHub mints for one job on request. Only a workflow granted <code>id-token: write</code> may ask for one.</td><td data-label="On your lane">issuer <code>%%ISSUER%%</code></td></tr>
+<tr><td><strong>Claim, assertion</strong></td><td data-label="Meaning">One field of that token. In the provider's rules a claim is written <code>assertion.&lt;name&gt;</code>.</td><td data-label="On your lane"><code>repository</code>, <code>repository_id</code>, <code>ref</code>, <code>sub</code></td></tr>
+<tr><td><strong>Pool and provider</strong></td><td data-label="Meaning">The pool holds the outside identities a project trusts; a provider inside it names one issuer, how its claims map, and the condition they must meet.</td><td data-label="On your lane">pool <code>%%POOL_ID%%</code>, provider <code>%%PROVIDER_ID%%</code></td></tr>
+<tr><td><strong>Attribute mapping</strong></td><td data-label="Meaning">Copies claims into Google attributes: <code>google.subject</code>, which audit logs show, and <code>attribute.*</code>, which bindings can name.</td><td data-label="On your lane">four mappings, the subject from <code>sub</code></td></tr>
+<tr><td><strong>Attribute condition</strong></td><td data-label="Meaning">An expression over the claims. If it is false, the token is refused before any credential exists.</td><td data-label="On your lane">%%N_CLAUSES%% equalities joined by <code>&amp;&amp;</code></td></tr>
+<tr><td><strong>STS</strong></td><td data-label="Meaning">Google's Security Token Service: the endpoint that checks the condition and swaps GitHub's token for a federated token.</td><td data-label="On your lane"><code>sts.googleapis.com</code>, among the %%N_APIS%% APIs <code>make apis</code> enables (step 9)</td></tr>
+<tr><td><strong>Binding (principalSet)</strong></td><td data-label="Meaning">An IAM grant on the service account naming the federated identities that may become it, by one attribute.</td><td data-label="On your lane"><code>%%BIND_ROLE%%</code> for <code>.../attribute.repository_id/REPO_ID</code></td></tr>
+<tr><td><strong>Impersonation</strong></td><td data-label="Meaning">Exchanging the federated token for the service account's own access token, through the IAM Credentials API.</td><td data-label="On your lane"><code>sa-documind-cicd</code>, for about an hour</td></tr>
+<tr><td><strong>User-managed key</strong></td><td data-label="Meaning">A private key for a service account, downloaded as JSON. It does not expire by default and signs in from anywhere.</td><td data-label="On your lane">none: <code>make keys-check</code> (step 8)</td></tr>
+<tr><td><strong>Repository variable</strong></td><td data-label="Meaning">A value that is not secret, set on the repository and read by a workflow as <code>${{ vars.NAME }}</code>.</td><td data-label="On your lane">%%CI_VARS%%</td></tr>
+<tr><td><strong>Environment, required reviewer</strong></td><td data-label="Meaning">A GitHub environment that a job names; a required reviewer must approve before that job starts. Free on public repositories.</td><td data-label="On your lane"><code>%%ENV_NAME%%</code>, with you as its reviewer (step 5)</td></tr>
+<tr><td><strong>workflow_dispatch</strong></td><td data-label="Meaning">A run started by hand, on a branch you choose. <code>documind-cd.yml</code> has no other trigger.</td><td data-label="On your lane"><code>gh workflow run</code>, or the Run workflow button</td></tr>
+<tr><td><strong>Ref</strong></td><td data-label="Meaning">The full name of what a run was started on: <code>refs/heads/&lt;branch&gt;</code> or <code>refs/tags/&lt;tag&gt;</code>.</td><td data-label="On your lane"><code>%%TRUST_REF%%</code> is trusted; any other ref is refused</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Hold two questions apart. <em>Who</em> may become the pipeline's account is the trust: one repository, by id and name, on one branch. <em>What</em> that account may do is its roles and the %%N_ACTAS_W%% accounts it may act as, which lesson 0.3's step 4 laid out. This lesson proves the first. The second is why the first matters: whoever controls the trusted repository's workflows can deploy code that runs as your services.</p>

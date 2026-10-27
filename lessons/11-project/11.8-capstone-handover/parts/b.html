@@ -1,0 +1,159 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>TENANT</code> and <code>API</code> set and the two token functions, <code>tok</code> and <code>otok</code>, defined.</p>
+<ul>
+<li><strong>Steps 4 to 6</strong> are offline: nothing leaves your machine, and the only thing written is a copy of the kit under <code>%%FORK_PATH%%</code>.</li>
+<li><strong>Step 7</strong> reads your lane and changes nothing on it. The two tokens need the token-creator grant <code>make operators</code> gives your address; lesson 11.3's runs needed the same.</li>
+<li><strong>Step 8</strong> writes one file, <code>HANDOVER.md</code>, into the fork you run it in.</li>
+<li><strong>Your records.</strong> Components 1, 4 and 8 read <code>evals/reports/</code> in the checkout you run the check in. If lessons 11.2 and 11.3 ran from another checkout, run the check there, or copy that folder over.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; The deployed UI</span><h3>The live URL behind IAP, and the Documents page</h3><p>Component 1 and component 2 as a reviewer sees them in a browser, and the two lines in the kit that make them so.</p></div></div>
+
+<h4>Definition</h4>
+<p>The live URL is documind-ui's. <code>make deploy-services</code> deploys it from <code>commands/lesson-12.4.sh</code> with two flags: <code>--no-allow-unauthenticated</code>, so Cloud Run accepts no anonymous request, and <code>--iap</code>, so Identity-Aware Proxy stands in front of the service and asks for a Google sign-in. A member of the IAP policy signs in and sees the app; a non-member is refused by IAP with a 403 before any request reaches the service. That is the rubric's first component, as a reviewer checks it: open it, sign in, ask a question, and watch a non-member get 403.</p>
+@@ui@@
+<p>Behind the UI, documind-ui calls documind-api with its own identity token, as documind-ui-sa. The API checks the tenant's roster. documind-outsider-sa is on no roster, so a token minted for it gets 403 from the API too: that is the 403 the kit's isolation rows prove (lessons 4.1 and 4.7), and the one the check reads from your newest live eval report.</p>
+
+<h4>The Documents page</h4>
+<p>The UI's Documents page has a Versions view. It makes one call, GET <code>/v1/sources</code> for the tenant, and renders what the API serves: each document's name, its status, how many chunks were embedded, reused or retired, the date it declares, when it was indexed, and where its copies are held. It is the same read as <code>make sources TENANT=</code>.</p>
+@@versions@@
+<p>Two things about it matter for component 2. First, <code>status</code> is what the check reads on the lane: every document of your own tenant must be listed <code>indexed</code>. Second, the view carries no page count, and neither does the API: <code>/v1/sources</code> returns none. So the check counts your pages offline, from the files in <code>evals/corpus/&lt;your tenant&gt;/</code>, by the rules the ingest worker counts them with.</p>
+@@pages@@
+<ul>
+<li><strong>A text file</strong> (<code>.md</code>, <code>.txt</code>) counts its form feeds plus one, the worker's own line in <code>services/ingest/main.py</code>. A manual written as one long file is one page unless you separate its pages with form feeds, which is what the canned fork's %%N_PAGES%% pages are.</li>
+<li><strong>A PDF</strong> counts the pages of its page tree, read with the standard library as the worker reads it with pypdf; a mirror <code>.md</code> beside it with a <code>pages:</code> line in its header is believed first. The kit's %%N_REAL_PDFS%% real PDFs agree with the record of them in <code>evals/real_sources.json</code>, and the build of this page checked it.</li>
+<li><strong>A picture or a recording</strong> is one page. A <code>.docx</code> is Document AI's to count, and the check says so: <code>pages not counted offline</code>.</li>
+<li><strong>A <code>.md</code> beside its <code>.pdf</code> or <code>.mp4</code> twin</strong> stays home when <code>make ingest-corpus</code> uploads (<code>evals/upload.sh</code>), so it is not a document and not counted twice.</li>
+</ul>
+
+<div class="box box-amber"><div class="box-title">Your own corpus means your own tenant</div>
+<p>Your own corpus is a tenant other than %%KIT_TENANTS%%, the kit's own three. The check takes the tenant folder under <code>evals/corpus/</code> with the most pages among the others. Adding your documents to acme's folder adds nothing to the capstone: component 2 reads <code>evals/corpus/ holds no tenant of your own</code>. Make a folder of your own, <code>make ingest-corpus</code> uploads it under that tenant, <code>make roster TENANT=... MEMBERS=...</code> puts documind-ui-sa on its roster so the Documents page and the check can read it, and lesson 4.1's golden rows ask it questions.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit's code</span><h3>The lines the check rests on</h3><p>The eight rules as the module states them, the numbers it holds, the loop that prints PASS or FAIL, the two rules that need the most reading, and the allow-list of reads.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>commands/capstone_check.py</code> is standard library only and has two subcommands, <code>check</code> and <code>handover</code>, plus <code>--selftest</code>. It loads two siblings by path, <code>release.py</code> and <code>remediate.py</code>, because those own the lane's names and the records <code>make</code> leaves: the gate's two accounts, the smoke log's format, how a <code>/version</code> answer reads, and the alert policies as Terraform declares them. The check reads the same records by the same rules rather than keeping a second copy of them.</p>
+@@rules@@
+
+<h4>The numbers</h4>
+<p>Every threshold the rubric states is one constant, next to the component it serves. <code>GOLDEN_MIN</code>, <code>ISOLATION_MIN</code> and <code>PAGES_MIN</code> are the rubric's %%GOLDEN_MIN%%, %%ISOLATION_MIN%% and %%PAGES_MIN%%. <code>REJECTED_MIN</code> is the three options component 5 asks for, <code>ENTRIES_MIN</code> the four entries of component 7, <code>USD_INR</code> the %%USD_INR%% of component 6. <code>REASON_WORDS</code> is the check's own line: a rejected option argued in fewer than %%REASON_WORDS%% words is named, not argued.</p>
+@@consts@@
+
+<h4>The loop</h4>
+<p><code>cmd_check()</code> runs the eight functions in the rubric's order. Each returns two lists: what it held and what is missing. A component with nothing missing is PASS; its evidence prints under it, indented. A component with anything missing is FAIL, and each missing line says what is absent and which lesson's command supplies it. The exit is 0 when every component passes and 1 otherwise, so a script can gate on it; a precondition that fails, such as a fork that is not a directory, exits 2 with a <code>STOP:</code> line instead.</p>
+@@loop@@
+
+<h4>The two rules that need the most reading</h4>
+<p><strong>Component 7</strong> is the one the Change-it in step 6 breaks. An entry is a headed section of <code>FAILURE-MODES.md</code> with a <code>Symptom:</code> line and a command in backticks that the fork can run. "Can run" is resolved, never run: a <code>make</code> target the fork's Makefile or <code>mk/*.mk</code> defines, or a script the fork holds, started with <code>python</code>, <code>bash</code>, <code>sh</code> or <code>./</code>. Of lesson 11.7's registry, <code>make gotcha-drill ID=...</code> with an id that has an offline drill reproduces a gotcha; <code>make gotchas</code> and <code>make gotcha-detect</code> show and detect one and prove nothing, and the check says so by name.</p>
+@@c7@@
+<p><strong>Component 8</strong> needs a rollback nobody wrote down as such. <code>make incident</code> writes no record, so the evidence is the smoke log: two successive <code>make smoke-deployed</code> runs of one lane where the revision serving changed from the one the candidate tag still names after it, which is what <code>make rollback</code> leaves, or back to an older revision, and both runs recorded a <code>/version</code> answer. A run whose traffic moved during its smokes is evidence of neither end.</p>
+@@rollback@@
+
+<h4>What it may run on your lane</h4>
+<p>With <code>PROJECT=</code>, every gcloud command goes through <code>gcloud_json()</code>, which refuses anything not on <code>READS</code> before it runs. The list is %%N_READS%% long: describe and list, plus <code>auth print-access-token</code> for the one read gcloud has no GA command for, the Monitoring API's alert policies. The two ID tokens are minted by <code>release.identity_token()</code>, as <code>make eval-live</code> mints them. Neither <code>check</code> nor <code>handover</code> can change the lane: there is no command on the list that would.</p>
+@@reads@@
+
+<h4>The two targets</h4>
+<p><code>mk/capstone.mk</code> is the module's own file, not <code>release.mk</code>, where the plan first put it: lessons 11.1 to 11.3 quote <code>release.mk</code> from their sections to its last line, and a target appended there would land in their pages. Neither target has <code>guard-project</code>, because neither needs a project: offline is the default. <code>FORK</code> is given on the command line and declared nowhere, since <code>make replay</code> (lesson 6.8) reads a <code>FORK</code> of its own.</p>
+@@mk@@
+
+<h4>Do it: the rules on hand-made input</h4>
+<p>The selftest runs every rule on documents, records and PDFs it makes up, with no fork and no lane: the rejected options as a list, a table and sub-sections, the cost model's volumes and date, every way a FAILURE-MODES command resolves or does not, pages from text and from a PDF's page tree, plain and packed, a rollback told from a promote, and the outsider's 403. <code>commands/tests/test_capstone_check.py</code> holds %%N_TESTS%% more tests, on the canned fork and on a stand-in lane, and <code>commands/tests/test_capstone_templates.py</code> %%N_TPL_TESTS%% on the templates of step 5.</p>
+%%CELL_SELFTEST%%
+%%OUT_SELFTEST%%
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Offline, Rs 0</span><h3>The check, offline: the kit as it ships, a canned capstone, your fork</h3><p>The to-do list a bare kit prints, eight PASSes on Sahyadri Freight, the records read with the kit's own rules, and the four templates your documents start from, which fail until you fill them.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make capstone-check</code> with no <code>FORK=</code> checks the checkout you are in. It reads files and records and runs <code>evals/run_eval.py</code> offline, as <code>make eval</code> does: a few seconds, no credential, no network. Every FAIL line is a to-do item with the lesson that supplies it.</p>
+
+<h4>Do it: the kit as it ships</h4>
+<p>Run it in your kit checkout. If your checkout holds lesson 11.3's records, components 1, 4 and 8 read them and your output differs from the one below, which was run on a copy of the kit with no records at all.</p>
+%%CELL_KIT%%
+%%OUT_KIT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The kit as it ships is no capstone, by design, and the check says exactly what is missing.</p>
+<ul>
+<li><strong>One PASS: component 3.</strong> The kit's own suite is %%N_KIT_GOLDEN%% golden rows, %%N_ISO%% of them isolation rows, and <code>make eval</code> exits 0. That is the one component you inherit.</li>
+<li><strong>Component 1 holds half.</strong> The fork deploys documind-ui behind IAP: the flags are in the script. What is missing is evidence a member was answered and a non-member refused, which only records can give: <code>make smoke-deployed</code> (lesson 11.3) and <code>make gate</code> (lesson 11.2).</li>
+<li><strong>Components 2, 5, 6, 7 and 8</strong> each name the file or folder that does not exist: a tenant of your own, the four documents, each with its template in <code>%%TEMPLATES%%/</code>, and a rollback in the smoke log.</li>
+<li><strong>The last line</strong> names the failing components and says what a FAIL is: an incomplete submission, for which the defence does not run.</li>
+</ul></div>
+
+<h4>Do it: a canned capstone that passes</h4>
+<p><code>commands/tests/capstone_fork/</code> is Sahyadri Freight, a made-up logistics company whose corpus is a fleet safety manual and a driver handbook, %%N_PAGES%% pages between them, with the four documents and the records lesson 11.3's controlled failure leaves: a mistyped model promoted by force, rolled back and repaired, with a smoke run around each step and the repair's gate report. The kit's tests lay it over a copy of the kit, so you do the same: a local clone of your checkout, the canned files over it, its two golden rows appended, then the check. The clone holds none of your records, so the output is the canned fork's alone.</p>
+%%CELL_FORK%%
+%%OUT_FORK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Eight PASSes, each with its evidence. Read them against the rubric's "how a reviewer checks it" column.</p>
+<ul>
+<li><strong>1, the live URL.</strong> Three things held: the deploy's two flags, a member answered (the last smoke run's <code>/version</code>, with its <code>git_sha</code>, model and prompt), and a non-member refused (every one of the %%N_ISO%% isolation rows answered 403 in the newest report that asked them, the repair's gate report).</li>
+<li><strong>2, your own corpus.</strong> <code>sahyadri</code> is the tenant that is not the kit's: %%N_DOCS%% documents, %%N_PAGES%% pages by the worker's count. And a query cites one: row <code>sh-01</code> passed citing the safety manual, in the same report.</li>
+<li><strong>3, the suite.</strong> %%N_GOLDEN%% rows now, %%N_ISO%% isolation; <code>make eval</code> exits 0 in the fork.</li>
+<li><strong>4, one lane.</strong> The last smoke run passed <code>smoke-chat</code> and <code>smoke-media</code>: two lanes on top of the core, when one is enough.</li>
+<li><strong>5, 6 and 7, the documents.</strong> Three rejected options named with a reason; dual-priced amounts, a date and the rate on one line; four entries, each with the command that proves it, the poison upload's among them.</li>
+<li><strong>8, the rollback.</strong> Told from the log: the traffic left <code>documind-api-00042-typ</code>, the revision the candidate tag still named, back to <code>documind-api-00041-kel</code>, between two smoke runs that both recorded <code>/version</code>. The <code>/version</code> before says <code>gemini-3.6-flsh</code>: the mistyped model, caught.</li>
+</ul>
+<p>The last line says it is complete and that nothing here is scored.</p></div>
+
+<h4>Do it: the records, with the kit's own rules</h4>
+<p>The check's rules are functions you can call. The cell loads the module, points a <code>Fork</code> at the canned fork and prints what the rules see: the smoke runs in order, the rollback they show, each report with its isolation rows, the tenant's pages, and how each FAILURE-MODES command resolves.</p>
+%%CELL_RECORDS%%
+%%OUT_RECORDS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Four smoke runs,</strong> as lesson 11.3 leaves them: the gated promote serving <code>00041-kel</code>; the forced promote of <code>00042-typ</code>, red, with the mistyped model in <code>/version</code>; the rollback to <code>00041-kel</code> with the tag still on <code>00042-typ</code>; the repair, <code>00043-fix</code>. The rollback is the third run against the second.</li>
+<li><strong>One report</strong> is a live eval report (the gate's); <code>gate.json</code> is the gate's record, not a report, so it is not listed here. It asked all %%N_ISO%% isolation rows and every one was refused.</li>
+<li><strong>Every command resolves.</strong> Two <code>make gotcha-drill</code> ids with offline drills, <code>make poison</code>, a target the Makefile defines, and <code>commands/incident-drill.sh</code>, a script the fork holds.</li>
+</ul></div>
+
+<h4>Do it: your four documents, from the templates</h4>
+<p>Your four documents start from the kit's templates in <code>%%TEMPLATES%%/</code>. Each is the canned fork's document emptied: the same headings, a <code>{{...}}</code> placeholder in every slot, %%N_PLACEHOLDERS%% across the four, and a comment at the top saying what the check reads in it and what the defence reads. In your fork you copy them to its root, <code>cp %%TEMPLATES%%/*.md .</code>, and replace every placeholder, braces included. Here the cell lays them as they ship over the canned fork's four, runs the check, counts the lines that still hold a placeholder, and puts the canned four back.</p>
+%%CELL_TEMPLATES%%
+%%OUT_TEMPLATES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A template copied as it ships is not yet a document. Each of the four components it stands in for FAILs, on the slots the check reads that still hold a placeholder.</p>
+<ul>
+<li><strong>1 to 4 still PASS.</strong> The canned fork's records, corpus and golden rows were not touched.</li>
+<li><strong>5:</strong> three rejected options named and none argued. <code>%%TPL_OPTION%%</code> is %%TPL_WORDS%% words, and the check counts an option as argued at %%REASON_WORDS%% or more.</li>
+<li><strong>6:</strong> the three volumes and the rate are the template's own, so they hold. The amounts are <code>Rs {{AMOUNT}}</code> and <code>USD {{AMOUNT}}</code>, which carry no figure, and the date is <code>{{YYYY-MM-DD}}</code>.</li>
+<li><strong>7:</strong> four entries, each with a <code>Symptom:</code> line and a command in one of the four shapes that resolve: a gotcha drill offline, a drill live, a make target and a script. None resolves until its placeholder is a real id, target or script, and the check says why for each.</li>
+<li><strong>8:</strong> the recorded rollback still holds, from the canned smoke log. The runbook does not say how to roll back until its command slot holds <code>make rollback</code> with your project and region, as lesson 11.3 ran it.</li>
+<li><strong>The grep</strong> counts the lines that still hold a placeholder, %%N_TPL_LINES%% across the four. The check reads only some of them and the defence reads all of them, so run the grep in your fork before the check, and expect 0 for each file.</li>
+<li><strong>The canned four back, exit 0.</strong> <code>commands/tests/capstone_fork/</code> holds the four filled in, for a made-up company: read each beside its template.</li>
+</ul>
+<p>The kit's own test, <code>commands/tests/test_capstone_templates.py</code>, holds the same line from both sides: as they ship, components 5 to 8 FAIL on their documents; with every placeholder filled, the four PASS.</p></div>
+
+<h4>Do it: your fork</h4>
+<p>In the fork you will defend, offline. The recording is the author's reference fork, built the way yours will be: a tenant of its own, <code>make ingest-corpus</code>, <code>make roster</code>, golden rows, <code>make gate</code>, lesson 11.3's rollback with a smoke run before and after, and the four documents, written from the templates.</p>
+%%CELL_REF%%
+%%OUT_REF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Expect the same shape as the canned fork's output with your tenant, your documents, your revision names and your dates. A FAIL here is work, not a verdict: its line names the lesson. The reference fork took the author about a day to make from a working lane; budget the same.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; Change it</span><h3>Change it: one command deleted, one component fails</h3><p>Delete the command from one FAILURE-MODES entry, and exactly component 7 FAILs; put the file back, and every component passes again.</p></div></div>
+
+<h4>Definition</h4>
+<p>An entry of <code>FAILURE-MODES.md</code> without a command is a symptom nobody can reproduce. The canned fork's first entry, "Pinned traffic hides a change", is proved by <code>make gotcha-drill ID=pinned-traffic</code>, lesson 11.7's offline drill. The cell deletes that one line with <code>sed</code>, runs the check, then copies the kit's canned file back and runs it once more, printing only the exit code.</p>
+%%CELL_CHANGE%%
+%%OUT_CHANGE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Component 7 FAILs alone.</strong> Three entries proved, four or more needed; the first entry's missing piece named: <code>no command in backticks</code>. The other seven components are untouched, and they say PASS.</li>
+<li><strong>The verdict is incomplete,</strong> not a lower score: <code>incomplete: component 7 FAILs</code>, exit 1. The rubric's words are the check's: a missing component is an incomplete submission, and the defence does not run.</li>
+<li><strong>The file back, exit 0.</strong> The second check, with its output dropped, says every component passes again.</li>
+</ul>
+<p>The kit's own test holds this exact case, <code>test_change_it_one_failure_modes_command_deleted_fails_that_component_only</code>, and one more test breaks each component alone and shows that only it fails. If a kit change ever made one FAIL spill into another, that test goes red.</p></div>
+
+<div class="box box-amber"><div class="box-title">Three more ways component 7 fails, each named</div>
+<p>Change the command instead of deleting it and the check says why it would not run. <code>make gotcha-detect ID=pinned-traffic</code>: <code>detects a gotcha, it does not reproduce one</code>. A script the fork does not hold: <code>the fork holds no commands/hold-fault.sh</code>. A <code>make</code> target no makefile in the fork defines: <code>the fork's Makefile and mk/*.mk define no &lt;target&gt; target</code>. Each is a line under the FAIL, so the fix is never a guess.</p></div>

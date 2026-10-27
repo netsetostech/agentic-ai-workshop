@@ -1,0 +1,75 @@
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The deployed UI</span><h3>The UI: one note in, its row, and an answer that cites it</h3><p>The upload this page traces, made once, then seen the way a user sees it: a row under Versions, and an answer with a citation.</p></div></div>
+
+<p>The trace needs an upload nobody else could have made, so the cell below writes a short note of your own: a title line, the time you made it, and two invented sections. The time makes its bytes, and so its content hash, new to your lane. Then <code>make ingest-one</code> copies it under acme's prefix and waits for the worker's <code>ingest_ok</code> line. That is the kit's own drill:</p>
+
+@@ingest_one@@
+
+%%CELL_NOTE%%
+%%OUT_NOTE%%
+
+<p>Two lines, and between them the whole bus ran. The object was finalized, Cloud Storage published its notice, Pub/Sub pushed it, and the worker read it, wrote the records and answered 200. The second line is the worker's own <code>ingest_ok</code>, read back from Cloud Logging: the version's <code>doc_key</code> (acme and the note's SHA-256), %%N_CHUNKS%% chunks and 1 page, since a text file has no page breaks. Keep the name <code>%%OBJECT%%</code> in mind; every read below uses it.</p>
+
+<p>Now the user's side. Open the UI (<code>https://documind-ui-NUMBER.asia-south1.run.app</code>) signed in to Google as yourself, and choose <strong>Documents</strong>. Under <strong>Versions</strong> the note has its own row: status <code>indexed</code>, <code>chunks</code> %%N_CHUNKS%%, <code>reused</code> 0, <code>embedded</code> %%N_CHUNKS%%, and the minute it was indexed. If the row is not there, choose <strong>Refresh indexing status</strong>: the page reads the ledger through the API each time it draws. Then choose <strong>Chat</strong> and ask the note's question:</p>
+
+<div class="box box-teal"><div class="box-title">Ask this in the Chat page</div>
+<p>%%QUESTION%%</p></div>
+
+<p>The answer should name gate 3 and the security desk, with a citation pill. Open <strong>Sources</strong> under it: one of them quotes the note's NG-01 section, and its button opens the note itself. A document your lane had never seen two minutes ago is now evidence an answer can cite. The UI's own uploader would have taken the same road. <strong>Index documents</strong> writes the file under your tenant's prefix in the same bucket, so it fires the same notice:</p>
+
+@@ui_upload@@
+
+<p>This is also where the two identities from the setup part ways. <code>make ingest-one</code> copied the note as you, the operator, with gcloud's sign-in. The Versions table and the chat asked the API as you, the person, through the roster, which maps your email to acme. The bus does not care who wrote the object: an object under <code>acme/</code> is acme's, whoever put it there.</p>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit's code</span><h3>The kit's code: what the subscription declares, and what it leaves to Google</h3><p>The notice, the subscription, the worker's limits and the handler's first lines, read for their settings: %%N_DECLARED_W%% declared, %%N_DEFAULTED_W%% left to Google.</p></div></div>
+
+<p>Lesson 1.5 read this path for its retry rule. This step reads it for its settings, because the settings are what you would have to reproduce, or give up, on another bus. Three files hold them all.</p>
+
+<h4>The notice</h4>
+@@notification@@
+<p>One rule on the uploads bucket: publish a notice for every <code>%%EVENT%%</code>, in the <code>%%PAYLOAD%%</code> format, into <code>%%TOPIC%%</code>. Google <a href="%%URL_GCS%%" target="_blank" rel="noopener">documents three properties</a> of these notices. They arrive at least once, so one upload can produce two messages with two message ids. They usually arrive within seconds, but with no promise of a time. And they are not promised in order. Google's advice to a reader that acts on a notice is to make the object's generation (with its metageneration) a precondition of the action, and the worker's guard does exactly that with the generation:</p>
+@@guard@@
+<p>An older generation than the ledger's is a late notice and is acknowledged as <code>stale</code>; anything else is fetched by its own generation, never as "whatever the object holds now". That one rule is why order does not matter to the kit, and step 8 comes back to it.</p>
+
+<h4>The subscription</h4>
+@@subscription@@
+<p>Four settings, each a decision with a reason in its comment or in lesson 1.5. Everything else about the subscription is Google's default. Side by side, from the Terraform above and Google's documentation, read on %%READ_ON%%:</p>
+
+%%SETTINGS_TABLE%%
+
+<p>The defaults are not mistakes. Each fits a lane whose uploads are few, whose one reader keys everything on the content, and whose bucket can replay any object. Two of them deserve a second look all the same. <strong>Retention:</strong> a notice nobody acknowledges waits %%RET_DAYS%% days and is then dropped, so a worker broken for longer than that loses its notices, and only the nightly walk of lesson 1.8 would find the objects with no ledger row. <strong>Expiration:</strong> Google deletes a subscription that has had no subscriber activity for %%EXP_DAYS%% days, and a successful push is the activity, so a lane with no upload for %%EXP_DAYS%% days loses <code>%%SUB%%</code> itself until the next <code>make plan</code> and apply recreate it. The same default applies to <code>%%DLQ_SUB%%</code>, which nothing reads unless you run <code>make dlq</code>. The kit's other push subscription, the one behind lesson 10.4's Google Chat door, sets both on purpose:</p>
+@@gchat_sub@@
+<p>Its comments say the values were written from memory. Google's documentation confirms both: the expiration defaults to %%EXP_DAYS%% days and can be set to never expire, and a retention can be as short as %%RET_MIN%%. The same file also keeps that door's messages in India with a storage policy on its topic; <code>%%TOPIC%%</code> declares none.</p>
+
+<h4>The worker that receives</h4>
+@@deploy@@
+<p>The subscription knows none of these numbers. Pub/Sub learns the worker's capacity only from its answers. %%CONC%% request per instance and at most %%MAXI%% instances make %%IN_FLIGHT%% deliveries in flight. A delivery beyond that waits in Cloud Run's pending queue for %%PENDING_S%% seconds or %%PENDING_X%% times the average start-up time, whichever is longer, and if no instance frees up it is refused with a 429, which Pub/Sub counts as a failed delivery like any other (<a href="%%URL_RUN_SCALING%%" target="_blank" rel="noopener">Google's autoscaling page</a>). Step 7 squeezes the %%MAXI%% to %%SQUEEZE%% to watch that happen. The %%TIMEOUT%%-second request ceiling is the subscription's %%ACK%%-second deadline seen from the other side: a request the worker cannot finish in time is a delivery Pub/Sub will make again.</p>
+
+<h4>The handler, and what it reads of the message</h4>
+@@push_parse@@
+<p>The envelope Pub/Sub posts carries the message's id, its publish time, its attributes (the object's generation among them) and, because the subscription has a dead-letter policy, a count of delivery attempts. The handler reads one field: <code>message.data</code>, the object's record, which it parses into <code>IngestMessage</code>. Nothing else of the envelope is read anywhere in <code>main.py</code>, and that is a decision, recorded on the contract:</p>
+@@doc_key@@
+<p>A message id names one message; a content hash names what was delivered. The worker keys everything on the second, which is why a duplicate is harmless whichever bus brought it:</p>
+@@duplicate@@
+<p>One consequence for the trace. The worker's log lines carry the object's generation and the version's key, never a message id or an attempt number, and Cloud Run does not join a container's plain log lines to the request that produced them: Google's <a href="%%URL_RUN_LOGGING%%" target="_blank" rel="noopener">logging page</a> says that needs a Cloud Logging client library or a trace field, and the worker writes plain JSON to stdout. So the next step joins the hops by time and by generation, not by an id.</p>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; REST</span><h3>REST: the trace hop by hop, and the subscription as Pub/Sub holds it</h3><p>Three Google APIs, read with your operator token: Cloud Storage for the object, Cloud Logging for the push and the worker's lines, Pub/Sub for the subscription and its topic.</p></div></div>
+
+<p>The first cell asks Cloud Storage's JSON API for the note's metadata, which is the record the notice carried. Then it asks Cloud Logging for everything <code>documind-ingest</code> logged in the ten minutes after the object was created: the request log entry Cloud Run writes for each POST it receives, and the worker's own JSON lines for this version. It prints them as one timeline, in seconds from the object's creation:</p>
+
+%%CELL_TRACE%%
+%%OUT_TRACE%%
+
+<p>Read it hop by hop. The first line is hop 1 and the start of the clock: the generation is the number the notice carried. Hops 2 to 4, the notice, the subscription and the push, leave no line of their own on your lane. Pub/Sub's own metrics count them, which step 7 reads, and the request log entry is where they end: one POST, answered 200, with the latency of the worker's whole job. Inside that latency are hop 5's reading and hop 7's writes: a <code>mirror_ok</code> line for each managed store acme's policy allows, the ledger's new fingerprint, and <code>ingest_ok</code> with the object's own generation. The 200 that ended the request was hop 6, the acknowledgement. Nothing in the timeline is joined by an id: the generation does the joining, as step 4 said it must. The <code>ingest_ok</code> line also becomes two points on the kit's log-based metrics: one on <code>documind/ingest_events</code>, labelled with the event and the tenant, and its embedded count, %%N_CHUNKS%%, on <code>documind/ingest_embedded</code>. Step 7 shows which of the worker's verdicts those metrics leave out.</p>
+
+<p>If the worker's lines are missing, the cell says so and prints the window it searched. Cloud Logging can take a minute to show a line, so run the cell again before you suspect the bus.</p>
+
+<h4>The subscription, as Pub/Sub holds it</h4>
+<p>Step 4 read what Terraform declared. The platform holds more: every field Google filled in with a default. The cell reads the subscription and its topic from the Pub/Sub API, then reads <code>terraform/eventarc.tf</code> in your clone of the kit and marks each field with who set it:</p>
+
+%%CELL_SUB%%
+%%OUT_SUB%%
+
+<p>The five declared fields come back as Terraform wrote them, the push endpoint and the token's account in place of the Terraform names, and the never-expire policy as an empty <code>expirationPolicy</code> (a lane applied before 13 October 2026 still reports Google's time to live there, %%EXP_S%% seconds or %%EXP_DAYS%% days, until its next <code>make plan</code> and apply). The five marked Google are the defaults in the table above, as the API reports them: the retention in seconds (%%RET_S%% is %%RET_DAYS%% days), and the switches the API leaves out when they are off. The topic's own retention is absent: once the subscription acknowledges a notice, no copy of it exists anywhere in Pub/Sub. Step 8's Kafka mapping turns on that one fact.</p>

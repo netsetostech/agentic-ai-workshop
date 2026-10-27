@@ -180,8 +180,15 @@ rv.fetch_current_shas = lambda *a, **k: set()           # the ledger answers; th
 TMP = Path(tempfile.mkdtemp(prefix="lesson72-"))
 
 
-def run_live(scenario: dict, let_in: int = 0) -> tuple:
+PICTURES = {"figure": {"annual_report_2026_fig3.png", "inv_2026_0412.png", "payment_of_bonus_act_1965_p30.png"}}
+VIDEO = {"segment": {"townhall_2026_q1.mp4"}}      # make media builds it in lesson 7.5
+
+
+def run_live(scenario: dict, let_in: int = 0, media: dict = PICTURES) -> tuple:
+    """live() over the stub. media is what acme's ledger lists as indexed: by default the lane at this lesson, the
+    corpus's pictures and no video yet, so mm-03 is judged on its words and the gate says so on an [info] line."""
     rv.ask = stub_ask(scenario, let_in)
+    rv.fetch_media_names = lambda api_url, tenant, token: media if tenant == "acme" else {}
     report = TMP / "evals" / "reports" / "lesson72.json"
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
@@ -193,6 +200,7 @@ def run_live(scenario: dict, let_in: int = 0) -> tuple:
 MISSES = {"lk-27": "refused", "jn-06": "nofig"}
 live_out, live_rc, live_report = run_live(MISSES)
 assert live_rc == 0 and not live_report["failed"], (live_rc, live_report["failed"])
+assert "[info] mm-03: no segment file of townhall_2026_q1 indexed for acme yet" in live_out, live_out[:1500]
 
 
 def mask(text: str) -> str:
@@ -326,7 +334,11 @@ for s in ('"  {len(ok)}/{len(rows)} answers collected from {a.api_url} in', '"  
           '"  judge: the service default (pass --judge-model to pin one)"', "    print(f\"\\n  Experiments run {a.experiment}/"):
     assert s in (KIT / JG).read_text(encoding="utf-8"), s
 OUT["traj_none"] = "no documind-chat service on this lane: trajectories need one\n"
-OUT["traj_chat"] = (f"  {len(golden)} rows reused from evals/reports/judge72.json (delete it to collect again)\n"
+# judge.py's --reuse line, read from its two f-string parts (13 October 2026: #172 corrected it for the frozen set)
+REUSED = re.search(r'rows reused from \{a\.reuse\} (\(under make judge-frozen [^"]*)"\n\s*f"([^"]*)"\)',
+                   (KIT / JG).read_text(encoding="utf-8"))
+assert REUSED and "delete" not in REUSED.group(0), "judge.py's --reuse line moved: update 4.2's expected shape"
+OUT["traj_chat"] = (f"  {len(golden)} rows reused from evals/reports/judge72.json {REUSED.group(1)}{REUSED.group(2)}\n"
                     + "".join(f"  trajectory {b:10} exact .../3  in-order .../3  any-order .../3  mean calls ...\n" for b in jd.BRAINS))
 
 
@@ -384,7 +396,7 @@ PRESETS = [
 ]
 KIT_RESULTS = []
 for label, scenario, let_in in PRESETS:
-    out, rc, rep = run_live(scenario, let_in)
+    out, rc, rep = run_live(scenario, let_in, {**PICTURES, **VIDEO})       # the board asks every media row for its kind
     verdict = [line.strip() for line in out.splitlines() if line.strip()][-1]
     if rc == 2:
         verdict = next(line.strip() for line in out.splitlines() if "A must_not_contain row fired" in line)

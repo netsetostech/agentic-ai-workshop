@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_9.2_Ollama_SLM_WIX.html`, reviewed at blob `ef4d07a96774afec01f7a333d643d470b90ee1c3`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_9.2_Ollama_SLM_WIX.html`, reviewed at blob `ad03345b6479dc15fcf2f07ada5fbee81e098d28`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 9.1's sensitive route has nowhere to go until a model runs behind it. The kit serves one with Ollama on a Cloud Run L4 GPU, always under one name, `documind-slm`. That model is either supplied (a GGUF and the Modelfile generated from its tokenizer) or a stock model from Ollama's library, which stands in until a supplied one exists. The model is built into the image, the service scales to zero, and the GPU bills for every minute an instance lives.
 
@@ -112,7 +112,7 @@ You need the shell in the kit's folder, with `PROJECT`, `REGION` and `NUMBER` se
 
 - The API as `make up` deployed it. Step 7 puts a no-traffic candidate revision on it with the gateway backend. The API already knows the gateway's URL (`LITELLM_URL`, set when it was deployed), and `make deploy-gateway` let the API's account invoke the gateway.
 
-- An L4 in `us-central1`. A project's first L4 deploy in a region is granted a quota of three GPUs, with zonal redundancy off, which is how the kit deploys. You need no request.
+- An L4 in `us-central1`, and the quota for it. The kit deploys it with zonal redundancy off. Many projects are granted three such GPUs on their first L4 deploy in a region, but a new project can have none, and then `make deploy-slm` stops before it builds anything, at `You do not have quota for using GPUs without zonal redundancy`. Check before the session: on the console's Quotas page, find Total Nvidia L4 GPU allocation without zonal redundancy, per project per region for Cloud Run in `us-central1`. If it is 0, request 1 there (`g.co/cloudrun/gpu-quota`), and run step 5 once Google has approved it.
 
 - About 240 MB for `~/tf-venv`, for step 3's transformers. Step 3 also downloads about 31 MB of tokenizer files from Hugging Face.
 

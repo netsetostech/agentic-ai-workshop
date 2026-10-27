@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_4.1_Eval_Dataset_WIX.html`, reviewed at blob `1842ef7a3c0ff2277b8154be660b88709080a151`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_4.1_Eval_Dataset_WIX.html`, reviewed at blob `b75b585cebbef16242deeea319b6b3dcac0e13f5`. Learners read that page on the course site; this guide keeps its prose.
 
 Module 4 measures the answer, and the measure is a set of questions with answer keys: the kit's golden set, 65 rows over 3 tenants. You find the one clause of ACME's handbook that no row asks about and write a row for it, which the offline gate accepts. Then you write the hardest shape, an isolation row for Zeta. The gate refuses it twice, each time with a sentence that says why, and accepts it on the third try. You ask both rows once against the API, label two paraphrases, and see why a question generated from a chunk is a candidate and not a row. Only step 6 and the last cell of step 7 call the cloud.
 

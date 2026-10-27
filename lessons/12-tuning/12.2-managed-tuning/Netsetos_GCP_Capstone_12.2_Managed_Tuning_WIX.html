@@ -87,7 +87,7 @@ li{margin-bottom:6px;}
 /* code windows: the rounded shell and the scroller are two elements */
 .cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
 .ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
-.ch-bar span{overflow-wrap:anywhere;}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
 .cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 .cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
 .cp:active{transform:scale(.96);}
@@ -681,20 +681,22 @@ export ENDPOINT="$(grep -o 'projects/[^ ]*/endpoints/[0-9]*' ~/poll172.log | hea
 ENDPOINT=projects/NUMBER/locations/us/endpoints/9136961803583303949</pre></div>
 
 
-<p>The second cell asks the endpoint one question the way the generator would. It sends <code>SYSTEM</code>, one source under its header and the question, with <code>generator._call</code>'s settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: <code>us-central1</code>, the job's region; <code>global</code>, where the served model answers; and the location the generator would use, from the path.</p>
+<p>The second cell asks the endpoint one question the way the generator would. It sends <code>SYSTEM</code>, one source under its header and the question, with <code>generator._call</code>'s settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: <code>us-central1</code>, the job's region; <code>global</code>, where the served model answers; and the location the generator would use, from the path. It reads the answer with the generator's own <code>_draft()</code>: the tuned model learned long quotes from the rows, so a quote past the schema's 200 characters is cut, and a <code>generation_repaired</code> line says so.</p>
 <div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (one answer from the endpoint, and two calls that are not found)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
-import ast, os, re, sys, types as pytypes
+import ast, json, logging, os, re, sys, types as pytypes
 sys.path[:0] = [".", "evals", "services/rag-api"]
 from google import genai
 from google.genai import errors, types
+from pydantic import ValidationError
 import make_trainset as mt
 from context_budget import source_header
-from shared.documind_schemas import ModelDraft
+from shared.documind_schemas import DraftCitation, ModelDraft
 P, EP = os.environ["PROJECT"], os.environ["ENDPOINT"]
-fn = next(n for n in ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read()).body
-          if isinstance(n, ast.FunctionDef) and n.name == "_endpoint_location")
-ns = {"re": re, "settings": pytypes.SimpleNamespace(generator_location=os.environ.get("GENERATOR_LOCATION", ""), region=os.environ["REGION"])}
-exec(compile(ast.Module([fn], []), "generator.py", "exec"), ns)       # lifted: generator.py builds its clients when imported
+fns = [n for n in ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read()).body
+       if isinstance(n, ast.FunctionDef) and n.name in ("_endpoint_location", "_quote_limit", "_problems", "_draft")]
+ns = {"re": re, "json": json, "log": logging.getLogger("generator"), "ValidationError": ValidationError, "DraftCitation": DraftCitation,
+      "ModelDraft": ModelDraft, "settings": pytypes.SimpleNamespace(generator_location=os.environ.get("GENERATOR_LOCATION", ""), region=os.environ["REGION"])}
+exec(compile(ast.Module(fns, []), "generator.py", "exec"), ns)       # lifted: generator.py builds its clients when imported
 where = ns["_endpoint_location"](EP)
 print(f"the endpoint's path says {EP.split('/locations/', 1)[1].split('/', 1)[0]}; the generator would call it at {where}")
 c = next(c for c in mt.load_chunks("acme") if c["chunk_id"] == "acme:code_on_wages_2019#p9-1")       # not a training row's chunk
@@ -706,12 +708,16 @@ tree = ast.parse(open("services/rag-api/cost.py", encoding="utf-8").read())
 usd_in, usd_out = next(ast.literal_eval(n.value) for n in tree.body
                        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "FALLBACK")["gemini-3.1-flash-lite"]
 for loc in dict.fromkeys(("us-central1", "global", where)):
+    client = genai.Client(enterprise=True, project=P, location=loc)      # held in a name: a client closes once nothing holds it
     try:
-        r = genai.Client(enterprise=True, project=P, location=loc).models.generate_content(model=EP, contents=prompt, config=cfg)
+        r = client.models.generate_content(model=EP, contents=prompt, config=cfg)
     except errors.APIError as e:
         print(f"  {loc:12} {e.code} {e.status}")
         continue
-    d, u = ModelDraft.model_validate_json(r.text), r.usage_metadata
+    d, u = ns["_draft"](r), r.usage_metadata      # read as the generator reads it: a quote over 200 characters is cut, and logged
+    if d is None:
+        print(f"  {loc:12} answered, and the generator reads no draft from it: {r.text[:200]}")
+        continue
     out = (u.candidates_token_count or 0) + (u.thoughts_token_count or 0)
     marks = re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", d.answer)
     rs = (u.prompt_token_count * usd_in + out * usd_out) / 1e6 * 85

@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_1.7_Versions_WIX.html`, reviewed at blob `3fc7051907aad57df30bf22596ebd56a662a00ac`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_1.7_Versions_WIX.html`, reviewed at blob `9d9079026f91a68b0b2e43907d5109b3a5aaf36e`. Learners read that page on the course site; this guide keeps its prose.
 
 A document on the lane has exactly one current version, and this lesson is about how that stays true. A new version is published by one swap, never by a stream of writes. A version stops being current in one of three ways, each with its own name and its own way back: superseded by a newer one, retired because its object left the bucket, or withdrawn by a person. And an event that arrives late, carrying an older generation of the object, is refused before a byte is downloaded, because acting on it would publish the past. You will read all of it off your lane, replay three events yourself, and withdraw and restore a document by hand.
 
@@ -130,7 +130,7 @@ The tombstone: what `make retire` writes, what it holds against, and the one com
 
 #### Definition
 
-A person retires a document with `make retire SOURCE=`. The reconcile CLI retires every current row of the source with the usual four fields and a thirty-day expiry, tells the managed mirror the version left, sets the ledger row to `withdrawn` with a timestamp, and refreshes the tenant's fingerprint so the answer cache follows. The object is not touched: it stays in the bucket on purpose, and the nightly walk reports it as "withdrawn, object kept". The tombstone holds against two things that would otherwise bring the document back: a redelivery of its event, and the same bytes uploaded again, both acknowledged as `ingest_withdrawn`. `make restore SOURCE=` is the way back: it moves the ledger row to `retired`, the state a lost event recovers from, and rewrites the object onto itself, which is a new generation and a new event; the worker then reactivates the rows inside the window, or re-ingests the bytes after it.
+A person retires a document with `make retire SOURCE=`. The reconcile CLI retires every current row of the source with the usual four fields and a thirty-day expiry, tells the managed mirror the version left, sets the ledger row to `withdrawn` with a timestamp, takes the retired ids out of the Vector Search index as the worker's swap does (13 October 2026; `VECTOR_INDEX_NAME`, which `make retire` reads from Terraform), and refreshes the tenant's fingerprint so the answer cache follows. The object is not touched: it stays in the bucket on purpose, and the nightly walk reports it as "withdrawn, object kept". The tombstone holds against two things that would otherwise bring the document back: a redelivery of its event, and the same bytes uploaded again, both acknowledged as `ingest_withdrawn`. `make restore SOURCE=` is the way back: it moves the ledger row to `retired`, the state a lost event recovers from, and rewrites the object onto itself, which is a new generation and a new event; the worker then reactivates the rows inside the window, or re-ingests the bytes after it.
 
 #### The code
 

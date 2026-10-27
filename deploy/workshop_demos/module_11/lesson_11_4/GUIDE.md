@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_11.4_Debug_Wrong_Answer_WIX.html`, reviewed at blob `7449ad397b6297eacbbdc4e2f9efd8e24b0f6a5d`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_11.4_Debug_Wrong_Answer_WIX.html`, reviewed at blob `db37cce668e8bbbb0c8fab353b899ca540d5e0b2`. Learners read that page on the course site; this guide keeps its prose.
 
 An acme employee asks for the E3 notice period and DocuMind says 90 days, where the golden set says 60. Something between the question and the answer made that happen, and guessing where is slow. Every DocuMind answer carries a trail. It says whether the answer cache served it, which store retrieved it and whether a fallback rung stood in, how many chunks the reranker saw and who ordered them, and which version of which document each citation came from. The log's fallback events and the ledger's versions sit beside it. In this lesson you break one answer on purpose, then trace it using only the marks the answer and the lane recorded. You rule out each stage in the order the answer was made, name the cause, and put the lane back.
 

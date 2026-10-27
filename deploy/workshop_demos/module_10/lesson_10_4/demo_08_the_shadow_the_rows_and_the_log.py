@@ -118,7 +118,7 @@ def step_03_the_rows_in_firestore(session):
         doc_type policy  kind text  current True  acme/hr_policy_2026.md
       tenants/acme/doc_types/acme~hr_policy_2026.md: policy, pin acme_497809ffbaa6..., set by you@example.com, source manifest
         the pin is the chunk's doc_key: True
-      tenants/acme/desk_exemplars/lk-06: route handbook, group lk-06, 768 dimensions, text-embedding-005, index d15e143dd357
+      tenants/acme/desk_exemplars/lk-06: route handbook, group lk-06, 768 dimensions, text-embedding-005, index f6b7c712c159
       tenant_settings/acme: desk_gate rules, desk_route on, desk_single None, data_region any
       tenant_settings/zeta: desk_gate rules, desk_route shadow, desk_single None, data_region any
       tenant_settings/globex: desk_gate rules, desk_route single, desk_single statute, 

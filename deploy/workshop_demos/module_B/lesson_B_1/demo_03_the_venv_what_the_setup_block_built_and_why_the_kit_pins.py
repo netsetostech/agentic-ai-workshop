@@ -42,7 +42,7 @@ def step_01_where_am_i_the_venv_asked_from_inside(session):
     numpy 2.5.3, installed in that site-packages: True
     google-genai 2.22.0, installed in that site-packages: True
     google-genai brought 10 more: anyio, distro, google-auth, httpx, pydantic, requests, sniffio, tenacity, typing-extensions, websockets
-    its rule for google-auth is google-auth[requests]<3.0.0,>=2.56.0; pip chose 2.60.0
+    its rule for google-auth is google-auth[requests]<3.0.0,>=2.56.0; pip chose 2.62.0
     """
     import re, shutil, sys, sysconfig, warnings
     from importlib import metadata

@@ -56,7 +56,7 @@ def _queues(name):
 
 QCFG, ZCFG = _queues("acme"), _queues("zeta")
 NOW = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
-SEND = ("desk_draft", "Send")
+SEND = ("desk_draft_form", "Send")
 
 
 # ---------------------------------------------------------------- the fakes at the seam
@@ -130,6 +130,9 @@ class FakeSt:
         return Block(self, "expander", label)
 
     def form(self, key, **k):
+        if key in self.session_state:   # as Streamlit 1.63 does: a form's key may not be one the page sets
+            raise AssertionError(f"StreamlitValueAssignmentNotAllowedError: values for the widget with key {key!r} "
+                                 "cannot be set using st.session_state")
         return Block(self, "form", key)
 
     def _widget(self, label, default, key=None):
@@ -388,7 +391,7 @@ def posts(http, path="/v1/cases"):
 
 
 def case_rows(st):
-    return [k for k in st.kinds("form") if k.startswith(("desk_new_", "desk_posh", "desk_draft", "desk_move_"))]
+    return [k for k in st.kinds("form") if k.startswith(("desk_new_", "desk_posh", "desk_draft_form", "desk_move_"))]
 
 
 # ---------------------------------------------------------------- the tests
@@ -584,7 +587,7 @@ class Moves(unittest.TestCase):
         st, http = FakeSt({"What is it about?": "grievance"}, {("desk_new_grievance", "Next: check it before sending")}), Http(svc)
         ns = load(st, http)
         run(ns, st)
-        self.assertIn("desk_draft", st.kinds("form"))
+        self.assertIn("desk_draft_form", st.kinds("form"))
         self.assertIn("desk_tell", st.kinds("form"))
         st.answers["What do you need help with?"] = "notice period?"
         st.pressed = {("desk_tell", "Send")}
@@ -908,7 +911,7 @@ class RoutedHalf(unittest.TestCase):
                                                   case_offer={"case_type": "people_query"}))]
         st, http, ns, _ = page(svc, answers={"Your question": "Who decides my notice exception?"},
                                pressed={("desk_ask", "Ask")})
-        self.assertIn("desk_draft", st.kinds("form"))
+        self.assertIn("desk_draft_form", st.kinds("form"))
         self.assertNotIn(ns["START"]["people_query"], st.kinds("button"), "drafted already: no second start")
         st.answers["Your question"], st.pressed = "And my leave?", {("desk_ask", "Ask")}
         run(ns, st)
@@ -989,14 +992,14 @@ class Drafts(unittest.TestCase):
         run(ns, st)
         made = [c[2] for c in posts(http)]
         self.assertEqual(made, [{"case_type": "grievance", "summary": "First words.", "people_ops_opt_in": True}])
-        self.assertIn("desk_draft", st.kinds("form"))
+        self.assertIn("desk_draft_form", st.kinds("form"))
         self.assertIn("Grievance Redressal Committee", st.text(), "who it goes to")
         self.assertIn(desk_law.BASIS["ir_s4_1"]["says"], st.text(), "the law it rests on")
         svc.confirm_status = [503]
         st.answers["In your own words (you can change this)"] = "Edited words."
         st.pressed = {SEND}
         run(ns, st)
-        self.assertIn("desk_draft", st.kinds("form"), "a failed send keeps the draft")
+        self.assertIn("desk_draft_form", st.kinds("form"), "a failed send keeps the draft")
         self.assertIn("The Desk is not available just now. Please try again in a minute.", st.kinds("error"))
         st.pressed = {SEND}
         run(ns, st)
@@ -1005,7 +1008,7 @@ class Drafts(unittest.TestCase):
         self.assertEqual(sends[0][2]["token"], sends[1][2]["token"], "the same draft is sent with one token")
         self.assertTrue(cases.TOKEN.match(sends[0][2]["token"]), "a token the confirm route takes")
         self.assertEqual(sends[1][2]["summary"], "Edited words.")
-        self.assertNotIn("desk_draft", st.kinds("form"))
+        self.assertNotIn("desk_draft_form", st.kinds("form"))
         self.assertTrue(any(t.startswith("Sent. Your case reference is") for t in st.kinds("success")))
 
     def test_the_target_date_and_its_clock(self):
@@ -1024,25 +1027,25 @@ class Drafts(unittest.TestCase):
         st, http = FakeSt({"What is it about?": "human_requested"}, {nxt}), Http(svc)
         ns = load(st, http)
         run(ns, st)
-        st.pressed = {("desk_draft", "Cancel this request")}
+        st.pressed = {("desk_draft_form", "Cancel this request")}
         run(ns, st)
         self.assertTrue(any(c[1].endswith("/cancel") for c in http.calls))
         self.assertIn("Cancelled. Nothing was sent.", st.kinds("success"))
-        self.assertNotIn("desk_draft", st.kinds("form"))
+        self.assertNotIn("desk_draft_form", st.kinds("form"))
         self.assertEqual(svc.drafts, {}, "the draft is deleted")
         # a draft already gone (cancelled in another tab, or expired) is a 404: the page lets it go the same way
         st.pressed = {nxt}
         run(ns, st)
         svc.drafts.clear()
-        st.pressed = {("desk_draft", "Cancel this request")}
+        st.pressed = {("desk_draft_form", "Cancel this request")}
         run(ns, st)
         self.assertIn("Cancelled. Nothing was sent.", st.kinds("success"))
-        self.assertNotIn("desk_draft", st.kinds("form"))
+        self.assertNotIn("desk_draft_form", st.kinds("form"))
         # a Send whose reply never arrived opened the case after all: Cancel then withdraws it, and says so
         st.pressed = {nxt}
         run(ns, st)
         svc.opened_by_then = True
-        st.pressed = {("desk_draft", "Cancel this request")}
+        st.pressed = {("desk_draft_form", "Cancel this request")}
         run(ns, st)
         self.assertIn("Withdrawn. The team sees that you withdrew it.", st.kinds("success"))
 
@@ -1061,7 +1064,7 @@ class Drafts(unittest.TestCase):
             st.pressed = {SEND}
             run(ns, st)
             self.assertTrue(any(said in t for t in st.kinds("error")), status)
-            self.assertNotIn("desk_draft", st.kinds("form"))
+            self.assertNotIn("desk_draft_form", st.kinds("form"))
             self.assertIn("desk_new_grievance", st.kinds("form"), "the same kind, ready again")
             self.assertEqual(st.values["In your own words (you can change this before sending)"],
                              "Edited words, written over ten minutes.", "never an empty form")
@@ -1070,7 +1073,7 @@ class Drafts(unittest.TestCase):
             run(ns, st)
             self.assertEqual(posts(http)[-1][2], {"case_type": "grievance", "people_ops_opt_in": True,
                                                   "summary": "Edited words, written over ten minutes."})
-            self.assertIn("desk_draft", st.kinds("form"))
+            self.assertIn("desk_draft_form", st.kinds("form"))
             self.assertNotIn("desk_refill", st.session_state, "the words are let go once they are a draft again")
 
     def test_an_expired_exit_dues_draft_keeps_its_date(self):

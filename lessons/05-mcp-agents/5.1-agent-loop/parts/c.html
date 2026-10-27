@@ -13,7 +13,7 @@
 %%OUT_DIRECT%%
 
 <div class="wjh"><div class="wjh-title">What just happened</div>
-<p>A direct-brain answer with <code>retrieve</code> in <code>tool_calls</code>: this lesson's proof. The answer is rag-api's, with five citations, in about the time of one rag-api call. That is the floor. Every agent answer that follows has to justify its extra seconds against it. The turn was made for acme because the roster said so. Nothing in the request could have said otherwise.</p></div>
+<p>A direct-brain answer with <code>retrieve</code> in <code>tool_calls</code>: this lesson's proof. The answer is rag-api's, with the citations it used, in about the time of one rag-api call. That is the floor. Every agent answer that follows has to justify its extra seconds against it. The turn was made for acme because the roster said so. Nothing in the request could have said otherwise.</p></div>
 
 <!-- ============================ STEP 7 ============================ -->
 <div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 3 &middot; The loop</span><h3>The loop: the model chooses its tools</h3><p>The same question to the LangChain brain, then a question only a tool can answer, to both brains.</p></div></div>
@@ -29,7 +29,28 @@
 %%OUT_LOOP%%
 
 <div class="wjh"><div class="wjh-title">What just happened</div>
-<p>On the policy question, the model chose <code>retrieve</code> itself and wrote its own answer from the citations; it took longer than the direct brain for the same fact. Its citations are numbered 1 to 5, and its answer cites <code>[1]</code>. The cost question went to the same session, so the thread held the first turn too, and the list still names only this turn's two tools, with its citations numbered from 1 again. The second tool, <code>calculate_processing_cost</code>, priced %%COST_USD%% US dollars for 283 pages at the priority rate, Rs %%COST_INR%%. The direct brain could only look the question up, and could only answer from what the documents say. The two brains may even give different numbers, because they consult different sources: the tool's price list, and whatever rate a document mentions. Your lists are the truth for your lane. A model that skipped the search, or searched twice, is still inside the contract.</p></div>
+<p>On the policy question, the model chose <code>retrieve</code> itself and wrote its own answer from the citations; it took longer than the direct brain for the same fact. Its citations are the passages rag-api's own answer cited, numbered from 1 for the turn, and its answer cites <code>[1]</code>: <code>retrieve</code> hands an agent what <code>/v1/query</code> returns, never the whole pool. The cost question went to the same session, so the thread held the first turn too, and the list still names only this turn's two tools, with its citations numbered from 1 again. The second tool, <code>calculate_processing_cost</code>, priced %%COST_USD%% US dollars for 283 pages at the priority rate, Rs %%COST_INR%%. The direct brain could only look the question up, and could only answer from what the documents say. The two brains may even give different numbers, because they consult different sources: the tool's price list, and whatever rate a document mentions. Your lists are the truth for your lane. A model that skipped the search, or searched twice, is still inside the contract.</p></div>
+
+<h4>Two searches in one message</h4>
+<p>A model may ask for more than one tool in a single message. A question with two parts can come back as two <code>retrieve</code> calls side by side, and the runtime does not run them one after the other. The LangChain brain hands each call to its tools node as a task of its own, and runs a step's tasks together. The LangGraph brain's <code>ToolNode</code> runs a message's calls in a thread pool, and ADK runs them as concurrent tasks. In all three, each call then runs in the chat service's tool pool, and is waited on for no longer than its own budget (lesson 5.5). Two searches can find the same chunk. If each search numbered its own citations, one passage would carry two numbers, and the answer could cite it twice as two sources. So <code>search()</code> numbers every citation against one ledger for the turn, under a lock, and a chunk the ledger already holds keeps its number.</p>
+@@ledger@@
+@@pool@@
+
+<h4>Do it: two searches at once, offline</h4>
+<p>The cell runs the kit's own LangChain brain on your machine, with a scripted model and a stand-in rag-api, so it calls nothing on your lane and costs nothing. The model asks for two searches in one message: the notice period, and the earned leave encashed on exit. The stand-in takes 1.5 seconds over the first and 1 second over the second, and both answers include LV-07, the handbook's clause on leave at exit. The cell prints when each search reached the stand-in and when it was answered, the citations each result carried, and the turn's list and citations. It runs in <code>~/graph-venv</code>, lesson 5.4's venv with the chat image's pins, and the first cell makes it if it is missing.</p>
+%%CELL_VENV%%
+%%OUT_VENV%%
+%%CELL_PARALLEL%%
+%%OUT_PARALLEL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both searches reached the stand-in together, and the turn waited 1.5 seconds for the two, the time of the slower one, not 2.5. The second search answered first, so its chunks were numbered first: LV-07 became <code>[1]</code> and LV-01 <code>[2]</code>. The first search's result then carried LV-07 as <code>[1]</code> again, beside NP-03 and PB-02 as <code>[3]</code> and <code>[4]</code>. The turn has four citations, not five, and each number in the answer points at one passage. The numbers follow the order the searches answered in, not the order the model asked, so the same question can number its sources differently from one run to the next. The model reads each result with its numbers, so it cites them right either way. The build ran the same turn through the LangGraph and ADK brains too, and both gave the same overlap and the same numbers.</p></div>
+
+<h4>Optional: does Gemini ask for two at once?</h4>
+<p>The scripted model always asks for both searches. Whether Gemini does is the model's choice. This cell makes the first model call of a turn by hand: the brains' own model from <code>shared/profile.py</code>, the kit's two tools bound to it, the system prompt, and the same two-part question. It prints the tool calls in the one message that comes back, then the tokens and the rupees. It is one call to <code>gemini-3.6-flash</code> on your project, under a rupee. No tool runs, and rag-api is not called.</p>
+%%CELL_LIVE%%
+%%OUT_LIVE%%
+<p>Two calls in that message is a parallel call: in a turn on your lane they would run at once, as they did offline. One search that names both topics, or one search and then a second in the next message, is inside the contract too. The second way costs one more model call, and the time of both searches end to end.</p>
 
 <!-- ============================ STEP 8 ============================ -->
 <div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; The rows</span><h3>The rows: what each brain cost, and which row records it</h3><p>rag-api's row for every retrieve(), and the chat service's row for every turn.</p></div></div>
@@ -60,6 +81,8 @@
 <tr><td>The one retrieve()</td><td data-label="Costs">one rag-api answer</td><td data-label="On your lane">under a rupee</td></tr>
 <tr><td>Two direct turns</td><td data-label="Costs">one rag-api answer each</td><td data-label="On your lane">under a rupee each</td></tr>
 <tr><td>Two LangChain turns</td><td data-label="Costs">one rag-api answer per retrieve, plus the agent's own two or three model calls, which the chat row prices</td><td data-label="On your lane">a rupee or two each</td></tr>
+<tr><td>Two searches at once, offline</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The optional Gemini call</td><td data-label="Costs">one model call with the two tools bound; no tool runs</td><td data-label="On your lane">under a rupee</td></tr>
 <tr><td>The checkpointer</td><td data-label="Costs">the Cloud SQL instance the lane already runs</td><td data-label="On your lane">nothing new</td></tr>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
@@ -72,7 +95,7 @@
 </ul></div>
 
 <!-- ============================ STEP 10 ============================ -->
-<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
 
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
 <thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
@@ -84,12 +107,13 @@
 <tr><td>5</td><td data-label="Claim">A direct-brain answer with retrieve in tool_calls</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>direct    tool_calls ['retrieve']</code>, citations 5</td></tr>
 <tr><td>6</td><td data-label="Claim">The loop chose its own tools</td><td data-label="The check">step 7, the cost question</td><td data-label="Pass looks like"><code>calculate_processing_cost</code> in the list</td></tr>
 <tr><td>7</td><td data-label="Claim">Each turn reports its own tools, and numbers its citations from 1</td><td data-label="The check">step 7, the second LangChain turn</td><td data-label="Pass looks like"><code>['retrieve', 'calculate_processing_cost']</code>, and <code>n [1, ...]</code></td></tr>
-<tr><td>8</td><td data-label="Claim">Every retrieve() leaves a rag-api row, labelled</td><td data-label="The check">step 8</td><td data-label="Pass looks like">rows for <code>direct</code> and <code>langchain</code></td></tr>
-<tr><td>9</td><td data-label="Claim">The chat row prices the agent's own turn</td><td data-label="The check">step 8, the keys</td><td data-label="Pass looks like"><code>model_calls</code>, <code>cost_usd</code>, <code>rag_cost_usd</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Two searches in one message run at once, and a chunk both find is numbered once</td><td data-label="The check">step 7, the offline cell</td><td data-label="Pass looks like"><code>at once: True</code>; <code>[1] LV-07</code> in both results, and four citations</td></tr>
+<tr><td>9</td><td data-label="Claim">Every retrieve() leaves a rag-api row, labelled</td><td data-label="The check">step 8</td><td data-label="Pass looks like">rows for <code>direct</code> and <code>langchain</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The chat row prices the agent's own turn</td><td data-label="The check">step 8, the keys</td><td data-label="Pass looks like"><code>model_calls</code>, <code>cost_usd</code>, <code>rag_cost_usd</code></td></tr>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
 <div class="box box-teal"><div class="box-title">What changed on your lane</div>
-<p>The chat service runs in your region, from the kit's current script, with IAP on and its checkpointer migrated. The UI's account and the outsider may invoke it, and so may the Desk's six accounts once Terraform has created them. You may mint tokens as the UI's account and the outsider. The usage rows of five retrievals and four chat turns, and one conversation of two turns in the checkpointer, session <code>lesson101-langchain</code>. The direct brain keeps no conversation. No roster, policy or setting changed. Lesson 5.2 exposes the same tools to any MCP client, and lesson 5.4 opens the LangGraph brain: the hand-built graph, its refuse node, and the checkpointer that keeps a conversation.</p></div>
+<p>The chat service runs in your region, from the kit's current script, with IAP on and its checkpointer migrated. The UI's account and the outsider may invoke it, and so may the Desk's six accounts once Terraform has created them. You may mint tokens as the UI's account and the outsider. The usage rows of five retrievals and four chat turns, and one conversation of two turns in the checkpointer, session <code>lesson101-langchain</code>. The direct brain keeps no conversation. No roster, policy or setting changed. Your home folder has <code>~/graph-venv</code>, with the chat image's pins, which lessons 5.4, 5.5 and 5.7 use too. If you ran step 7's optional cell, your project's bill has one more Gemini call, under a rupee. Lesson 5.2 exposes the same tools to any MCP client, and lesson 5.4 opens the LangGraph brain: the hand-built graph, its refuse node, and the checkpointer that keeps a conversation.</p></div>
 
 </div>
 

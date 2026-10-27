@@ -1,4 +1,4 @@
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 RETRIEVAL_BACKENDS = ("vector", "firestore", "rag_engine", "vertex_search")   # rag_engine: 4.3's corpus (P9.4); vertex_search: 4.4's data store (R4) - each as the retrieval stage
@@ -55,10 +55,10 @@ class Settings(BaseSettings):
     rag_location: str = Field("us-central1", alias="RAG_LOCATION")
     rag_distance_threshold: float = Field(0.5, alias="RAG_DISTANCE_THRESHOLD")
     # R4 (13 September 2026, evening): 4.4's data stores are global (managed.tf), searched through their default serving
-    # config as the lesson's notebook does; the extractive segments asked per result (a plain data store answers with
-    # snippets, an Enterprise engine with segments - the backend takes whichever came).
+    # config as the lesson's notebook does. The store ranks the documents and the kit's own rows give the passages
+    # (retriever._search_retrieve, 22 October 2026): a standard-edition store refuses extractive segments, and its
+    # snippets stop short of the figure.
     search_location: str = Field("global", alias="SEARCH_LOCATION")
-    search_segments: int = Field(3, alias="SEARCH_SEGMENTS")
     # The ledger (12.5, 11 September 2026): `on` retrieves only chunks the ledger marks current - one
     # version per document. Off until the second vector index is built and the chunks written before
     # the ledger carry the field (make backfill-current); a switch, judged on a candidate like the others.
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     # ONE declared embedding (12 September 2026): EMBEDDING_MODEL and EMBEDDING_VERSION are variables.tf's
     # embedding_model / embedding_version, set on this service AND on the ingest worker by make deploy-services,
     # so the query vector and the document vectors come from one model by construction. The worker stamps the
-    # pair on every chunk row; a bump is a planned migration (make reembed, deploy/INDEXING.md), never a silent
+    # pair on every chunk row; a bump is a planned migration (not yet a target: INDEXING.md), never a silent
     # mismatch. /version reports it beside the model and the prompt.
     embed_model: str = Field("text-embedding-005", alias="EMBEDDING_MODEL")
     embedding_version: str = Field("1", alias="EMBEDDING_VERSION")
@@ -129,6 +129,12 @@ class Settings(BaseSettings):
     # of the same tenant under the same corpus fingerprint is answered from Firestore - no retrieval, no model call.
     # Off on the lane until the threshold is measured on paraphrase pairs (the RAG plan, W4).
     semantic_cache: str = Field("off", alias="SEMANTIC_CACHE")
+    # Workshop lesson 2.5's rewrite stage (rewrite.py, shared/query_rewrite.py): off | on, anything else refused below.
+    # On, /v1/query asks QUERY_REWRITE_MODEL (on the global endpoint) for the question in the documents' words and
+    # searches with that - it never reranks or answers with it - and searches the question itself when the rewrite drops
+    # a code, a grade or a figure, or fails. Off on the lane until evals/ablate.py --rewrite measures it.
+    query_rewrite: str = Field("off", alias="QUERY_REWRITE")
+    query_rewrite_model: str = Field("gemini-3.1-flash-lite", alias="QUERY_REWRITE_MODEL")
     prompt_id: str = "documind-rag"
     prompt_version: str = "v3"
     retrieval_mode: str = "dense"          # dense | hybrid (4.5's hybrid.py)
@@ -154,6 +160,16 @@ class Settings(BaseSettings):
     # BigQuery model_prices table so a rate change is not a redeploy.
     price_in: float = 1.50
     price_out: float = 7.50
+
+    @field_validator("query_rewrite")
+    @classmethod
+    def _query_rewrite_known(cls, value: str) -> str:
+        # Refused at import, as RETRIEVAL_GRAPH is: a typo must not start a revision that searches the question as
+        # asked while its environment says the stage is on.
+        if value not in ("off", "on"):
+            raise ValueError(f"QUERY_REWRITE={value!r}: off or on - off searches the question as asked; on searches workshop "
+                             "lesson 2.5's rewrite of it and still reranks and answers the question")
+        return value
 
     @model_validator(mode="after")
     def _retrieval_modes_agree(self):

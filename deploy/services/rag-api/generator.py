@@ -22,7 +22,14 @@ def _caches() -> TenantCacheManager:
     return TenantCacheManager(settings.project_id, settings.region)
 
 log = logging.getLogger("documind-api")   # same logger main.py writes usage rows on
-_client = genai.Client(enterprise=True, project=settings.project_id, location="global")  # generation runs on the global endpoint (Gemini 3.x)
+# Gemini 3.x on global serves from shared capacity, and a 429 there is "try again shortly", not a fault: on a new
+# project's quota one call in a lesson's run of them came back RESOURCE_EXHAUSTED and the answer was lost (21 October
+# 2026). The client retries a 429 or 5xx up to five more times, 1, 2, 4, 8 and 16 seconds apart, before
+# _call_or_fallback sees the error; a routed tier's 429 still falls back to the default model after that. Three more
+# times over 7 seconds still let one answer in thirty through as a 429 during a lesson's burst of calls (3.3, 3.4).
+RETRY = {"retry_options": {"attempts": 6, "initial_delay": 1.0, "exp_base": 2.0, "max_delay": 16.0,
+                           "http_status_codes": [429, 500, 502, 503, 504]}}   # a dict, as desk_recall.py and query_rewrite.py pass theirs
+_client = genai.Client(enterprise=True, project=settings.project_id, location="global", http_options=RETRY)  # generation runs on the global endpoint (Gemini 3.x)
 
 
 @lru_cache(maxsize=8)
@@ -271,15 +278,15 @@ def _call(prompt: str, packed: list[dict], tenant_id: str | None, max_tokens: in
         contents=_contents(prompt, packed),   # + the figures being cited (9.6, gap G7)
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
-            # ModelDraft, from shared/documind_schemas.py - the same class 3.2 teaches.
+            # ModelDraft, from shared/documind_schemas.py - the same class workshop lesson 3.5 teaches.
             # The model cites by [Source N] and QUOTES the words it relied on; resolve()
             # below turns that into Citations with ids, pages and scores it never saw.
             response_schema=ModelDraft,
             max_output_tokens=max_tokens,
             # NO temperature / top_p / top_k: gemini-3.6-flash ignores all
             # three, and passing them reads like a knob that does something.
-            # thinking_level, not thinking_budget=0 - Gemini 3.x thinking
-            # cannot be switched off, and budget=0 is a 2.5-era setting.
+            # thinking_level, Gemini 3's own setting, at LOW: an answer is given a little thinking. The Desk router's L1
+            # sends the older thinking_budget 0, for the least (evals/route_probe.py measures whether that is none).
             thinking_config=types.ThinkingConfig(thinking_level="LOW"),
             **_cache_kwargs(tenant_id, model),
         ),
@@ -469,9 +476,14 @@ def _vertex_stream(prompt: str, packed: list[dict], tenant_id: str | None, model
     usage = {"tokens_in": 0, "tokens_out": 0}
     yielded = 0
     try:
+        # The last part asks for prose. No schema here, but SYSTEM's rules name the structured answer's fields ("set
+        # answerable=false"), and given some pools the model wrote the whole answer as JSON, which the Chat page drew as a
+        # raw code block: 5 of 20 streams on 21 October 2026, 0 of 10 with this line. A part of its own, after the prompt,
+        # so SYSTEM, prompt_versions.json, the budget's fixed text and /v1/query are as before, and a tenant cache still fits.
         for part in _client_for(model).models.generate_content_stream(
             model=model,
-            contents=_contents(prompt, packed),   # + the figures being cited (9.6, gap G7)
+            contents=_contents(prompt, packed)    # + the figures being cited (9.6, gap G7)
+            + ["Write the answer for a person to read, in plain prose or Markdown with the [N] marks; never JSON."],
             config=types.GenerateContentConfig(
                 max_output_tokens=settings.max_answer_tokens,
                 thinking_config=types.ThinkingConfig(thinking_level="LOW"),
@@ -496,3 +508,14 @@ def _vertex_stream(prompt: str, packed: list[dict], tenant_id: str | None, model
         return
     # The model that answered, for the usage row: the tier, or the default it fell back to.
     yield "usage", {**usage, "model": model}
+
+
+# Workshop lesson 12.4 (13 October 2026): the prompt version's own rules, after SYSTEM's five. prompt_rules.py reads
+# them from prompt_rules.json, numbers them on from 6, and refuses at import a PROMPT_VERSION that file does not list
+# and prompt_versions.json does not register (lesson 3.6). v3, config.py's default, adds none: SYSTEM stays the literal
+# above, byte for byte, and with it the tuning set's copy (evals/make_trainset.py). Bound through globals() so that the
+# literal stays SYSTEM's one assignment, the text make prompt-version and the lessons read by AST. generate(),
+# generate_stream(), _budget() and the gateway's two turns read SYSTEM when they run, and cache_admin.py imports it
+# after this line, so each of them carries the version's rules.
+from prompt_rules import with_rules  # noqa: E402
+globals()["SYSTEM"] = with_rules(SYSTEM, settings.prompt_id, settings.prompt_version)

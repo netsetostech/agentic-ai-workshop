@@ -1,0 +1,112 @@
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; Change it</span><h3>Change it: TOP_K, and which part of the bill moves</h3><p>Three passages instead of five, offline and on your lane, on a chat brain and on the Desk.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>TOP_K=K</code> makes the command send <code>top_k</code> K with every search of the run, whatever the model asked for. <code>retrieve</code>'s declaration, and its default of 5, do not change, so the request the model reads is the same. What moves depends on what a search returns. Offline, the Rs 0 lane's search returns every one of the top_k passages, so the tool results shrink with TOP_K, and rag-api's estimated prompt packs three chunks instead of five.</p>
+<p>On your lane, a chat brain's search is rag-api's <code>/v1/query</code>. rag-api packs top_k chunks into its own prompt and answers. <code>resolve()</code> then builds one citation for each source the answer cited, and for no other, with the quote the answer gave: rule 5 of rag-api's prompt keeps it to the clause that answers, at most twenty-five words. A source the answer cites only as an <code>[N]</code> in its prose comes with no quote, so its citation carries the passage's first 500 characters. The chat model's tool result is those citations. So on your lane TOP_K moves rag-api's own prompt, and rag-api's share of the turn's bill. It moves the tool results only as far as the answer's choice of clauses changes. The Desk's <code>/v1/passages</code> returns all of its top_k passages, whole, so TOP_K moves the Desk's tool results on both lanes.</p>
+
+<h4>The code</h4>
+@@topk@@
+@@gen@@
+@@resolve@@
+@@t_topk@@
+
+<h4>Do it: offline, the two records side by side</h4>
+<p><code>make context-sources</code> prints its breakdown; with <code>JSON=1</code> it prints the turn as one record instead, the command's <code>--json</code>. Write one record with TOP_K unset and one with TOP_K 3, then compare them source by source.</p>
+%%CELL_WRITE_JSON%%
+%%CELL_COMPARE%%
+%%OUT_COMPARE%%
+<p>Offline, exactly the two lines the kit's test pins moved: the tool results, from %%RES5%% tokens to %%RES3%%, and rag-api's own prompt. The search's citations went from %%CHARS5%% characters to %%CHARS3%%. The turn went from Rs %%TURN_INR%% to Rs %%TURN_INR3%%: Rs %%MODEL_INR%% to Rs %%MODEL_INR3%% for the model calls, and Rs %%RAG_INR%% to Rs %%RAG_INR3%% for rag-api.</p>
+
+<h4>Do it: on your lane, a chat brain and the Desk</h4>
+<p>Compare this one with step 7's <code>langgraph</code> output:</p>
+%%CELL_TOPK_LANE%%
+%%OUT_TOPK_LANE%%
+<p>And this one with step 7's <code>desk</code> output:</p>
+%%CELL_TOPK_DESK%%
+%%OUT_TOPK_DESK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read three lines in each pair. The search line says <code>top_k 3 (TOP_K; 5 asked)</code>, and how many citations or passages came back, in how many characters. Under it, rag-api's own call: on <code>langgraph</code> its tokens in should drop by about the two chunks it no longer packs. Then the tool results in the second call. On <code>langgraph</code> they are the clauses rag-api's answer chose from what it packed. If the answer cited the same clauses from three chunks as from five, the tool results barely move. On the Desk every passage comes back whole, so the tool results drop by about the two passages it no longer returns.</p>
+<p>The setting that looks like a knob on the chat model's context is, on your lane, mostly a knob on rag-api's. Offline it looked like the chat model's because the Rs 0 lane hands back all of its top_k passages. When a number you measured offline moves differently on your lane, look first at what the lane's search returns.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 4 &middot; The thread</span><h3>The thread rides every call too</h3><p>Three turns on one local thread, the third one measured: the earlier turns ride both of its calls, untrimmed.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>TURNS=3</code> asks two earlier questions on the same thread first: <em>%%EARLIER1%%</em>, then <em>%%EARLIER2%%</em> The thread lives in the command's own <code>InMemorySaver</code>, or for ADK in its in-memory session service, never in your lane's checkpoint database. The third turn is the one measured. Everything the first two left in the thread rides both of its calls: two questions, the model's calls and their citations, and two answers. Nothing trims it, and rag-api's own <code>TokenBudget</code> says as much in a comment: the chat brains resend whole threads. The direct brain and the Desk keep no thread, and the command refuses <code>TURNS</code> for them: <code>%%DIRECT_REFUSAL%%</code>.</p>
+
+<h4>The code</h4>
+@@turns@@
+@@history@@
+
+<h4>Do it: offline</h4>
+%%CELL_TURNS_OFFLINE%%
+%%OUT_TURNS_OFFLINE%%
+<p>The thread is %%THREAD3%% tokens on each call, %%THREAD3_PCT%%% of call 1's %%T3_CALL1%%. Over the turn it is %%THREAD3_TURN%% tokens and Rs %%THREAD3_INR%%, more than everything else the two calls carried together. Every other source is the fresh turn's, token for token. The two earlier turns cost Rs %%T3_EARLIER_INR%% on their own (%%T3_EARLIER_CALLS%% model calls and %%T3_EARLIER_SEARCHES%% searches), and this one Rs %%T3_TURN_INR%%. TOP_K reaches the earlier turns' searches too: with TOP_K 3 the same thread is %%THREAD3_K3%% tokens, as the widget in step 1 shows.</p>
+
+<h4>Do it: on your lane</h4>
+%%CELL_TURNS_LANE%%
+%%OUT_TURNS_LANE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Compare it with step 7's <code>langchain</code> run. The system prompt, the declarations and the question count as they did there. The thread is the new line, with the same count in each call. Any cached tokens on these calls are what each call's own usage reported as cached, billed at a tenth of the input rate, and the <code>cached</code> line prices them. Every turn adds its question, its calls, its citations and its answer to the thread, so the thread is the one source that grows with the conversation and never shrinks. Lesson 6.2 compares DocuMind's two caches. Lesson 6.9 budgets the thread: windowing, compaction and what a turn may write.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the split is measured this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<p><strong>At the SDK boundary, not in the framework.</strong> Every brain's model call passes through one of two google-genai methods, so one wrapper reads all of them. What it reads is what the adapter actually sent: ADK's extra line, its JSON Schema declarations, LangChain's conversion of the tools. The frameworks' own message objects would show none of the three.</p>
+<p><strong>Counted in context, not piece by piece.</strong> On your lane each source is what adding it to the request added, so the sources sum to the request's own count, and the residual against the bill shows what the counter missed. A field the counter will not take is estimated and marked, never quietly dropped.</p>
+<p><strong>rag-api's estimator offline.</strong> <code>OFFLINE=1</code> counts with <code>estimate_tokens</code>, the same rule <code>pack_chunks</code> budgets rag-api's prompt with (lesson 3.4), so the offline split adds up exactly and agrees with rag-api's own packing.</p>
+<p><strong>A local thread, never a lane thread.</strong> <code>TURNS</code> asks its earlier questions on a thread of the command's own. A lane run writes no thread and no chat row; rag-api logs each search as it logs any.</p>
+<p><strong>TOP_K at the search, not in the declaration.</strong> The model reads the same request either way, so whatever the bill does, the search did it.</p>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Run</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><code>OFFLINE=1</code>, any brain, and the two records</td><td data-label="Costs">nothing: a script and the kit's corpus on your machine</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td>One turn on a chat brain</td><td data-label="Costs">the chat model's calls and one rag-api answer, at list price</td><td data-label="On your lane">a few rupees at most; the output's last lines price yours</td></tr>
+<tr><td>One turn on the direct brain</td><td data-label="Costs">one rag-api answer</td><td data-label="On your lane">the <code>rag-api, inside</code> line</td></tr>
+<tr><td>One turn on the Desk</td><td data-label="Costs">the agent's calls; <code>/v1/passages</code> bills nothing</td><td data-label="On your lane">the model calls' line</td></tr>
+<tr><td><code>count_tokens</code></td><td data-label="Costs">a few requests per call, not billed</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td><code>TURNS=3</code></td><td data-label="Costs">three turns, the third measured</td><td data-label="On your lane">the earlier turns' line plus the turn's</td></tr>
+<tr><td>Step 3's two questions in the UI</td><td data-label="Costs">two turns on the chat service</td><td data-label="On your lane">the captions</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>What the kit does not do yet</h4>
+<ul>
+<li><strong>No split on the chat row.</strong> <code>agent.py</code> logs a turn's <code>tokens_in</code> and its cost, never what they were spent on. The split exists only when you run this command.</li>
+<li><strong>No trimming of the thread.</strong> Every turn resends all the earlier ones (step 9). Lesson 6.9 budgets it.</li>
+<li><strong>No cache under the chat brains' calls.</strong> rag-api's tenant cache (lesson 6.2) sits on rag-api's prompt. The chat brains' fixed parts, a few hundred tokens, are far below the %%MIN_CACHE%% tokens an explicit context cache needs on the Gemini 3 family (<code>cache_manager.py</code>).</li>
+<li><strong>Only a local thread.</strong> The command measures a turn it runs itself; it cannot split a turn a person had in the UI. <code>make thread</code> (lesson 6.8) reads those back from the lane.</li>
+<li><strong>The Desk needs lesson 10.4's registry on the lane.</strong> Until acme's rows carry their classes, the statute desk finds nothing to read.</li>
+<li><strong>Offline, a thought signature counts as nothing.</strong> The script sends none, and the estimate copies none; only your lane's residual can show what one adds.</li>
+</ul>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eleven checks, each one block above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The UI gives one number for the whole turn</td><td data-label="The check">step 3, the captions</td><td data-label="Pass looks like"><code>Rs N.NN</code> under each answer, nothing by source</td></tr>
+<tr><td>2</td><td data-label="Claim">The fixed parts ride every call</td><td data-label="The check">step 5, the turn by source</td><td data-label="Pass looks like"><code>%%SYS_TOK%% in each of 2 calls</code> and <code>%%LC_DECL%% in each of 2 calls</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Each call's sources add up to what it was sent</td><td data-label="The check">step 5, both calls</td><td data-label="Pass looks like">residual <code>0</code>, offline</td></tr>
+<tr><td>4</td><td data-label="Claim">The counter takes the system prompt and the declarations</td><td data-label="The check">step 6, the probe</td><td data-label="Pass looks like"><code>honoured: +N</code> for both, on both brains</td></tr>
+<tr><td>5</td><td data-label="Claim">The count is the bill</td><td data-label="The check">step 6, call 1's request</td><td data-label="Pass looks like">a residual of a few tokens at most</td></tr>
+<tr><td>6</td><td data-label="Claim">Each brain assembles its own request</td><td data-label="The check">step 7, the headers</td><td data-label="Pass looks like">ADK: the framework's line and <code>parametersJsonSchema</code>; the Desk: %%N_DESK_TOOLS%% declarations; direct: <code>no model call of the chat's own</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The turn's rupees are the Meter's</td><td data-label="The check">step 7, any brain</td><td data-label="Pass looks like"><code>the model calls</code> and <code>the turn's Meter (limits.py) charged</code> the same rupees</td></tr>
+<tr><td>8</td><td data-label="Claim">Offline, TOP_K moves the tool results and rag-api's prompt, and nothing else</td><td data-label="The check">step 8, the two records</td><td data-label="Pass looks like">two lines marked <code>moved</code>, and <code>5 chunks packed, then 3</code></td></tr>
+<tr><td>9</td><td data-label="Claim">On your lane, TOP_K moves rag-api's prompt more than the tool results</td><td data-label="The check">step 8, langgraph against step 7</td><td data-label="Pass looks like">rag-api's <code>in</code> down by about two chunks; the tool results close to step 7's</td></tr>
+<tr><td>10</td><td data-label="Claim">The Desk's tool results move with TOP_K on your lane</td><td data-label="The check">step 8, the Desk against step 7</td><td data-label="Pass looks like"><code>3 passages back</code>, and smaller tool results</td></tr>
+<tr><td>11</td><td data-label="Claim">The thread rides both calls of a later turn</td><td data-label="The check">step 9, on your lane</td><td data-label="Pass looks like"><code>thread so far</code> with the same count in each of 2 calls</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing is configured. rag-api's log has a usage row for each search your lane runs made: event <code>query</code> for the chat brains and the direct brain, each with the brain's name, and event <code>passages</code>, with no tokens and no cost, for the Desk. <code>TURNS=3</code> added the searches of its two earlier turns. <code>make context-sources</code> wrote no thread and no chat row: its threads lived in its own process. Step 3's two questions are one session in your chat service's checkpointer, with two chat rows and a rag-api row for each search they made. <code>~/graph-venv</code> has the chat image's pins, and your home folder has <code>~/cs_default.json</code> and <code>~/cs_top3.json</code> from step 8. Put acme's pin back now, with the setup section's pin-back window. Lesson 6.2 compares the two caches DocuMind has: a cached prefix the model still reads, and a stored answer the model never sees.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.1 Assemble the context: what rides every model call &middot; v5.0</p><p>Next: Lesson 6.2 Compare context caching and answer caching.</p></div>

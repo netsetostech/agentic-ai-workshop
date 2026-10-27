@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_5.5_Tool_Failures_WIX.html`, reviewed at blob `780a103bb4f0ddb0633a2c104547c46fa01b58c3`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_5.5_Tool_Failures_WIX.html`, reviewed at blob `231353ae70fcc3a72fa7234c1a540311a4f88b3e`. Learners read that page on the course site; this guide keeps its prose.
 
 A tool call can fail in more places than it can succeed. Some failures stop a request at the door, and some reach the model as an error. Some reach it as ordinary data that happens to say something went wrong. And some are not failures of a tool at all: a turn that never ends, because the model keeps asking. You force five failures through the kit's own LangChain brain: a blocked name, a wrong argument, a tool that does not exist, a retrieval that times out, and a retrieval cut at its budget. You stop a model that never stops asking, and see the next turn answer. Then you meet three identities at the chat service's door, and a filter argument the corpus cannot honour. For each one you find where it surfaced and who was told.
 
@@ -132,7 +132,7 @@ The first cell builds the LangChain brain on a model that asks for the cost tool
 
 #### Do it: a capped turn on your lane
 
-The looping model made three calls and ran the cost tool three times. The Meter refused the fourth call, so it was never made, and the turn ended with the stop sentence and `stopped_by model_calls`. The thread holds ten messages, and every tool call in it has its result, so the second question was answered as if nothing had happened. `make limits-check` ran 36 tests, and they include the same stop through the LangGraph and ADK brains. `make limits` shows the numbers your chat runs under. The A2A peer, which lesson 10.6 traces, publishes no cap yet, so ADK's own default of 500 applies there. In the drill, every agent brain answered HTTP 200 with the stop sentence after one model call, and `direct`, which makes no model call of its own here, answered as usual. With the setting restored, the same test passed with no stop. That is the proof for the turn's limits: a turn on your lane stopped at its limit, and still answered.
+The looping model made three calls and ran the cost tool three times. The Meter refused the fourth call, so it was never made, and the turn ended with the stop sentence and `stopped_by model_calls`. The thread holds ten messages, and every tool call in it has its result, so the second question was answered as if nothing had happened. `make limits-check` ran 36 tests, and they include the same stop through the LangGraph and ADK brains. `make limits` shows the numbers your chat runs under. The A2A peer, which lesson 10.6 traces, publishes a cap of its own: 12 model calls a task. In the drill, every agent brain answered HTTP 200 with the stop sentence after one model call, and `direct`, which makes no model call of its own here, answered as usual. With the setting restored, the same test passed with no stop. That is the proof for the turn's limits: a turn on your lane stopped at its limit, and still answered.
 
 ### Access failures at the chat service's door
 
@@ -196,7 +196,7 @@ Each point is checked in the kit's code, and the build asserts it, so this box c
 
 - The limits are the service's, not the tenant's. One setting on the chat service holds every tenant and every caller to the same 12 calls, Rs 5 and 100 seconds.
 
-- The A2A peer has no cap of its own. Its `/health` names none, so ADK's default of 500 model calls a task applies to it.
+- The A2A peer counts model calls only. Its `/health` names its own cap, 12 model calls a task (`ADK_MAX_LLM_CALLS` on its service), and it has no rupee budget and no task deadline of its own.
 
 - `refusals` mixes policy and mistakes. A blocked name, a bad argument, an unknown tool and an unknown tier all land in the same list, and nothing in the four keys says which is which.
 

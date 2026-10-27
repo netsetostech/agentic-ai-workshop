@@ -1,0 +1,75 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 11 &middot; Project &middot; Lesson 11.2</div>
+<h1>Evaluate and gate <span>the exact candidate revision</span></h1>
+<p>Lesson 11.1's dispatch left a revision of <code>documind-api</code> that takes no traffic, and its live gate said green inside one GitHub run. Your lane does not remember that verdict, and <code>make promote</code> moves traffic to whichever revision a file names. This lesson ties the verdict to the revision. <code>make gate</code> judges exactly the revision <code>.candidate-revision</code> names, once the candidate tag routes to it and its tag URL answers as its own build, and writes a record: the revision, its image digest and <code>GIT_SHA</code>, the report's sha256, the verdict and the time. <code>make promote-gated</code> reads that record and stops any other revision, a red verdict, an edited report or an old record before <code>make promote</code> runs. You will name the candidate, see which token audience the API accepts, gate the candidate, read the record back against Cloud Run, and offer a record that names another revision.</p>
+<div class="hero-chips"><div class="hero-chip">a verdict names one revision</div><div class="hero-chip">digest, GIT_SHA, report sha256</div><div class="hero-chip">%%N_ROWS%% rows, %%N_THRESHOLDS%% thresholds</div><div class="hero-chip">a red gate is recorded too</div><div class="hero-chip">stale after %%MAXH%% hours</div><div class="hero-chip">gate-check: the files, then the lane</div><div class="hero-chip">promote-gated stops any other revision</div><div class="hero-chip">CI: job dependency, no record</div><div class="hero-chip">make up, deploy-services: no gate</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A verdict that names what it judged</a></li>
+<li><a href="#s2">The words: candidate, tag URL, audience, digest, GIT_SHA, the gate, the report, the record, verdict, rules, stale, gate-check, promote-gated, GATE_FILE</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The candidate, as the console and lesson 11.1's run show it</a></li>
+<li><a href="#s4">make gate and make promote-gated, line by line</a></li>
+<li><a href="#s5">On your lane: the candidate named, the token's audience, and the gate</a></li>
+<li><a href="#s6">The record read back against Cloud Run, and gate-check alone</a></li>
+<li><a href="#s7">Change it: a record that names another revision</a></li>
+<li><a href="#s8">What the record does not hold, and what it costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a gate's verdict is bound to the one revision it judged, and how <code>gate-check</code> stops every other revision before traffic moves. Then you will prove it on your lane: the candidate lesson 11.1 made, judged by <code>make gate</code>, its record checked against Cloud Run's own API, and a record that names another revision refused before <code>make promote</code> runs.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A verdict that names what it judged</h3><p>Why a green gate and a traffic flip need a record between them, what the record holds, and the order gate-check reads it in.</p></div></div>
+
+<p><strong>The gate judges a URL; the flip moves a name.</strong> The live gate asks the API every golden row and holds the answers to %%N_THRESHOLDS%% thresholds and the required rows (lesson 4.2), on a candidate that takes no traffic (lesson 4.3 placed it there). What it sees is one URL. <code>make promote</code> then moves traffic to the revision <code>.candidate-revision</code> names. Before this lesson's two targets, nothing joined the two: <code>make eval-live</code> wrote no revision into its report, and <code>make promote</code> read no verdict. A red gate, a gate on another candidate and last week's gate all promoted the same way.</p>
+
+<p><strong>What can come between them.</strong> A second candidate made after the gate moves the <code>candidate</code> tag, and the tag URL then answers from a revision the gate never asked. An image-only update changes the image and leaves the old <code>GIT_SHA</code> on the revision, because settings carry over from one revision to the next, so <code>/version</code> names a build that is not running (the Makefile's comments call this F43). The lane's documents, rosters and model move over days, so an old green says little about today. The golden rows and the thresholds change, so a verdict can have been judged by rules this checkout no longer holds. And any file can be edited by hand.</p>
+
+<p><strong>The record is the join.</strong> <code>make gate</code> asks no row until the candidate tag routes to the revision the file names, the revision is Ready with an image digest and a <code>GIT_SHA</code> its image tag agrees with, and <code>/version</code> on the tag URL answers as that <code>GIT_SHA</code>. Then it asks every row and writes <code>%%GATE_FILE%%</code>: the revision, its image and digest, its <code>GIT_SHA</code>, the report's path and sha256, the eval's exit code, the verdict and the scores, the sha256 of the %%N_RULES_W%% files the verdict was judged by, and the start and finish times. A red gate writes its record too, so a refusal can say why. <code>make promote-gated</code> runs <code>gate-check</code> on that record before <code>make promote</code>: the files first, and only when every file agrees, the lane.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128230;</div><div>
+<p><strong>A batch release certificate.</strong> In a pharmaceutical plant, quality assurance never approves "the tablets". It signs a release certificate for batch B-2311, with the laboratory's analysis of that batch attached and the edition of the pharmacopoeia its tests followed. The dispatch clerk loads a carton only when its batch number matches a signed certificate. A certificate for B-2310 releases nothing in B-2311. A failed assay releases nothing. An attached analysis that has been altered voids the certificate. A certificate signed under last year's pharmacopoeia, or long before dispatch, sends the batch back for retest. And the clerk reads the label on the carton itself, not only the paperwork. <code>make gate</code> is the signature on one revision, <code>gate.json</code> is the certificate, the report is the analysis, the rule files are the pharmacopoeia, and <code>gate-check</code> is the clerk at the loading bay.</p></div></div>
+
+<h4>Try it: would make promote-gated let this through?</h4>
+<p>The panel holds one gate record, the files of a checkout and the lane, as <code>gate-check</code> reads them. It starts on a green record of <code>%%CAND%%</code>, two hours old. Pick a case, or change any field: the panel prints what <code>gate-check</code> would print, marks each of its checks, and says whether <code>make promote</code> would run after it. The names, digests and hashes are the stand-in lane's from step 4.</p>
+
+<div class="diagram gk" id="gk">
+<div class="dg-title">Would make promote-gated let it through? gate-check's rules, from commands/release.py</div>
+%%GK_PANEL%%
+<p class="dg-cap">Built when this page was built, from the kit you clone. The rules are <code>gate-check</code>'s own, <code>offline_reasons()</code> and then <code>live_reasons()</code> in <code>commands/release.py</code>, written again in JavaScript. Before this page was written, node ran the panel on the %%N_PRESETS%% cases above and on %%N_CASES%% states in all, and release.py's own <code>gate-check</code> ran on the same files against the kit test's stand-in lane: every exit code, every printed line, and whether the lane was read, agreed. The records, the report hashes and the digests are the ones the stand-in gate wrote.</p>
+</div>
+
+<p>Three things to try. Rename the record's revision to the serving one: it is refused from the files alone, and the lane is never read. Rename the record and <code>.candidate-revision</code> both: now the files agree, so <code>gate-check</code> reads the lane, and Cloud Run's own digest and <code>GIT_SHA</code> for that revision give the copy away. Then set the age to 23.9 hours, and to 24.1: the line at %%MAXH%% hours is a bound the kit draws, not a promise that 23 hours is fresh.</p>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It runs no gcloud and asks no row. Every case starts from a record the stand-in gate wrote, so it cannot show a record that is not JSON, one with a missing field, or one from another lane's checkout, which <code>gate-check</code> also refuses (step 4's table has them). A real revision never changes its image: "another image" stands for a record that was not written about this revision by this lane's <code>make gate</code>.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: candidate, tag URL, audience, digest, GIT_SHA, the gate, the report, the record, verdict, rules, stale, gate-check, promote-gated, GATE_FILE</h3><p>Fourteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Candidate revision</strong></td><td data-label="Meaning">A revision of <code>documind-api</code> that takes no traffic and carries the tag <code>candidate</code>. A revision is one image with one set of settings, and never changes once made.</td><td data-label="On your lane">the one lesson 11.1's dispatch made: <code>api:COMMIT</code>, made by <code>sa-documind-cicd</code></td></tr>
+<tr><td><strong>.candidate-revision</strong></td><td data-label="Meaning">A file in the kit holding one revision's name. <code>make record-candidate</code> writes it, at the end of <code>make release-candidate</code> and <code>make candidate</code>; <code>make promote</code> moves traffic to the name in it.</td><td data-label="On your lane"><code>deploy/.candidate-revision</code>, ignored by git; the dispatch's copy stayed on GitHub's runner</td></tr>
+<tr><td><strong>Tag URL</strong></td><td data-label="Meaning">The URL that reaches one tagged revision directly, whatever its share of traffic.</td><td data-label="On your lane"><code>https://candidate---documind-api-NUMBER.asia-south1.run.app</code></td></tr>
+<tr><td><strong>Canonical URL, the audience</strong></td><td data-label="Meaning">The service's own URL. The API checks the audience of every bearer token against it (<code>SELF_URL</code>), whichever of the service's URLs is called (F42).</td><td data-label="On your lane"><code>https://documind-api-NUMBER.asia-south1.run.app</code></td></tr>
+<tr><td><strong>Image digest</strong></td><td data-label="Meaning"><code>status.imageDigest</code>: the image Cloud Run resolved the tag to when it made the revision, named by its content. A tag can be moved to another image; a digest cannot.</td><td data-label="On your lane"><code>.../documind/api@sha256:</code> and 64 hex digits</td></tr>
+<tr><td><strong>GIT_SHA, /version</strong></td><td data-label="Meaning">The commit a revision says it runs: a setting on the revision, which <code>GET /version</code> reports. An image-only update keeps the old one (F43).</td><td data-label="On your lane"><code>COMMIT</code>, the image's own tag</td></tr>
+<tr><td><strong>make gate</strong></td><td data-label="Meaning"><code>release.py gate</code>: the checks before any row, every golden row through <code>run_eval.py</code>, then the record.</td><td data-label="On your lane">about ten minutes and about Rs %%RS_GATE%%</td></tr>
+<tr><td><strong>The report</strong></td><td data-label="Meaning">Every row's verdict, written by <code>run_eval.py --report</code> to a file that names the revision.</td><td data-label="On your lane"><code>evals/reports/gate-documind-api-....json</code>, ignored by git</td></tr>
+<tr><td><strong>The gate record</strong></td><td data-label="Meaning">The JSON <code>make gate</code> writes, in the format <code>documind-gate/1</code>: %%N_RECORD_KEYS%% fields, of which <code>gate-check</code> requires %%N_FIELDS%%.</td><td data-label="On your lane"><code>%%GATE_FILE%%</code></td></tr>
+<tr><td><strong>Verdict</strong></td><td data-label="Meaning"><code>pass</code> when <code>run_eval.py</code> exited 0 and nothing in the report blocks; otherwise <code>fail</code>. <code>release.py</code> exits 0, 1 (red, recorded) or 2 (stopped, nothing new recorded).</td><td data-label="On your lane">yours, after step 5</td></tr>
+<tr><td><strong>The rules</strong></td><td data-label="Meaning">The %%N_RULES_W%% files a verdict is judged by: the evaluator, the rows, the required rows and the documents a citation may name. The record keeps the sha256 of each.</td><td data-label="On your lane">%%RULE_FILES%%</td></tr>
+<tr><td><strong>Stale</strong></td><td data-label="Meaning">A record that finished more than %%MAXH%% hours ago, is stamped more than %%SKEW_MIN_W%% minutes in the future, or was judged by rule files that differ from the checkout's.</td><td data-label="On your lane">%%MAXH%% hours; <code>release.py gate-check --max-age-hours</code> moves it</td></tr>
+<tr><td><strong>gate-check</strong></td><td data-label="Meaning"><code>release.py gate-check</code>: whether the record lets <code>make promote</code> move traffic. It only reads, and exits 0, or 1 with every reason it found.</td><td data-label="On your lane">Rs 0, step 6</td></tr>
+<tr><td><strong>make promote-gated, GATE_FILE</strong></td><td data-label="Meaning"><code>gate-check</code>, then the unchanged <code>make promote</code>. <code>GATE_FILE</code> names the record both targets use; another file tries a record and leaves yours alone.</td><td data-label="On your lane"><code>GATE_FILE=%%GATE_FILE%%</code>; lesson 11.3 promotes with it</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: <code>make gate</code> judges and records, and <code>gate-check</code> only reads. A green record moves nothing on its own. <code>make promote-gated</code> moves traffic, and lesson 11.3 runs it.</p>

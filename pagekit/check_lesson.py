@@ -45,6 +45,13 @@ MIN_KB = 60  # a floor that catches a near-empty page; teaching content has no u
 MAX_IDE_LINK_KB = 10  # Generated navigation has a separate bound.
 
 
+def kind_of(label: str) -> str:
+    """A window label's first whole word, lower-cased: "make" (a command window) is not "makefile" (an excerpt of the
+    kit's Makefile, checked verbatim like any other kit file; before 8 October 2026 the prefix match skipped those)."""
+    m = re.match(r"\w+", label.strip().lower())
+    return m.group(0) if m else ""
+
+
 def windows(page: str):
     rx = r'<div class="cw"><div class="ch-bar"><span>(.*?)</span>.*?<pre[^>]*>(.*?)</pre>'
     for m in re.finditer(rx, page, re.S):
@@ -56,7 +63,7 @@ def verbatim(page: str):
     checked, misses = 0, []
     for label, code in windows(page):
         head = label.strip()
-        if head.lower().startswith(NOT_EXCERPTS):
+        if kind_of(head) in NOT_EXCERPTS:
             continue        # commands, learner code, sample output: not excerpts
         if not KIT_LABEL.search(head):
             continue
@@ -89,6 +96,14 @@ def references(page: str) -> list:
     return sorted(bad)
 
 
+def undotted(page: str) -> list:
+    """'lesson 7's' and 'lessons 5.x' in the prose: numbers from before the Cohort 2 renumbering, which a dotted id
+    (lesson 4.4, lessons 2.1-2.4) or a Module replaces (12 October 2026). references() cannot see them: no dot. A tag
+    is a wall, so a table's "this lesson" and the next row's number are not read as one."""
+    text = html.unescape(re.sub(r"<[^>]+>", "|", NOT_PROSE.sub("|", page)))
+    return sorted({m.group(0) for m in re.finditer(r"\b[Ll]essons?[ \xa0]+\d{1,2}(?!\d|\.\d)(?:['’]s|\.x)?", text)})
+
+
 COMMAND_WINDOWS = ("bash", "shell", "make", "gcloud")
 
 
@@ -97,7 +112,7 @@ def make_targets(page: str) -> set:
     gcloud), one element at a time with shell comments cut. Kit excerpts are not scanned: their prose ("would make
     an old version current") is checked verbatim against the kit instead."""
     texts = [html.unescape(TAG.sub("", c)) for c in re.findall(r"<code[^>]*>(.*?)</code>", page, re.S)]
-    texts += [code for label, code in windows(page) if label.strip().lower().startswith(COMMAND_WINDOWS)]
+    texts += [code for label, code in windows(page) if kind_of(label) in COMMAND_WINDOWS]
     found = set()
     for text in texts:
         for line in text.splitlines():
@@ -135,6 +150,8 @@ def check(lid: str) -> list:
         out.append("  ! the footer does not name the lesson")
     for ref in references(page):
         out.append(f"  ! names {ref}, which the manifest does not have")
+    for ref in undotted(page):
+        out.append(f"  ! names '{ref}' without a dot: a number from before the renumbering")
     if teaching_kb < MIN_KB:
         out.append(f"  ! teaching content {teaching_kb:.1f} KB, under the {MIN_KB} KB floor")
     if navigation_kb > MAX_IDE_LINK_KB or page != annotate(lid, page):

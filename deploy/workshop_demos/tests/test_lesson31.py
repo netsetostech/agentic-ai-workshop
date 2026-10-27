@@ -116,12 +116,34 @@ class IOTests(unittest.TestCase):
                 self.cloud.fixture("acme", "example.md", b"abc", upload=True)
             blob.upload_from_string.assert_not_called()
             blob.reload.side_effect = NotFound()
-            with self.assertRaisesRegex(RuntimeError, "Upload evals/demo"):
+            # UI mode pauses for the learner's upload, then fails only if the object is still missing.
+            with patch("workshop_helpers.steps.manual_checkpoint") as pause, \
+                    self.assertRaisesRegex(RuntimeError, "still not in the uploads bucket"):
                 self.cloud.fixture("acme", "example.md", b"abc", upload=False)
+            self.assertIn("Upload evals/demo/example.md in the ACME UI", pause.call_args.args[0])
             blob.upload_from_string.assert_not_called()
             blob.download_as_bytes.return_value = b"abc"
             self.cloud.fixture("zeta", "example.md", b"abc", upload=True)
             self.assertEqual(blob.upload_from_string.call_args.kwargs["if_generation_match"], 0)
+
+    def test_fixture_follow_upload_takes_the_uploaded_version(self):
+        # Lesson 3.8: a pasted note whose line endings differ is its own version; the demo follows it, never refuses it.
+        class NotFound(Exception):
+            pass
+        fake = {"google.api_core.exceptions": SimpleNamespace(NotFound=NotFound)}
+        blob = Mock(size=4, generation=7)
+        blob.download_as_bytes.return_value = b"a\r\nb"
+        self.cloud.bucket = SimpleNamespace(name="example", blob=Mock(return_value=blob))
+        with patch.dict(sys.modules, fake), patch.object(sys, "path", [str(KIT), *sys.path]):
+            from services.ingest.contracts import sha256_of
+            row = self.cloud.fixture("acme", "note.md", b"a\nb", upload=False, follow_upload=True)
+            self.assertEqual((row["sha256"], row["generation"]), (sha256_of(b"a\r\nb"), "7"))
+            blob.upload_from_string.assert_not_called()
+            blob.reload.side_effect = NotFound()
+            with patch("workshop_helpers.steps.manual_checkpoint") as pause, \
+                    self.assertRaisesRegex(RuntimeError, "not in the uploads bucket yet"):
+                self.cloud.fixture("acme", "note.md", b"a\nb", upload=False, follow_upload=True)
+            pause.assert_not_called()                                    # the step itself paused before
 
     def test_log_filter_uses_all_three_exact_identifiers(self):
         expected = {"tenant": "zeta", "doc_key": "zeta_abc", "generation": "42"}

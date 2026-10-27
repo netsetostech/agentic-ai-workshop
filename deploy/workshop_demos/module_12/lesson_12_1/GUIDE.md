@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_12.1_Tuning_Decision_WIX.html`, reviewed at blob `74d0c88ef6b682c383fddeaf29771c03fe9980f8`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_12.1_Tuning_Decision_WIX.html`, reviewed at blob `9eed5a17f5d61821ddf78f70787434a3fb702c47`. Learners read that page on the course site; this guide keeps its prose.
 
 Tuning teaches a model a habit, not facts. Before you pay for it, your lane's own numbers must show answers that are wrong in a way a habit fixes: a missing citation, a missing refusal, JSON that breaks. The fix must also be one that a prompt, a cache or better retrieval cannot make more cheaply. The kit has no tool that makes this call. This page gives you a rubric that reads numbers the kit already produces.
 
@@ -310,7 +310,7 @@ Each point is checked in the kit's code or its committed v1, and the build asser
 
 - The rule "frozen" is a comment. The version defaults to v1, and `write()` overwrites without checking. `make trainset`'s recipe passes no version, and `make tune` reads v1 unless told otherwise. A second run without `TRAINSET_ARGS` replaces the file the kit ships, and the manifest that proved it.
 
-- The plain style's training prompt is not the served prompt. Training shows one source, with no header line, and carries `SYSTEM` twice. The generator packs several sources under header lines, and sends `SYSTEM` once. The code names `tools/check_auth_wiring.py` as what holds the two `SYSTEM`s equal, and it does not exist. They are equal today, and nothing keeps them so. Step 7's `--style helpdesk` builds the served prompt with the generator's own packer.
+- The plain style's training prompt is not the served prompt. Training shows one source, with no header line, and carries `SYSTEM` twice. The generator packs several sources under header lines, and sends `SYSTEM` once. The code names `commands/tests/test_prompt_versions.py` as what holds the two `SYSTEM`s equal (until 13 October 2026 it named a `tools/check_auth_wiring.py` that never existed). They are equal today, and since 8 October 2026 that kit test, which CI runs, fails when the two differ. Step 7's `--style helpdesk` builds the served prompt with the generator's own packer.
 
 - The plain style's targets never mark a source. `SYSTEM`'s rule 2 asks for `[N]` in the answer, and the UI turns each one into a pill. `target()` never writes one, so the file teaches the model to leave the marks out. The gate, which counts the citations list, would not notice. v3's answers carry the mark.
 

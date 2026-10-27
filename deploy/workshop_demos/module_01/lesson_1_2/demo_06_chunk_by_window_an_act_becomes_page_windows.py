@@ -3,9 +3,9 @@
 Your kit has a text mirror of every Act, made by pypdf when the corpus was fetched, with a form feed between pages. Cut the mirror of the Code on Wages and look at one seam. Read it on the lane, and ask a question that lands on a page
 
 Run order inside this file:
-1. Do it: cut the Code on Wages, Rs 0 (source window 22)
-2. Read it on the lane, and ask a question that lands on a page (source window 24)
-3. Read it on the lane, and ask a question that lands on a page (source window 25)
+1. Do it: cut the Code on Wages, Rs 0 (source window 24)
+2. Read it on the lane, and ask a question that lands on a page (source window 26)
+3. Read it on the lane, and ask a question that lands on a page (source window 27)
 
 Prerequisites: demo_05_chunk_by_section_the_handbook_becomes_283_clauses.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -116,9 +116,9 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_22', step_01_cut_the_code_on_wages_rs_0),
-        ('source_24', step_02_on_the_lane_and_ask_a_question_that_lands),
-        ('source_25', step_03_on_the_lane_and_ask_a_question_that_lands),
+        ('source_24', step_01_cut_the_code_on_wages_rs_0),
+        ('source_26', step_02_on_the_lane_and_ask_a_question_that_lands),
+        ('source_27', step_03_on_the_lane_and_ask_a_question_that_lands),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

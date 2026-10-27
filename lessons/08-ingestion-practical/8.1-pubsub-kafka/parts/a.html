@@ -1,0 +1,76 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 8 &middot; Ingestion practical &middot; Lesson 8.1</div>
+<h1>Run the ingest events through Pub/Sub, mapped to Kafka: <span>one upload followed from the bucket to a cited answer, one burst squeezed, every setting set beside Kafka's</span></h1>
+<p>Lesson 1.4 followed a document to its records and lesson 1.5 followed a message through its retries. This lesson follows the bus between them as a part you could replace. One upload is traced from the object's generation through the notice, the push and the acknowledgement to the records and an answer that cites it. The subscription's settings are read off the platform: the %%N_DECLARED_W%% the kit declares and the %%N_DEFAULTED_W%% it leaves to Google. The kit's %%N_OBJECTS_W%% corpus objects are pushed at a worker squeezed from %%MAXI_W%% instances to %%SQUEEZE_W%%. And every setting is set beside its Kafka counterpart, with the gap between them.</p>
+<p>The point of the mapping is not that one bus is better. Each choice in the kit, from the claim on the content hash to the versioned bucket, is what makes a forgetful bus enough, and by the end you should be able to say which of them a move to Kafka would make you rebuild.</p>
+<div class="hero-chips"><div class="hero-chip">%%TOPIC%%</div><div class="hero-chip">%%SUB%%</div><div class="hero-chip">Push, with an OIDC token</div><div class="hero-chip">%%ACK%% s to answer</div><div class="hero-chip">%%MIN_BO%% s to %%MAX_BO%% s, %%ATTEMPTS%% attempts</div><div class="hero-chip">%%RET_DAYS%% days: Google's default</div><div class="hero-chip">%%IN_FLIGHT%% in flight, squeezed to %%SQUEEZE%%</div><div class="hero-chip">13 rows mapped to Kafka</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What an event bus does, and the two shapes it comes in</a></li>
+<li><a href="#s2">The words: topic, subscription, push, ack, retention, offset, partition, consumer group</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The UI: one note in, its row, and an answer that cites it</a></li>
+<li><a href="#s4">The kit's code: what the subscription declares, and what it leaves to Google</a></li>
+<li><a href="#s5">REST: the trace hop by hop, and the subscription as Pub/Sub holds it</a></li>
+<li><a href="#s6">Direct reads: the records the push left, and the answer through the API</a></li>
+<li><a href="#s7">The burst: %%N_OBJECTS_W%% objects against %%SQUEEZE_W%% instances</a></li>
+<li><a href="#s8">Pub/Sub mapped to Kafka: thirteen rows, and when Kafka would be the better bus</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what the kit's Pub/Sub path declares and what it leaves to Google's defaults, follow one upload of your own from the object's generation to the push, the acknowledgement, the records and a cited answer, squeeze the worker to %%SQUEEZE_W%% instances while the corpus lands, and set each setting beside its Kafka counterpart.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What an event bus does, and the two shapes it comes in</h3><p>A notice that something happened, carried from the code that saw it to the code that must act: either as a queue that forgets what is done, or as a log that keeps everything.</p></div></div>
+
+<p><strong>The bus carries a notice, not the document.</strong> When an upload lands in DocuMind's bucket, the worker has to index it, and the two never call each other. Cloud Storage publishes a notice, about a kilobyte of the object's metadata, into a Pub/Sub topic. A subscription on that topic remembers the notice until someone has dealt with it, and pushes it to the worker as an HTTP request. The document's bytes never travel on the bus. They stay in the bucket, which keeps every version, and the notice names the version: the object's <em>generation</em>. The worker fetches exactly that generation, and every hop of this lesson's trace carries that one number.</p>
+
+<p><strong>Two shapes of bus.</strong> A <em>queue</em> tracks each message on its own. Pub/Sub's subscriptions work this way: a message is delivered, and if the reader acknowledges it, it is gone; if the reader refuses it, or stays silent past a deadline, it is delivered again. A <em>log</em> keeps every message, in order and numbered, for a fixed time, whether anyone read it or not. Apache Kafka works this way. Each reader keeps its own position in the log, its <em>offset</em>, and moves it forward when it has done the work. Push and pull follow from the shape: Pub/Sub can push to an endpoint and decide the pace itself, while a Kafka consumer always pulls, at its own pace.</p>
+
+<p><strong>What each shape gives you for free.</strong> A queue gives you retries and a dead-letter topic as settings, and it forgets: replaying yesterday's messages needs retention that you have to switch on first. A log gives you replay as a matter of course, since moving an offset back is the whole operation, and leaves retries and dead letters to the code you write. The kit chose the queue, and its other choices are what make the queue enough. A claim on the content hash turns a second delivery into a harmless duplicate. A generation guard turns a late delivery into a harmless stale event. And the versioned bucket is the real record, which the nightly walk replays from by rewriting an object onto itself. Step 8 sets all thirteen differences side by side; step 7 shows the one you can feel, which is what a pushing bus does when its reader is full.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128230;</div><div>
+<p><strong>A courier, or the goods shed's register.</strong> There are two ways a parcel can reach an office in Bhiwandi. A courier brings each parcel to the door and waits for a signature. Once it is signed for, the courier's company forgets it; if it is refused, the courier comes back later, again and again up to a limit, and then leaves it at a depot. One courier route serves one office. A second office that wants the same parcels needs its own route, and gets only the parcels that arrive after its route begins. That is Pub/Sub: the subscription is the route, the push is the courier, the 200 is the signature and the dead-letter topic is the depot.</p>
+<p>The goods shed at the railway station works the other way. Every parcel that arrives is written on the next numbered line of a register, and nobody carries anything anywhere. Each office sends its own clerk, who keeps a bookmark in the register, collects whatever lies past it, and moves the bookmark once the parcels are put away. The register is pulped after a week, read or not, and a new office can start from the first line still there. That is Kafka: the register is a partition, the line number is an offset, the bookmark is a committed offset and the clerks are a consumer group. DocuMind's parcels, though, are slips, not boxes: each names a shelf in a warehouse that keeps every version. That is why the kit can afford a courier that forgets.</p></div></div>
+
+<h4>The trace: one upload, hop by hop, on both buses</h4>
+<p>The panel follows this lesson's upload through the kit's real path. Pick a hop to read what happens on your lane, the number that bounds it, and what the same hop would be on Kafka. Switch the worker's answer to watch a refusal take the other road, the one lesson 1.5 drills. Every name and number in the panel is read from the kit when this page is built: <code>eventarc.tf</code> for the topic, the subscription and its policy, <code>lesson-12.5.sh</code> for the worker's limits, <code>main.py</code> for what the handler reads and answers, and the worker's own chunker for the note's chunks. The Kafka column is Kafka's general model, not a kit you can run.</p>
+
+<div class="diagram" id="tr">
+<div class="dg-title">One upload, hop by hop, on two buses</div>
+<label class="tr-l">The worker answers <select id="tr-verdict"><option value="ack">200: indexed, so acknowledged</option><option value="nack">refused: 4xx, 5xx or %%ACK%% s of silence</option></select></label>
+<ol class="tr-hops" id="tr-hops" aria-label="The hops"></ol>
+<div class="tr-card" id="tr-card" aria-live="polite"></div>
+<p class="dg-cap">Hops 1 to 5 are the same whatever the worker answers; hops 6 to 8 follow its answer. The numbers in each card's lane column come from the kit's files, Google's documented defaults where the kit sets nothing.</p>
+</div>
+
+<p>Read the two columns down to hop 6 and the difference is plain. On your lane Pub/Sub decides when to deliver, how fast, how often to retry and when to give up, and the worker only answers. On Kafka the consumer decides all four, and the broker only keeps the log. The rest of this page proves the left-hand column on your lane, one hop at a time.</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: topic, subscription, push, ack, retention, offset, partition, consumer group</h3><p>Fourteen terms, Pub/Sub's and Kafka's, each with what it is on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Event, notice</strong></td><td data-label="Meaning">A record that something happened, small enough to carry: here an object's metadata, never its bytes.</td><td data-label="On your lane">One <code>%%EVENT%%</code> notice, in the <code>%%PAYLOAD%%</code> format, per new generation in <code>documind-ai-YOUR-ID-uploads</code>.</td></tr>
+<tr><td><strong>Topic</strong></td><td data-label="Meaning">The named stream that publishers write to.</td><td data-label="On your lane"><code>%%TOPIC%%</code>, and its dead-letter twin <code>%%DLQ_TOPIC%%</code>.</td></tr>
+<tr><td><strong>Subscription</strong></td><td data-label="Meaning">Pub/Sub's reader of a topic: it holds every message published after it was created until that message is acknowledged.</td><td data-label="On your lane"><code>%%SUB%%</code> (push), and <code>%%DLQ_SUB%%</code> (pull) on the dead-letter topic.</td></tr>
+<tr><td><strong>Push, pull</strong></td><td data-label="Meaning">Push: Pub/Sub sends each message to an HTTPS endpoint and sets the pace. Pull: the reader asks when it is ready.</td><td data-label="On your lane">Push to the worker's URL with an OIDC token for <code>%%INGEST_SA%%</code>; <code>make dlq</code> pulls.</td></tr>
+<tr><td><strong>Ack, nack</strong></td><td data-label="Meaning">The reader's answer. On push, a %%ACK_CODES%% acknowledges the message; any other status refuses it, and it is delivered again.</td><td data-label="On your lane">The worker answers 200 for every verdict but three: 400 for a record it cannot parse, 409 for a claim another delivery holds inside its lease, 500 for a failed pipeline.</td></tr>
+<tr><td><strong>Ack deadline</strong></td><td data-label="Meaning">How long Pub/Sub waits for the answer before it counts the delivery as failed.</td><td data-label="On your lane">%%ACK%% s, the longest Google allows, and the worker's own request timeout.</td></tr>
+<tr><td><strong>Retry policy</strong></td><td data-label="Meaning">How long a refused message waits before it is delivered again.</td><td data-label="On your lane">%%MIN_BO%% s, growing to %%MAX_BO%% s, for each message on its own.</td></tr>
+<tr><td><strong>Dead-letter topic, delivery attempt</strong></td><td data-label="Meaning">Where a message goes after too many refusals, and Pub/Sub's count of them, which Google calls approximate.</td><td data-label="On your lane"><code>%%DLQ_TOPIC%%</code>, after %%ATTEMPTS%% attempts.</td></tr>
+<tr><td><strong>Message retention</strong></td><td data-label="Meaning">How long a subscription keeps a message nobody has acknowledged, and, if you ask it to, one that was.</td><td data-label="On your lane">Not set: Google's %%RET_DAYS%% days. Acknowledged messages are not kept.</td></tr>
+<tr><td><strong>Expiration</strong></td><td data-label="Meaning">A subscription with no subscriber activity for this long is deleted.</td><td data-label="On your lane">Not set: Google's %%EXP_DAYS%% days.</td></tr>
+<tr><td><strong>Ordering key, exactly-once delivery</strong></td><td data-label="Meaning">Two delivery options the kit does not use: messages that share a key arrive in order, and an acknowledged message is never delivered again (pull subscriptions only).</td><td data-label="On your lane">Neither. The generation guard and the content-hash claim do their work instead.</td></tr>
+<tr><td><strong>Partition, offset</strong></td><td data-label="Meaning">Kafka's words: a partition is one ordered log of a topic, and an offset is a record's position in it.</td><td data-label="On your lane">None: Pub/Sub has neither. The object's generation is the kit's version number.</td></tr>
+<tr><td><strong>Consumer group</strong></td><td data-label="Meaning">Kafka's reader: its members share a topic's partitions and commit an offset for each.</td><td data-label="On your lane">One subscription is the nearest thing; Cloud Run's instances share it.</td></tr>
+<tr><td><strong>Backlog, lag</strong></td><td data-label="Meaning">What is waiting to be read. Pub/Sub counts undelivered messages and the age of the oldest; Kafka counts consumer lag, in offsets.</td><td data-label="On your lane">Read in step 7. The kit alerts on the dead-letter subscription's backlog, and on the main subscription's oldest message once it is %%BACKLOG_MIN%% minutes old.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two pairs in this table are easy to confuse. A <em>topic</em> is where messages are written and a <em>subscription</em> is where they are read: on Pub/Sub, the state of every message (delivered, acknowledged, how many attempts) lives on the subscription, so two subscriptions on one topic each get their own copy. And an <em>acknowledgement</em> is not a <em>commit</em>: acknowledging deletes one message from one subscription, while committing an offset on Kafka moves a bookmark and deletes nothing.</p>

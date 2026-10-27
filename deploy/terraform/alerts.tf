@@ -15,7 +15,9 @@ resource "google_monitoring_notification_channel" "oncall" {
   }
 }
 
-# SLO: p95 /v1/query < 3s over 30-min rolling window
+# Latency: documind-api's p95 over 3 s for 5 minutes. Every request to the service counts, not /v1/query alone, and
+# the figure is the mean of the series' p95s (REDUCE_MEAN), not the p95 of all requests: a quiet, fast revision pulls
+# it down.
 resource "google_monitoring_alert_policy" "api_latency" {
   display_name = "API p95 latency > 3s"
   combiner     = "OR"
@@ -163,14 +165,18 @@ resource "google_monitoring_alert_policy" "gpu_left_warm" {
 # counts a reindex cost (reused, embedded, retired); the nightly job ends on reconcile_done with the drift it
 # measured. Three metrics read them off the log, and three policies turn them into a pager: a failure within ten
 # minutes, drift that stays above zero for two nights, the job itself failing. Before these, every one of those
-# lines was a log search somebody had to remember to run.
+# lines was a log search somebody had to remember to run. The worker's verdicts grew after this metric and it did
+# not (13 October 2026, lesson 8.4's review): a PDF handed to the batch lane, a poison message, a withdrawn source's
+# bytes refused, a version another lane had already indexed and a cut-off claim taken back are counted now too. A
+# delivery the claim turns away (ingest_duplicate, ingest_claim_held, ingest_claim_moved) changes no document and
+# stays out: deliveries are Pub/Sub's own subscription metrics.
 resource "google_logging_metric" "ingest_events" {
   name    = "documind/ingest_events"
   project = var.project_id
   filter  = <<EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="documind-ingest"
-    jsonPayload.event=~"^ingest_(ok|superseded|reactivated|stale_event|failed)$"
+    jsonPayload.event=~"^ingest_(ok|superseded|reactivated|stale_event|failed|queued_batch|poison|withdrawn|already_current|claim_retaken)$"
   EOT
   metric_descriptor {
     metric_kind = "DELTA"
@@ -179,7 +185,7 @@ resource "google_logging_metric" "ingest_events" {
     labels {
       key         = "event"
       value_type  = "STRING"
-      description = "ingest_ok | ingest_superseded | ingest_reactivated | ingest_stale_event | ingest_failed"
+      description = "ingest_ok | ingest_superseded | ingest_reactivated | ingest_stale_event | ingest_failed | ingest_queued_batch | ingest_poison | ingest_withdrawn | ingest_already_current | ingest_claim_retaken"
     }
     labels {
       key         = "tenant"
@@ -383,6 +389,40 @@ resource "google_monitoring_alert_policy" "dlq_depth" {
   alert_strategy { auto_close = "1800s" }
   documentation {
     content   = "An upload reached the dead-letter queue: the worker refused it twelve times. make dlq PROJECT=<project> shows it (objectId, eventTime, deliveryAttempt); fix or remove the object, then acknowledge the message: gcloud pubsub subscriptions pull ingest-dlq-sub --auto-ack --limit 1. The incident closes when the subscription is empty."
+    mime_type = "text/markdown"
+  }
+}
+
+# The main subscription's backlog, watched (13 October 2026, lesson 8.4's review). dlq_depth reads the dead letters,
+# and nothing read documind-ingest-push itself: a worker that stopped answering, or a corpus more than thirty
+# instances could take, left every upload waiting with no page until messages reached the DLQ after their twelfth
+# attempt, about an hour in. oldest_unacked_message_age is the age of the oldest message Pub/Sub still holds for the
+# worker, the lag a self-updating index promises to keep small. One document holds its message for an ack deadline
+# at most (600 s, eventarc.tf); one whose holder was cut off first waits out the claim's lease (idempotency.py, 660 s)
+# and a backoff that reaches 600 s itself, about 31 minutes at the very worst. Over 30 minutes for five minutes is a
+# queue, then, or a message failing every attempt: a failed document has paged as ingest_failed by then, and a
+# poison message (ingest_poison) pages here about half an hour before dlq_depth does.
+resource "google_monitoring_alert_policy" "ingest_backlog" {
+  display_name = "Ingest subscription backlog: oldest message over 30 minutes"
+  combiner     = "OR"
+  conditions {
+    display_name = "documind-ingest-push: oldest unacked message > 1800 s for 5 minutes"
+    condition_threshold {
+      filter          = "resource.type=\"pubsub_subscription\" AND resource.labels.subscription_id=\"${google_pubsub_subscription.ingest_push.name}\" AND metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 1800
+      duration        = "300s"
+      aggregations {
+        alignment_period     = "60s"
+        per_series_aligner   = "ALIGN_MAX"
+        cross_series_reducer = "REDUCE_MAX"
+      }
+    }
+  }
+  notification_channels = local.alert_channel_ids
+  alert_strategy { auto_close = "1800s" }
+  documentation {
+    content   = "Uploads are waiting: the oldest message on documind-ingest-push is over 30 minutes old. Read what the worker logs: gcloud logging read 'resource.labels.service_name=\"documind-ingest\"' --limit 20. ingest_failed or ingest_poison lines are one document retrying towards the dead-letter queue (make dlq PROJECT=<project> once it lands); ingest_claim_held lines are deliveries waiting out a claim's lease; no lines at all is a worker that is not answering: gcloud run services describe documind-ingest --region <region> shows its revision and instances. The incident closes when the oldest message is younger than 30 minutes."
     mime_type = "text/markdown"
   }
 }

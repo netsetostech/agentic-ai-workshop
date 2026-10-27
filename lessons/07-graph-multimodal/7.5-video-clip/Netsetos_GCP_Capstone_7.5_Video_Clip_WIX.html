@@ -87,7 +87,7 @@ li{margin-bottom:6px;}
 /* code windows: the rounded shell and the scroller are two elements */
 .cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
 .ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
-.ch-bar span{overflow-wrap:anywhere;}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
 .cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 .cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
 .cp:active{transform:scale(.96);}
@@ -275,7 +275,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 
 <p><strong>Validating it: three checks.</strong></p>
 <ol>
-<li><strong>The kind.</strong> Golden row mm-03 asks the town hall question and requires a segment citation (<code>must_cite_kind</code>). <code>run_eval</code>'s <code>media_kind_rate</code> must reach 0.80, and mm-03 is a required row that must pass on its own.</li>
+<li><strong>The kind.</strong> Golden row mm-03 asks the town hall question and requires a segment citation (<code>must_cite_kind</code>). <code>run_eval</code>'s <code>media_kind_rate</code> must reach 0.80, and mm-03 is a required row that must pass on its own. The gate asks it for the segment once your ledger lists <code>townhall_2026_q1.mp4</code> as indexed. Until then it judges mm-03 on its words and prints an <code>[info]</code> line saying so.</li>
 <li><strong>The second.</strong> Nothing in the kit checks it, so this lesson does. <code>make media</code> writes the ground truth beside the video: each speaker turn's start and end, measured from the synthesised audio.</li>
 <li><strong>The gate.</strong> <code>make smoke-media</code> generates an image as a member and has the outsider refused. It asks a figure question, lists the media documents through the MCP server, and uploads through a signed URL that the worker then indexes.</li>
 </ol>
@@ -331,7 +331,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 <tr><td><strong><code>kind</code></strong></td><td data-label="Meaning">The citation's modality: <code>text</code>, <code>figure</code>, <code>table</code> or <code>segment</code>.</td><td data-label="On your lane">mm-03 asks for <code>segment</code></td></tr>
 <tr><td><strong>The pill</strong></td><td data-label="Meaning"><code>[Clip N, mm:ss]</code>: N is the source's number in the context, mm:ss its start.</td><td data-label="On your lane">drawn by the Streamlit UI; the API returns the fields</td></tr>
 <tr><td><strong>The ground truth</strong></td><td data-label="Meaning"><code>townhall_2026_q1.segments.json</code>: each speaker turn's start and end, measured from the synthesised audio.</td><td data-label="On your lane">written by <code>make media MEDIA_ARGS=--video</code>; gitignored, never uploaded</td></tr>
-<tr><td><strong>The media rows</strong></td><td data-label="Meaning">Golden rows with <code>must_cite_kind</code>. <code>media_kind_rate</code> is the share of them that got a citation of that kind.</td><td data-label="On your lane">mm-01 and mm-02 figure, mm-03 segment, all three required; threshold 0.80</td></tr>
+<tr><td><strong>The media rows</strong></td><td data-label="Meaning">Golden rows with <code>must_cite_kind</code>. <code>media_kind_rate</code> is the share of them that got a citation of that kind.</td><td data-label="On your lane">mm-01 and mm-02 figure, mm-03 segment, all three required; threshold 0.80. Each asks for its kind once its file is indexed.</td></tr>
 <tr><td><strong><code>make smoke-media</code></strong></td><td data-label="Meaning">Module 7's gate: five checks, six PASS lines.</td><td data-label="On your lane">image, outsider, figure citation, media documents, signed upload</td></tr>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
@@ -496,7 +496,8 @@ print("3. the pills for the three sources:", *[ns["_label"](i, s) for i, s in en
 print("4. the usage row's modality:", ns["modality_of"]([x.kind for x in answer.citations]),
       "| the same answer from the table and the figure:", ns["modality_of"](["text", "figure"]))
 for cited in (3, 1):                                          # run_eval's rule for a media row: mm-03 asks for a segment
-    one = ModelDraft(answer=draft.answer, confidence="high", answerable=True, citations=[{"source": cited, "quote": "5.2 per cent"}])
+    one = ModelDraft(answer=draft.answer.replace("[3]", f"[{cited}]"), confidence="high", answerable=True,   # the prose's marker, the cited source
+                     citations=[{"source": cited, "quote": "5.2 per cent"}])
     kinds = sorted({x.kind for x in resolve(one, packed).citations})
     print(f"5. mm-03, citing [Source {cited}]: kinds {kinds} -&gt; {'counts' if 'segment' in kinds else 'cited no segment'}")
 PY</pre></div>
@@ -837,7 +838,7 @@ make smoke-media PROJECT="$PROJECT"</pre></div>
 <div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
 <p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
 <ul>
-<li><strong>No gate asks for a clip.</strong> <code>make smoke-media</code> asks one question, the figure one. A lane whose video was never heard still passes it. Only mm-03 in <code>make eval-live</code> asks for a segment.</li>
+<li><strong>No gate asks for a clip.</strong> <code>make smoke-media</code> asks one question, the figure one. A lane whose video was never heard still passes it. Only mm-03 in <code>make eval-live</code> asks for a segment, and only while the ledger lists the town hall's video as indexed. If the video fails to index, the gate judges mm-03 on its words alone and says so on an <code>[info]</code> line.</li>
 <li><strong>Nothing checks the second.</strong> <code>run_eval</code> asks for a segment of any kind, anywhere in any video. No code in the kit reads the ground truth <code>build_media.py</code> writes; <code>upload.sh</code> and the walk only skip it. Step 5's check is this lesson's own.</li>
 <li><strong>Gemini's times are kept as given.</strong> The worker's <code>Segment</code> has no validator. Nothing checks that a segment starts before it ends, keeps to the minute the prompt asks for, or ends inside the video.</li>
 <li><strong>The model is never told when.</strong> The <code>[Source N]</code> header names the file, a page, a section and a date, never a segment's start. A question about when something was said cannot be answered, though the citation carries the second.</li>

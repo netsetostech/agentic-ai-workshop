@@ -25,7 +25,11 @@ RETRY_FAILED_STEP = False
 
 
 # Original CLI workflow for step_01_an_argument_the_corpus_cannot_honour.
-COMMANDS_01 = """export SINCE103="$(date -u +%FT%TZ)"
+COMMANDS_01 = """# acme's rows must be unknown, as the worker wrote them: count what lesson 5.2's reset would still change
+PYTHONPATH=.:services/ingest GOOGLE_CLOUD_PROJECT="$PROJECT" python services/ingest/relabel.py --project "$PROJECT" --tenant acme --reset |
+  python -c 'import json,sys; s=[json.loads(x) for x in sys.stdin if "relabel_plan" in x][-1]; n=s["rows"]+s["history_rows"]; print(f"acme rows still classed: {n}"); sys.exit(1 if n else 0)' ||
+  { echo "STOP: acme's rows still carry classes, so the filter would find them. Run lesson 5.2's finish cell first: make doc-types PROJECT=\\"$PROJECT\\" TENANT=acme RESET=1 APPLY=1 (with VECTOR_INDEX_NAME exported)." >&2; exit 1; }
+export SINCE103="$(date -u +%FT%TZ)"
 DOCUMIND_IMPERSONATE_SA="documind-ui-sa@$PROJECT.iam.gserviceaccount.com" RAG_API_URL="$API" python - <<'PY'
 from shared.documind_tools import retrieve
 for doc_type in (None, "invoice"):

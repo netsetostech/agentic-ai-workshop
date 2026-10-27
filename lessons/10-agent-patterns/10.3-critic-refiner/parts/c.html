@@ -1,0 +1,108 @@
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 3 &middot; Your lane</span><h3>Your lane: one verify turn</h3><p>verify on the gratuity row, live, with the desk's prompt as it stands.</p></div></div>
+
+<h4>Definition</h4>
+<p>Without <code>OFFLINE=1</code>, <code>make agent-turn</code> needs <code>PROJECT</code>, and <code>commands/agent-turn.sh</code> exports what a live turn needs: the project for Gemini, rag-api's address, built from <code>REGION</code> (pass yours: the Makefile's default is <code>us-central1</code>), and <code>documind-ui-sa</code> as the account rag-api's ID token is minted as. <code>gemini()</code> builds the model as the chat service builds the Desk agent's, <code>%%MODEL%%</code> on location <code>global</code> at thinking <code>%%DEFAULT_LEVEL%%</code>, and the reflect call runs on the same model at the same level. Every search is one POST to <code>/v1/passages</code>, the call lesson 10.1 showed, which rag-api books with no tokens and no cost. Each attempt runs under the chat service's limits, %%MAX_CALLS%% calls and Rs %%BUDGET%%, with its reflect call counted on it, so a verify turn can spend up to Rs %%CAP_TURN%% in all. By the kit's own count the turn costs about Rs %%EST_TURN_VERIFY%% before thinking when its first attempt passes, and each retry adds about Rs %%EST_RETRY%%; step 10 shows how that count is made.</p>
+%%CELL_TURN_VERIFY%%
+%%OUT_TURN_VERIFY%%
+<p>Read it attempt by attempt. If attempt 1 called <code>gratuity_estimate</code> and the check passed it, the turn is the loop's own and nothing was retried. If the check failed it, the printout says why, then shows the reflect call with its tokens and rupees and the note it wrote; a line <code>the note writes ...</code> means Gemini put a figure in its note, which no later attempt can use. A retry that passed ships, and after %%MAX_ATTEMPTS%% failures the last attempt ships and the totals say the check passed none. An attempt its limits stopped ends <code>stopped by turn_budget</code> or <code>model_calls</code>, and the check fails it for that alone.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 4 &middot; The eval and the records</span><h3>The %%N_ROWS%% rows on your lane, with the calculator rule taken out</h3><p>The rule out, %%N_LIVE_RUNS%% live runs, the rule back, then two reads at Rs 0: the side by side, and the records.</p></div></div>
+
+<h4>Definition</h4>
+<p>A model that follows the desk's prompt calls a calculator for every figure, so the check rarely fails, verify rarely retries, and the four ways tie. That would be true and would prove nothing about checking. To see the critic at work, these two runs take out the prompt's calculator rule, the three lines from "Work every figure out with a calculator" to "say which one is missing" in <code>services/chat/desk_agent.py</code>, in your clone only. The bench imports <code>desk_agent</code> from your clone in its own process, so the deployed chat service is not touched. Put the rule back as soon as the second run ends. Without it each call reads about %%RULE_TOKENS%% tokens fewer, by the script's count of four characters a token.</p>
+@@rule@@
+<p>The runs are step 7's without <code>OFFLINE=1</code>: %%N_LIVE_LOOP%% loop turns, then %%N_LIVE_VERIFY%% verify runs, each run saved as one JSON line, both with the rule out so that the two arms face the same prompt. A progress line on stderr shows each run's calls and rupees as it finishes, and the report comes when every run is in.</p>
+%%CELL_RULE_DEL%%
+%%OUT_RULE_DEL%%
+%%CELL_EVAL_PLAIN%%
+%%OUT_EVAL_PLAIN%%
+%%CELL_EVAL_VERIFY%%
+%%OUT_EVAL_VERIFY%%
+%%CELL_RULE_RESTORE%%
+%%OUT_RULE_RESTORE%%
+
+<h4>Do it: side by side, at Rs 0</h4>
+%%CELL_EVAL_SIDE%%
+%%OUT_EVAL_SIDE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>This is the lesson's proof: on the same %%N_ROWS%% rows, the loop's pass@1, its pass@3 re-rolls, best-of-3 chosen by the figure check and verify's pass@3 with notes, each with correct, verified, calls and rupees a row, then the check's precision. Read the <code>with notes:</code> line of verify's report first. If the check passed every first attempt, verify never retried and ties pass@1: the weakened prompt did not make Gemini fail. If it retried, that line says on which attempt each run passed and how many notes wrote a figure. The precision line says how far the check can be trusted on your lane: a pass that is correct but not verified is a figure with no calculator behind it, which the check could not see. The %%N_ROWS%% model-written rows cannot rank four ways, and the kit says so: every comparison is indicative, and no way is named the winner. These runs measure the four ways on a weakened prompt; they say nothing about the Desk's own error rate.</p></div>
+
+<h4>Do it: read the records back, at Rs 0</h4>
+<p>The same cell as step 7, on your lane's saves.</p>
+%%CELL_RECORDS_READ%%
+%%OUT_RECORDS_READ%%
+<p>Each <code>the note before attempt</code> line is a note Gemini wrote, and the line under it says whether the note writes a figure. A note that writes one is what the weakened prompt invites and what the kit expects: the figure check and <code>check_args</code> never read it, so the attempt after it had to work its figure out again or fail.</p>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the critic is code, what each way costs, the library's form, and what the kit does not do yet</h3><p>Choosing between the three ways, the bill for each run, Google ADK's reflect-and-retry plugin, and the gaps.</p></div></div>
+
+<h4>Why the critic is code</h4>
+<ul>
+<li><strong>One answer, one verdict.</strong> A model asked to judge an answer reads the same passages, can agree with its own mistake, may judge the same answer two ways on two calls, and bills each call. <code>figure_check()</code> gives one verdict for one answer and costs nothing, and nothing a note or a remark says can argue with it, because it reads neither.</li>
+<li><strong>It knows only the turn.</strong> The eval's verified reads the row: its expected figure and its calculator. A deployed agent has neither, so the critic a deployed agent can run is the turn's own, and that is the one this lesson uses. Nothing from the task row ever reaches the model.</li>
+<li><strong>Its blind spots are the price.</strong> It reads digits and dates; a yes in words, a figure in words and a figure copied from a passage pass. Measure its precision before you trust a pass: offline, %%PREC_BLIND%% of the %%PREC_PASS%% runs it passed had no calculator behind them.</li>
+<li><strong>Re-roll to measure, not to ship.</strong> pass@k shows what a perfect chooser could reach, at k turns a question.</li>
+<li><strong>Choose when k turns a question are affordable.</strong> Best-of-3 reached the ceiling offline because each row had another run and its second rule prefers a run that states a calculator's figure: %%BO_CALLS%% calls and Rs %%BO_RS%% a row, against pass@1's %%P1_CALLS%% calls and Rs %%P1_RS%%.</li>
+<li><strong>Retry when most first answers pass.</strong> verify pays for a reflect call and one more attempt only when the check fails: %%V_CALLS%% calls and Rs %%V_RS%% a row offline. It ships whatever the check passes, so it is as good as the check.</li>
+<li><strong>A choice made by a model.</strong> Lesson 10.4's router chooses too: when its two cheap signals disagree about a question's desk, one arbiter call, a model, picks between the routes they named. This lesson's chooser is code, and it reads the answer, not the question.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>What it calls</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>Steps 4 to 7</td><td data-label="What it calls">the standard library, scripted models and the kit's corpus</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td>Step 3, the Chat page</td><td data-label="What it calls">two agent turns of the chat service</td><td data-label="On your lane">the captions show their rupees; the chat service stops a turn at Rs %%BUDGET%%</td></tr>
+<tr><td>Step 8, one verify turn</td><td data-label="What it calls">1 attempt, %%N_TURN_VERIFY%% calls offline</td><td data-label="On your lane">about Rs %%EST_TURN_VERIFY%% before thinking, and Rs %%K_TURN_VERIFY%% more for each 1,000 thinking tokens a call; a retry adds about Rs %%EST_RETRY%%</td></tr>
+<tr><td>Step 9, the loop</td><td data-label="What it calls">%%N_LIVE_LOOP%% turns, %%N_EVAL_PLAIN%% calls offline</td><td data-label="On your lane">about Rs %%EST_EVAL_PLAIN%% before thinking, and Rs %%K_EVAL_PLAIN%% more for each 1,000</td></tr>
+<tr><td>Step 9, verify</td><td data-label="What it calls">%%N_LIVE_VERIFY%% runs, %%N_EVAL_VERIFY%% calls offline, one retry among them</td><td data-label="On your lane">about Rs %%EST_EVAL_VERIFY%% before thinking, and Rs %%K_EVAL_VERIFY%% more for each 1,000; each further retry about Rs %%EST_RETRY%%</td></tr>
+<tr><td>Step 9, the reads</td><td data-label="What it calls">the saved files</td><td data-label="On your lane">Rs 0</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>"Before thinking" is the input and visible tokens the kit's script counts for these very runs, plus the tool declarations Gemini receives with every call that binds the desk's %%N_TOOLS%% tools, about %%DECL_TOKENS%% tokens, priced at USD %%RATE_IN%% in and %%RATE_OUT%% out a million and Rs %%USD_INR%% to the dollar. The loop's calls and verify's answer calls bind them; the reflect call binds none. Thinking is billed as output, Rs %%RS_K_OUT%% for every 1,000 tokens, and only your lane knows how much a call spends. Two limits to know. A loop turn on these rows reaches Rs %%BUDGET%% before its last call only when its calls think about %%STOP_LOOP%% tokens each, and a verify attempt at about %%STOP_VERIFY%%; the Meter then stops it, and the turn prints <code>stopped by turn_budget</code>. And because each attempt has its own Meter, the ceiling for a verify run is Rs %%CAP_TURN%%, not Rs %%BUDGET%%: Rs %%CAP_ALL%% for steps 8 and 9 together, against about Rs %%EST_ALL%% before thinking.</p>
+
+<h4>The library's form</h4>
+<p>Google's Agent Development Kit, at the chat image's pin (google-adk 2.8.0), ships <code>ReflectAndRetryToolPlugin</code>. It catches a tool call that raises an exception, or, in a subclass that overrides <code>extract_error_from_result()</code>, one whose result holds an error (the method finds none by default). It gives the model structured guidance to reflect on the error and on the arguments it sent, and lets it try again, up to <code>max_retries</code> consecutive failures of a tool (3 by default), counted per invocation unless told otherwise. It retries a tool call, not an answer, and its guidance is the model's to follow. verify checks the whole answer in code and starts a fresh attempt. The kit uses the plugin nowhere. Tree of Thoughts and LATS go further, searching over many candidate steps with a model as the judge. The kit has neither, and the lesson plan defers plan search and LATS past this cohort.</p>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code or the pinned library, and the build asserts it, so this box changes when they do.</p>
+<ul>
+<li><strong>The check reads digits and whole dates only.</strong> A yes or no in words, a figure in words and a figure copied from a passage pass it: <code>unsupported()</code>'s own docstring says a number in words is prose.</li>
+<li><strong>An answer with no figure passes.</strong> "I could not work the gratuity out" states nothing to check, so it ships as passed, and only the eval, which reads the row, says it is not correct (the kit's test in step 5).</li>
+<li><strong>No note outlives its turn.</strong> Each turn starts with no notes. Moving a note that keeps coming back into the desk's prompt is a hand edit, and nothing measures it.</li>
+<li><strong>No reflect call reads the grader.</strong> The reflect call reads only the turn's own verdict, never the eval's: there is no switch for a grader's critique.</li>
+<li><strong>Fixed limits.</strong> <code>MAX_ATTEMPTS = %%MAX_ATTEMPTS%%</code> and <code>NOTE_CHARS = %%NOTE_CHARS%%</code> are constants: no make variable and no flag changes them. One thinking level goes with every call, the reflect call's too.</li>
+<li><strong>The Desk does not run verify.</strong> Nothing under <code>services/</code> imports the bench, and no code there runs the figure check.</li>
+<li><strong>The comparison is indicative.</strong> %%N_ROWS%% model-written rows; <code>evals/paired.py</code> prints "indicative" on every comparison, and on these rows "no conclusion".</li>
+<li><strong>The offline slips and notes are the script's.</strong> Its slips write the right figure, and its notes never write one.</li>
+</ul></div>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Thirteen checks, each one block above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A figure no calculator returned fails the check</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>failed: no calculator, question or passage of the turn wrote 2,40,000</code></td></tr>
+<tr><td>2</td><td data-label="Claim">A yes in words and a copied 45 pass it</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>passed</code> on both lines</td></tr>
+<tr><td>3</td><td data-label="Claim">check_args takes a number only from the question</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>is a fact about the person that their message does not state</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The reflect call never sees the right figure</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>returned: a figure</code> and <code>False</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A note is cut to %%NOTE_CHARS%% characters</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>the note code keeps, %%KEPT_LEN%%</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A wrong figure is corrected in one round</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>the answer that ships: attempt 2's, the first the figure check passed</code></td></tr>
+<tr><td>7</td><td data-label="Claim">A note's figure never passes</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>the last of %%MAX_ATTEMPTS%%: the figure check passed none</code></td></tr>
+<tr><td>8</td><td data-label="Claim">With the notes in the question, the figure gets through</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>attempt 2's, the first the figure check passed</code> and <code>0 calculations</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The pattern file is the kit's again</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>git diff --stat</code> prints nothing, and <code>grep -c</code> prints <code>1</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The four ways ran on the same rows</td><td data-label="The check">steps 7 and 9</td><td data-label="Pass looks like"><code>loop against verify, on the %%N_ROWS%% rows both ran</code></td></tr>
+<tr><td>11</td><td data-label="Claim">The check's precision is measured, not assumed</td><td data-label="The check">steps 7 and 9</td><td data-label="Pass looks like"><code>the figure check's precision: of the ...</code></td></tr>
+<tr><td>12</td><td data-label="Claim">The desk's prompt is the kit's again</td><td data-label="The check">step 9</td><td data-label="Pass looks like"><code>git diff --stat</code> prints nothing, and <code>grep -c</code> prints <code>1</code></td></tr>
+<tr><td>13</td><td data-label="Claim">No way is named the winner</td><td data-label="The check">steps 7 and 9</td><td data-label="Pass looks like"><code>no conclusion at this many rows</code> and <code>indicative</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing was deployed. acme's and zeta's stored rows carry their classes, if this lesson's setup line ran. <code>~/graph-venv</code> holds the chat image's pins. Your home directory holds the saved runs, <code>plain-offline.jsonl</code>, <code>verify-offline.jsonl</code>, <code>plain.jsonl</code> and <code>verify.jsonl</code>, and <code>commands/agent_patterns.py</code> and <code>services/chat/desk_agent.py</code> are the kit's again. Lesson 10.4 takes the next question: before any agent answers, route each question to one specialist agent.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 10 Agent patterns &middot; Lesson 10.3 Check, retry or choose: the critic and refiner pattern &middot; v5.0</p><p>Next: Lesson 10.4 %%NEXT_TITLE%%.</p></div>

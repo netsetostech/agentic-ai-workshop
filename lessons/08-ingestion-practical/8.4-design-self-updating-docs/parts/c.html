@@ -1,0 +1,156 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Dimension 2 &middot; Failure modes</span><h3>Failure modes: what pages, what does not, and what the design does about it</h3><p>Four failures the kit's own scripts reproduce, the policies that catch two of them, and a fifth that no script reproduces.</p></div></div>
+
+<h4>Definition</h4>
+<p>A 2 documents four failure modes with real symptoms, each reproduced by a script. The 3 is the column after the symptom: what <code>terraform/</code> would catch, what it would not, and what the design does about the second group. The kit declares %%AT_DEFAULTS%% alert policies on a lane deployed with the defaults, and %%WITH_WALK%% once the nightly walk is declared. %%N_INGEST_DEFAULT_CAP%% of the default ones watch the document lifecycle: <em>%%D_FAILED%%</em>, <em>%%D_DLQ%%</em>, <em>%%D_BACKLOG%%</em> (13 October 2026) and <em>%%D_PIN%%</em>.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Failure</th><th>Reproduced by</th><th>The symptom</th><th>What pages</th><th>What the design does</th></tr></thead>
+<tbody>
+<tr><td><strong>Poison</strong>: an object the worker can never parse</td><td data-label="Reproduced by"><code>make poison</code> (<code>commands/poison.sh</code>): a zero-byte object</td><td data-label="The symptom">A 400 and an <code>ingest_poison</code> line, retried %%ATTEMPTS%% times with backoff, then <code>%%DLQ_TOPIC%%</code>, about an hour later</td><td data-label="What pages"><em>%%D_BACKLOG%%</em> once the message has waited %%BACKLOG_MIN%% minutes, then <em>%%D_DLQ%%</em> within %%DLQ_FOR%% s of the message landing. Not <em>%%D_FAILED%%</em>: its metric counts <code>ingest_poison</code>, but the policy reads <code>ingest_failed</code> lines only</td><td data-label="What the design does">Keep the dead-letter alert. With the walk on, delete the object as well: the walk rewrites anything the ledger never saw, so a poison object is refused again every night</td></tr>
+<tr><td><strong>A backlog</strong> on the main subscription: more uploads than %%IN_FLIGHT%% instances take</td><td data-label="Reproduced by"><code>make ingest-corpus</code> (<code>evals/upload.sh</code>): every corpus object at once. Lesson 8.1 runs the ingest events through this same subscription</td><td data-label="The symptom">Deliveries refused while no instance is free, retried later; the oldest unacknowledged message ages, and every answer about the new documents waits</td><td data-label="What pages"><em>%%D_BACKLOG%%</em>, since 13 October 2026: the oldest unacknowledged message over %%BACKLOG_MIN%% minutes for %%BACKLOG_FOR_MIN%% minutes. Before it no policy read <code>%%SUB%%</code>, and a document showed only once it had failed %%ATTEMPTS%% times, on the DLQ</td><td data-label="What the design does">Keep it: the lag a self-updating platform promises is exactly that number. Its threshold sits above the slowest turn one document can honestly take, an ack deadline, a cut-off claim's %%LEASE%%-second lease and a backoff that reaches %%MAX_BACKOFF%% s; when it pages for a queue, scale the worker, not the threshold</td></tr>
+<tr><td><strong>A lost event, or a deleted object</strong>: the ledger and the bucket disagree</td><td data-label="Reproduced by">Lesson 1.8: delete an object, then <code>make reconcile</code> prints the plan</td><td data-label="The symptom">Nothing on the event path: the notification publishes <code>%%EVENT_TYPE%%</code> only, so a delete says nothing and the document keeps answering</td><td data-label="What pages">Nothing on a default lane: <code>RECONCILE_JOB ?= false</code> declares no walk, and <em>%%D_DRIFT%%</em> and <em>%%D_RFAILED%%</em> exist only with it. With it, drift pages after %%DRIFT_FOR%% hours above zero</td><td data-label="What the design does">The walk declared (<code>make reconcile-job</code>), its two policies with it. Then the delete itself as an event: on this versioned bucket a delete archives the live generation, so the notification would add the archive event, and the worker would retire the source when no live generation remains, leaving the walk to confirm</td></tr>
+<tr><td><strong>A stale context cache</strong> after a change</td><td data-label="Reproduced by"><code>make smoke-reindex</code>, or lesson 6.3: <code>make reindex</code>, then <code>make cache CACHE_OP=show</code></td><td data-label="The symptom"><code>cache_stale</code> in the API's log, and answers run uncached, correct but dearer, until <code>make cache</code> packs again; that pack is the kit's own files, not the corpus (lesson 6.3)</td><td data-label="What pages">Nothing: no metric or policy counts <code>cache_stale</code></td><td data-label="What the design does">A log metric over <code>cache_stale</code>, <code>make cache</code> in the runbook after every reindex, and a pack built from the ledger's current rows rather than from the kit's files</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>So the monitoring catches two of the four: the poison twice, about half an hour in and again at the hour, and the backlog itself.</strong> The other two are counted on lines nobody alerts on, or not counted at all. The panel shows the same thing as red stations: the deleted handbook answering on, and the queued PDF that nothing takes.</p>
+
+<p><strong>A fifth, which no kit script reproduces: a claim cut off.</strong> <code>release()</code> gives a claim back when the pipeline raises. A worker that dies without raising, cut off at the request's %%TIMEOUT%% s or out of memory, never runs it, and the claim stays <code>processing</code>. Until 13 October 2026 <code>claim()</code> refused every later delivery and <code>push()</code> acked each one as a duplicate: the document was missing while every delivery succeeded, which is the warning <code>release()</code>'s own docstring gives, and the walk's nightly reingest was acked as a duplicate too. The design's answer was an age on the claim, and it is the kit's now: a claim holds for a lease counted from its <code>claimed_at</code>, %%LEASE%% s on the push lane (the ack deadline and a minute) and %%BATCH_LEASE%% s for a claim the batch job took. A delivery inside the lease is nacked with a 409 and comes back; the first one after it takes the claim back in a transaction and indexes the bytes, logged as <code>ingest_claim_retaken</code>, which the lifecycle metric counts. With the walk on, the night's rewrite is that delivery. The cut-off itself pages nothing; <em>%%D_BACKLOG%%</em> pages only if the retries outlast %%BACKLOG_MIN%% minutes.</p>
+
+<h4>The code</h4>
+@@poison@@
+@@ingest_metric@@
+@@dlq_alert@@
+@@backlog_alert@@
+@@walk_alerts@@
+@@cache_stale@@
+@@release@@
+@@lease@@
+@@decide@@
+
+<h4>Do it: the policies the kit declares, read from its files</h4>
+<p>The cell reads every Terraform file, lists the alert policies that watch the document lifecycle with what each one reads and when it exists, and counts the policies that read the main subscription, its oldest unacknowledged age, and <code>cache_stale</code>.</p>
+%%CELL_ALERTS%%
+%%OUT_ALERTS%%
+
+<h4>Do it: the walk on three stuck states</h4>
+<p>The walk's planner is pure Python. The cell hands it three objects nobody indexed: one whose claim was cut off in <code>processing</code>, one zero-byte object, and one PDF the worker queued for the batch lane. Then it asks the claim's lease what the night's rewrite of the first will find.</p>
+%%CELL_STUCK%%
+%%OUT_STUCK%%
+
+<h4>Read it on your lane: the policies that exist</h4>
+<p>The same list from the Monitoring API: every policy on your lane by name, and whether any of them reads the main subscription or the dead-letter one.</p>
+%%CELL_LANE_ALERTS%%
+%%OUT_LANE_ALERTS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The kit's files and your lane agreed: the lifecycle has %%N_INGEST_DEFAULT_W%% policies on a default lane and two more with the walk, and one of them reads <code>%%SUB%%</code>'s oldest message. The planner showed the stuck state that never clears on its own: a poison object is re-ingested every night and refused every night. The cut-off claim is planned the same way, but its lease ran out hours before the walk, so the rewrite's delivery takes it back; and a queued PDF is not drift at all, so only its <code>ingest_queued_batch</code> line counts it. A 3 on this dimension is that list, with the alert, the switch or the fix that closes each gap beside it.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Dimension 3 &middot; Cost</span><h3>Cost: standing still, staying fresh, and one change, at 1k, 100k and 10M documents</h3><p>Three kinds of bill, the edit's parts counted from the kit's own functions, and the month at three scales from lesson 8.3's module.</p></div></div>
+
+<h4>Definition</h4>
+<p>A self-updating platform pays three kinds of bill. <strong>Standing still</strong>: the index's serving nodes and Firestore's storage, by the hour, whether anything changes or not. <strong>Staying fresh</strong>: Vector Search's compaction. An index that takes streamed updates is rebuilt at least every %%COMPACT_DAYS%% days while updates keep arriving, at the batch-update price for the whole index, as lesson 8.3 read from Google's page: %%COMPACTIONS%% rebuilds in a 30-day month. <strong>One change</strong>: what the panel's edit did, priced. The scales are documents of the kit's corpus mix in one tenant, computed with lesson 8.3's module from the same prices, read on %%PRICE_DATE%%, at Rs %%USD_INR%% to the dollar.</p>
+
+<h4>One edit, part by part</h4>
+%%EDIT_TABLE%%
+
+<p>The embedding is the smallest line. The carry-over saved the model its work, but a version's chunk ids name the version, so the swap writes every row three times (staged, flipped, retired) and the index takes every datapoint again. An edit costs its changed chunks in the model, and its whole document in Firestore and Vector Search. The kit records the choice: the id stays version and position, so citations and the golden set stay stable, and a chunk's identity across versions rides on <code>chunk_hash</code> and the locator.</p>
+@@ids@@
+
+<h4>The month, at three scales</h4>
+%%COST_TABLE%%
+
+<p><strong>Dated %%PRICE_DATE%%.</strong> Every price is lesson 8.3's: Google's list prices for Mumbai (asia-south1) for Vector Search and Firestore, and the online embedding price, read on that date, at Rs %%USD_INR%% to the dollar. The serving line takes the cheapest of the three shard sizes lesson 8.3 prices: the kit declares SMALL for a new lane, and past one SMALL shard a larger size is cheaper. Not priced here: Cloud Run's request time, the DLP scan, Document AI for a PDF, the managed stores' imports and storage, and BigQuery's streaming inserts.</p>
+
+<p>Read the table the rubric's way. At 1k documents the platform is its standing bill, %%STAND_1K%% a month, and an edit costs Rs %%EDIT_1K%%: %%BREAK_1K%% edits a month would match it. At 10M, staying fresh costs as much as standing still, compaction at %%COMPACT_10M%% a month beside serving at %%SERVE_10M%%, and one edit costs Rs %%EDIT_10M%%, nearly all of it the fingerprint's ten million reads. The edit's own cost does not move with scale. The fingerprint is the line that does.</p>
+
+<h4>Do it: the cost model as a script</h4>
+<p>This is component 6's <code>COST-MODEL.md</code> as something a reviewer can rerun. It measures the kit's corpus with the kit's own chunker, carries lesson 8.3's prices as dated constants, and uses the edit's counts from this page: its characters, its datapoints, and the Firestore writes and reads the kit's functions made.</p>
+%%CELL_COST%%
+%%OUT_COST%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The script printed the table's three totals, the embedding once and the edit, scale by scale, from the kit's corpus and dated prices. Its last column is the number a design needs before it promises freshness: how many edits a month cost as much as keeping the platform up. Below it, edits are free in practice. Above it, the next rupee is in the fingerprint's column, which step 8 takes apart.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Dimension 3 &middot; Cost at 10&times;</span><h3>Cost at 10&times;: the fingerprint breaks first</h3><p>Ten times the bill is arithmetic. What stops being linear on the update path is a read that grows with the tenant, a walk with a fixed clock, and a burst the push lane cannot hold.</p></div></div>
+
+<h4>Definition</h4>
+<p>The commonest 2 on this dimension scales the bill by ten and stops. For a self-updating platform, ten times the load is ten times the changes, or a tenant ten times larger, and three limits on the update path stop being linear well before the index does. Lesson 8.3 found them in a ten-million-document load; here they are as limits on every change:</p>
+
+%%LIMITS_TABLE%%
+
+<p><strong>So what breaks first at 10&times;?</strong> Take the middle scale and multiply it by ten: a tenant of a million documents. Every change, however small, re-reads the tenant's million ledger rows, %%FP_1M_RATE%% a second inside one %%TIMEOUT%%-second request, and Rs %%FP_1M_RS%% in reads; the walk must list %%WALK_1M_RATE%% objects and rows a second for %%WALK_S%% seconds. The fingerprint breaks first, because it is the one cost that grows with the tenant on every change. Past %%FP_CROSS%% documents in a tenant, it already costs more than the rest of a handbook-sized edit together. At the top scale it costs Rs %%FP_10M_RS%% a change and must stream %%FP_10M_RATE%% rows a second. Spreading documents over tenants divides it, which lesson 8.3's calculator shows; an incremental fingerprint ends it, folding each change's <code>doc_key</code> into a running value on the ledger row in the same write that records it.</p>
+
+<div class="box box-teal"><div class="box-title">A 3 sounds like this</div>
+<p>"At ten times our largest tenant, the first limit is the corpus fingerprint: every change reads the tenant's whole ledger inside a %%TIMEOUT%%-second request, a million rows at a million documents. Before a tenant passes %%FP_CROSS%% documents we move to an incremental fingerprint. The second is compaction: at ten million documents, staying fresh costs as much as serving the index."</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Dimension 4 &middot; Evals</span><h3>Evals: a change is a release, and the check that cannot fail</h3><p>The gate runs before a document is uploaded, the version row moves with it, and the anchors check never sees a chunk.</p></div></div>
+
+<h4>Definition</h4>
+<p>The kit treats a document change the way it treats a code change. <code>make reindex</code> runs the offline gate before it uploads anything, then <code>make eval-live SOURCE=</code> judges the rows that cite the document on a candidate; <code>deploy/INDEXING.md</code> calls this "a reindex is a release". The gate is <code>evals/run_eval.py</code>: %%N_THRESH%% thresholds and %%N_REQUIRED%% required rows over %%N_GOLDEN%% golden rows. Its version row, <code>vr-01</code>, is this platform's own test. It asks <code>lk-06</code>'s question and forbids the figure only revision 2 holds, so a re-issue that leaves the rows behind turns the gate red, and the rows move with the document in the same commit.</p>
+
+<p>Then the rubric's hardest point: which checks cannot fail. For this platform, the offline anchors check is one. It looks for each <code>must_retrieve</code> anchor in the tenant's files, filename and whole text joined, and never in a chunk. No chunker change, no carry-over bug and no lost event can turn it red. What replaced it here is the live gate scoped to the document, whose rows are answered from the real index, and the lifecycle smoke, <code>make smoke-reindex</code>, which re-issues a fixture and puts it back. One gap remains: <code>must_retrieve</code> recall over the real pool is printed as information, not judged, so a chunker change is judged by the answers it changes, not by the chunks it loses.</p>
+
+<h4>The code</h4>
+@@reindex_gate@@
+@@version_check@@
+@@anchors@@
+
+<h4>Do it: the gate offline, and what moves with a document</h4>
+%%CELL_EVALS%%
+%%OUT_EVALS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The offline gate judged the golden set itself and passed. The second cell showed what a change of the handbook is judged by: the %%N_SCOPE%% rows <code>make eval-live SOURCE=hr_policy_2026.md</code> sends, and <code>vr-01</code>, which is required, so it blocks on its own. Then the vacuous one: the anchors check found no problems, and it would find none after any chunker change, because it never reads a chunk. A 3 names that check and what replaced it.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Dimension 5 &middot; Next month</span><h3>Next month: what the kit's own operating record moved to the top</h3><p>A 3 is an observation from operating, not a plan from before; the kit's dated comments show what one looks like.</p></div></div>
+
+<h4>Definition</h4>
+<p>The fifth dimension cannot be designed in advance, which is its point: a 3 is a top item nobody planned, found by running the thing. A design page can show only the shape. The kit's comments record exactly this kind of item for the document lifecycle, each one moved to the top because a live run showed something no plan had:</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>What a live run showed</th><th>Where the kit records it</th><th>What it moved to the top</th></tr></thead>
+<tbody>
+<tr><td>The first undo flipped whatever rows remained; past the window the TTL had taken them, and the source was left with no current version at all</td><td data-label="Where the kit records it"><code>idempotency.py</code>, 12 September 2026</td><td data-label="What it moved to the top">The undo counts the rows and the window before it flips anything</td></tr>
+<tr><td>The first planner re-ingested a source a person had withdrawn, the same night</td><td data-label="Where the kit records it"><code>reconcile.py</code>, 12 September 2026</td><td data-label="What it moved to the top">The tombstone: withdrawn, object kept, and only <code>make restore</code> lifts it</td></tr>
+<tr><td>The first live load sent a document to the DLQ on five refusals that were never the document's fault</td><td data-label="Where the kit records it"><code>eventarc.tf</code></td><td data-label="What it moved to the top">%%ATTEMPTS_W_CAP%% deliveries, not five</td></tr>
+<tr><td>The first version parsed a whole PDF, then looked at its page count</td><td data-label="Where the kit records it"><code>main.py</code>, 12 September 2026</td><td data-label="What it moved to the top">Pages counted off the page tree before Document AI is paid</td></tr>
+<tr><td>On the first live load, every retry of a failed document was acked as a duplicate</td><td data-label="Where the kit records it"><code>idempotency.py</code>, <code>claim()</code></td><td data-label="What it moved to the top">A failed claim is claimable again</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+@@first_undo@@
+@@first_planner@@
+
+<p>For this platform, a month of operating answers the questions that could reorder its work: the subscription's oldest unacknowledged age in its busiest hour, the share of each edit the carry-over reused, how long a cache ran stale after each change, how many cut-off claims the lease took back (<code>ingest_claim_retaken</code>), and the drift each night once the walk is on. A 3 names the one that surprised you, and says what it pushed down the list. The items already known are named in the kit: <code>deploy/INDEXING.md</code> lists a full re-embed of the corpus, under the name <code>reembed</code>, as not yet built, and lesson 8.3's last table names an incremental fingerprint and a sharded walk.</p>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Twelve checks, each one step above, each with what passing looks like.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A change's path is the kit's own</td><td data-label="The check">step 4 and the panel</td><td data-label="Pass looks like">%%N_ST_W%% stations, each with its file, in <code>main.py</code>'s order</td></tr>
+<tr><td>2</td><td data-label="Claim">Your lane's ledger, seen two ways</td><td data-label="The check">step 3's Documents page and <code>GET /v1/sources</code></td><td data-label="Pass looks like">acme <code>any</code>; the handbook at %%N_HB%% chunks; the same fingerprint in both</td></tr>
+<tr><td>3</td><td data-label="Claim">The caches' records against the ledger</td><td data-label="The check">step 3's direct reads</td><td data-label="Pass looks like">no context cache, or one current or STALE; entries counted by fingerprint</td></tr>
+<tr><td>4</td><td data-label="Claim">A one-clause edit embeds two chunks</td><td data-label="The check">step 4's cell</td><td data-label="Pass looks like">%%REUSED%% reused, %%EMBEDDED%% embedded; whole-document windows reuse %%WIN_REUSED_W%% of %%WIN_N%%</td></tr>
+<tr><td>5</td><td data-label="Claim">Three rejected designs, dated, each with a threshold</td><td data-label="The check">step 5's cell</td><td data-label="Pass looks like">the edit priced both ways; a window of %%RET_MIN%% to %%RET_MAX%% days; %%REWRITE_1%% rewrites at 1 s</td></tr>
+<tr><td>6</td><td data-label="Claim">What pages, and what does not</td><td data-label="The check">step 6's first cell</td><td data-label="Pass looks like">%%N_INGEST_POL_W%% lifecycle policies, two of them only with the walk; 1 that reads <code>%%SUB%%</code></td></tr>
+<tr><td>7</td><td data-label="Claim">One stuck state never clears on its own</td><td data-label="The check">step 6's second cell</td><td data-label="Pass looks like">reingest, reingest, queued; drift 2 of 3; the cut-off claim's lease long run out, so its rewrite takes the claim back</td></tr>
+<tr><td>8</td><td data-label="Claim">Your lane's policies</td><td data-label="The check">step 6's lane read</td><td data-label="Pass looks like">%%AT_DEFAULTS%% at the defaults or %%WITH_WALK%% with the walk; one reads <code>%%SUB%%</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The cost at three scales, dated</td><td data-label="The check">step 7's cell</td><td data-label="Pass looks like">three lines equal to the table: the month, the embedding once, the edit</td></tr>
+<tr><td>10</td><td data-label="Claim">What breaks first is a named limit</td><td data-label="The check">step 8</td><td data-label="Pass looks like">the fingerprint, past %%FP_CROSS%% documents in a tenant; %%FP_1M_RATE%% rows a second at a million</td></tr>
+<tr><td>11</td><td data-label="Claim">A change is a release, and one check is vacuous</td><td data-label="The check">step 9's cells</td><td data-label="Pass looks like">the gate sound; <code>vr-01</code> required; the anchors check with no problems, whatever the chunker</td></tr>
+<tr><td>12</td><td data-label="Claim">Next month's top item comes from operating</td><td data-label="The check">step 10</td><td data-label="Pass looks like">one observation from your lane that you did not plan, and what it moved</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing. Every cell on this page read the kit's files, your lane's ledger and cache records, or its alert policies: the offline cells call nothing, and the reads in steps 3 and 6 write nothing. The ripple ran on a stand-in. Two of the design's additions are in the kit since 13 October 2026, the alert on the subscription's age and the claim's lease: your lane has them once <code>make up</code> applies the policy and the worker is redeployed from this kit. The rest, the walk declared, a delete that retires at once and an incremental fingerprint, are proposals. If you pinned acme to the kit's index in the setup section, put the pin back. Module 9 starts with lesson 9.1, which traces and authorizes the routes through the model gateway.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 8 Ingestion practical &middot; Lesson 8.4 System design: a self-updating documentation platform &middot; v5.0</p><p>Next: Lesson 9.1 %%NEXT_TITLE%%.</p></div>

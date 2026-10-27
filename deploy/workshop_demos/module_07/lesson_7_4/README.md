@@ -142,24 +142,13 @@ rag_engine 20 -> rerank 5  (4.3's corpus, P9.4)         0.96      0.91   0.76   
        lost: lk-05: IT-SEC-04, hr_policy_2026 - not retrieved at depth 1
        lost: jn-07: IT-SEC-04 - not retrieved at depth 2
        lost: jn-11: labour_codes_compliance_handbook - ranked out (in the candidates, not the five)
-vertex_search 20 -> rerank 5  (4.4's data store, R4)         0.88      0.71   0.61       30     ...   (2 rows failed)
+vertex_search 20 -> rerank 5  (4.4's data store, R4)         1.00      0.93   0.80       42     ...   (2 rows failed)
        jn-04: NotFound: 404 DataStore documind-globex not found
        lk-28: NotFound: 404 DataStore documind-globex not found
-       lost: lk-05: IT-SEC-04, hr_policy_2026 - not retrieved at depth 0
-       lost: lk-08: FIN-02 - ranked out (in the candidates, not the five)
-       lost: lk-09: WFH-01 - not retrieved at depth 6
-       lost: lk-13: MSA-09 - not retrieved at depth 3
-       lost: jn-01: LV-07 - not retrieved at depth 12
-       lost: jn-02: NP-03, LV-07 - not retrieved at depth 15
-       lost: jn-03: LV-07, NP-03 - not retrieved at depth 18
-       lost: jn-07: IT-SEC-04 - not retrieved at depth 5
-       lost: lk-15: maternity_benefit_amendment_act_2017 - ranked out (in the candidates, not the five)
-       lost: lk-24: osh_code_2020 - ranked out (in the candidates, not the five)
-       lost: lk-25: osh_code_2020 - ranked out (in the candidates, not the five)
-       lost: lk-26: dpdp_act_2023 - ranked out (in the candidates, not the five)
-       lost: lk-29: osh_code_2020 - ranked out (in the candidates, not the five)
-       lost: lk-30: dpdp_act_2023 - ranked out (in the candidates, not the five)
-       lost: lk-31: code_on_social_security_2020 - ranked out (in the candidates, not the five)
+       the store ranked no document for 1 of 45 rows: the kit's nearest rows answered them, as the API does
+       lost: lk-19: payment_of_bonus_act_1965 - ranked out (in the candidates, not the five)
+       lost: lk-21: code_on_wages_2019 - ranked out (in the candidates, not the five)
+       lost: jn-11: labour_codes_compliance_handbook - ranked out (in the candidates, not the five)
 
 Read it in this order: recall@depth is the reranker's ceiling - if the 20 and 50 rows agree, depth is not the knob;
 recall@5 of the lane's row minus the first row is the reranker's lift, and p95 is what it costs;
@@ -197,7 +186,7 @@ make managed-status TENANT_ONLY=zeta, until the stores match the ledger (the han
 {"tenant": "zeta", "store": "rag_engine", "ledger_current": 7, "held": 7, "missing": 0, "orphans": 0, "status": "in sync", "missing_doc_keys": [], "orphan_doc_keys": []}
 {"tenant": "zeta", "store": "vertex_search", "ledger_current": 7, "held": 7, "missing": 0, "orphans": 0, "status": "in sync", "missing_doc_keys": [], "orphan_doc_keys": []}
 zeta, answered from vertex_search: A confirmed employee at grade L4 or above serves a notice period of 45 days [1].
-  cites zeta:zeta_025c4143...#vs-f44cd45f3eb8
+  cites zeta:025c4143...#1
 ```
 
 **`step_02_a_new_version_then_the_undo(session)` — A new version, then the undo / Do it**
@@ -225,7 +214,7 @@ make managed-status TENANT_ONLY=zeta, until the stores match the ledger (the han
 {"tenant": "zeta", "store": "rag_engine", "ledger_current": 7, "held": 7, "missing": 0, "orphans": 0, "status": "in sync", "missing_doc_keys": [], "orphan_doc_keys": []}
 {"tenant": "zeta", "store": "vertex_search", "ledger_current": 7, "held": 7, "missing": 0, "orphans": 0, "status": "in sync", "missing_doc_keys": [], "orphan_doc_keys": []}
 zeta, answered from vertex_search: A confirmed employee at grade L4 or above serves a notice period of 30 days [1].
-  cites zeta:zeta_e920a147...#vs-e9fd5992049d
+  cites zeta:e920a147...#1
 ```
 
 ### demo_06_a_withdrawal_then_the_restore.py
@@ -271,7 +260,7 @@ make managed-status TENANT_ONLY=zeta, until the stores match the ledger (the han
 {"tenant": "zeta", "store": "rag_engine", "ledger_current": 7, "held": 7, "missing": 0, "orphans": 0, "status": "in sync", "missing_doc_keys": [], "orphan_doc_keys": []}
 {"tenant": "zeta", "store": "vertex_search", "ledger_current": 7, "held": 7, "missing": 0, "orphans": 0, "status": "in sync", "missing_doc_keys": [], "orphan_doc_keys": []}
 zeta, answered from vertex_search: A confirmed employee at grade L4 or above serves a notice period of 30 days [1].
-  cites zeta:zeta_e920a147...#vs-e9fd5992049d
+  cites zeta:e920a147...#1
 ```
 
 ### setup/restore_settings.py
@@ -292,6 +281,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_7.4_Mirror_Freshness_WIX.html`. All 23 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `52a2208d70780892bee65299e6a93e78318165ff`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_7.4_Mirror_Freshness_WIX.html`. All 23 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `a125e44207864ba40330c6fc86173a9a6fb17712`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

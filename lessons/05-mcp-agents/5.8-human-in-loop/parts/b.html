@@ -1,0 +1,108 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code> and <code>ME</code>, and the chat service lesson 5.1 deployed. You also need what lesson 5.6 left on your lane: acme's queues, the eval accounts on their rosters, and your four roles. Step 3 changes your lane: it adds <code>people_ops</code> to your roles, and you raise one case on the Desk page. Steps 4 and 5 make or complete <code>~/graph-venv</code> with the chat image's pins and the SQLite checkpointer, and touch nothing on your lane. Step 6 asks the chat service five questions as <code>documind-evalacme-sa</code>, and raises and withdraws one case. Step 8 changes your lane more, and undoes most of it: it switches acme's <code>agent_actions</code> to <code>approval</code>, gives <code>documind-evalacme-sa</code> the <code>doc_approver</code> role, withdraws one small document and brings it back, then switches acme off again; the approval records and their audit events stay. Run steps 3, 6, 7 and 8 in the same shell, in order: step 3 defines <code>CHAT</code>, <code>SINCE108</code>, <code>sa</code> and <code>etok</code>, and the later steps use them.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; Your lane and the deployed UI</span><h3>Your lane: the People team's reader, and a request for a person on the Desk page</h3><p>The People team's role for you, then a request for a person told to the Desk, sent as a case, and read in the People team's inbox.</p></div></div>
+
+<h4>Do it: the People team's reader</h4>
+<p>A request for a person goes to acme's <code>people</code> queue, the People team's. A case there is read by whoever holds <code>people_ops</code>, and nobody on your lane holds it yet: lesson 5.6 gave you the roles that read grievances and POSH cases. So far a request for a person would reach no one. The cell sets the names the later steps use, notes the time in <code>SINCE108</code> for step 7's log read, and gives you <code>people_ops</code> beside the four roles you have. <code>ROLES=</code> sets exactly the roles it lists, so it names all five.</p>
+%%CELL_ROLES%%
+%%OUT_ROLES%%
+<p><code>make roles</code> wrote your role document. <code>before</code> lists the four roles lesson 5.6 gave you, <code>granted</code> names <code>people_ops</code> alone, and <code>revoked</code> is empty. The grant is one <code>role.grant</code> event in the audit bucket. Roles are read on every request, so the Desk page shows you the People team's inbox at once.</p>
+
+<h4>Do it: ask for a person on the Desk page</h4>
+<ol>
+<li><strong>Tell the Desk.</strong> Open the UI, sign in as yourself and choose <strong>Desk</strong>. In the <strong>Tell the Desk</strong> box, "What do you need help with?", type <code>%%ESCALATE%%</code> and press <strong>Send</strong>. The sentence is one of the gate's own <code>human_requested</code> examples, from <code>commands/tests/test_desk_rules.py</code>. The reply is the fixed text: "%%TEMPLATE%%" Under it is the caption "This is a fixed reply. No AI model was used. To reach a person, raise the case below. A case does not include what you typed here." and a button, <strong>Ask for a person</strong>.</li>
+<li><strong>Send the case.</strong> Press <strong>Ask for a person</strong>. Under <strong>Raise a case</strong>, "What is it about?" now reads "I want to talk to a person", and the form is empty. Write a sentence of your own in "In your own words (you can change this before sending)" and press <strong>Next: check it before sending</strong>. The draft reads "Asked for a person: not sent yet" and "Goes to: %%PEOPLE_NAME%%", with the contact acme's queues file names, and below the form, "Nothing is sent until you press Send. This draft is kept for %%DRAFT_MIN%% minutes". Press <strong>Send</strong>. The page says "Sent. Your case reference is", then eight characters, and that you can follow it under Your cases.</li>
+<li><strong>Read it as the People team.</strong> Under <strong>Your inbox</strong> the case shows as "Asked for a person", with "Status: Sent", who raised it and your words under "In their words:". In "Change the status to", choose "Acknowledged (we have seen it)" and press <strong>Update</strong>. Under <strong>Your cases</strong>, "Asked for a person" now shows "Status: Seen by the team".</li>
+</ol>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The Desk page sent your words to <code>POST /v1/chat</code>, and the chat door answered before any brain ran. It found the class <code>human_requested</code>, sent the fixed reply, and named the class in <code>case_offer</code>. The button came from <code>case_offer</code>, never from your words, and the form started empty. The draft and the send went through the case routes as you. The case went to the <code>people</code> queue, and the inbox showed it to you because you now hold <code>people_ops</code>. <code>human_requested</code> is not one of the sensitive classes, so the door's log row names you as well as the class; step 7 reads it. The Chat page would have shown the same fixed reply, with "brain: desk_gate" in its caption, but no button: it does not read <code>case_offer</code>.</p>
+<p>That is the escalation the kit runs on your lane: by rule, at the door, and raised by the person. You were the person who asked and the People team at once, so one sign-in shows both sides; on a real lane they are different people.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit's code</span><h3>The pause, in the kit: approval.py</h3><p>Three tools that bring a person into a turn, who may decide what, the approve node, and the kit's own tests.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>services/chat/approval.py</code> is %%N_AP_LINES%% lines. Its docstring opens with the fact the rest depends on: one module in the service imports it, <code>approval_routes.py</code>, behind a company's switch that is off until an operator sets it. The build checks that too: no other file under <code>services/</code> imports it, <code>tools.BLOCKED</code> still holds its %%N_BLOCKED%% names, and the LangGraph brain still has its refuse node.</p>
+@@header@@
+
+<h4>The three tools</h4>
+<p><code>NEEDS_APPROVAL</code>, <code>NEEDS_ANSWER</code> and <code>DECISIONS</code> say who ends which pause. A document's name is at most %%NAME_MAX%% characters, a reason for a rejection at most %%REASON_MAX%%, and an answer at most %%ANSWER_MAX%%. <code>CaseType</code> lists the six kinds the Desk page's button offers.</p>
+@@consts@@
+<p>The person who asked is never a tool argument. <code>owner()</code> reads them from the thread id, which the server builds from the verified caller, so neither the model nor a resume can change it.</p>
+@@owner@@
+<p><code>withdraw_document</code> takes its tenant and the person who asked from the thread. It accepts a bare file name, <code>tenant/name</code> or the upload URI, and refuses another tenant's document or a path. Then comes the last lock: the resumed turn's context must name someone other than the person who asked as the approver of this call's id. What withdraws is injected, and the result names the undo.</p>
+@@withdraw@@
+<p><code>ask_user</code>'s body runs only where nobody was asked, and it tells the model to put the question in its answer. That is what happens on your lane while a company's switch is off, where the brain has no such tool.</p>
+@@ask@@
+<p><code>offer_case</code> checks that the person's roles open the case desk and that the company has a queue for the kind of case, as <code>GET /v1/cases/offer</code> decides it. It takes no reason, so nothing a person disclosed reaches its result, and it writes nothing: its <code>case_offer</code> has the chat door's key and shape.</p>
+@@offer@@
+
+<h4>Who may decide</h4>
+<p><code>_check()</code> holds the rules. <code>approve</code> may come from anyone but the person who asked, and, when <code>may_approve</code> is given, only from someone it allows. <code>reject</code> may come from the person who asked, as their cancel, or from a second person. <code>respond</code> may come only from the person who asked. A decision with no person named, the wrong kind for the tool, a reason that is too long or an empty answer is refused too.</p>
+@@check@@
+
+<h4>The approve node</h4>
+<p><code>route()</code> sends a turn with any call that needs a person to <code>approve</code>, where the brain's route sends a blocked call to <code>refuse</code>. The approve node builds the pause's payload, in the shape LangChain's middleware uses, and calls <code>interrupt()</code>. On the resume it checks the decisions again with <code>_refusals()</code>: a resume that breaks a rule gets another <code>interrupt()</code>, which says why. Below that come the "approval asked" log line, an error result for each rejected call, and the answer as the result of each question answered. <code>onward()</code> then sends every call still without a result to the tools, one <code>Send</code> each: the approved calls, and any call asked for beside them. With none, it goes back to <code>agent</code>.</p>
+@@approve@@
+<p>The graph is the LangGraph brain's, with <code>approve</code> where <code>refuse</code> is. It has %%N_AG_EDGES%% edges to the brain's %%N_LG_EDGES%%: <code>refuse</code> only goes back to <code>agent</code>, while <code>approve</code> can also send calls on to <code>tools</code>.</p>
+@@wiring@@
+@@brain_route@@
+
+<h4>decide() and paused()</h4>
+<p><code>paused()</code> reads the interrupt's payload and checks that it matches the calls waiting in the thread. <code>decide()</code> refuses before anything runs. Nothing waiting is a <code>LookupError</code>, which a route would answer as 409. A wrong count or kind of decision is a <code>ValueError</code>, 422. A person the rules do not allow is a <code>PermissionError</code>, 403. Then it resumes the turn. The resumed turn's context takes its tenant and user from the thread, whatever context the caller passes, and names who approved each call, which is what the tool's lock reads.</p>
+@@paused@@
+@@decide@@
+
+<h4>The middleware form</h4>
+<p><code>hitl_middleware()</code> gives LangChain's <code>create_agent</code> the same pause, with the same decisions and descriptions, and <code>paused()</code> reads both forms into one record. Its <code>after_model</code> hook is a graph node of its own, so each model call writes one more checkpoint. The build counted them on a scripted model: a turn with one model call writes %%CP_ONE_A%% checkpoints without the middleware and %%CP_ONE_B%% with it, and a turn with two writes %%CP_TWO_A%% and %%CP_TWO_B%%. That is why the kit's turn limits wrap the model call instead (lesson 5.5).</p>
+@@hitl@@
+
+<h4>Do it: the kit's own tests</h4>
+<p><code>make approval-check</code> is <code>commands/approval-check.sh</code>. It makes <code>~/graph-venv</code> if it is missing (lesson 5.4 made it), installs the chat image's pins and the SQLite checkpointer, <code>langgraph-checkpoint-sqlite</code> %%PIN_SQLITE%%, the version <code>services/chat/requirements-local.txt</code> pins, and runs <code>commands/tests/test_approvals.py</code>. CI's chat-pins step runs the same file. It needs no credential, no network after the install, and costs nothing.</p>
+@@mk@@
+@@sh@@
+%%CELL_CHECK%%
+%%OUT_CHECK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>All %%N_TESTS%% tests passed: %%N_WIRING%% in the <code>Wiring</code> class and %%N_APPROVALS%% in the <code>Approvals</code> class. The <code>Wiring</code> tests need only the standard library. They check that nothing in the service imports the module, and that it writes no audit event, so the list of actions lesson 4.8 counts is unchanged. They check that it was verified against the image's own pins: LangChain %%PIN_LC%%, LangGraph %%PIN_LG%% and the SQLite checkpointer %%PIN_SQLITE%%. And they check that the make target, its script and CI's chat-pins step all run this file. The <code>Approvals</code> tests drive the module on scripted models, a stand-in rag-api and a fake Firestore that records any write. Each is a claim this page makes, and step 5 runs four of them by hand.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; On your machine</span><h3>Pause, refuse, approve and resume on your machine</h3><p>A withdrawal paused and approved, a second process resuming it from a file, a question only the asker answers, and the Change-it.</p></div></div>
+
+<h4>Do it: a withdrawal, paused and approved</h4>
+<p>The cell builds the kit's approval graph on a scripted model that asks for <code>withdraw_document</code>, with an in-memory checkpointer and an executor that only prints. It streams the turn to its pause and lists what waits. Then it tries Asha's own approval, and Ravi's.</p>
+%%CELL_PAUSE%%
+%%OUT_PAUSE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The stream shows the agent node, then <code>__interrupt__</code>: the approve node stopped the turn before any tool ran. <code>paused()</code> lists one call, <code>c0</code>, which takes approve or reject, asked by asha. Asha's approval was refused by <code>decide()</code> before anything ran, and the same call still waited. Ravi's approval resumed the turn. The approve node ran again from its first line, so its log line was written now, once, at the resume. Then the tool ran with Ravi's approval in the context, and called the executor with the tenant and the person who asked, both from the thread. The path lists the node each checkpoint said would run next: agent, approve (where the turn waited), tools, agent, and the end.</p></div>
+
+<h4>Do it: a second process resumes it</h4>
+<p>The pause is data in the checkpointer, not a request waiting in memory. The first process pauses the turn into a SQLite file, <code>~/lesson108_threads.db</code>, through <code>SqliteSaver</code>, the local lane's checkpointer, and ends. The second process is a new interpreter: it builds a new graph on the same file, finds the waiting call, and resumes it with Ravi's approval.</p>
+%%CELL_SQLITE%%
+%%OUT_SQLITE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Nothing passed between the two processes but the file. Process 1 ended with the turn paused before <code>approve</code>. Process 2 found the same waiting call there, and <code>decide()</code> resumed it: the approval line was written in process 2, at the resume, and the executor ran once, with <code>requested_by</code> asha and <code>approved_by</code> ravi. The kit's own test does the same with two processes. Your lane's checkpointer is Postgres on Cloud SQL, shared by every instance of the chat service, so any instance could resume a turn paused there. Nothing pauses there yet.</p></div>
+
+<h4>Do it: a question only the asker answers</h4>
+<p>The same graph, now with a scripted model that asks Asha which rule applies to her. The handbook's NP-03 gives a confirmed employee at grade E3 or above 60 days' notice, and its PB-02 gives 15 days during probation. Ravi tries to answer for her, Asha tries to approve, then Asha answers.</p>
+%%CELL_ASK%%
+%%OUT_ASK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>ask_user</code> takes a respond decision and nothing else, and only from asha, the user in the thread id. Ravi's answer was refused with a <code>PermissionError</code> and Asha's approval with a <code>ValueError</code>, both before anything ran. Her answer became <code>ask_user</code>'s result, which the model reads in the same turn. The path went from <code>approve</code> straight back to <code>agent</code>: the tools had nothing to run.</p></div>
+
+<h4>Change it: the approval line above interrupt()</h4>
+<p>A resumed node runs again from its first line. The kit writes its "approval asked" line below <code>interrupt()</code>, so it is written once, at the resume. The first cell defines <code>twice108</code>, which pauses one withdrawal, approves it, and counts that line at each point. The second cell moves the line above <code>interrupt()</code>, from line %%MOVE_FROM%% to line %%MOVE_TO%%, and runs <code>twice108</code> again. Then it puts the kit's file back with git, so the setup section's <code>git pull</code> next time is not refused.</p>
+%%CELL_TWICE%%
+%%OUT_TWICE%%
+%%CELL_MOVE%%
+%%OUT_MOVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Above <code>interrupt()</code>, the line was written at the pause and again at the resume, twice for one approval, while the tool still ran once. A log line written twice does no harm. An email to the approver, a ticket or a payment made there would go out twice, once each time the node runs. So in any node that pauses, everything above <code>interrupt()</code> must be safe to run again.</p></div>

@@ -98,7 +98,7 @@ your kit is at b89bbd8
 
 ### demo_04_the_live_half_every_row_two_identities_nine_rates_three_exit_codes.py
 
-Do it: the live gate, with a report Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Last, what the run cost. The API priced every answer on its usage row; make usage groups the last hour of those rows. Run it straight after the gate, before step 5 asks the lane again.
+Do it: the live gate, with a report Until lesson 7.5 builds the town hall's video, the gate prints an [info] line for mm-03 and judges it on its words: there is no segment to cite yet. Once your ledger lists townhall_2026_q1.mp4 as indexed, mm-03 asks for its segment again. The board below asks every media row for its kind, as the gate does after 7.5. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Last, what the run cost. The API priced every answer on its usage row; make usage groups the last hour of those rows. Run it straight after the gate, before step 5 asks the lane again.
 
 **`step_01_the_live_gate_with_a_report(session)` — The live half: every row, two identities, nine rates, three exit codes / Do it: the live gate, with a report**
 
@@ -113,6 +113,7 @@ Expected shape, not a promised result:
 ```text
 >> https://documind-api-NUMBER.asia-south1.run.app
 == eval gate: LIVE ==
+  [info] mm-03: no segment file of townhall_2026_q1 indexed for acme yet: judged as a text lookup, the segment citation not asked (make media builds it)
   65 rows (47 answerable, 18 not) against https://documind-api-NUMBER.asia-south1.run.app
 
   [PASS] request_success_rate  100.0%  (threshold 100%; 65 rows)
@@ -122,7 +123,7 @@ Expected shape, not a promised result:
   [PASS] must_contain_rate      97.8%  (threshold 85%; 46 rows)
   [PASS] correct_rate           95.7%  (threshold 68%; 47 rows)
   [PASS] refusal_rate          100.0%  (threshold 90%; 18 rows)
-  [PASS] media_kind_rate       100.0%  (threshold 80%; 3 rows)
+  [PASS] media_kind_rate       100.0%  (threshold 80%; 2 rows)
   [PASS] isolation_403_rate    100.0%  (threshold 100%; 11 rows)
   [info] quote_support_rate      ...  (quoted words found in the tenant's corpus text; not a threshold - a Doc AI extraction and a pypdf mirror hyphenate differently)
 
@@ -148,7 +149,7 @@ Expected shape, not a promised result:
 
 **`step_02_the_live_gate_with_a_report(session)` — The live half: every row, two identities, nine rates, three exit codes / Do it: the live gate, with a report**
 
-Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point.
+Until lesson 7.5 builds the town hall's video, the gate prints an [info] line for mm-03 and judges it on its words: there is no segment to cite yet. Once your ledger lists townhall_2026_q1.mp4 as indexed, mm-03 asks for its segment again. The board below asks every media row for its kind, as the gate does after 7.5. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point.
 
 Operation: bash — run in the operator shell, in the kit (reads the report; changes nothing).
 
@@ -203,7 +204,7 @@ Operation: bash — run in the operator shell, in the kit (a second venv for the
 Expected shape, not a promised result:
 
 ```text
-selftest: the cited chunk's text replaces its quote as the context and a miss keeps the quote; the prompt the judge reads carries the context then the question; the frame carries the six judge columns plus the baseline; the trajectory maths is right on the three cases
+selftest: the cited chunk's text replaces its quote as the context and a miss keeps the quote; the prompt the judge reads carries the context then the question; the frame carries the six judge columns plus the baseline; the trajectory maths is right on the three cases; a failed request is a rating not returned
 ```
 
 **`step_02_the_judge_on_your_lane(session)` — The judge: the lane's own answers, read with the context they cite / Do it: the judge on your lane**
@@ -240,11 +241,11 @@ Expected shape, not a promised result:
 
 ### demo_06_where_the_gate_and_the_judge_disagree_read_the_row.py
 
-Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary and writes no per-row ratings, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
+Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary, and writes per-row ratings only when --save-rows names a file, which the run above does not, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
 
 **`step_01_where_the_gate_and_the_judge_disagree_read(session)` — Where the gate and the judge disagree: read the row / Where the gate and the judge disagree: read the row**
 
-Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary and writes no per-row ratings, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
+Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary, and writes per-row ratings only when --save-rows names a file, which the run above does not, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
 
 Operation: bash — run in the operator shell, in the kit (reads both files; changes nothing).
 
@@ -294,6 +295,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_4.2_Live_Judge_WIX.html`. All 40 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `a3b436e773ca4580adf995f55ba1ad0be7561a39`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_4.2_Live_Judge_WIX.html`. All 40 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `b9f33f7e16b7f44cd5dd37f48cac48545966665c`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

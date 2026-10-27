@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -163,6 +164,18 @@ class InfrastructureTests(unittest.TestCase):
         for switch in ("DESK_JOB", "RECONCILE_JOB", "BATCH_JOB", "DESK_ROUTER_ALERTS", "DESK_GATE_ALERTS", "GCHAT_DOOR"):
             self.assertIn(switch, str(stopped.exception))     # the refusal names every switch a lane must keep passing
 
+    def test_no_terraform_resource_carries_prevent_destroy(self):
+        """No resource needs prevent_destroy: inspect_plan refuses every delete on make plan and make up (the test above).
+        prevent_destroy refused more: Terraform rejects a whole destroy that includes one such resource, so make down
+        removed nothing once the services and the corpora were gone (8 October 2026, managed.tf's data stores)."""
+        root = Path(__file__).resolve().parents[2] / "terraform"
+        files = sorted(p for p in root.rglob("*.tf") if ".terraform" not in p.parts)
+        self.assertTrue(files, root)
+        guarded = [f"{p.relative_to(root).as_posix()}:{number}" for p in files
+                   for number, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+                   if re.match(r"\s*prevent_destroy\s*=", line)]
+        self.assertEqual(guarded, [], "prevent_destroy makes Terraform refuse make down's whole destroy")
+
     def test_failed_plan_clears_old_selection(self):
         infra.write_json(self.root / infra.SELECTED_FILE, {"plan": "old.tfplan"})
         self.fake.plan_code = 1
@@ -206,6 +219,74 @@ class InfrastructureTests(unittest.TestCase):
     def test_unknown_wif_policy_cannot_be_simplified(self):
         with self.assertRaisesRegex(infra.Stop, "three-gate policy"):
             infra.parse_trust(CONDITION + " && assertion.actor == 'alice'")
+
+
+class SubscriptionsNeverExpire(unittest.TestCase):
+    """Every Pub/Sub subscription the kit declares holds expiration_policy { ttl = "" } (13 October 2026). Left to the
+    default, Google deletes a subscription after 31 days without subscriber activity: a lane with no upload for a month
+    lost documind-ingest-push and ingest-dlq-sub, and the next upload published to a topic nobody read."""
+
+    TERRAFORM = Path(__file__).resolve().parents[2] / "terraform"
+
+    def subscriptions(self) -> dict:
+        out = {}
+        for tf in sorted(self.TERRAFORM.glob("*.tf")):
+            text = tf.read_text(encoding="utf-8")
+            for m in re.finditer(r'^resource "google_pubsub_subscription" "(\w+)" \{\n(.*?)^\}', text, re.M | re.S):
+                out[f"{tf.name}:{m.group(1)}"] = m.group(2)
+        return out
+
+    def test_every_subscription_holds_the_policy(self):
+        subs = self.subscriptions()
+        self.assertLessEqual({"eventarc.tf:ingest_push", "eventarc.tf:ingest_dlq_sub", "gchat.tf:gchat_push"}, set(subs))
+        for name, body in subs.items():
+            self.assertRegex(body, r'(?m)^  expiration_policy \{\n    ttl = ""\n  \}$', name)
+
+
+class IngestBacklogAlert(unittest.TestCase):
+    """The main ingest subscription's backlog pages (13 October 2026, lesson 8.4's review). dlq_depth read the dead
+    letters and no policy read documind-ingest-push, so a worker that stopped answering showed only when messages
+    reached the DLQ after their twelfth attempt, about an hour in. ingest_backlog reads the subscription's oldest
+    unacknowledged message, on every lane, and its threshold clears one document's slowest honest turn."""
+
+    TERRAFORM = Path(__file__).resolve().parents[2] / "terraform"
+    INGEST = Path(__file__).resolve().parents[2] / "services" / "ingest"
+
+    def block(self, kind: str, name: str, text: str) -> str:
+        m = re.search(rf'^resource "{kind}" "{name}" \{{\n(.*?)^\}}', text, re.M | re.S)
+        self.assertIsNotNone(m, name)
+        return m.group(1)
+
+    def policy(self) -> str:
+        return self.block("google_monitoring_alert_policy", "ingest_backlog",
+                          (self.TERRAFORM / "alerts.tf").read_text(encoding="utf-8"))
+
+    def test_the_push_subscription_has_a_backlog_policy(self):
+        body = self.policy()
+        self.assertIn(r'resource.labels.subscription_id=\"${google_pubsub_subscription.ingest_push.name}\"', body)
+        self.assertIn(r'metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\"', body)
+        self.assertRegex(body, r'(?m)^      comparison      = "COMPARISON_GT"$')
+        self.assertIn("notification_channels = local.alert_channel_ids", body)
+        self.assertNotRegex(body, r"(?m)^  count\s*=")                  # declared on every lane, as dlq_depth is
+        self.assertRegex(body, r'\n  documentation \{\n    content\s*=\s*"[^"\n]*documind-ingest-push')
+
+    def test_the_threshold_clears_one_documents_slowest_turn(self):
+        # The slowest honest turn of one message: its holder cut off just after claiming, every delivery inside the
+        # claim's lease nacked, the delivery that retakes it at most one maximum backoff after the lease runs out,
+        # and then one attempt of up to an ack deadline. Threshold plus duration must outlast it, or one document
+        # would page as a backlog.
+        body = self.policy()
+        threshold = int(re.search(r"(?m)^      threshold_value = (\d+)$", body).group(1))
+        duration = int(re.search(r'(?m)^      duration        = "(\d+)s"$', body).group(1))
+        sub = self.block("google_pubsub_subscription", "ingest_push",
+                         (self.TERRAFORM / "eventarc.tf").read_text(encoding="utf-8"))
+        ack = int(re.search(r"(?m)^  ack_deadline_seconds = (\d+)$", sub).group(1))
+        backoff = int(re.search(r'(?m)^    maximum_backoff = "(\d+)s"$', sub).group(1))
+        lease = sum(int(n) for n in re.search(r"(?m)^LEASE_SECONDS = ([\d +]+)$", (
+            self.INGEST / "idempotency.py").read_text(encoding="utf-8")).group(1).split("+"))
+        self.assertGreater(lease, ack, "a claim's lease outlasts the deadline its request is cut at")
+        self.assertGreater(threshold + duration, lease + backoff + ack)
+        self.assertLess(threshold, 3600, "the backlog pages before the dead-letter queue would, about an hour in")
 
 
 if __name__ == "__main__":

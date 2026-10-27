@@ -1,0 +1,141 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Candidate</span><h3>The stage on a candidate: QUERY_REWRITE=on, a forced failure, and the undo</h3><p>A revision that serves nobody, one question with the stage on, the same question with a model that does not exist, the two log lines, and the variables taken back out.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>QUERY_REWRITE</code> is read once, at startup, and the validator refuses anything but <code>off</code> or <code>on</code> before the revision serves. Neither make target sets it. <code>make deploy-services</code> sets the API's whole environment with <code>--set-env-vars</code>, and the variable is not in its list; <code>make candidate</code> updates its own list with <code>--update-env-vars</code>, and the variable is not in that one either. A revision gets the stage from <code>gcloud run services update --update-env-vars</code>, as below, and that has two consequences. The next <code>make deploy-services</code> replaces the whole environment and turns the stage off again: a variable set by hand is a hotfix that a routine deploy drops, which lesson 11.7 drills. And <code>--update-env-vars</code> merges, so the variable would ride into the next candidate, <code>make candidate</code>'s included, unless it is removed; the undo removes both. The pattern is lesson 2.2's: <code>--no-traffic</code> and a tag, a URL of its own, and the identity token's audience still the service's canonical URL.</p>
+
+<h4>The code</h4>
+@@make_candidate@@
+@@deploy_set@@
+
+<h4>Do it: the stage on, one question</h4>
+<p>The cell creates the revision and asks it the paraphrase from step 3. <code>ask()</code> prints the stage's three keys, the clocks, the answer's cost and the citations. If the first line says <code>same</code>, the model judged the question a good search query already; ask another of step 5's questions, such as pp-10's, the same way.</p>
+%%CELL_ON%%
+%%OUT_ON%%
+
+<h4>Do it: a model that does not exist, the same question</h4>
+<p><code>QUERY_REWRITE_MODEL</code> is a setting, so a revision whose model name is wrong is one variable away. The call fails, <code>rewrite()</code> catches it, and the stage searches the question: the answer still comes, with HTTP 200.</p>
+%%CELL_FAIL%%
+%%OUT_FAIL%%
+
+<h4>Do it: the two lines the two questions wrote</h4>
+%%CELL_ROWS%%
+%%OUT_ROWS%%
+
+<h4>Do it: the undo</h4>
+<p>The variables exist only on the candidate's template, so they are removed rather than set back, and the tag is dropped. Both template lines must print empty.</p>
+%%CELL_UNDO%%
+%%OUT_UNDO%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A revision with the stage on answered the paraphrase on its own URL while the live revision served everyone else. Its answer said which text found the pool, <code>stages.search_query</code>, and what the stage did, <code>stages.rewrite</code>; its citations came from a pool the reranker ordered against the person's question. With a model that does not exist, the same request answered 200 with <code>fallback</code>: the question was searched, exactly as with the stage off, and the failure cost a call's latency and nothing else. The two log lines named the outcomes, the error's class, the tokens and the cost, and no word of the question. Then the variables came out of the template and the tag went; the next candidate starts clean, and the next <code>make deploy-services</code> would have taken them out anyway.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Measure</span><h3>The measurement: the rewrite arm against the lane, on the golden rows and the paraphrases</h3><p>Lesson 2.2's harness with one arm added from outside the API, the paraphrases scored on their originals' anchors, the tally of the calls, and a reading that holds when there is no lift.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>--rewrite</code> adds one arm to <code>evals/ablate.py</code>, built beside the <code>--arms</code> keys and never as one of them: the lane's dense 20 then rerank 5, with the question rewritten first by the same <code>shared/query_rewrite.py</code>. The rewrite is what the Firestore rung searches and the question is what the reranker orders, as on <code>/v1/query</code>; a refused or failed rewrite searches the question, so the arm differs from the lane's only on the rows where a rewrite was accepted. Each distinct question gets one call, kept, so a retried row is not asked twice: %%GOLD_Q%% calls in the golden run, because two pairs of rows ask in the same words, and %%ALL_Q%% in the paraphrase run. <code>--paraphrases</code> adds the file's %%PARA%% <code>same: true</code> rows after the golden ones, each scored on the anchors of the row it rewords, and prints under each arm the golden share and the paraphrase share apart; the %%PARA_SAME_FALSE%% <code>same: false</code> rows ask something else and are never scored. So the paraphrase run re-scores the %%ANCH%% golden rows too: if you want one run only, run that one, since its split line carries the golden share. <code>--limit</code> cuts the golden rows first.</p>
+
+<h4>The code</h4>
+@@make_ablate@@
+@@abl_flags@@
+@@abl_rows@@
+@@abl_arm@@
+@@abl_paraphrases@@
+@@abl_split@@
+@@abl_summary@@
+
+<h4>Do it: a wiring check, then the golden rows, then the paraphrases</h4>
+<p>The wiring check takes the first five anchored rows, two arms and five calls, and shows the lines are where they should be before the longer runs spend anything.</p>
+%%CELL_WIRING%%
+%%OUT_WIRING%%
+%%CELL_GOLDEN%%
+%%OUT_GOLDEN%%
+%%CELL_PARA%%
+%%OUT_PARA%%
+
+<h4>How to read it, and the baseline it is read against</h4>
+@@abl_read@@
+@@abl_baseline@@
+<p>The 8 September figures were measured over the %%BASE_ROWS%% anchored rows the golden set had then; it has %%ANCH%% now, %%NEW_ROWS%% added since, so today's lane row is the baseline that counts, measured in the same run as the rewrite row. Read the two rows of each run against each other, never against another run. One row whose anchors all appear or all vanish moves recall@5 by %%ONE_G%% on the golden rows and by %%ONE_P%% on the paraphrases, so a difference of a row or two is the movement of single rows, which one run cannot separate from the model's own variation between runs. With the lane's own row at %%BASE_R5%% when it was last measured, there is little left to win on the golden rows, so a rewrite row equal to the lane's is the likely result there, and the harness's own words for it are "the rewrite is not the knob on these questions". The paraphrases are where it may differ: the same anchors, asked in other words. The rewrite row's p95 carries the model call and a second embedding, and the tally line under it is what the calls cost.</p>
+%%RESULT_GOLDEN%%
+%%RESULT_PARA%%
+
+<div class="box box-teal"><div class="box-title">When the stage earns its call</div>
+<p>Turn it on only where the measurement says so: the rewrite row ahead of the lane's on the paraphrases by at least one row's worth, and not behind it on the golden rows by as much. Then weigh what it costs per question: one %%MODEL%% call, about Rs %%PER_1000%% a thousand questions (%%PER_1000_SRC%%), and the call's milliseconds inside every <code>retrieve_ms</code>. Below that line, leave it off; config.py's default says the same. Even on, it serves only <code>/v1/query</code>, and the kit has no make switch for it yet: a revision carries it until the next <code>make deploy-services</code>.</p></div>
+
+<h4>What the runs cost</h4>
+<p>Each row of the ablation costs two embeddings, in paise, and one Ranking API request per arm, at the listed rate lesson 2.3 states, one US dollar per thousand requests, Rs %%RS_REQ%% each at %%USD_INR%% rupees to the dollar. Each rewrite call is priced here from the prompt's length through <code>shared/prices.py</code>; your tally lines print the real figure. An answer is priced by its tokens and printed on its own line; config.py's budgets cap one attempt at %%MAX_CONTEXT%% tokens in and %%MAX_ANSWER%% out, Rs %%ANSWER_MAX%% at %%GEN_MODEL%%'s list price.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>What is billed</th><th>Rupees</th></tr></thead>
+<tbody>
+%%COST_ROWS%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two retrieval recipes ran over the same rows in the same run, and the only knob between them was the text the index was searched with. Each was scored by whether the anchor came back in the top five, not by whether an answer sounded right, so no model's prose could flatter either. On the golden rows the lane's row was the bar, and a rewrite row level with it means the stage would add a call and its milliseconds to every question for nothing; on the paraphrases the same anchors were asked in other words, which is the case the stage exists for. The tally said how many calls the guard refused or the model gave back, and what they cost. Whichever way the two lines fell, the switch stays where config.py put it until a line like yours says otherwise.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Change it: delete the prompt's literal rule and measure the guard; where the stage cannot go</h3><p>Two defences against one failure, the first removed and the second measured on the rows it guards; then the routes, rows and deploys the stage never reaches.</p></div></div>
+
+<h4>Definition: two defences, one failure</h4>
+<p>A rewrite that loses a code or a figure is stopped twice. The prompt's second rule asks the model to copy every literal exactly as written; the guard refuses whatever the model sends back without one. Delete the rule and the guard is all that is left. The guard can refuse only a question that carries a literal: %%LIT_ROWS%% of the %%ANCH%% anchored golden rows, %%LIT_Q%% distinct questions, all of them acme's. The five rows that <code>--limit 5</code> takes carry one literal between them, %%FIRST5_LIT%%'s "%%FIRST5_LITS%%", which is why this check takes a file of its own through <code>--golden</code> rather than a limit. The edit is to your clone of the kit only; the lane's image never sees it.</p>
+@@qr_rule@@
+
+<h4>Do it: the rows the guard can refuse, Rs 0</h4>
+%%CELL_LITROWS%%
+%%OUT_LITROWS%%
+
+<h4>Do it: delete the rule</h4>
+%%CELL_EDIT%%
+%%OUT_EDIT%%
+
+<h4>Do it: the same arm, the edited prompt, those rows</h4>
+%%CELL_CHANGE%%
+%%OUT_CHANGE%%
+<p>Compare its tally with step 7's golden run. A question with no literal cannot be refused, so the golden run's refused count was already a count over these %%LIT_Q%% questions: the same questions, the same model and the same guard, with one rule of the prompt between the two counts. More refusals with the rule gone is the guard doing the rule's work. Each refusal searched the question as asked, so on these rows the rewrite arm cannot fall below the lane's for a lost literal, only for a rewrite that kept every literal and searched worse; a weaker prompt costs refused calls, each one billed, before it costs a worse search.</p>
+%%RESULT_CHANGE%%
+
+<h4>Do it: put the kit back</h4>
+<p>The edit changed the prompt and left <code>PROMPT_VERSION</code> as it was, so any line written with the edited prompt would name a version that does not describe it. That is a reason to restore the file rather than keep the experiment; versioning a prompt properly is lesson 3.6's subject.</p>
+%%CELL_RESTORE%%
+%%OUT_RESTORE%%
+
+<h4>Where the stage cannot go</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Where</th><th>What the stage does there</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>/v1/stream</code>, the Chat page</td><td data-label="What the stage does there">Nothing: the question is searched as asked.</td><td data-label="Why">No <code>search_query</code> line; step 3.</td></tr>
+<tr><td><code>/v1/passages</code></td><td data-label="What the stage does there">Nothing.</td><td data-label="Why">No <code>search_query</code> line; an agent that reads passages writes its own query.</td></tr>
+<tr><td>An answer-cache hit</td><td data-label="What the stage does there">No call: nothing is retrieved.</td><td data-label="Why">The call line runs only on a miss.</td></tr>
+<tr><td><code>/version</code></td><td data-label="What the stage does there">Not reported.</td><td data-label="Why">Read the template, as the names box does, or an answer's stages.</td></tr>
+<tr><td>The usage row and the month's budget counter</td><td data-label="What the stage does there">Not counted.</td><td data-label="Why">The call's cost is on its <code>query_rewrite</code> line only.</td></tr>
+<tr><td><code>make deploy-services</code></td><td data-label="What the stage does there">Turned off.</td><td data-label="Why"><code>--set-env-vars</code> without <code>QUERY_REWRITE</code>; lesson 11.7's drill.</td></tr>
+<tr><td><code>make candidate</code></td><td data-label="What the stage does there">Neither set nor cleared.</td><td data-label="Why"><code>--update-env-vars</code> merges its own list; step 6's undo.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The lane runs the stage off</td><td data-label="The check">the names box</td><td data-label="Pass looks like"><code>rewrite: off (default)</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The Chat page's stream never asks for a rewrite</td><td data-label="The check">step 3</td><td data-label="Pass looks like">a <code>stream</code> row with brain <code>ui</code>; <code>query_rewrite lines in the last 10 minutes: 0</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The guard forgives spelling and refuses substance</td><td data-label="The check">step 4's two offline cells</td><td data-label="Pass looks like">two <code>kept</code>, three <code>refused</code>, each naming what it dropped; <code>Ran %%N_TESTS%% tests</code>, <code>OK</code></td></tr>
+<tr><td>4</td><td data-label="Claim">Every call ends in a named outcome</td><td data-label="The check">step 5</td><td data-label="Pass looks like">one line per row, an outcome on each; the tally's rupees</td></tr>
+<tr><td>5</td><td data-label="Claim">On, /v1/query searches the rewrite and answers the question</td><td data-label="The check">step 6, the first question</td><td data-label="Pass looks like"><code>rewrite rewritten</code> and a <code>searched:</code> line that is not the question</td></tr>
+<tr><td>6</td><td data-label="Claim">A failed rewrite is a fallback, not an error</td><td data-label="The check">step 6, the second question</td><td data-label="Pass looks like"><code>rewrite fallback</code>, an answer, and the question as the searched text</td></tr>
+<tr><td>7</td><td data-label="Claim">The log line carries no question text</td><td data-label="The check">step 6, the log read</td><td data-label="Pass looks like">two <code>query_rewrite</code> lines: outcome, error, tokens, cost; no question</td></tr>
+<tr><td>8</td><td data-label="Claim">The candidate is gone and the template clean</td><td data-label="The check">step 6, the undo</td><td data-label="Pass looks like"><code>QUERY_REWRITE= QUERY_REWRITE_MODEL=</code>; 100 percent on the live revision</td></tr>
+<tr><td>9</td><td data-label="Claim">The rewrite arm measured against the lane</td><td data-label="The check">step 7</td><td data-label="Pass looks like">two arm lines per run; the golden and paraphrase shares; a tally line</td></tr>
+<tr><td>10</td><td data-label="Claim">Without the rule the guard does the rule's work, and the kit is back</td><td data-label="The check">step 8</td><td data-label="Pass looks like">a refused count to set beside step 7's; <code>the rule is back: True</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing that serves traffic. Step 6 created three revisions of the API that took none, one with the stage on, one with a model that does not exist and one with both variables removed, then dropped the tag; the live revision never changed and <code>QUERY_REWRITE</code> is absent from the template again. Step 8 edited <code>shared/query_rewrite.py</code> in your clone and put it back; it also left <code>%%LIT_FILE%%</code>. The log holds the questions' usage rows and two <code>query_rewrite</code> lines. The bill: about Rs %%MEASURE_RS%% for the %%N_RANK%% Ranking API requests of steps 7 and 8 and the rewrite calls of steps 5 to 8, computed from the row counts above, plus %%N_ANSWERS%% generated answers in steps 3 and 6, each priced on its own line. Lesson 2.6 decides, from the reranked pool and before any answer is written, whether to answer at all or to refuse.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 2 Retrieval &middot; Lesson 2.5 Rewrite the query before retrieval, and measure it &middot; v5.0</p><p>Next: Lesson 2.6 %%NEXT%%.</p></div>

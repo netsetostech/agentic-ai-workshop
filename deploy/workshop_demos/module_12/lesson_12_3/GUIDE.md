@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_12.3_Tuned_Candidate_WIX.html`, reviewed at blob `b2fefa0d8707ac518698fb9851e542583dd1762a`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_12.3_Tuned_Candidate_WIX.html`, reviewed at blob `0428e1fce6d71b2dd991357209b218b1e3272490`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 12.2 left a tuned endpoint. This lesson puts it behind the API on a candidate revision that takes no traffic, and compares that revision with the live one on the same questions, in the same hour. The method is lesson 4.4's. What is new is what can contaminate the comparison when the candidate is a tuned model, and how the price of its answers is counted.
 
@@ -110,7 +110,7 @@ You need the shell in the kit's folder, with `PROJECT`, `REGION`, `NUMBER`, `API
 
 - Two hours. Run steps 4 to 6 back to back, so that both revisions are measured in the same window and step 6's two hours of usage rows cover every run.
 
-- What the lesson changes. It makes a candidate revision with no traffic and removes its address at the end. It writes two reports in your home folder and one Experiments run, and leaves the usage rows of the answers. Nothing is promoted.
+- What the lesson changes. It makes two revisions with no traffic, the candidate and the untuned base, and removes their addresses at the end. It writes three reports in your home folder and one Experiments run, and leaves the usage rows of the answers. Nothing is promoted.
 
 ### What the kit does with a tuned candidate
 
@@ -186,7 +186,7 @@ Lesson 4.4 scoped its gates to the handbook's rows. A tuned model can change any
 
 ### The verdict and the delta
 
-The pairwise judge on every row, the usage rows by model, the decision, and the candidate's tag removed.
+The pairwise judge on every row, the usage rows by model, the untuned base beside them, the decision, and the candidate's tag removed.
 
 #### Definition
 
@@ -208,6 +208,22 @@ The gates and the judge asked both revisions the same questions, so their usage 
 
 - `make usage` names the endpoint `projects/NUMBER/loca`. The cell groups by the full path.
 
+#### Compare the models: the untuned base
+
+The gate and the judge set the tuned flash-lite against the live flash, so every difference mixes two changes: a smaller model, and the tuning on top of it. A third revision pulls them apart: `gemini-3.1-flash-lite` as Google serves it, the base v2 was tuned from (`TUNE_BASE`, lesson 12.2), with every other setting the candidate's. Live against untuned is then the smaller model, and untuned against tuned is the tuning.
+
+The cell makes it with `gcloud`, not `make candidate`. That target would move the `candidate` tag to the new revision and record it in `.candidate-revision`: the tuned candidate would lose its address, and `make promote` would move traffic to the untuned model. A service update starts from the service's latest settings, which have been the candidate's since step 4, so with `--update-env-vars` the model is the one setting that changes. A model name is served on the global endpoint, as the live model is; only an endpoint path is served from its own location.
+
+Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved.
+
+- The untuned base passes every threshold too, on the stand-in. A tuned endpoint bills 1.5 times what its base does for the same tokens (step 3), so where the untuned base does as well, it is the cheaper of the two, and tuning has to earn its price against it, not only against flash.
+
+- Two comparisons, two causes. On the stand-in the untuned base misses the two rows the live revision misses, so the smaller model moved nothing. The tuning moved all three rows step 5 found: jn-06 gained its second figure, and jn-03 and jn-09 each lost one. That is step 5's reading of the joins, with the smaller model ruled out. On your lane, read each pair's rows on their own.
+
+- The generation times are your lane's. The gate reads `generate_ms` from the API's own clock on every answered row. A tuned endpoint is served from its own location and the untuned base from the global endpoint, so their times can differ for reasons beyond the tuning. The stand-in's times are made up, so the expected output leaves them out.
+
+Remove the untuned revision's address when you are done with it. The revision stays in the service's list, with no traffic, as the candidate's does after the next block.
+
 #### The decision, and the candidate's tag
 
 The decision is yours, and it reads the three results in order. The gate must pass. The judge says how often the tuned model gives the worse answer where the two differ. The delta says what that is worth at your volume. With a candidate that passes, there are three ways forward:
@@ -219,6 +235,8 @@ The decision is yours, and it reads the three results in order. The gate must pa
 - Keep the live model, and remove the candidate's address. The lane's path is this one:
 
 The revision stays in the service's list, with no traffic and no URL. The tuned endpoint stays too, billed only when it answers.
+
+The cell's second half puts `documind-api`'s template back to what serves. Every update since step 4 wrote the template, the untuned base's last, and removing a tag moves no template. Lesson 12.4's `make prompt-candidate` changes only the prompt version and starts from the template. Without this half, its candidate would answer with the untuned model, and a promote would put that model live. Run it whichever way you go: after a promote, the template still holds the untuned base. The update moves no traffic, and lesson 11.7's detector checks the result.
 
 ### Optional: the v3 candidate, and the gate on it
 
@@ -296,9 +314,9 @@ Each point is checked in the kit's code, and the build asserts it, so this box c
 
 ### Verify it yourself: the checklist
 
-Ten checks, each one block above, each with the value that proves it on your lane. The last two are for steps 7 and 8, if you ran them.
+Eleven checks, each one block above, each with the value that proves it on your lane. The last two are for steps 7 and 8, if you ran them.
 
-`documind-api` has one more revision, with the tuned endpoint as its model, no traffic and no tag, and `.candidate-revision` is gone. Your home folder has `base173.json` and `cand173.json`, and Experiments has the pairwise run. Cloud Logging holds the usage rows of about 260 answers. The live revision still serves `gemini-3.6-flash`, and the tuned endpoint stays, billed only when it answers. If you ran steps 7 and 8, the candidate address pointed at v3's endpoint until you removed it again, and `~/cand173v3.json` holds v3's gate. Lesson 12.4 closes the loop: a production row becomes a candidate change, gated by eval-live before it is promoted or rolled back.
+`documind-api` has three more revisions, each with no traffic and no tag: the candidate, with the tuned endpoint as its model; the untuned base, with `gemini-3.1-flash-lite`; and the one that put the template back to what serves. `.candidate-revision` is gone. Your home folder has `base173.json`, `untuned173.json` and `cand173.json`, and Experiments has the pairwise run. Cloud Logging holds the usage rows of about 325 answers. The live revision still serves `gemini-3.6-flash`, and the tuned endpoint stays, billed only when it answers. If you ran steps 7 and 8, the candidate address pointed at v3's endpoint until you removed it again, and `~/cand173v3.json` holds v3's gate. Lesson 12.4 closes the loop: a production row becomes a candidate change, gated by eval-live before it is promoted or rolled back.
 
 Netsetos GenAI on GCP · Module 12 Tuning · Lesson 12.3 Compare the tuned candidate with an uncontaminated baseline · v5.0
 

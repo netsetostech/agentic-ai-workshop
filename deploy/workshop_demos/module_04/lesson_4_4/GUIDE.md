@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_4.4_Controlled_Change_WIX.html`, reviewed at blob `97d97638098f6e3f140aba7bc44e9edda7bc2aa0`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_4.4_Controlled_Change_WIX.html`, reviewed at blob `1d96e75612c048af34839c14cbc590f8a5bcbf8c`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 4.2 measured the revision that serves today. This lesson changes one thing and measures the difference. You make a candidate revision of the API with a cheaper model behind it and no traffic, and prove from both revisions' settings that the model is the only difference. You run the live gate on the rows that cite the handbook against both, ask the pairwise judge which answers are better, and read the price of the difference off the usage rows. Then you remove the candidate's tag, because an experiment is not a release.
 

@@ -3,7 +3,7 @@
 rag-api's row for every retrieve(), and the chat service's row for every turn. Each retrieve() posts to rag-api's /v1/query, and rag-api writes its usage row, now labelled with the brain that asked. The chat service writes a row of its own for each turn: the brain, the tenant, the user, the session, the time and the two lists, and the turn's own model calls, their tokens and their cost, beside what its searches billed. Lesson 5.5 shows the limits those numbers are counted against. The cell reads both kinds since step 5, the shell's own retrieval included, labelled ui because it named no brain.
 
 Run order inside this file:
-1. The rows: what each brain cost, and which row records it (source window 24)
+1. The rows: what each brain cost, and which row records it (source window 32)
 
 Prerequisites: demo_07_the_loop_the_model_chooses_its_tools.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -70,7 +70,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_24', step_01_the_rows_what_each_brain_cost_and_which_ro),
+        ('source_32', step_01_the_rows_what_each_brain_cost_and_which_ro),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

@@ -259,9 +259,13 @@ def convert_lesson(number, module, lesson, specification):
         if code.startswith("# for this lesson: acme answers"):
             body = "session.pin_vector()"
             adaptations.append("Save the actual previous pin before selecting vector; cleanup restores it instead of assuming rag_engine.")
-        elif code.startswith("# when you finish the lesson:"):
+        elif code.startswith("# when you finish the lesson:") and "make tenant-backend" in code:
             body = "session.restore_backend()"
             adaptations.append("Run at lesson end despite its early HTML position, as the source label explicitly instructs.")
+        elif code.startswith("# when you finish the lesson:"):
+            # Not the backend pin: the cell's own commands are the put-back (5.2's doc-type reset, which the restore
+            # above stood in for, so acme's rows stayed classed and lesson 5.5's filter found them, 22 October 2026).
+            adaptations.append("Run at lesson end despite its early HTML position, as the source label explicitly instructs: the cell's own commands, which put back what the lesson changed.")
         # Centralize the repeated service-environment plumbing, leaving model settings visible.
         env_match = re.search(r"for N in ([A-Z0-9_ ]+); do setenv", code)
         if code.startswith("svc_env()") and env_match:

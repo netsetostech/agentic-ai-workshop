@@ -64,6 +64,8 @@ THIRD_PARTY = {
     # lesson 6.4's chat service runs the LangChain tool loop
     "langchain", "langchain_core", "langchain_google_genai", "langgraph",
     "langchain_chroma", "chromadb",
+    # workshop lesson 10.7's hand-off: the chat's peer.py imports a2a-sdk, whose import name is a2a
+    "a2a",
 }
 
 C = {"PASS": "PASS", "WARN": "WARN", "FAIL": "FAIL", "SKIP": "SKIP"}

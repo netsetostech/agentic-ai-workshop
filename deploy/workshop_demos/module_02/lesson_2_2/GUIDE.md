@@ -4,13 +4,13 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_2.2_Hybrid_WIX.html`, reviewed at blob `e328b1eb4da48eab527de6f40bfc73967d53aefb`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_2.2_Hybrid_WIX.html`, reviewed at blob `8d99d2528071436f02857a4b2d4c68af267d27d9`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 2.1 reproduced the API's pool by hand: one vector, one index, the tenant restrict. This lesson adds the second leg. Every datapoint already carries a sparse vector (lesson 1.3); the index can search by it, fuse the two lists by rank rather than by score, and hand back one pool; a deployment setting turns that on; and a harness measures each choice on the golden set with no model in the loop. You will rank acme's own rows with two sparse rulers and see one find the right clause first while the other buries it, fetch the same question three ways from the index, fuse two of the lists yourself with the kit's function and match the server's order, run the ablation and read recall, MRR and p95 per arm, then turn hybrid on for a candidate revision that takes no traffic and compare its answers with the live dense ones.
 
 - What a second leg adds, and how two lists become one
 
-- The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling
+- The words: vector, leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling
 
 - Before you run anything: set up the shell
 
@@ -28,17 +28,39 @@ Lesson 2.1 reproduced the API's pool by hand: one vector, one index, the tenant 
 
 - Verify it yourself: the checklist
 
-You will learn what the sparse leg of hybrid retrieval is made of, why two ranked lists are merged by position with Reciprocal Rank Fusion rather than by score, and why a sparse leg is only as good as its weights. Then you will prove it on your lane: rank acme's rows with the index's ruler and the ablation's, ask the index dense, sparse-only and fused, reproduce the fused order with `rrf_fuse()`, run `make ablate`, and judge `RETRIEVAL_MODE=hybrid` on a candidate revision before it serves anyone.
+You will learn what a dense and a sparse vector each hold and how each scores a match, what the sparse leg of hybrid retrieval is made of, why two ranked lists are merged by position with Reciprocal Rank Fusion rather than by score, and why a sparse leg is only as good as its weights. Then you will prove it on your lane: rank acme's rows with the index's ruler and the ablation's, ask the index dense, sparse-only and fused, reproduce the fused order with `rrf_fuse()`, run `make ablate`, and judge `RETRIEVAL_MODE=hybrid` on a candidate revision before it serves anyone.
 
 ### What a second leg adds, and how two lists become one
 
 Meaning and spellings are found by different rulers, fused by rank, and only as good as their weights.
 
-Retrieval finds evidence two ways, and each is blind where the other sees. The dense leg turns the question and every chunk into 768 numbers from a model that has read a great deal of text, so "quit" lands near "resign" and a question about senior staff finds a clause about grade E3. It is weak exactly where a token means nothing outside this corpus: an invoice number, a clause code, a product name is just a rare string to it. The sparse leg counts the words themselves. "INV-2026-0412" matches "INV-2026-0412" and nothing else, and it will never know that "quit" and "resign" are the same request. Hybrid retrieval runs both legs and merges the two ranked lists into one pool.
+Retrieval finds evidence two ways, and each is blind where the other sees. A dense vector is 768 numbers that an embedding model, text-embedding-005 on your lane, computes for a text. Every slot is filled and no slot stands for a word: together the numbers place the text by what it means, so texts that mean the same thing land close together, and "If I quit my job" lands near a clause about resignation although the two share no word. A sparse vector has one slot per word. The kit's has 1,048,576 slots, each word hashed to one of them, and a chunk fills only as many as it has distinct words: NP-03, the notice-period clause, fills 33 and leaves every other slot at zero. It records which words a text uses and nothing about what they mean, so "NP-03" matches "NP-03" exactly and "quit" never matches "resignation". Where a token means nothing outside this corpus, a clause code, a product name, one invoice number among many, the dense leg has little to go on and the sparse leg is at its best. Hybrid retrieval runs both legs and merges the two ranked lists into one pool.
 
-The merge goes by rank, not by score. A dense distance and a sparse dot product live on different scales, so adding them would let one leg drown the other. Reciprocal Rank Fusion ignores the scores: each list gives an id 1 / (k + rank) points, the dense list's points are multiplied by alpha and the sparse list's by 1 - alpha, the points are summed and the ids sorted. With k at 60, being first rather than second is worth a little; being on a list rather than absent is worth a lot. The kit's `rrf_fuse()`, the ablation's `rrf()` and the index's `rrf_ranking_alpha` are three spellings of this one rule, and the API sends alpha 0.7.
+#### First, the intuition: a help desk with four answers
 
-A sparse leg is only as good as its weights. The index's sparse leg weights a word by how often it appears in the chunk, 1 for the first time and 0.5 for each repeat, and every word counts: "the" as much as "invoice". A long Act page with sixty occurrences of "the" and "of" therefore outscores the one invoice that carries the number you asked for. The ablation's sparse leg is BM25, which does two more things: it weights a word by how rare it is across the corpus, so "inv-2026-0412" counts and "the" barely does, and it discounts long chunks. On acme's corpus that is the difference between finding the invoice first and finding it around rank one thousand. This is the finding steps 3 and 4 confirm on your lane, and it is why the question "is hybrid better?" has to be answered as "which hybrid, and measured how".
+Before acme's corpus, a desk small enough to see every word. It holds four answers, lettered A to D. Each button asks one question and runs the whole of hybrid retrieval in three panels: the sparse leg counts the question's words in each answer, the dense leg drops the question on a map of meaning and takes the nearest answers, and Reciprocal Rank Fusion merges the two ranked lists by position. The slider sets alpha, how much the merge trusts the dense list; try it on the order number.
+
+points = 1000 ÷ (60 + rank), the rule's 1 ÷ (60 + rank) scaled to read easily, and none when a list does not have the answer. Total = alpha × dense points + (1 − alpha) × sparse points.
+
+A toy for intuition: four answers, word matching that counts each shared word once, and a two-number map whose positions are made up. A real dense vector has 768 numbers, and the kit's sparse leg weights its words. The merge is the kit's rule, `rrf_fuse()`'s alpha / (k + rank) with k = 60, at the API's alpha of 0.7; every number in the three panels is computed and checked when the page is built.
+
+#### Then on acme's documents: the same three situations, measured
+
+The same three situations on acme's corpus, with the kit's real arithmetic: the clause code NP-03 plays the order number, "If I quit my job" the money-back question, and the invoice the refund for a ticket. Each button animates both legs. On the left, the sparse vectors: the chunk's words above the line at the slots the kit hashes them to, taller for a word the chunk repeats, the question's words below it, and a teal mark wherever the two share a word; the score is the sum of those shared weights. On the right, the dense side sketched as a flat map of meaning, where the question lands near what it means. Replay runs it again.
+
+chunk's words question's words shared
+
+A flat sketch: the positions are illustrative, the real space has 768 dimensions.
+
+Computed when this page was built by the kit's own code: the words, their slots and weights by `shared/sparse_encoder.py`, each score as the index scores a sparse vector, and each rank among the 1,628 chunks of acme's 17 markdown mirrors, by the index's ruler and by BM25, as in the fusion bench below. The dense rank of the invoice is step 4's run on the lane; step 4 measures the other two once `Q` and `ANCHOR` are exported as the panel shows.
+
+A map pin and a book index. A dense vector is a pin on a map of meaning: "quit my job" and "the resignation is acknowledged" are pins in the same neighbourhood, and the search is simply the nearest pins. A sparse vector is the index at the back of a book: look up NP-03 and you get exactly the pages that print NP-03; look up "quit" and you get nothing, because the book says "resignation". Each finds what the other misses, which is why the lane can ask both.
+
+How each one scores a match. The dense leg scores closeness: the question's 768 numbers against a chunk's, one dot product, high when the two mean the same thing. The sparse leg multiplies the weights of the words the question and the chunk share and adds them up. "What does clause NP-03 say?" shares one word with the clause, `np-03`, so it scores 1 × 1.0 = 1.0; "If I quit my job, how long must I keep working?" shares none and scores 0, and no weighting can rescue a zero.
+
+The merge goes by rank, not by score. A dense distance and a sparse dot product live on different scales, so adding them would let one leg drown the other. Reciprocal Rank Fusion ignores the scores: each list gives an id 1 / (k + rank) points, the dense list's points are multiplied by alpha and the sparse list's by 1 - alpha, the points are summed and the ids sorted. With k at 60, being first rather than second is worth a little; being on a list rather than absent is worth a lot. The help desk's third panel does this arithmetic: for "Refund for a cancelled ticket", answer C was third in the dense list but second in the sparse one, so it passes D, which only the dense list had. For the order number it shows the rule's limit: the merge cannot read the text, so when the dense list is guessing, alpha decides. The kit's `rrf_fuse()`, the ablation's `rrf()` and the index's `rrf_ranking_alpha` are three spellings of this one rule, and the API sends alpha 0.7.
+
+A sparse leg is only as good as its weights. The index's sparse leg weights a word by how often it appears in the chunk, 1 for the first time and 0.5 for each repeat, and every word counts: "the" as much as "invoice". A long Act page with sixty occurrences of "the" and "of" therefore outscores the one invoice that carries the number you asked for, and pages full of "clause" and "does" outscore NP-03 itself for "What does clause NP-03 say?". The ablation's sparse leg is BM25, which does two more things: it weights a word by how rare it is across the corpus, so "inv-2026-0412" and "np-03" count and "the" barely does, and it discounts long chunks. On acme's corpus that is the difference between first and 1,161st for the invoice, and between first and 274th for the clause: the numbers on the buttons above. This is the finding steps 3 and 4 confirm on your lane, and it is why the question "is hybrid better?" has to be answered as "which hybrid, and measured how".
 
 Two clerks and a chair. A records room with two clerks. The first has read every file and brings the pages that mean what you asked. The second works from a concordance and brings every page that carries your exact words, and if you let him count every "the", he brings the longest pages first. The chair never compares the clerks' confidence. She takes each clerk's ranked stack, gives a page 1 / (60 + position) points for where it sits in each stack, trusts the first clerk 70 to 30, and reads the totals. A page both clerks brought rises. A page only the second clerk brought, at 30 percent, cannot outscore anything in the first clerk's top twenty, and that arithmetic is in step 5.
 
@@ -50,9 +72,9 @@ Computed when this page was built by the kit's own code: `shared/sparse_encoder.
 
 It has no dense leg of its own, because that needs the model and your lane; step 4 gives you the list to paste. Until then, list 1 is leg B, which makes the RRF table a demonstration of the rule on two rankers that disagree, not of what the API fuses. Move alpha from 0.7 towards 0 on the invoice question and watch which ruler's first choice wins the fused top: that is the whole meaning of alpha.
 
-### The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling
+### The words: vector, leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling
 
-Twelve words, each with the value it takes on your lane.
+Fourteen words, each with the value it takes on your lane.
 
 Two of these words carry the lesson's finding: the index's sparse leg and BM25 are both "sparse", and they are not the same ruler. Keep them apart when someone says the ablation proved hybrid does nothing: it proved that about one of them.
 
@@ -118,7 +140,7 @@ One question, one endpoint, three queries, and the lists saved for step 5.
 
 #### Do it: dense, alpha 0, alpha 0.7
 
-Three queries went to one endpoint with the same tenant restrict. The dense leg found the invoice; the sparse leg alone did not, and its list was the long Act pages step 3 predicted, the same first three as step 3's first ruler; on acme's lane the two legs shared no chunk, so the fused list at alpha 0.7 was the dense list exactly, because a leg weighted 0.3 cannot lift an id the other leg did not hold. On a question where the legs do share a chunk, the fused list is the dense list with a few positions shuffled, and an Act page both legs held can move above the invoice: that is the lift working against you, and the arithmetic of it is next. Paste the dense list's five lines into the bench in step 1 and the RRF table becomes what the API would fuse. For a question whose exact token the corpus repeats rarely, set `Q` and `ANCHOR` and run the cell again; the anchor ranks are the measurement.
+Three queries went to one endpoint with the same tenant restrict. The dense leg found the invoice; the sparse leg alone did not, and its list was the long Act pages step 3 predicted, much the same pages step 3's first ruler put on top, though not always in the same order. Where the two legs share no chunk, as in the sample, the fused list at alpha 0.7 is the dense list exactly, because a leg weighted 0.3 cannot lift an id the other leg did not hold. Where they do share a chunk, the fused list is the dense list with the shared chunks moved up, and an Act page both legs held can move above the invoice: that is the lift working against you, and the arithmetic of it is next. Paste the dense list's five lines into the bench in step 1 and the RRF table becomes what the API would fuse. For a question whose exact token the corpus repeats rarely, set `Q` and `ANCHOR` and run the cell again; the anchor ranks are the measurement.
 
 ### RRF by hand: the kit's rule reproduces the server's order
 
@@ -164,7 +186,7 @@ A revision that answers on a tag URL and serves nobody, the same questions to bo
 
 #### Do it: hybrid on a candidate, the same two questions to both revisions, then undo
 
-A second revision of the API came up with hybrid on, answered on its own URL, took no traffic, and was asked the same questions as the live one. The citations are the reranker's choice from the pool, so hybrid can only change them by changing which twenty candidates arrive, not their order; where the citations agreed, the pool's membership was the same and hybrid changed nothing for that question, which step 5's bound predicted for a 0.3 leg over a dense pool that already held the anchor; where they differed, the difference is the finding, and the gate that decides whether it is a good one is lesson 7's, `make eval-live` against the candidate URL. Then the variable was removed, so the next candidate does not inherit it, and the tag was dropped. The next `make plan` may show the service template moved; `make up` puts it back.
+A second revision of the API came up with hybrid on, answered on its own URL, took no traffic, and was asked the same questions as the live one. The citations are the model's: `resolve()` keeps one for each chunk the answer cites, and the reranker only orders the pool and cuts it to the chunks the model reads. So hybrid can only change them by changing which twenty candidates arrive, not their order; where the citations agreed, hybrid changed nothing the answer drew on for that question, which step 5's bound predicted for a 0.3 leg over a dense pool that already held the anchor; where they differed, the difference is the finding, and the gate that decides whether it is a good one is lesson 4.4's, `make eval-live` against the candidate URL. Then the variable was removed, so the next candidate does not inherit it, and the tag was dropped. The next `make plan` may show the service template moved; `make up` puts it back.
 
 ### What hybrid costs, where it cannot go, and what the harness does not measure
 
@@ -184,7 +206,7 @@ The ablation's hybrid arm is BM25 plus Firestore's dense rung, fused in-process;
 
 Nine checks, each one block above, each with the value that proves it on your lane.
 
-Nothing that serves traffic. Step 7 created two revisions of the API that took none and removed the tag and the variable again; the service's live revision never changed. The ablation left `~/ablate.jsonl`, one line per arm, which lesson 7 reads as a baseline. The bench in step 1 keeps whatever you pasted only until you leave the page. Lesson 2.3 takes the pool this lesson measured and studies the reranker that cuts it to the citations you see.
+Nothing that serves traffic. Step 7 created two revisions of the API that took none and removed the tag and the variable again; the service's live revision never changed. The ablation left `~/ablate.jsonl`, one line per arm, which lesson 4.4 reads as a baseline. The bench in step 1 keeps whatever you pasted only until you leave the page. Lesson 2.3 takes the pool this lesson measured and studies the reranker that cuts it to the citations you see.
 
 Netsetos GenAI on GCP · Module 2 Retrieval · Lesson 2.2 Compare dense and hybrid retrieval · v5.0
 

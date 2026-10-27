@@ -714,12 +714,15 @@ class WiringTests(unittest.TestCase):
         self.assertRegex(req, r"(?m)^google-cloud-storage==3\.13\.1$")
         self.assertRegex(req, r"(?m)^langgraph==1\.2\.12$")
         agent = self.read("services", "chat", "agent.py")
-        self.assertTrue(agent.rstrip().endswith("import desk  # noqa: E402\n"
-                                                "desk.install(app, caller=caller, tenant_for=tenant_for, thread_config=thread_config)"))
+        # The Desk's two lines, after chat(): present, not last - workshop lesson 5.8's approval routes are installed
+        # after them (13 October 2026), and a later lesson may add its own line after those.
+        self.assertIn("\nimport desk  # noqa: E402\n"
+                      "desk.install(app, caller=caller, tenant_for=tenant_for, thread_config=thread_config)\n", agent)
+        self.assertLess(agent.index("def chat(req: ChatRequest"), agent.index("\nimport desk  # noqa: E402\n"))
 
     def test_the_makefile(self):
         mk = self.read("Makefile")
-        self.assertEqual(len(mk.splitlines()), 885)                             # workshop lesson 9.3 counts it
+        self.assertEqual(len(mk.splitlines()), 888)                             # workshop lesson 9.3 counts it
         self.assertIn("\n.DEFAULT_GOAL := dryrun\n", mk)
         phony = mk[mk.index(".PHONY:"):mk.index("# ---------- the module files")].replace("\\", " ").split()
         agents = self.read("mk", "agents.mk")

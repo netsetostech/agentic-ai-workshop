@@ -166,7 +166,8 @@ assert "| Autopilot cluster fee (after the free-tier credit) | $0.10 |" in src[R
 assert "| g2-standard-8 (8 vCPU, 32 GiB, 1× L4) | $0.853624 |" in src[README] and "| Autopilot L4 GPU premium | $0.067 / GPU-hr |" in src[README]
 assert "| Autopilot vCPU premium | $0.003 × 8 |" in src[README] and "| Autopilot memory premium | $0.00035 × 32 |" in src[README]
 assert "**$1.0558/hr → $771/month → ₹65,514/month**" in src[README] and "GKE wins above roughly **74%**" in flat(src[README])
-assert "| `terraform/gke.tf` + `gke/` | **11.5** | v2.0 | Autopilot, GPU requested per pod. `vllm-deployment.yaml` pins `vllm/vllm-openai:v0.28.0`, matching 11.1/11.2. |" in src[UNOWNED]
+assert "| `terraform/gke.tf` + `gke/` |" not in src[UNOWNED]          # the stale row (Autopilot, v0.28.0) left on 13 October 2026
+assert "| `gke/vllm-deployment.yaml` | config | 9.3 |" in (KIT / "INDEX.md").read_text(encoding="utf-8")   # this lesson owns it
 
 # ------------------------------------------------------------------ Google's rates (24 September 2026) and what they make
 RUN_S = 0.0001867 + 8 * 0.000018 + 32 * 0.000002           # Cloud Run, us-central1: L4 without zonal redundancy, 8 vCPU, 32 GiB, USD a second

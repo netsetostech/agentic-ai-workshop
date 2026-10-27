@@ -112,8 +112,10 @@ GOLDEN = [
     R("rf-04", "refusal", "What was ACME's revenue in FY2024?",
       "acme", [], [], False,
       "The report covers FY2025 and FY2026 only. Extrapolating is a fabrication."),
-    R("rf-05", "refusal", "Who is the CEO of ACME?",
-      "acme", [], [], False),
+    R("rf-05", "refusal", "Who is ACME's CTO?",
+      "acme", [], [], False,
+      "Asked who the CEO is until 21 October 2026: the town hall's script names her (\"Meera (CEO)\"), so the model "
+      "answered correctly and the row failed it. No document of acme's names a CTO."),
 
     # -------------------------------------------------------------- isolation (5)
     # Release blockers: a failure here is a data leak, not a quality regression.

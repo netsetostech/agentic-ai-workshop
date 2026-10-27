@@ -1,0 +1,116 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 12 &middot; Tuning &middot; Lesson 12.4</div>
+<h1>Improve the agent safely: <span>eval-gated self-improvement</span></h1>
+<p>Lessons 12.1 to 12.3 changed the model behind DocuMind's answers. This lesson changes the words in front of it, starting from one answer that went wrong on your lane. A model may propose the change: one rule for the generator's prompt. A person accepts it, and the golden set gains the row that would have caught the answer. Then the gate judges the new prompt version on a revision that takes no traffic. Only then does traffic move. If the gate says no, the change goes back with git.</p>
+<p>In this lesson you turn one production answer into a proposed rule and check it with the kit's own validator. You accept it as prompt version v4 and paste its golden row. Then lesson 11.2's <code>make gate</code> judges it, and either <code>make promote-gated</code> moves traffic to it or you roll it back.</p>
+<div class="hero-chips"><div class="hero-chip">make improve</div><div class="hero-chip">prompt_rules.json</div><div class="hero-chip">PROMPT_VERSION</div><div class="hero-chip">REVIEWER=</div><div class="hero-chip">the R(...) row</div><div class="hero-chip">make prompt-candidate</div><div class="hero-chip">make gate</div><div class="hero-chip">refusal_rate</div><div class="hero-chip">make promote-gated</div><div class="hero-chip">git revert</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What makes self-improvement safe</a></li>
+<li><a href="#s2">The words: production row, proposer, prompt rule, the check, prompt version, PROMPT_VERSION, reviewer, golden row, the evaluator, candidate, the gate, promote or roll back</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The answer that went wrong, and the row you write from it</a></li>
+<li><a href="#s4">What the kit does with a prompt rule</a></li>
+<li><a href="#s5">make improve: one rule from the row</a></li>
+<li><a href="#s6">A person accepts it: v4, and its golden row</a></li>
+<li><a href="#s7">v4 on a candidate, and the gate</a></li>
+<li><a href="#s8">Before and after: the live URL and the tag URL</a></li>
+<li><a href="#s9">Promote, or roll back</a></li>
+<li><a href="#s10">The version on every usage row</a></li>
+<li><a href="#s11">Optional: a rule worded past the phrases, gated</a></li>
+<li><a href="#s12">Why it works this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s13">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn which steps of a self-improving loop a model may take and which belong to a person and to the gate, and how the kit stops a proposed rule from ever touching the rows that judge it. Then you will prove it on your lane: a production answer becomes prompt version v4, gated before it is promoted or rolled back.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What makes self-improvement safe</h3><p>A loop that learns from its own failures, with a person, the golden set and the gate around the one step a model takes.</p></div></div>
+
+<p><strong>Self-improvement, in production.</strong> An agent improves itself when its own failures feed a change to how it answers. Done carelessly, that loop is dangerous in three ways. A model that rewrites its own instructions can talk itself out of a rule. A loop that writes its own tests can always pass them. And a change that ships because it reads well has not been measured at all. The kit keeps the useful part, a model reading a failure and proposing a fix. It puts a person, the golden set and the gate around that step.</p>
+
+<p><strong>What may change, and how.</strong> Only rag-api's prompt, and only by adding to it. <code>generator.py</code>'s <code>SYSTEM</code> holds %%OWN%% numbered rules. A prompt version may add rules after them, numbered from %%OWN1%%, and v3, the default, adds none. The versions live in <code>services/rag-api/prompt_rules.json</code>, and the file is append-only: each version's rules begin with the rules of the version before it, unchanged. Which version a revision answers under is a setting, <code>PROMPT_VERSION</code>. So one image carries every accepted version, and each revision picks one. <code>/version</code> and every usage row name the version that answered.</p>
+
+<p><strong>Who does what.</strong></p>
+<ul>
+<li><strong>The model</strong> proposes one rule, on one line, and says why. It is sent the rules as they are served, the answer, and what a right answer holds. It writes nothing.</li>
+<li><strong>You</strong> write the question in your own words, and say what a right answer holds: the golden row's shape, its figure and its anchor. You read the proposal and decide whether to accept it. You paste the golden row.</li>
+<li><strong>The kit</strong> checks the row against the documents and the rule against <code>SYSTEM</code>'s rules before anything is written. It refuses to write the evaluator at all.</li>
+<li><strong>The gate</strong> judges the new version on a revision with no traffic, with every golden row, the new one among them.</li>
+<li><strong>Traffic</strong> moves only through <code>make promote-gated</code>, and only on a green record.</li>
+</ul>
+
+<p><strong>What a rule may never do.</strong> It may never undo one of <code>SYSTEM</code>'s rules. That means answering from outside the numbered context (rule 1), dropping the citations (rule 2), refusing less when the context does not hold the answer (rule 3), quoting a whole section (rule 5), or setting the rules aside. The kit refuses %%N_PHRASES%% phrases that say so, at Rs 0, matched as whole words. A rule worded past those phrases reaches the gate, and the gate measures what it does. <code>refusal_rate</code> must stay at or above %%REFUSAL_PCT%%% of the %%N_UNANS%% rows the documents cannot answer, so if %%N_RED%% of them are answered the gate is red. And each of <code>required.json</code>'s %%N_REQ%% rows must pass on its own.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127973;</div><div>
+<p><strong>A hospital's morbidity and mortality meeting.</strong> Once a month a hospital's doctors meet about the cases that went wrong. The team that treated the patient presents the case in its own words, with the patient's name left out. Anyone in the room may propose a change to the ward's protocol. The head of the department decides whether it is adopted. An adopted change is added to the protocol as a new numbered item, signed and dated, and nobody rewrites the old items in place. The audit standards the hospital is judged by are not written by whoever proposed the change. A new item is tried on one ward before the hospital takes it up, and it is dropped if that ward's audit gets worse.</p>
+<p>The case is the production row, and leaving out the patient's name is writing the question in your own words, never a user's. The proposal is <code>make improve</code>'s rule, from a model or from you. The head of department is the reviewer. The new numbered item is v4's rule %%OWN1%%: append-only, with the reviewer and the date on it. The audit standards are the evaluator, which <code>improve.py</code> never writes. The trial ward is the candidate revision, the ward's audit is the gate, and taking the item up is <code>make promote-gated</code>. Dropping it is a <code>git revert</code>.</p></div></div>
+
+<h4>The loop, and what can stop it at each stage</h4>
+<p>Seven stages, each with the thing that can stop it beside it. Every value here is read from the kit when the page is built.</p>
+
+<div class="diagram" id="loop">
+<div class="dg-title">make improve, make prompt-candidate, make gate: the stages and their guards</div>
+<div class="fs">
+<div class="fs-main"><span class="fs-n">1</span><div><b>The production row.</b> A question answered wrongly on the UI. You write the row: the question in your own words, the answer, and what a right answer holds.</div></div>
+<div class="fs-branch"><b>Stops it:</b> a figure or an anchor that is not in the tenant's documents. The row is refused before any model call, at Rs 0, as <code>build_golden.py</code> would refuse it.</div>
+<div class="fs-main"><span class="fs-n">2</span><div><b>The proposal.</b> <code>make improve ROW=</code> sends %%MODEL%%, on the global endpoint, the rules as served, the answer and what a right answer holds. It returns one rule and why, under a JSON schema, for about Rs %%RS_PROPOSE%%. Or you write your own with <code>--rule</code>, at Rs 0.</div></div>
+<div class="fs-branch"><b>Stops it:</b> <code>prompt_rules.py</code>. A rule is one line of at most %%MAX_WORDS%% words, with none of %%N_PHRASES%% phrases that undo <code>SYSTEM</code>'s rules, neither of the prompt's labels, no rule number and no duplicate. A refused rule writes nothing.</div>
+<div class="fs-main"><span class="fs-n">3</span><div><b>The review.</b> <code>make improve REVIEWER=</code>: you read the proposal and accept it. It becomes v4 in <code>prompt_rules.json</code>, with your name, the date and the proposer.</div></div>
+<div class="fs-branch"><b>Stops it:</b> you, by not accepting it. The proposer cannot accept its own rule, and a proposal made on a version that is no longer the latest is refused.</div>
+<div class="fs-main"><span class="fs-n">4</span><div><b>The golden row.</b> Accept prints the <code>R(...)</code> row. You paste it into <code>build_golden.py</code> (lesson 4.1's method), then run <code>build_golden.py</code> and <code>make eval</code>.</div></div>
+<div class="fs-branch"><b>Stops it:</b> <code>improve.py</code> never writes the evaluator. One <code>write()</code> refuses its %%N_EVALUATOR%% paths. The builder checks the row again, and the offline gate checks the whole set.</div>
+<div class="fs-main"><span class="fs-n">5</span><div><b>The candidate.</b> Commit, <code>make build</code>, then <code>make prompt-candidate PROMPT_VERSION=v4</code>: a revision of <code>documind-api</code> with no traffic, tagged <code>candidate</code>.</div></div>
+<div class="fs-branch"><b>Stops it:</b> a version <code>prompt_rules.json</code> does not list, before any gcloud call. An image that does not carry the version refuses to start.</div>
+<div class="fs-main"><span class="fs-n">6</span><div><b>The gate.</b> <code>make gate</code> (lesson 11.2) asks all %%N_GATE%% golden rows of the exact candidate, for about Rs %%RS_GATE%%.</div></div>
+<div class="fs-branch"><b>Stops it:</b> %%N_TH%% thresholds, among them <code>refusal_rate</code> at %%REFUSAL_PCT%%% of the %%N_UNANS%% rows the documents cannot answer, and each of <code>required.json</code>'s %%N_REQ%% rows.</div>
+<div class="fs-main"><span class="fs-n">7</span><div><b>Promote or roll back.</b> Green: <code>make promote-gated</code> moves the traffic. Red: no promote, and a <code>git revert</code> of the commit that holds v4.</div></div>
+<div class="fs-branch"><b>Stops it:</b> <code>gate-check</code> refuses a red record, a record for another revision, or one judged by other rules (lesson 11.2).</div>
+</div>
+<p class="dg-cap">The values are the kit's: <code>prompt_rules.py</code>'s limits, <code>improve.py</code>'s list of the evaluator, <code>run_eval.py</code>'s thresholds over <code>golden.jsonl</code>'s %%N_ROWS%% rows and the one you add, <code>required.json</code>, and the gate's rupees at lesson 11.2's typical answer of 2,000 tokens in and 300 out (Rs %%RS_ANSWER%% each).</p>
+</div>
+
+<h4>Write a rule, and see where it stops</h4>
+<p>Pick a rule or write your own. The first box says what <code>make improve</code>'s check says about it, and where it goes next. The second shows the prompt as the next version would serve it: <code>SYSTEM</code>, the rules added so far, and yours.</p>
+
+<div class="diagram rt" id="rt">
+<div class="dg-title">prompt_rules.py's check, and the prompt a version serves</div>
+<div class="rt-presets" role="group" aria-label="Rules to try">%%PRESET_BUTTONS%%</div>
+<label class="rt-lab" for="rt-rule">The rule</label>
+<textarea id="rt-rule" rows="3" spellcheck="false">%%EX_RULE_TA%%</textarea>
+<div class="rt-opts"><label>Builds on <select id="rt-base"><option value="v3" selected>v3, as the kit ships it</option><option value="v4">v4, the page's example accepted</option></select></label>
+<label><input type="checkbox" id="rt-dated"> a packed source carries an effective date</label></div>
+<div class="rt-out" id="rt-out" aria-live="polite">%%RT_OUT0%%</div>
+<div class="cw"><div class="ch-bar"><span id="rt-cap">%%RT_CAP0%%</span><span class="ro">read only</span></div><pre tabindex="0" id="rt-prompt">%%RT_PROMPT0%%</pre></div>
+<p class="dg-cap">The check is <code>prompt_rules.py</code>'s <code>problems()</code>, ported to this page and compared with the kit's own on %%N_CASES%% rules when the page was built, every one of the %%N_PHRASES%% phrases among them. As <code>make improve</code> does, the page trims the rule before checking it. The prompt is <code>generator.py</code>'s <code>SYSTEM</code> and <code>DATED_RULE</code>, read from the kit and numbered the way <code>numbered()</code> numbers them.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It checks the words, as the kit does, and cannot see what a rule means. The rule "worded past the phrases" passes here and in <code>make improve</code> alike, though it asks for fewer refusals. Only the gate measures what a rule does to the answers. Tick the dated source on v3 with a rule that passes, and you see something the kit does on purpose: two rules numbered %%OWN1%%. Step 12 says why.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: production row, proposer, prompt rule, the check, prompt version, PROMPT_VERSION, reviewer, golden row, the evaluator, candidate, the gate, promote or roll back</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>The production row</strong></td><td data-label="Meaning">One answer from your lane that went wrong, as a JSON file you write: the question in your own words, the answer, and what a right answer holds.</td><td data-label="On your lane"><code>~/row124.json</code></td></tr>
+<tr><td><strong>The proposer</strong></td><td data-label="Meaning"><code>%%MODEL%%</code> on the global endpoint, under a JSON schema: one rule and why. Or you, with <code>--rule</code>.</td><td data-label="On your lane">about Rs %%RS_PROPOSE%% a proposal; yours costs Rs 0</td></tr>
+<tr><td><strong>A prompt rule</strong></td><td data-label="Meaning">One line added after <code>SYSTEM</code>'s %%OWN%% rules and numbered on from %%OWN1%%.</td><td data-label="On your lane">v4's rule %%OWN1%%</td></tr>
+<tr><td><strong>The check</strong></td><td data-label="Meaning"><code>prompt_rules.problems()</code>: why a rule may not follow the ones before it. At most %%MAX_WORDS%% words, none of %%N_PHRASES%% phrases, no label, no number, no duplicate.</td><td data-label="On your lane">offline, Rs 0</td></tr>
+<tr><td><strong>A prompt version</strong></td><td data-label="Meaning">The rules a version adds, in <code>prompt_rules.json</code>. Append-only: a new rule is a new version.</td><td data-label="On your lane">v3 adds none; v4 adds yours</td></tr>
+<tr><td><strong><code>PROMPT_VERSION</code></strong></td><td data-label="Meaning">The setting that picks the version a revision answers under: <code>config.py</code>'s <code>prompt_version</code>, read from the environment. v3 by default.</td><td data-label="On your lane"><code>PROMPT_VERSION=v4</code> on the candidate</td></tr>
+<tr><td><strong>The reviewer</strong></td><td data-label="Meaning">The person who read the proposal and accepts it (<code>REVIEWER=</code>). The proposer cannot accept its own rule.</td><td data-label="On your lane">you</td></tr>
+<tr><td><strong>The golden row</strong></td><td data-label="Meaning">The <code>R(...)</code> line accept prints, which you paste into <code>build_golden.py</code> (lesson 4.1).</td><td data-label="On your lane">the next id of its shape: <code>%%NEXT_ID%%</code> for a lookup</td></tr>
+<tr><td><strong>The evaluator</strong></td><td data-label="Meaning">What judges a candidate: <code>run_eval.py</code>, <code>required.json</code>, <code>golden.jsonl</code>, <code>build_golden.py</code>, <code>manifest.json</code>, and the documents under <code>corpus/</code> and <code>demo/</code>.</td><td data-label="On your lane">%%N_EVALUATOR%% paths <code>improve.py</code> never writes</td></tr>
+<tr><td><strong>The candidate</strong></td><td data-label="Meaning">A revision of <code>documind-api</code> built from your commit, with <code>PROMPT_VERSION=v4</code>, no traffic and the tag <code>candidate</code>.</td><td data-label="On your lane"><code>https://candidate---documind-api-NUMBER.asia-south1.run.app</code></td></tr>
+<tr><td><strong>The gate</strong></td><td data-label="Meaning"><code>make gate</code> (lesson 11.2): every golden row asked of the exact candidate, and a record bound to that revision.</td><td data-label="On your lane">%%N_GATE%% rows, about Rs %%RS_GATE%%</td></tr>
+<tr><td><strong>Promote or roll back</strong></td><td data-label="Meaning"><code>make promote-gated</code> moves traffic on a green record. A red gate means no promote, and a <code>git revert</code> of the version's commit.</td><td data-label="On your lane">yours, in step 9</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the check reads the words and the gate measures the answers. A rule the check refuses never costs a rupee. A rule the check passes has proved nothing yet, until the gate has asked every golden row of a revision that serves it.</p>

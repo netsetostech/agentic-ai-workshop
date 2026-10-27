@@ -21,7 +21,7 @@
 #     make retire / restore SOURCE=                 withdraw a document (a tombstone the nightly walk honours), bring it back
 #     make batch / queued / batch-job            the batch lane (13 September 2026): drain the queue now, list it, declare the job
 #     make graph TENANT=acme                     build the tenant's knowledge graph (4.6) for RETRIEVAL_GRAPH=on|auto
-#     make managed-status / rag-corpus TENANT=   the managed mirror (P9, 4.3 + 4.4): the stores against the ledger; a tenant's RAG Engine corpus
+#     make managed-status / rag-corpus TENANT=   the managed mirror (P9, 4.3 + 4.4): the stores against the ledger; a tenant's RAG Engine corpus; managed-sync repairs drift
 #     make candidate RETRIEVAL_BACKEND=rag_engine  4.3's corpus as the API's retrieval stage (P9.4), judged on a candidate; make ablate ABLATE_ARGS="--arms all" first
 #     make rag-engine-enable                     once per project: RAG Engine in serverless mode + vectorsearch (4.3's one-time prep)
 #     make down  PROJECT=...                        the services, then terraform destroy; names what only project deletion removes
@@ -146,8 +146,8 @@ TF_PROJECT_VARS = $(abspath $(TF_DIR)/runbook-project.auto.tfvars.json)
 BUDGET_AMOUNT      ?= 5000
 PAGERDUTY_KEY      ?= unset-in-dryrun
 # Explicit legacy import and teardown targets use this init recipe; the job targets plan and apply as plan and up do.
-# The safe plan/up path requires an initialized backend and never switches its bucket.
-TFSTATE_BUCKET     ?= documind-tfstate
+# The safe plan/up path requires an initialized backend and never switches its bucket: <project>-tfstate unless set (names are global).
+TFSTATE_BUCKET     ?= $(PROJECT)-tfstate
 TFSTATE_PREFIX     ?= documind/$(PROJECT)
 
 TF_EXTRA_VARS = -var audit_lock=$(AUDIT_LOCK) \
@@ -185,22 +185,22 @@ SCRIPTS    = commands/lesson-12.5.sh commands/lesson-12.2.sh commands/lesson-12.
              commands/lesson-12.4.sh commands/lesson-12.8.sh \
              commands/lesson-7.2.sh commands/lesson-8.4.sh
 
-.PHONY: dryrun extract check validate eval eval-live plan up secrets build deploy-services tf-backend \
-        wait-index roster ingest-corpus smoke down guard-project bq-views features make-evalset \
+.PHONY: dryrun extract check validate eval eval-live plan up secrets build-access build deploy-services tf-backend \
+        wait-index roster ingest-corpus smoke down guard-project bq-views bq-views-when-ready down-region features make-evalset \
         chat-local deploy-slm slm-off ablate smoke-mcp smoke-chat smoke-agent \
         trainset cache judge tune candidate \
         deploy-gateway gateway-off smoke-gateway smoke-slm build-vllm deploy-vllm vllm-off gke-up gke-down compare \
         gpu-quota gpu-cap gpu-cap-off off off-now \
         release-candidate record-candidate promote rollback smoke-all usage ingest-one poison dlq down-services \
         reindex retire restore reconcile reconcile-job backfill-current sources purge smoke-reindex \
-        batch queued batch-job graph managed-status rag-corpus rag-engine-enable tenant-policy tenant-backend \
-        managed-stores managed-stores-down vector-status wait-vectors backfill-vectors desk-check route-probe doc-types limits limits-check limits-drill desk roles desk-queues cases cases-overdue smoke-cases desk-job desk-operators route-index route-calibrate smoke-desk route-eval desk-views deploy-gchat smoke-gchat
+        batch queued batch-job graph managed-status managed-sync rag-corpus rag-engine-enable tenant-policy tenant-backend \
+        managed-stores managed-stores-down vector-status wait-vectors backfill-vectors desk-check route-probe doc-types limits limits-check limits-drill desk roles desk-queues cases cases-overdue smoke-cases desk-job desk-operators route-index route-calibrate smoke-desk route-eval desk-views deploy-gchat smoke-gchat decide bench exemplars label-sheet judge-agree judge-frozen prompt-version agent-turn agent-eval agent-tests approval-check thread replay ci-vars keys-check triage attack-offline attack-eval context-sources window-check gate promote-gated smoke-deployed incident gotchas gotcha-drill gotcha-detect remediate incident-drill managed-peer-up managed-peer-ask managed-peer-trace managed-peer-smoke managed-peer-sessions managed-peer-down ralph-image ralph ralph-workspace ralph-check ralph-probe review-diff review-eval improve prompt-candidate route-compare arms-combine capstone-check handover agent-drill handoff smoke-handoff check-callers pin-tools evil-mcp mcp-local attack-agents agent-shapes agent-actions withdraw-run smoke-approval case-check case-eval case-tests
 
 # ---------- the module files (22 September 2026): one .mk per lane; the Makefile keeps the variables and the core ----------
 # mk/ingestion.mk  the roster and the tenant pins, the vector tier's status and repair, the ingest drills (the v5 course's Module 1)
 # mk/lifecycle.mk  the ledger (reindex, retire, restore, reconcile, sources, purge) and the batch lane (Module 1)
 # mk/agents.mk     the agent layer (Modules 5 and 10). A long recipe is a commands/ script or a subcommand of commands/lane.py
-# (the Desk's: commands/desk_ops.py). tools/check_*.py read the Makefile and mk/*.mk as one text. Bare make: dryrun.
+# (the Desk's: commands/desk_ops.py). mk/retrieval.mk: decide (Module 2). tools/check_*.py read them as one text. Bare make: dryrun.
 .DEFAULT_GOAL := dryrun
 include mk/*.mk
 
@@ -270,7 +270,7 @@ adopt-firestore: guard-project
 # BEFORE planning. Terraform rejects a saved plan if intervening work made it stale.
 up: guard-project
 	$(INFRA) apply $(INFRA_FLAGS) $(INFRA_PLAN)
-	$(MAKE) drift secrets build deploy-services wait-index roster managed-stores bq-views vector-status
+	$(MAKE) drift secrets build-access build deploy-services wait-index roster managed-stores bq-views-when-ready vector-status
 
 # After an apply, a plan should be EMPTY. A resource that is still "to be replaced" is one the
 # provider reads back differently from how it was written - which is how both vector indexes
@@ -563,11 +563,11 @@ smoke-media: guard-project
 # The Rs 0 lane (lesson 6.4 step 7, gap G3): the SAME chat service, DOCUMIND_PROFILE=local -
 # Ollama gemma3:4b for the model, a Chroma directory for the corpus, no IAP and no roster
 # (LOCAL_USER / LOCAL_TENANT stand in). Needs `pip install -r services/chat/requirements.txt
-# -r services/chat/requirements-local.txt` once, and `ollama pull gemma3:4b`. Seeds the six
-# teaching passages first; Chroma upserts, so re-running is harmless.
+# -r services/chat/requirements-local.txt` once, and `ollama pull gemma3:4b`. Seeds acme's corpus first;
+# Chroma upserts, so re-running is harmless. One absolute directory for both: the service runs from services/chat.
 chat-local:
-	DOCUMIND_PROFILE=local $(PY) -m shared.local_corpus acme
-	cd services/chat && DOCUMIND_PROFILE=local PYTHONPATH=../.. \
+	DOCUMIND_PROFILE=local DOCUMIND_CHROMA_DIR="$(CURDIR)/documind_chroma" $(PY) -m shared.local_corpus acme
+	cd services/chat && DOCUMIND_PROFILE=local DOCUMIND_CHROMA_DIR="$(CURDIR)/documind_chroma" PYTHONPATH=../.. \
 	  $(PY) -m uvicorn agent:app --host 127.0.0.1 --port 8081
 
 # destroy needs the SAME variables plan/apply need - terraform resolves every declared
@@ -585,7 +585,10 @@ down: guard-project down-services
 	echo ">>   buckets that hold objects: uploads, datasets, audit (force_destroy = false, storage.tf) - and with AUDIT_LOCK=true the audit bucket's LOCKED retention policy blocks even the project's deletion for five years, by design"; \
 	echo ">>   a tuned endpoint from make tune (evals/tune.py: Vertex AI, not Terraform)"; \
 	echo ">>   a RAG Engine corpus outside MANAGED_TENANTS (make rag-corpus TENANT= by hand; managed.py: Vertex AI, not Terraform) - it bills storage until deleted: managed-stores-down just removed MANAGED_TENANTS' corpora; gcloud ai rag-corpora ... or 4.3's cleanup cell for the rest"; \
-	echo ">>   the BigQuery views make bq-views applied (terraform/sql/*.sql, through bq, not Terraform)"; \
+	echo ">>   the BigQuery views make bq-views applied (terraform/sql/*.sql, through bq, not Terraform) - and so the documind_observability dataset that holds them and the log sink's tables (destroy reports it still in use)"; \
+	echo ">>   the Vertex AI Search data stores documind-<tenant> once they hold documents (destroy reports Active documents exists): they bill storage until the project goes"; \
+	echo ">>   Cloud Run jobs a deploy script made outside Terraform (documind-checkpoint-setup): gcloud run jobs list --region $(REGION)"; \
+	echo ">>   the billing account's DocuMind monthly budget for this project (budget.tf): make down leaves it when destroy stops early - remove it under Billing > Budgets & alerts"; \
 	echo ">> Delete the throwaway project to stop all billing:"; \
 	echo ">>   gcloud projects delete $(PROJECT)"; exit $$rc
 
@@ -598,7 +601,7 @@ down: guard-project down-services
 DOWN_SERVICES     = documind-ingest documind-api documind-admin documind-ui documind-chat documind-mcp documind-agent documind-gchat
 DOWN_SERVICES_M11 = documind-gateway
 DOWN_SERVICES_GPU = documind-slm documind-vllm
-down-services: guard-project
+down-services: guard-project down-region
 	@for t in acme zeta globex; do \
 	  (cd services/rag-api && GOOGLE_CLOUD_PROJECT=$(PROJECT) $(PY) cache_admin.py delete --project $(PROJECT) --tenant $$t 2>/dev/null) \
 	    || echo ">> cache $$t: nothing deleted (no cache, or no google-genai / credentials in this shell)"; done
@@ -621,7 +624,7 @@ SLM_REGION ?= us-central1
 # may invoke it, and the caller's ID token is the door (no master key). Its token proxy fronts the SLM (and the vLLM
 # engine when built) with an ID token per call; its spend logs and tag budgets live in the Cloud SQL instance
 # gateway.tf declares, mounted here as DATABASE_URL through the connector (15 September 2026, with the one shape).
-deploy-gateway: guard-project tf-backend
+deploy-gateway: guard-project tf-backend build-access
 	@NUMBER=$$(gcloud projects describe $(PROJECT) --format='value(projectNumber)'); \
 	SLM=https://documind-slm-$$NUMBER.$(SLM_REGION).run.app; VLLM=$${GEMMA_VLLM_URL:-https://documind-vllm-$$NUMBER.$(SLM_REGION).run.app}; \
 	DB=$$(cd $(TF_DIR) && terraform output -raw gateway_database_url); \
@@ -651,7 +654,7 @@ smoke-gateway: guard-project
 # 10.5's GGUF and the Modelfile it generated from the tokenizer, from the datasets bucket - or, with SLM_STOCK set,
 # a stock model as the stand-in until that file lands (decision D2). The startup probe waits for the model, not
 # the process; the gateway's and the UI's accounts may invoke it.
-deploy-slm: guard-project
+deploy-slm: guard-project build-access
 	@mkdir -p services/slm/build; rm -f services/slm/build/documind-slm.gguf services/slm/build/Modelfile services/slm/build/STOCK; \
 	if [ -n "$(SLM_STOCK)" ]; then echo "$(SLM_STOCK)" > services/slm/build/STOCK; echo ">> stand-in: $(SLM_STOCK) will be served as documind-slm"; \
 	else gcloud storage cp gs://$(PROJECT)-datasets/sft/documind-slm.gguf services/slm/build/ && \
@@ -808,7 +811,7 @@ rollback: guard-project
 	@PREV=$$(cat .previous-revision); \
 	gcloud run services update-traffic documind-api --region $(REGION) --project $(PROJECT) --to-revisions $$PREV=100 --quiet && echo ">> traffic on $$PREV"
 
-# 12.8's full smoke: the seven smokes in one run, with the exports smoke.py reads. A refusal line is a PASS - a system
+# 12.8's full smoke: the eight smokes in one run, with the exports smoke.py reads. A refusal line is a PASS - a system
 # that answers everybody passes a smoke made only of "does it work?".
 # The smoke's OWN exit status decides (12 September 2026): a pipeline's status is grep's, and grep is satisfied by a
 # FAIL line, so a failing smoke left this target at exit 0 and the release day green. /bin/sh is dash on the runners
@@ -849,7 +852,7 @@ managed-status: guard-project
 
 # The managed stores, all of them (13 September 2026, evening): make up runs this after the
 # roster (the policies are set) and before the first ingest - the mirror never creates a store, and a version
-# ingested before its corpus exists waits for the walk's repair (the plan's R6). RAG Engine in serverless mode
+# ingested before its corpus exists waits for make managed-sync (the walk only removes). RAG Engine in serverless mode
 # once, a corpus per `any` tenant (idempotent by name), the data stores already declared by managed.tf
 # (MANAGED_SEARCH=true); then the demo's pins, so one deployment answers from all three stores: acme from
 # 4.3's corpus, zeta from 4.4's data store, globex (data_region in) from the kit's own rows. Safe to re-run.
@@ -860,9 +863,9 @@ managed-stores: guard-project
 	@GOOGLE_CLOUD_PROJECT=$(PROJECT) $(PY) -m shared.tenancy backend zeta vertex_search
 	@echo ">> managed stores ready: corpora for $(MANAGED_TENANTS); acme reads rag_engine, zeta vertex_search, globex the kit's rows; make managed-status after make ingest-corpus"
 
-# The corpora bill storage until deleted and are not Terraform's to destroy: make down runs this first.
-# The data stores go with terraform destroy. The pins are cleared so a redeploy of the same project does not
-# send acme and zeta to stores that no longer exist.
+# The corpora bill storage until deleted and are not Terraform's to destroy: make down runs this before its terraform
+# destroy, which takes the data stores too (managed.tf's prevent_destroy refused that whole destroy until 8 October 2026).
+# The pins are cleared so a redeploy of the same project does not send acme and zeta to stores that no longer exist.
 managed-stores-down: guard-project
 	@for t in $(MANAGED_TENANTS); do \
 	  (cd services/ingest && GOOGLE_CLOUD_PROJECT=$(PROJECT) RAG_LOCATION=$(RAG_LOCATION) $(PY) managed.py --project $(PROJECT) --delete-corpus --tenant $$t) || exit 1; \

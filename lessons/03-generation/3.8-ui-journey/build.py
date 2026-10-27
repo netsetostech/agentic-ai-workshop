@@ -69,14 +69,14 @@ EXCERPTS = {
     "stream_answer": ("services/frontend/chat.py - stream_answer(): the question, labelled ui, and the events as they come",
                       block(CHAT, "def stream_answer(", end="def chat_page(")),
     "identity": ("shared/iap.py - identity(): the assertion first, the bearer token second, never a header",
-                 block(IAP, "    assertion = headers.get(ASSERTION_HEADER)", n=8)),
+                 block(IAP, "    assertion = assertion_of(headers)", n=8)),
     "row_user": ("services/rag-api/main.py - usage_row(): who asked, and a brain that defaults to ui",
                  block(API, '    return {"event": surface, "tenant": req.tenant_id, "user": user["email"],', n=1) + "\n...\n"
                  + block(API, '            "brain": getattr(req, "brain", None) or "ui"}', n=1)),
     "label": ("services/frontend/citations.py - the pattern and the labels: [3], [Fig 3, p.12], [Clip 3, 03:20]",
               block(CITE, "_CITE = re.compile(", n=1) + "\n...\n" + block(CITE, "def _label(n: int, src: dict | None)", end="def render_with_citations(")),
     "pill": ("services/frontend/citations.py - render_with_citations(): the pills, drawn as HTML",
-             block(CITE, "    def _pill(match):", n=14)),
+             block(CITE, "    def _pill(match):", n=16)),
     "signing": ("services/frontend/citations.py - signing on Cloud Run: the account's email and token, and IAM signs",
                 block(CITE, "def _signing_kwargs() -> dict:", end="def _mmss(")),
     "ui_roles": ("terraform/sa.tf - the UI's project roles, and the two it pointedly lacks",
@@ -97,7 +97,7 @@ fill = filler(EXCERPTS, window)
 grab = lambda pat, text: re.search(pat, text).group(1)
 cite_txt, docs_txt, chat_txt = ((KIT / p).read_text(encoding="utf-8") for p in (CITE, DOCS, CHAT))
 EXPIRY = int(grab(r"SIGNED_URL_EXPIRY = datetime\.timedelta\(minutes=(\d+)\)", cite_txt))
-TIP_CHARS = int(grab(r'tip = \(src\["text"\]\[:(\d+)\]', cite_txt))
+TIP_CHARS = int(grab(r'tip = \(" "\.join\(src\["text"\]\[:(\d+)\]\.split\(\)\)', cite_txt))
 CITE_RE = grab(r'_CITE = re\.compile\(r"([^"]+)"\)', cite_txt)
 TYPES = re.findall(r'"(\w+)": "[a-z]+/', grab(r"MIME_TYPES = \{(.*?)\}", docs_txt.replace("\n", " ")))
 MAX_MB = int(grab(r"max_upload_size=(\d+)", docs_txt))
@@ -202,7 +202,7 @@ JS = """<script>
     if (!r.sources.length && !r.answer) { ans.innerHTML = '<p class="cr-note">paste the transcript curl -N prints for /v1/stream, or pick a case</p>'; srcs.innerHTML = ''; return; }
     var pills = 0, html = esc(r.answer).replace(CITE, function(m, g){                /* render_with_citations(): each number becomes a pill */
       return g.replace(/ /g, '').split(',').map(function(x){ var n = parseInt(x, 10), src = (n > 0 && n <= r.sources.length) ? r.sources[n - 1] : null; pills++;
-        var tip = src ? (src.text.slice(0, TIP) + '...') : 'unknown source';
+        var tip = src ? (src.text.slice(0, TIP).trim().split(/\\s+/).join(' ') + '...') : 'unknown source';
         return '<span class="cr-pill" title="' + esc(tip) + '">' + esc(label(n, src)) + '</span>'; }).join(''); });
     var notes = [];
     if (/\\[Source \\d+\\]/.test(r.answer)) notes.push('the answer says [Source N]; the pattern accepts digits only, so the UI draws no pill for it');

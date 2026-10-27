@@ -71,8 +71,12 @@ export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
 curl -s -X POST "$CAND/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \\
   -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":5}' \\
   | python -c "import sys, json; j = json.load(sys.stdin); s = j['stages']; print('candidate: rerank_fallback', s.get('rerank_fallback', 0), '| rerank_ms', s['rerank_ms'], '| pool', s['pool'], '| answerable', j['answerable']); [print('   score %.4f  #%s  %s' % (c['score'], c['chunk_id'].rsplit('#', 1)[1], c['source_uri'].split('/')[-1][:26])) for c in j['citations']]"
-gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="rerank_fallback"' \\
-  --project "$PROJECT" --freshness 10m --limit 3 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)'
+for i in $(seq 1 12); do                                                     # the line reaches Cloud Logging seconds after the answer
+  LINE="$(gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="rerank_fallback"' \\
+    --project "$PROJECT" --freshness 2m --limit 1 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)')"
+  [ -n "$LINE" ] && break; sleep 5
+done
+echo "${LINE:-no rerank_fallback line in a minute: run the read again}"
 
 """
 
@@ -88,9 +92,7 @@ def step_02_on_a_candidate_a_deadline_no_call_can_meet(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: candidate: rerank_fallback 1 | rerank_ms 1x | pool 20 | answerable True
-       score 0.7xxx  #1  hr_policy_2026.md
-       score 0.7xxx  #4  hr_policy_2026.md
-       score 0.6xxx  #2  hr_policy_2026.md
+       score 0.6xxx  #1  hr_policy_2026.md
     2026-09-2xT1x:xx:xx.xxxxxxZ	acme	DeadlineExceeded
     """
     # Preserve the kit CLI's arguments, conditions and observation order.

@@ -78,7 +78,8 @@ def step_01_from_a_segment_to_a_pill_run(session):
     print("4. the usage row's modality:", ns["modality_of"]([x.kind for x in answer.citations]),
           "| the same answer from the table and the figure:", ns["modality_of"](["text", "figure"]))
     for cited in (3, 1):                                          # run_eval's rule for a media row: mm-03 asks for a segment
-        one = ModelDraft(answer=draft.answer, confidence="high", answerable=True, citations=[{"source": cited, "quote": "5.2 per cent"}])
+        one = ModelDraft(answer=draft.answer.replace("[3]", f"[{cited}]"), confidence="high", answerable=True,   # the prose's marker, the cited source
+                         citations=[{"source": cited, "quote": "5.2 per cent"}])
         kinds = sorted({x.kind for x in resolve(one, packed).citations})
         print(f"5. mm-03, citing [Source {cited}]: kinds {kinds} -> {'counts' if 'segment' in kinds else 'cited no segment'}")
 

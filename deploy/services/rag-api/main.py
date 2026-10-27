@@ -70,6 +70,23 @@ app.add_middleware(CORSMiddleware,
     allow_origins=["https://documind.example.com"],
     allow_methods=["POST","GET"], allow_headers=["*"])
 
+
+# A 429 from the default model is the caller's to see (generator._exhausted_tier answers only a routed tier's), so it
+# leaves as a 429 with its reason and a Retry-After, not as an unexplained 500 in plain text: on a new project's quota
+# two lessons' demos read "Internal Server Error" and failed parsing it (21 October 2026). Every other model error is
+# raised again and still leaves as a 500 - lesson 11.3's typo in GENERATOR_MODEL must fail the gate, not be explained.
+from google.genai import errors as _genai_errors  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+
+
+@app.exception_handler(_genai_errors.APIError)
+async def model_quota_exhausted(request: Request, e: _genai_errors.APIError):
+    if getattr(e, "code", None) != 429:
+        raise e
+    log.warning(json.dumps({"event": "model_quota_exhausted", "path": request.url.path}))
+    return JSONResponse(status_code=429, headers={"Retry-After": "30"},
+                        content={"detail": "the model's quota is exhausted (429 RESOURCE_EXHAUSTED): retry in a minute"})
+
 # verify_iap and enforce_membership live in auth.py: identity is verified
 # against the IAP assertion, and the tenant is checked against the Firestore
 # roster rather than compared to a header the caller sent.
@@ -362,6 +379,9 @@ def _guard():
     return guard
 
 
+from rewrite import search_query  # noqa: E402 - workshop lesson 2.5's stage, on /v1/query only (QUERY_REWRITE, off)
+
+
 def screen_prompt(text: str, tenant_id: str) -> str:
     """Before retrieval, never after: an injection that reaches the retriever has already chosen which documents the
     model reads. A block is a 400 with the reason - a refusal dressed as an answer would hide the rate."""
@@ -397,7 +417,8 @@ def query(req: QueryRequest, user=Depends(verify_iap)):
     with stage(stages, "retrieve"):
         qvec = embed_query(req.query)                     # once: the answer cache and the retrieval share it
         hit = _semantic_hit(req, qvec, fingerprint)
-        chunks = [] if hit else retrieve(req.query, req.tenant_id, req.top_k, req.filters, vec=qvec, backend=rbackend)
+        search_q, search_vec = (req.query, qvec) if hit else search_query(req.query, qvec, stages, req.tenant_id)   # workshop lesson 2.5: what is searched; off (the default), the question and qvec
+        chunks = [] if hit else retrieve(search_q, req.tenant_id, req.top_k, req.filters, vec=search_vec, backend=rbackend)
     stages["pool"] = len(chunks)                          # what the reranker sees: TOP_K_RETRIEVE, as served
     stages["graph_chunks"] = sum(1 for c in chunks if c.get("found_by") == "graph")   # 4.6's walk, counted
     stages["managed_chunks"] = sum(1 for c in chunks if c.get("found_by") in MANAGED_BACKENDS)   # P9.4 / R4: the store's share of the pool

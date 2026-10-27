@@ -37,7 +37,7 @@ After upgrading from a previous layout, run the lesson's finish file first, then
 
 ## Finish and restore
 
-- [cleanup/demo_06_the_verdict_and_the_delta.py](cleanup/demo_06_the_verdict_and_the_delta.py) — At lesson end: The decision is yours, and it reads the three results in order. The gate must pass. The judge says how often the tuned model gives the worse answer where the two differ. The delta says what that is worth at your volume. With a candidate that passes, there are three ways forward:
+- [cleanup/demo_06_the_verdict_and_the_delta.py](cleanup/demo_06_the_verdict_and_the_delta.py) — At lesson end: Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved. Remove the untuned revision's address when you are done with it. The revision stays in the service's list, with no traffic, as the candidate's does after the next block. The decision is yours, and it reads the three results in order. The gate must pass. The judge says how often the tuned model gives the worse answer where the two differ. The delta says what that is worth at your volume. With a candidate that passes, there are three ways forward:
 - [setup/restore_settings.py](setup/restore_settings.py) — At lesson end: DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. make up pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like acme:acme_497809ff...#rag-532341da71fe, a page of null even for a PDF, and stages.retrieval_backend: rag_engine. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors. The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.
 - [setup/finish.py](setup/finish.py) — Run the listed cleanup sections in order, even after a failure; retain evidence and restore saved settings.
 
@@ -207,7 +207,7 @@ live  candidate  needs
 
 ### demo_06_the_verdict_and_the_delta.py
 
-Do it: the verdict The gates and the judge asked both revisions the same questions, so their usage rows are like for like. The cell prints make usage's model table, groups the rows by model, and prices the endpoint's rows at 1.5 times what they log.
+Do it: the verdict The gates and the judge asked both revisions the same questions, so their usage rows are like for like. The cell prints make usage's model table, groups the rows by model, and prices the endpoint's rows at 1.5 times what they log. The gate and the judge set the tuned flash-lite against the live flash, so every difference mixes two changes: a smaller model, and the tuning on top of it. A third revision pulls them apart: gemini-3.1-flash-lite as Google serves it, the base v2 was tuned from (TUNE_BASE, lesson 12.2), with every other setting the candidate's. Live against untuned is then the smaller model, and untuned against tuned is the tuning. The cell makes it with gcloud, not make candidate. That target would move the candidate tag to the new revision and record it in .candidate-revision: the tuned candidate would lose its address, and make promote would move traffic to the untuned model. A service update starts from the service's latest settings, which have been the candidate's since step 4, so with --update-env-vars the model is the one setting that changes. A model name is served on the global endpoint, as the live model is; only an endpoint path is served from its own location. The cell makes it with gcloud, not make candidate. That target would move the candidate tag to the new revision and record it in .candidate-revision: the tuned candidate would lose its address, and make promote would move traffic to the untuned model. A service update starts from the service's latest settings, which have been the candidate's since step 4, so with --update-env-vars the model is the one setting that changes. A model name is served on the global endpoint, as the live model is; only an endpoint path is served from its own location. Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved.
 
 **`step_01_the_verdict(session)` — The verdict and the delta / Do it: the verdict**
 
@@ -262,6 +262,96 @@ projects/NUMBER/loca  vertex                     130    970907    17751    0.269
   candidate   130 answers  Rs 0.1761 an answer as logged, Rs 0.2641 as Google bills it
 the rupee delta: the tuned endpoint costs Rs 0.8079 less an answer, Rs 808 per 1,000 answers
   (the usage rows alone say Rs 0.8959: they log the endpoint at its base's rate)
+```
+
+**`step_03_compare_the_models_the_untuned_base(session)` — The verdict and the delta / Compare the models: the untuned base**
+
+The gate and the judge set the tuned flash-lite against the live flash, so every difference mixes two changes: a smaller model, and the tuning on top of it. A third revision pulls them apart: gemini-3.1-flash-lite as Google serves it, the base v2 was tuned from (TUNE_BASE, lesson 12.2), with every other setting the candidate's. Live against untuned is then the smaller model, and untuned against tuned is the tuning. The cell makes it with gcloud, not make candidate. That target would move the candidate tag to the new revision and record it in .candidate-revision: the tuned candidate would lose its address, and make promote would move traffic to the untuned model. A service update starts from the service's latest settings, which have been the candidate's since step 4, so with --update-env-vars the model is the one setting that changes. A model name is served on the global endpoint, as the live model is; only an endpoint path is served from its own location.
+
+Operation: bash — run in the operator shell, in the kit (one more revision with no traffic, at a tag of its own).
+
+Expected shape, not a promised result:
+
+```text
+...
+UNTUNED=https://untuned---documind-api-NUMBER.asia-south1.run.app
+```
+
+**`step_04_compare_the_models_the_untuned_base(session)` — The verdict and the delta / Compare the models: the untuned base**
+
+The cell makes it with gcloud, not make candidate. That target would move the candidate tag to the new revision and record it in .candidate-revision: the tuned candidate would lose its address, and make promote would move traffic to the untuned model. A service update starts from the service's latest settings, which have been the candidate's since step 4, so with --update-env-vars the model is the one setting that changes. A model name is served on the global endpoint, as the live model is; only an endpoint path is served from its own location. Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved.
+
+Operation: bash — run in the operator shell, in the kit (every golden row on the untuned base: about ten minutes).
+
+IDE adaptation: Run the untuned gate through live_gate: a red gate on the untuned base is an observation this lesson compares, and it keeps its fresh report.
+
+Expected shape, not a promised result:
+
+```text
+>> https://untuned---documind-api-NUMBER.asia-south1.run.app
+  65 rows (47 answerable, 18 not) against https://untuned---documind-api-NUMBER.asia-south1.run.app
+
+  [PASS] request_success_rate  100.0%  (threshold 100%; 65 rows)
+  [PASS] answerable_rate        97.9%  (threshold 80%; 47 rows)
+  [PASS] citation_rate         100.0%  (threshold 95%; 46 rows)
+  [PASS] citation_valid_rate   100.0%  (threshold 100%; 46 rows)
+  [PASS] must_contain_rate      97.8%  (threshold 85%; 46 rows)
+  [PASS] correct_rate           95.7%  (threshold 68%; 47 rows)
+  [PASS] refusal_rate          100.0%  (threshold 90%; 18 rows)
+  [PASS] media_kind_rate       100.0%  (threshold 80%; 3 rows)
+  [PASS] isolation_403_rate    100.0%  (threshold 100%; 11 rows)
+  [info] quote_support_rate      ...  (quoted words found in the tenant's corpus text; not a threshold - a Doc AI extraction and a pypdf mirror hyphenate differently)
+
+  shape        rows   ok   pass
+  lookup         34   34     33
+  join           11   11     10
+  refusal         8    8      8
+  isolation      11   11     11
+  version         1    1      1
+  latency ms  p50   ...  p95   ...   (round trip, 65 rows)
+  retrieve_ms p50   ...  p95   ...
+  rerank_ms   p50   ...  p95   ...
+  generate_ms p50   ...  p95   ...
+  pool        avg   ...   semantic cache hits ...
+
+  rows that cost a point (2):
+    jn-06  join      acme    answered without ['EMEA', '11.4'] | 'emea revenue fell in fy2026 [1].'
+    lk-27  lookup    acme    REFUSED conf=low cites=0 | What is the maximum rate of central tax the CGST Act allows?
+
+  report: /home/YOU/untuned173.json
+  All thresholds met.
+```
+
+**`step_05_compare_the_models_the_untuned_base(session)` — The verdict and the delta / Compare the models: the untuned base**
+
+The cell makes it with gcloud, not make candidate. That target would move the candidate tag to the new revision and record it in .candidate-revision: the tuned candidate would lose its address, and make promote would move traffic to the untuned model. A service update starts from the service's latest settings, which have been the candidate's since step 4, so with --update-env-vars the model is the one setting that changes. A model name is served on the global endpoint, as the live model is; only an endpoint path is served from its own location. Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved.
+
+Operation: bash — run in the operator shell, in the kit (reads the three reports).
+
+Expected shape, not a promised result:
+
+```text
+live  untuned    tuned  needs
+  request_success_rate    100.0%   100.0%   100.0%   100%
+  answerable_rate          97.9%    97.9%    97.9%    80%
+  citation_rate           100.0%   100.0%   100.0%    95%
+  citation_valid_rate     100.0%   100.0%   100.0%   100%
+  must_contain_rate        97.8%    97.8%    95.7%    85%
+  correct_rate             95.7%    95.7%    93.6%    68%
+  refusal_rate            100.0%   100.0%   100.0%    90%
+  media_kind_rate         100.0%   100.0%   100.0%    80%
+  isolation_403_rate      100.0%   100.0%   100.0%   100%
+  rows passed              63/65    63/65    62/65
+  generate_ms p50            ...      ...      ...
+  generate_ms p95            ...      ...      ...
+  live     answered by gemini-3.6-flash
+  untuned  answered by gemini-3.1-flash-lite
+  tuned    answered by endpoint 9136961803583303949
+  live to untuned, what the smaller model moved: 0 row(s)
+  untuned to tuned, what the tuning moved: 3 row(s)
+    jn-03: pass to fail (answered without ['45', '60'])
+    jn-06: fail to pass (ok)
+    jn-09: pass to fail (answered without ['8.33', 'twenty per cent'])
 ```
 
 ### optional/demo_07_optional_the_v3_candidate_and_the_gate_on_it.py
@@ -370,9 +460,22 @@ the UI's URL sends 100% of its traffic to documind-api-000NN-xxx; the candidate 
 
 ### cleanup/demo_06_the_verdict_and_the_delta.py
 
-At lesson end: The decision is yours, and it reads the three results in order. The gate must pass. The judge says how often the tuned model gives the worse answer where the two differ. The delta says what that is worth at your volume. With a candidate that passes, there are three ways forward:
+At lesson end: Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved. Remove the untuned revision's address when you are done with it. The revision stays in the service's list, with no traffic, as the candidate's does after the next block. The decision is yours, and it reads the three results in order. The gate must pass. The judge says how often the tuned model gives the worse answer where the two differ. The delta says what that is worth at your volume. With a candidate that passes, there are three ways forward:
 
-**`step_01_the_decision_and_the_candidate_s_tag(session)` — The verdict and the delta / The decision, and the candidate's tag**
+**`step_01_compare_the_models_the_untuned_base(session)` — The verdict and the delta / Compare the models: the untuned base**
+
+Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved. Remove the untuned revision's address when you are done with it. The revision stays in the service's list, with no traffic, as the candidate's does after the next block.
+
+Operation: bash — run in the operator shell, in the kit (removes the untuned revision's address; the revision stays, with no traffic).
+
+Expected shape, not a promised result:
+
+```text
+...
+the untuned URL now: HTTP 404
+```
+
+**`step_02_the_decision_and_the_candidate_s_tag(session)` — The verdict and the delta / The decision, and the candidate's tag**
 
 The decision is yours, and it reads the three results in order. The gate must pass. The judge says how often the tuned model gives the worse answer where the two differ. The delta says what that is worth at your volume. With a candidate that passes, there are three ways forward:
 
@@ -383,6 +486,9 @@ Expected shape, not a promised result:
 ```text
 ...
 the candidate URL now: HTTP 404
+the template against documind-api-000NN-xxx: image another; put back ['GENERATOR_MODEL', 'GIT_SHA', 'RAG_MODEL_BASE']; remove []
+documind-api's template is what its serving revision documind-api-000NN-xxx was made from
+nothing found
 ```
 
 ### setup/restore_settings.py
@@ -403,6 +509,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_12.3_Tuned_Candidate_WIX.html`. All 33 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `b2fefa0d8707ac518698fb9851e542583dd1762a`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_12.3_Tuned_Candidate_WIX.html`. All 41 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `0428e1fce6d71b2dd991357209b218b1e3272490`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

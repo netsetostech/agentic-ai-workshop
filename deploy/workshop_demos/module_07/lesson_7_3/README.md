@@ -144,9 +144,9 @@ acme: retrieval_backend=rag_engine
 acme: retrieval_backend rag_engine, policy_fallback 0; pool 17, 14 from a managed store
   A: A confirmed employee at grade E3 or above serves a notice period of 60 days [2].
   cites acme:acme_497809ff...#rag-c31c1f459b60 (hr_policy_2026.md)
-zeta: retrieval_backend vertex_search, policy_fallback 0; pool 12, 12 from a managed store
+zeta: retrieval_backend vertex_search, policy_fallback 0; pool 20, 20 from a managed store
   A: A confirmed employee at grade L4 or above serves a notice period of 30 days [1].
-  cites zeta:zeta_e920a147...#vs-9b9cb379153b (hr_policy_zeta_2026.md)
+  cites zeta:e920a147...#1 (hr_policy_zeta_2026.md)
 globex: retrieval_backend vector, policy_fallback 0; pool 20, 0 from a managed store
   A: Either party may terminate the agreement for convenience on 120 days' written notice [1].
   cites globex:a0d13745...#2 (msa_globex_2026.md)
@@ -239,6 +239,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_7.3_Managed_Mirrors_WIX.html`. All 26 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `5d2f8eed1c871bf3e8af3c1094e90280a07c7795`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_7.3_Managed_Mirrors_WIX.html`. All 26 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `3281212510aa6d9609fab245b5304486f6909ead`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

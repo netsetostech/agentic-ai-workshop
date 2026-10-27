@@ -6,8 +6,9 @@ rag_engine and vertex_search retrieval backends read - but only where the tenant
 (tenant_settings/{tenant}: `any`, or `in`, which an absent or unreadable policy also means; shared/tenancy.permits).
 A forbidden store is one mirror_policy_skipped line; every copy is a doc.mirror audit event and a `mirrored` stamp on
 the ledger row. The API reads a store for a tenant pinned to it (make tenant-backend), held against the same policy:
-an `in` tenant pinned to a store is served from the kit's own index with policy_fallback 1. A store's text comes back
-as chunks of the kit's contract, their ids minted from the text (#rag-, #vs-), found_by the store.
+an `in` tenant pinned to a store is served from the kit's own index with policy_fallback 1. RAG Engine's text comes back
+as chunks of the kit's contract, their ids minted from the text (#rag-); Vertex AI Search ranks the documents and the
+kit's own rows of those versions are the passages (22 October 2026); both found_by the store.
 Offline: the kit's Mirror with two stand-in stores and a policy - a copy, two skips, a policy turned to `in`, a
 retirement. Live: the policies, the pins and make managed-status; acme pinned back to RAG Engine, three tenants asked,
 and the cited chunk found in the kit's own retrieve() with found_by rag_engine; a note uploaded to globex (`in`) and the
@@ -17,8 +18,8 @@ the kit's index anyway.
 Build-time proof: the offline cell runs on the kit. The live cells ran the kit's own tenancy CLI, managed.py (--status,
 and the Mirror the worker holds), rag-api (under uvicorn) and retriever over a stand-in lane: the three tenants' corpus
 as evals/upload.sh sends it (the doc_keys are the files' own hashes), Firestore in JSON files, RAG Engine as a corpus
-per `any` tenant cut 512/100 and ranked by word overlap, Vertex AI Search as a data store per `any` tenant answering
-with extractive segments, Gemini as a reader of the packed clause. The panel is the kit's rules - Mirror.after_swap
+per `any` tenant cut 512/100 and ranked by word overlap, Vertex AI Search as a data store per `any` tenant ranking
+its documents, Gemini as a reader of the packed clause. The panel is the kit's rules - Mirror.after_swap
 with the worker's guard, choose_for, retrieval_backend_for and the store dispatch - ported and checked against the
 kit's code on every combination of its settings.
 """
@@ -110,23 +111,25 @@ src = {p: (KIT / p).read_text(encoding="utf-8") for p in (MANAGED, TENANCY, MAIN
                                                           "evals/upload.sh", "README.md", "services/rag-api/config.py")}
 MK = src["Makefile"] + "".join(p.read_text(encoding="utf-8") for p in sorted((KIT / "mk").glob("*.mk")))
 assert 'policies = [("acme", "any"), ("zeta", "any"), ("globex", "in")]' in src["commands/lane.py"]
-assert "$(MAKE) drift secrets build deploy-services wait-index roster managed-stores bq-views vector-status" in MK   # make up
+assert "$(MAKE) drift secrets build-access build deploy-services wait-index roster managed-stores bq-views-when-ready vector-status" in MK   # make up
 assert re.search(r"^MANAGED_MIRROR  \?= both$", src["Makefile"], re.M) and re.search(r"^MANAGED_TENANTS \?= acme zeta$", src["Makefile"], re.M)
 assert "MANAGED_MIRROR=$(MANAGED_MIRROR) RAG_LOCATION=$(RAG_LOCATION)" in MK and "RETRIEVAL_BACKEND=vector; \\" in MK   # the worker mirrors; the API's default
 assert 'default     = ["acme", "zeta"]' in src["terraform/managed.tf"] and 'location                     = "global"' in src["terraform/managed.tf"]
 assert "CHUNK_SIZE, CHUNK_OVERLAP = 512, 100" in src[MANAGED] and 'rag_distance_threshold: float = Field(0.5, alias="RAG_DISTANCE_THRESHOLD")' in src["services/rag-api/config.py"]
 assert 'MEDIA_TYPES = {"image/png": "figure", "image/jpeg": "figure",' in src[WORKER] and "text = None                                          # a media document has none" in src[WORKER]
 # 1. managed-status holds the stores against every indexed version, media included, which the mirror never copies
-STATUS = src[MANAGED].split("def status(", 1)[1].split("def main(", 1)[0]
+STATUS = src[MANAGED].split("def status(", 1)[1].split("def sync(", 1)[0]
 assert "kind" not in STATUS and "policy" not in STATUS                                   # no media filter; no policy read
 # 2. a policy turned to `in` deletes nothing: set_policy writes one field, and only a retirement takes a copy out
 SET_POLICY = src[TENANCY].split("def set_policy(", 1)[1].split('if __name__ == "__main__":', 1)[0]
 assert "delete" not in SET_POLICY.lower() and "mirror" not in SET_POLICY.lower()
 assert "A delete is never refused: it is the direction the policy wants." in src[MANAGED]
-# 3. nothing repairs a missing copy: the walk only removes, despite what managed.py and the Makefile say
+# 3. the walk only removes; a missing copy waits for make managed-sync (22 October 2026), which uploads what a store lacks
 REC = src["services/ingest/reconcile.py"]
 assert re.findall(r"mirror\.(\w+)\(", REC) == ["retired", "retired"], re.findall(r"mirror\.(\w+)\(", REC)
-assert "the walk repairs the mirror (P9.3)" in src[MANAGED] and "waits for the walk's repair" in src["Makefile"]
+assert "make managed-sync uploads what is missing" in src[MANAGED] and "waits for make managed-sync (the walk only removes)" in src["Makefile"]
+SYNC = src[MANAGED].split("def sync(", 1)[1].split("def main(", 1)[0]
+assert "one.upsert(tenant, doc_key, uri, text, meta)" in SYNC and "pictures.append(doc_key)" in SYNC and "managed-sync: guard-project" in MK
 UPSERT_CALLERS = sorted({p.relative_to(KIT).as_posix() for p in (KIT / "services").rglob("*.py") if re.search(r"_mirror\.after_(swap|undo)\(|mirror\.upsert\(", p.read_text(encoding="utf-8"))})
 assert UPSERT_CALLERS == ["services/ingest/main.py"], UPSERT_CALLERS                       # the worker's swap and undo, and nothing else
 # 4. a Vertex AI Search copy is recorded as held when its import is only requested
@@ -136,12 +139,11 @@ assert 'or "import requested"   # an LRO: minutes; the walk verifies' in VS_UPSE
 CITATION = src["shared/documind_schemas.py"].split("class Citation(BaseModel):", 1)[1].split("\nclass ", 1)[0]
 MEDIA_ROWS = src[RET].split("def _media_rows(", 1)[1].split("def _managed_retrieve(", 1)[0]
 assert "found_by" not in CITATION and "found_by" not in MEDIA_ROWS
-# make down cannot finish while the data stores exist: Terraform rejects a plan that destroys a prevent_destroy resource
-assert "lifecycle {\n    prevent_destroy = true\n  }" in src["terraform/managed.tf"]
+# the stores' bill (step 7's table): make down deletes the corpora first, then its terraform destroy takes the data stores,
+# which carry no prevent_destroy since 8 October 2026 (until then Terraform refused that whole destroy)
 DOWN = MK[MK.index("\ndown: guard-project"):MK.index("# ---------- Teardown")]
-assert "terraform destroy -input=false -auto-approve $(TF_VARS)" in DOWN and "-target" not in DOWN and "state rm" not in DOWN and "data store" not in DOWN.lower()
-assert "-var managed_search=$(MANAGED_SEARCH)" in MK and re.search(r"^MANAGED_SEARCH  \?= true$", src["Makefile"], re.M)
-assert "protected managed search stores (`prevent_destroy = true`)" in src["README.md"]
+assert DOWN.index("$(MAKE) managed-stores-down") < DOWN.index("terraform destroy -input=false -auto-approve $(TF_VARS)")
+assert "prevent_destroy =" not in src["terraform/managed.tf"]
 TENANT_SETTINGS = src[MAIN].split("def tenant_settings(", 1)[1].split("def choose_for(", 1)[0]
 assert "except Exception:  # noqa: BLE001 - the pin is a convenience; the setting is the default\n        doc = {}" in TENANT_SETTINGS
 STATUS_RECIPE = MK[MK.index("managed-status: guard-project\n"):].split("\n\n", 1)[0]
@@ -166,8 +168,8 @@ top of it. Firestore is held in a JSON file: the three tenants' chunk rows and l
 each version's doc_key its file's own hash), the tenants' settings, and whatever the kit writes. RAG Engine is a corpus
 per `any` tenant (acme, zeta: make up's managed-stores), a file per current text version, cut 512 tokens with 100
 overlapping (words stand in for tokens) and ranked by word overlap, a distance for each context; Vertex AI Search is a
-data store per `any` tenant (managed.tf), a document per current text version, answering with the paragraphs that match
-as extractive segments. The worker is stood in by the kit's own Mirror, called the way main.py calls it after a swap.
+data store per `any` tenant (managed.tf), a document per current text version, ranking the documents that match
+the question. The worker is stood in by the kit's own Mirror, called the way main.py calls it after a swap.
 Gemini reads the packed clause. gcloud answers identity tokens and log reads from what the stand-in worker logged."""
 import collections
 import datetime as dt
@@ -494,24 +496,6 @@ def _not_found(what: str):
     return NotFound(what)
 
 
-def _segments(tenant: str, query: str, v: dict, k: int) -> list:
-    """The paragraphs of a version that match, best first; a PDF's text keeps its pages (a form feed between them)."""
-    out, page = [], 1
-    for block_ in re.split(r"\n\s*\n", v["text"]):
-        para = " ".join(block_.replace("\f", " ").split())
-        if para:
-            out.append((para, page))
-        page += block_.count("\f")
-    t = _DT[tenant]
-    scored = sorted(((t.sim(query, p), -i, p, pg) for i, (p, pg) in enumerate(out)), reverse=True)
-    segs = []
-    for s, _, p, pg in scored[:k]:
-        if s <= 0:
-            break
-        segs.append({"content": p, **({"pageNumber": str(pg)} if v["pdf"] else {})})
-    return segs
-
-
 class _SearchClient:
     def search(self, request):
         tenant = _store_of(request.serving_config)
@@ -523,14 +507,12 @@ class _SearchClient:
             _DT[tenant] = Tfidf([p for v in vs.values() for p in re.split(r"\n\s*\n", v["text"])])
         t = _DT[tenant]
         ranked = sorted(((t.sim(request.query, v["text"]), dk) for dk, v in vs.items()), key=lambda x: (-x[0], x[1]))
-        k = request.content_search_spec.extractive_content_spec.max_extractive_segment_count
         out = []
         for s, dk in ranked[:request.page_size]:
             if s < 0.03:
                 break
             out.append(SimpleNamespace(document=_Document(id=dk, name=f"{request.serving_config}/documents/{dk}",
-                                                          struct_data={"source_uri": vs[dk]["source_uri"]},
-                                                          derived_struct_data={"extractive_segments": _segments(tenant, request.query, vs[dk], k)})))
+                                                          struct_data={"source_uri": vs[dk]["source_uri"]})))
         return out
 
 
@@ -698,7 +680,7 @@ def rag():
     main._fs = retriever._fs = lambda: DB
     retriever._index_endpoint = lambda: Index()
     retriever._ranker = lambda: Ranker()
-    main.enforce_membership = lambda email, tenant_id: None     # the roster is lesson 8's; every ask here is a member's
+    main.enforce_membership = lambda email, tenant_id: None     # the roster is lesson 4.6's; every ask here is a member's
 
     def caches():
         m = object.__new__(cache_manager.TenantCacheManager)
@@ -1134,7 +1116,8 @@ assert re.search(r"  A: A confirmed employee at grade E3 or above serves a notic
 assert re.search(r"  A: A confirmed employee at grade L4 or above serves a notice period of 30 days \[\d+\]\.\n", A5), A5
 assert re.search(r"  A: Either party may terminate the agreement for convenience on 120 days' written notice \[\d+\]\.\n", A5), A5
 CITE = re.findall(r"  cites (\S+) \((\S+)\)", A5)
-assert CITE[0][0].startswith("acme:acme_") and "#rag-" in CITE[0][0] and "#vs-" in CITE[1][0] and re.fullmatch(r"globex:[0-9a-f]{8}\.\.\.#\d+", CITE[2][0]), CITE
+assert CITE[0][0].startswith("acme:acme_") and "#rag-" in CITE[0][0] and re.fullmatch(r"zeta:[0-9a-f]{8}\.\.\.#\d+", CITE[1][0]) \
+    and re.fullmatch(r"globex:[0-9a-f]{8}\.\.\.#\d+", CITE[2][0]), CITE   # zeta's passage is the kit's own row, of a version the store ranked
 assert [c[1] for c in CITE] == ["hr_policy_2026.md", "hr_policy_zeta_2026.md", "msa_globex_2026.md"], CITE
 P5 = [re.search(r"pool (\d+), (\d+) from a managed store", line).groups() for line in A5.splitlines() if "retrieval_backend" in line]
 POOL_ACME, MANAGED_ACME = map(int, P5[0])
@@ -1330,7 +1313,7 @@ UI_JS = r"""var root = document.getElementById('mm'); if (!root) return;
   var $ = function(id){ return document.getElementById(id); };
   function row(out, k, v, cls){ out.appendChild(el('b', '', k)); out.appendChild(el('span', cls || '', v)); }
   var SAY = {mirror_ok: 'mirror_ok', mirror_policy_skipped: 'mirror_policy_skipped: the policy keeps the text home', mirror_no_store: 'mirror_no_store: no store for the tenant (said once)'};
-  var FOUND = {rag_engine: 'found_by rag_engine: RAG Engine\'s text, ids ending #rag-', vertex_search: 'found_by vertex_search: the data store\'s segments, ids ending #vs-',
+  var FOUND = {rag_engine: 'found_by rag_engine: RAG Engine\'s text, ids ending #rag-', vertex_search: 'found_by vertex_search: the kit\'s own rows of the documents the data store ranked, ids tenant:sha256#n',
     media: 'the kit\'s own figure and segment rows, when the tenant has any and the pool has room: no found_by at all',vector: 'found_by vector: the kit\'s Vector Search index, ids tenant:sha256#n',
     firestore: 'found_by firestore: the kit\'s rows in Firestore'};
   var PRESETS = {acme: ['any', 'both', true, true, 'rag_engine', 'text'], zeta: ['any', 'both', true, true, 'vertex_search', 'text'], globex: ['in', 'both', false, false, 'default', 'new']};

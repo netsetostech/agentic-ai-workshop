@@ -3,7 +3,7 @@
 The poison message from step 5 reaches the queue about an hour after its first refusal. Run the first line then; an empty listing earlier is the retries still running, not a fault. The second read decodes the message's own record, the same JSON the worker refused, to see the size of zero with your own eyes.
 
 Run order inside this file:
-1. Read it, when it has landed (source window 34)
+1. Read it, when it has landed (source window 35)
 
 Prerequisites: demo_06_the_batch_lane_the_250_page_decision_the_queued_claim_the_job.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -50,7 +50,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_34', step_01_when_it_has_landed),
+        ('source_35', step_01_when_it_has_landed),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

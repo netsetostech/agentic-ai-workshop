@@ -31,8 +31,12 @@ One object under `gs://PROJECT-uploads/<tenant>/<name>` changes (same name, new 
    downloaded; a generation that no longer exists is the same case (its successor's event indexes the object).
 2. **Claim.** `documents/{tenant_sha256}` in a transaction; the row carries `tenant_id` (the MCP server filters
    on the field, never on the id's prefix). A refused claim whose status is `superseded` is the undo (step 7); one
-   whose status is `queued` is acked as `queued_batch` (the batch lane holds it, step 3); any other refusal is a
-   duplicate, acked.
+   whose status is `queued` is acked as `queued_batch` (the batch lane holds it, step 3); one still `processing` is
+   asked for its lease (13 October 2026: a worker cut off without `release()` used to leave it there for ever) -
+   past `LEASE_SECONDS` from its `claimed_at` (the ack deadline and a minute; the batch job's timeout and a minute for
+   a claim the job took) it is taken back and ingested (`ingest_claim_retaken`), inside it the delivery is nacked with
+   a 409 and comes back later (`ingest_claim_held`), or acked as `batch_processing` while the batch job holds it; any
+   other refusal is a duplicate, acked.
 3. **Parse, scan, chunk.** A PDF is counted by pypdf *before* Doc AI sees it; over `MAX_INLINE_PAGES` (250) it
    goes to the batch lane - `ingest_batch/{doc_key}` written with the object, its generation and its type, the
    claim set to `queued`, `ingest_queued_batch` logged with the consumer named - and is indexed from there by the
@@ -92,7 +96,7 @@ One object under `gs://PROJECT-uploads/<tenant>/<name>` changes (same name, new 
 | `sources/` | `indexed` | `record_source` | the current version is live | a re-issue (a new `doc_key`, still `indexed`), `make retire`, the object leaving the bucket |
 | `sources/` | `retired` | the nightly walk; `make restore` | the object left the bucket; its rows are flagged and expiring | the object back in the bucket: the next walk plans a reingest |
 | `sources/` | `withdrawn` | `make retire` | a person took it down; the object is **kept**; its rows are flagged and expiring | `make restore` only - never the walk (*withdrawn, object kept*), never a redelivery, never the same bytes again (`ingest_withdrawn`) |
-| `documents/` | `processing` | `claim`, `take_batch` | a worker, or the batch job, holds this version | `finish`, `release`, or the batch hand-off |
+| `documents/` | `processing` | `claim`, `take_batch` | a worker, or the batch job, holds this version, for a lease from `claimed_at` | `finish`, `release`, the batch hand-off, or a delivery after the lease (`retake_expired`) |
 | `documents/` | `queued` | the batch hand-off | over `MAX_INLINE_PAGES`; waiting for the batch job | `take_batch` (`processing`) when the job runs - started by the worker, hourly, or `make batch`; the walk reports it and moves on |
 | `documents/` | `indexed` | `finish`, `reactivate` | the version is current | the swap (`superseded`) |
 | `documents/` | `superseded` | the swap, `make retire`, the walk | retired at `retired_at`; the undo window runs from it | `reactivate` (`indexed`), or a retaken claim after a refused undo (`processing`) |
@@ -143,7 +147,7 @@ runs uncached on a mismatch (`cache_stale`), until `make cache` packs the corpus
 | `firestore_indexes.tf` | `google_firestore_field.chunks_expire_at` with `ttl_config {}` | the only deleter (P5) |
 | `variables.tf` | `retention_days` (30), `embedding_model`, `embedding_version` + outputs | one declared number, one declared embedding; `make deploy-services` reads the outputs into both services |
 | `reconcile.tf` | `google_cloud_run_v2_job.reconcile` on `var.reconcile_image`, IAM, the 23:30 IST schedule; `RECONCILE_JOB=true` | the whole night is one apply (P6). Needs an ingest image first: `make build`, then `make reconcile-job` |
-| `alerts.tf` | metrics `documind/ingest_events` (label `event`), `ingest_embedded`, `ingest_reused`, `reconcile_drift`; policies *Ingest failed* (10 min), *Ledger drift above zero for two nights*, *Nightly reconcile failed* | the lifecycle is a pager, not a log search (P8) |
+| `alerts.tf` | metrics `documind/ingest_events` (label `event`: every verdict the worker logs but a delivery the claim turns away), `ingest_embedded`, `ingest_reused`, `reconcile_drift`; policies *Ingest failed* (10 min), *Ledger drift above zero for two nights*, *Nightly reconcile failed*, *Ingest dead-letter queue holds messages*, *Ingest subscription backlog: oldest message over 30 minutes* (13 October 2026) | the lifecycle is a pager, not a log search (P8) |
 
 ## 6. The operator's playbook
 
@@ -152,9 +156,10 @@ runs uncached on a mismatch (`cache_stale`), until `make cache` packs the corpus
 | One document changed | `make reindex FILE=<new> NAME=<same name> TENANT=<t>` (the offline gate runs first), then move the golden rows it turned red, then `make eval-live SOURCE=<name> API=<candidate>` | `ingest_ok` with `reused`, `embedded`, `retired`; `ingest_superseded`; the scoped gate green |
 | Only metadata changed | nothing | the night's reconcile records the generation: *touch* |
 | A late redelivery of an old version | nothing | `ingest_stale_event`; the ledger untouched |
+| A worker cut off mid-document (deadline, out of memory) | nothing - the claim's lease runs out (13 October 2026) | `ingest_claim_held` (a 409) for the deliveries inside the lease, then `ingest_claim_retaken` and `ingest_ok`; *Ingest subscription backlog* pages if the retries outlast 30 minutes |
 | The same version from the notebook lane (4.1's Document AI ingester, 2.3 / 4.2 / 4.5's `seed()`), uploaded to the bucket | nothing | `ingest_already_current`: the claim recorded with the rows already current, the ledger learns the generation, nothing parsed or embedded when all embedding stamps match. Unstamped legacy rows are not adopted. Both lanes name a version by the sha of the OBJECT (a real Act's PDF, never its mirror), so neither re-issues the other's rows; the other order needs nothing - `seed()` skips a version the lane holds (13 September 2026) |
 | The change was wrong | `make reindex FILE=<old> NAME=<same name>` | `ingest_reactivated`, matching document embeddings reused (legacy vectors repaired) - inside the `RETENTION_DAYS` undo window; after it, `reactivate_incomplete` then `ingest_ok` (a fresh version, the carry-over paying only for what changed) |
-| A document withdrawn on purpose | `make retire SOURCE=` | `reconcile_withdrawn`: the ledger row `withdrawn`, the object kept, the rows expiring after `RETENTION_DAYS`; every night the plan says *withdrawn, object kept* and does nothing; the same bytes again are `ingest_withdrawn` |
+| A document withdrawn on purpose | `make retire SOURCE=` | `reconcile_withdrawn`: the ledger row `withdrawn`, the object kept, the rows expiring after `RETENTION_DAYS`, their datapoints out of the index (`datapoints_removed`, 13 October 2026); every night the plan says *withdrawn, object kept* and does nothing; the same bytes again are `ingest_withdrawn` |
 | A document deleted from the bucket | delete the object | retired by the night's walk (`reconcile_retired`, the row `retired`); put the object back and the next walk re-ingests it |
 | Bring a withdrawn document back | `make restore SOURCE=` | `reconcile_restored`, then `ingest_reactivated` inside the undo window or `ingest_ok` after it; refused with the reason when the source is not withdrawn or its object is gone |
 | A document over 250 pages | nothing - it is queued and the batch job indexes it (`make batch` to run the job now, `make queued` to see the queue; `make batch-job` once, to declare it) | `ingest_queued_batch` with the consumer named, then the job's `ingest_ok` with `lane=batch` and the record in `ingest_batch/` (`indexed`, or `failed` with the reason); the plan's `queued` line until then, not drift |
@@ -176,9 +181,10 @@ runs uncached on a mismatch (`cache_stale`), until `make cache` packs the corpus
 - **Offline, every PR** (`run_eval.py`): the `version` shape - `must_contain` from the current version of its
   `source`, `must_not_contain` a figure only a retired version under `evals/demo` holds. Re-issue the handbook
   without moving `lk-06` and `vr-01` and the gate is red before anything deploys.
-- **Wiring** (`tools/check_auth_wiring.py`): the chunker measured on the handbook's two revisions (281 of 283
-  reused), the carry-over plan, the newest-per-source guard, the fake-Firestore swap / reactivate / fingerprint,
-  the TTL field, the job, the metrics, the Makefile and the deploy scripts.
+- **Wiring** (`commands/tests/test_twin_chunker.py`, in CI): the worker's chunker and its twin in
+  `shared/documind_corpus.py` agree on every corpus text and edge case, at the kit's size and overlap and at
+  lesson 8.2's, so a lane and a notebook mint one set of chunk ids and hashes; the carry-over and the swap are
+  the lifecycle check's, below.
 - **Lifecycle** (`tools/check_lifecycle.py`): the tombstone (a withdrawn source is never re-ingested by the plan,
   never reactivated), the verified undo (a shortfall and a closed window refuse, flip nothing, log both numbers),
   the batch claim left `queued` and skipped by the plan, the job's take and run (`take_batch`, `batch.py`: by

@@ -33,6 +33,11 @@ need not be installed. Each check names the code change that would turn it red (
                   /v1/passages (workshop lesson 10.6) is the retrieval half: the same checks before retrieval, each
                   chunk's full text, no model call, no answer cache, a row with event passages and no cost; and
                   shared/documind_tools.retrieve(passages=True) asks it, or Chroma on the local lane.
+  rewrite.py      workshop lesson 2.5's stage, on /v1/query only: QUERY_REWRITE=off hands retrieve() the question and
+                  its vector with no model call, no line and the stages untouched; on, the rewrite and its own vector
+                  when shared/query_rewrite.py's literal guard keeps it, else the question and its vector (rejected,
+                  fallback); rerank() and generate() get req.query either way, the answer cache keeps the question's
+                  vector, a cache hit asks no rewrite. config.py refuses a QUERY_REWRITE other than off | on.
   generator.py    generate_stream's first event is ("packed", packed), once, even when a tier falls back; the
                   chunk budget is max_context_tokens less the estimate of the fixed parts (TokenBudget.fit), and
                   the prompt never exceeds the total; the tokens of a truncated first attempt and the thinking
@@ -190,7 +195,7 @@ def main() -> int:
     settings = SimpleNamespace(chunks_collection="chunks", retrieval_current_only="on", retrieval_backend="vector", retrieval_mode="dense",
                                top_k_retrieve=20, vector_deployed_index="dep", project_id="demo", rerank_model="semantic-ranker-fast-004",
                                rerank_timeout_s=5.0, retrieval_graph="off", graph_hops=1, graph_cap=20, graph_backend="firestore", graph_seed_k=5, graph_seed_distance=0.4,
-                               rag_location="us-central1", rag_distance_threshold=0.5, search_location="global", search_segments=3)
+                               rag_location="us-central1", rag_distance_threshold=0.5, search_location="global")
     graph_calls, graph_answer = [], {"seeds": [], "nodes": []}
 
     class _FakeGraph:
@@ -214,7 +219,7 @@ def main() -> int:
            "embed_for_graph": lambda q: graph_calls.append(("embed_for_graph", q)) or [0.9, 0.1],
            "choose_mode": graph_ns["choose_mode"], "__builtins__": __builtins__}
     lift(ret_src, rns, names=("matches", "_firestore_fallback", "newest_per_source", "prefer_current", "_dense_retrieve", "graph_candidates", "retrieve", "_graph_store",
-                              "_by_retrieval_score", "rerank_fell_back", "rerank", "_rag_corpus", "_version_row", "_page_span", "_search_serving_config", "_search_filter", "_search_texts", "_search_retrieve",
+                              "_by_retrieval_score", "rerank_fell_back", "rerank", "_rag_corpus", "_version_row", "_page_span", "_search_serving_config", "_search_filter", "_search_retrieve",
                               "_media_rows", "_managed_retrieve"), assigns=("_corpora",))
     fb = rns["_firestore_fallback"]
     out = fb([0.1], "acme", 20, {"doc_type": "policy"})
@@ -225,6 +230,14 @@ def main() -> int:
     settings.retrieval_current_only = "off"
     fb([0.1], "acme", 20, {"kind": "figure"})
     assert fs_seen[-1]["wheres"] == [("tenant_id", "==", "acme"), ("kind", "==", "figure")], fs_seen[-1]
+    # Without the pre-filter it asks for four times as many and keeps the first top_k current rows: retired versions
+    # held places in a re-issued corpus and left half a pool after prefer_current (21 October 2026).
+    assert fs_seen[-1]["limit"] == 80, fs_seen[-1]
+    _near = _FQuery.find_nearest
+    _FQuery.find_nearest = lambda self, *a, **k: (fs_seen.append({"wheres": self.wheres, "limit": k.get("limit")}) or SimpleNamespace(get=lambda: [
+        _Snap(f"acme#{i}", {"tenant_id": "acme", "text": "t", "d": 0.1, "current": i % 2 == 0}) for i in range(8)]))
+    assert [r["id"] for r in fb([0.1], "acme", 3)] == ["acme#0", "acme#2", "acme#4"], "retired rows dropped, then top_k"
+    _FQuery.find_nearest = _near
     settings.retrieval_current_only = "on"
     fb([0.1], "acme", 20, {"doc_type": ["guidance", "statute"], "kind": "text"})
     assert fs_seen[-1]["wheres"] == [("tenant_id", "==", "acme"), ("current", "==", True), ("doc_type", "in", ["guidance", "statute"]), ("kind", "==", "text")], \
@@ -456,80 +469,80 @@ def main() -> int:
     ok("retriever._managed_retrieve: no corpus for the tenant, or a store that raises, is the Firestore fallback with the caller's filters and one rag_engine_fallback line - never an empty pool that reads as a refusal")
 
     # ------------------------------------------------------------------ RETRIEVAL_BACKEND=vertex_search (R4, 13 September 2026 evening)
-    # 4.4's data store as the retrieval stage: the store ranks and extracts (segments when it serves them, else the snippet),
-    # the kit's own rows give each result its source, type and a fresh `current`, and the pool is the kit's contract.
-    search_calls, search_results = [], []
+    # 4.4's data store as the retrieval stage: the store ranks the tenant's documents and the kit's own rows give the
+    # passages - the Firestore rung's nearest, kept when the store ranked their version (22 October 2026: a
+    # standard-edition store refuses extractive segments, and its snippets stop short of the figure).
+    search_calls, search_results, near_calls = [], [], []
 
-    class _SpecObj:
+    class _SR:
         def __init__(self, **kw): self.kw = kw
-
-    class _CSS(_SpecObj):
-        SnippetSpec, ExtractiveContentSpec = _SpecObj, _SpecObj
-
-    class _SR(_SpecObj):
-        ContentSearchSpec = _CSS
-
-    class _SDoc:
-        def __init__(self, id, derived): self.id, self._d = id, {"id": id, "derived_struct_data": derived}
-        @staticmethod
-        def to_dict(d): return dict(d._d)
 
     def _search_fn(request=None):
         search_calls.append(request.kw)
         if isinstance(search_results, Exception):
             raise search_results
-        return iter([SimpleNamespace(document=d) for d in search_results])
-    rns["discoveryengine"] = SimpleNamespace(RankingRecord=lambda **kw: kw, RankRequest=lambda **kw: kw, SearchRequest=_SR, Document=_SDoc)
+        return iter([SimpleNamespace(document=SimpleNamespace(id=i)) for i in search_results])
+    near = [{"id": "acme:s2#3", "doc_key": "acme_s2", "text": "sixty days of notice", "score": 0.9, "kind": "text", "doc_type": "policy",
+             "source_uri": "gs://b/acme/hr.md", "current": True, "found_by": "firestore"},
+            {"id": "acme:old#1", "doc_key": "acme_old", "text": "ninety days of notice", "score": 0.85, "kind": "text", "doc_type": "policy", "found_by": "firestore"},
+            {"id": "acme:it#0", "doc_key": "acme_it", "text": "restart the payroll job", "score": 0.8, "kind": "text", "doc_type": "runbook", "found_by": "firestore"},
+            {"id": "acme:s2#9", "doc_key": "acme_s2", "text": "ninety for directors", "score": 0.7, "kind": "text", "doc_type": "policy", "found_by": "firestore"},
+            {"id": "acme:s2#f", "doc_key": "acme_s2", "text": "a figure", "score": 0.6, "kind": "figure", "doc_type": "policy", "found_by": "firestore"}]
+    wrapped_fb = rns["_firestore_fallback"]
+    rns["_firestore_fallback"] = lambda vec, tenant_id, top_k, filters=None: near_calls.append((vec, tenant_id, top_k, filters)) or [
+        dict(r) for r in near if all(r.get(k) in v if isinstance(v, list) else r.get(k) == v for k, v in (filters or {}).items())]   # Firestore's where()
+    rns["discoveryengine"] = SimpleNamespace(RankingRecord=lambda **kw: kw, RankRequest=lambda **kw: kw, SearchRequest=_SR)
     rns["_search"] = lambda: SimpleNamespace(search=_search_fn)
-    fb_calls.clear(); logs.clear(); m_seen.clear()
+    logs.clear(); m_seen.clear()
     settings.retrieval_backend = "vertex_search"
-    vs = lambda key, text: f"acme:{key}#vs-" + __import__("hashlib").sha256(text.encode()).hexdigest()[:12]
-    search_results[:] = [_SDoc("acme_s2", {"extractive_segments": [{"content": "sixty days of notice", "pageNumber": "7"}, {"content": "  ", "pageNumber": "8"}, {"content": "ninety for directors", "pageNumber": "9"}]}),
-                         _SDoc("acme_it", {"snippets": [{"snippet": "restart the <b>payroll</b> job", "snippet_status": "SUCCESS"}]}),
-                         _SDoc("acme_ghost", {"snippets": [{"snippet": "a file the ledger never saw"}]}),
-                         _SDoc("acme_old", {"snippets": [{"snippet": "ninety days of notice"}]}),
-                         _SDoc("acme_s2", {}), _SDoc("", {"snippets": [{"snippet": "no id"}]})]
+    search_results[:] = ["acme_s2", "acme_it", "acme_ghost", "acme_s2", ""]
     got = rns["retrieve"]("what is the notice period", "acme", 5, None, vec=[0.1])
     req = search_calls[-1]
-    assert req["serving_config"] == "projects/demo/locations/global/collections/default_collection/dataStores/documind-acme/servingConfigs/default_search" \
-        and req["query"] == "what is the notice period" and req["page_size"] == 20 and req["filter"] == "", req
-    assert req["content_search_spec"].kw["snippet_spec"].kw == {"return_snippet": True} and req["content_search_spec"].kw["extractive_content_spec"].kw == {"max_extractive_segment_count": 3}, "snippets and segments both asked, as 4.4's cell asks"
-    assert [c["id"] for c in got] == [vs("acme_s2", "sixty days of notice"), vs("acme_s2", "ninety for directors"), vs("acme_it", "restart the payroll job"), "acme:m#0"], [c["id"] for c in got]
+    assert req == {"serving_config": "projects/demo/locations/global/collections/default_collection/dataStores/documind-acme/servingConfigs/default_search",
+                   "query": "what is the notice period", "page_size": 20, "filter": ""}, req
+    assert near_calls[-1] == ([0.1], "acme", 60, None), "the kit's nearest rows, three times TOP_K_RETRIEVE deep, with the tenant and the caller's filters"
+    assert [c["id"] for c in got] == ["acme:s2#3", "acme:it#0", "acme:s2#9", "acme:m#0"], [c["id"] for c in got]
     top = got[0]
-    assert top["found_by"] == "vertex_search" and top["source_uri"] == "gs://b/acme/hr.md" and top["doc_type"] == "policy" and top["doc_key"] == "acme_s2" and top["kind"] == "text" \
-        and top["effective_from"] == "2026-04-01" and top["locator"] == "p7" and top["score"] == 1.0 and top["current"] is True, top
-    assert got[1]["locator"] == "p9" and abs(got[1]["score"] - 0.99) < 1e-9 and got[2]["text"] == "restart the payroll job" and got[2]["locator"] == "" and abs(got[2]["score"] - 0.98) < 1e-9, "segments in the store's order, the snippet's markup stripped, the rank as the score"
-    assert got[3]["kind"] == "figure" and m_seen[-1]["limit"] == 5 and not fb_calls and not logs, "figures join from the kit's index; the store answered, so no fallback"
-    ok("retriever._search_retrieve: the tenant's data store by the mirror's id through its default serving config, asked for TOP_K_RETRIEVE results with snippets and extractive segments; each segment (else the snippet, markup stripped) becomes a chunk of the contract through its version's row; an unknown document, a retired version and a result without an id are dropped; media joins from the kit's index")
+    assert top["found_by"] == "vertex_search" and top["store_rank"] == 1 and got[1]["store_rank"] == 2 and top["score"] == 0.9 \
+        and top["source_uri"] == "gs://b/acme/hr.md" and top["doc_type"] == "policy" and top["current"] is True, top
+    assert got[3]["kind"] == "figure" and m_seen[-1]["limit"] == 5 and not logs, "figures join from the kit's index; the store answered, so no fallback"
+    ok("retriever._search_retrieve: the tenant's data store by the mirror's id through its default serving config ranks TOP_K_RETRIEVE documents and asks for no text of its own; the passages are the kit's nearest rows, three times as deep, kept when the store ranked their version, with the kit's ids, scores and fields, found_by vertex_search and the store's rank; a version the store did not rank, a figure row and a result without an id are dropped; media joins from the kit's index")
     got = rns["retrieve"]("q", "acme", 5, {"doc_type": "policy"}, vec=[0.1])
-    assert search_calls[-1]["filter"] == 'doc_type: ANY("policy")' and [c["doc_key"] for c in got if c.get("found_by") == "vertex_search"] == ["acme_s2", "acme_s2"] and not any(c.get("kind") == "figure" for c in got), \
-        "the caller's doc_type goes to the store as a filter expression and applies to the mapped chunks and the media rows alike"
+    assert search_calls[-1]["filter"] == 'doc_type: ANY("policy")' and near_calls[-1][3] == {"doc_type": "policy"} \
+        and [c["id"] for c in got if c.get("found_by") == "vertex_search"] == ["acme:s2#3", "acme:s2#9"] and not any(c.get("kind") == "figure" for c in got), \
+        "the caller's doc_type goes to the store as a filter expression and to the kit's rows as a pre-filter, and the media rows alike"
     got = rns["retrieve"]("q", "acme", 5, {"doc_type": ["policy", "runbook"], "kind": "text"}, vec=[0.1])
-    assert search_calls[-1]["filter"] == 'doc_type: ANY("policy", "runbook")' and [c["doc_key"] for c in got] == ["acme_s2", "acme_s2", "acme_it"], \
-        "a doc_type list is one ANY() of its classes at the store, and the same set on the mapped chunks"
+    assert search_calls[-1]["filter"] == 'doc_type: ANY("policy", "runbook")' and [c["id"] for c in got] == ["acme:s2#3", "acme:it#0", "acme:s2#9"], \
+        "a doc_type list is one ANY() of its classes at the store, and the same set on the kit's rows"
     assert rns["_search_filter"]({"doc_type": ['a"b', "c"]}) == 'doc_type: ANY("a\\"b", "c")' and rns["_search_filter"]({"doc_type": 'a"b'}) == 'doc_type: ANY("a\\"b")', "a quote inside a class is escaped, listed or not"
     assert rns["_search_filter"]({"doc_type": ["a\\", "b"]}) == 'doc_type: ANY("a\\\\", "b")', "a backslash is escaped first, so it cannot eat the closing quote and run into the next class"
     m_seen.clear()
     got = rns["retrieve"]("q", "acme", 5, {"kind": "text"}, vec=[0.1])
-    assert search_calls[-1]["filter"] == "" and all(c["kind"] == "text" for c in got) and not m_seen, "kind never reaches the store; kind=text asks no media"
-    n = len(search_calls)
+    assert search_calls[-1]["filter"] == "" and all(c.get("kind", "text") == "text" for c in got) and not m_seen, "kind never reaches the store; kind=text asks no media"
+    n, k = len(search_calls), len(near_calls)
     got = rns["retrieve"]("q", "acme", 5, {"kind": "figure"}, vec=[0.1])
-    assert [c["id"] for c in got] == ["acme:m#0"] and len(search_calls) == n and m_seen[-1]["limit"] == 20, "kind=figure: the store is not asked, the kit's index answers alone at full depth"
+    assert [c["id"] for c in got] == ["acme:m#0"] and len(search_calls) == n and len(near_calls) == k and m_seen[-1]["limit"] == 20, \
+        "kind=figure: the store is not asked, the kit's index answers alone at full depth"
     search_results[:] = []
-    got = rns["retrieve"]("q", "acme", 5, {"kind": "text"}, vec=[0.1])
-    assert got == [] and not fb_calls and not any(l["event"] == "vertex_search_fallback" for l in logs), "no results is an empty pool: the store answered"
+    logs.clear()
+    got = rns["retrieve"]("q", "acme", 5, {"kind": "text", "doc_type": "policy"}, vec=[0.1])
+    assert near_calls[-1] == ([0.1], "acme", 20, {"kind": "text", "doc_type": "policy"}) and got and all(c["found_by"] == "firestore" for c in got) \
+        and [l["event"] for l in logs] == ["vertex_search_fallback"] and logs[-1]["error"] == "the store ranked no document", \
+        "a store that ranks no document is the Firestore rung at TOP_K_RETRIEVE with the filters, and one vertex_search_fallback line says so - never an empty pool that refuses what the kit's rows answer (iso-01, 22 October 2026)"
     settings.top_k_retrieve = 2
-    search_results[:] = [_SDoc("acme_s2", {"extractive_segments": [{"content": "a"}, {"content": "b"}, {"content": "c"}]})]
+    search_results[:] = ["acme_s2", "acme_it"]
     got = rns["retrieve"]("q", "acme", 5, {"kind": "text"}, vec=[0.1])
-    assert search_calls[-1]["page_size"] == 2 and len(got) == 2, "the pool is cut to TOP_K_RETRIEVE, which is also what the store is asked for"
+    assert search_calls[-1]["page_size"] == 2 and near_calls[-1][2] == 6 and [c["id"] for c in got] == ["acme:s2#3", "acme:it#0"], \
+        "the pool is cut to TOP_K_RETRIEVE, which is also how many documents the store is asked for"
     settings.top_k_retrieve = 20
     search_results = RuntimeError("404 data store documind-zeta not found")
     logs.clear()
     got = rns["retrieve"]("q", "zeta", 5, {"doc_type": "policy"}, vec=[0.1])
-    assert fb_calls[-1] == ([0.1], "zeta", 20, {"doc_type": "policy"}) and logs[-1]["event"] == "vertex_search_fallback" and "404" in logs[-1]["error"] and "MANAGED_SEARCH=true" in logs[-1]["hint"], \
+    assert near_calls[-1] == ([0.1], "zeta", 20, {"doc_type": "policy"}) and logs[-1]["event"] == "vertex_search_fallback" and "404" in logs[-1]["error"] and "MANAGED_SEARCH=true" in logs[-1]["hint"], \
         "a tenant with no data store, or a store that will not answer, is the Firestore rung with the filters, and the line says how to get a store"
     search_results = []
-    ok("retriever._search_retrieve: doc_type (a class, or a list as one ANY()) as a filter expression and once more on the chunks; kind is the kit's; no results is an empty pool; the pool is cut to TOP_K_RETRIEVE; no store or an error is the Firestore fallback with the filters and one vertex_search_fallback line")
+    rns["_firestore_fallback"] = wrapped_fb
+    ok("retriever._search_retrieve: doc_type (a class, or a list as one ANY()) as a filter expression at the store and a pre-filter on the kit's rows; kind is the kit's; the pool is cut to TOP_K_RETRIEVE; no store, an error or no document ranked is the Firestore fallback with the filters and one vertex_search_fallback line")
     settings.retrieval_backend, settings.retrieval_current_only = "vector", "on"
     rns["_fs"] = lambda: SimpleNamespace(collection=lambda name: _GColl() if name == "chunks" else None)
 
@@ -594,9 +607,9 @@ def main() -> int:
     assert S(GOOGLE_CLOUD_PROJECT="demo", RETRIEVAL_BACKEND="rag_engine", RESIDENCY="india").retrieval_backend == "rag_engine" \
         and not hasattr(S(GOOGLE_CLOUD_PROJECT="demo"), "residency"), "residency is the tenant's policy, not a startup refusal or a setting"
     assert "residency" not in cns["check_retrieval_modes"].__code__.co_varnames[:cns["check_retrieval_modes"].__code__.co_argcount]
-    # R4: the fourth backend, 4.4's data store, with the same hybrid refusal and its own two settings
+    # R4: the fourth backend, 4.4's data store, with the same hybrid refusal and its own setting
     assert S(GOOGLE_CLOUD_PROJECT="demo", RETRIEVAL_BACKEND="vertex_search").retrieval_backend == "vertex_search" and S(GOOGLE_CLOUD_PROJECT="demo").search_location == "global" \
-        and S(GOOGLE_CLOUD_PROJECT="demo", SEARCH_SEGMENTS="5").search_segments == 5 and cns["MANAGED_BACKENDS"] == ("rag_engine", "vertex_search")
+        and not hasattr(S(GOOGLE_CLOUD_PROJECT="demo"), "search_segments") and cns["MANAGED_BACKENDS"] == ("rag_engine", "vertex_search")
     try:
         S(GOOGLE_CLOUD_PROJECT="demo", RETRIEVAL_BACKEND="vertex_search", retrieval_mode="hybrid")
         raise AssertionError("vertex_search with hybrid was accepted")
@@ -622,6 +635,16 @@ def main() -> int:
         assert "off|on|auto" in str(e) and "choose_mode" in str(e), "the refusal names the three modes and what auto does"
     assert S(GOOGLE_CLOUD_PROJECT="demo").rerank_timeout_s == 5.0 and S(GOOGLE_CLOUD_PROJECT="demo", RERANK_TIMEOUT_S="2.5").rerank_timeout_s == 2.5
     assert 'rerank_timeout_s: float = Field(5.0, alias="RERANK_TIMEOUT_S")' in cfg_src
+    # workshop lesson 2.5's switch: off by default, on accepted, anything else refused when Settings is built; the model a setting
+    assert S(GOOGLE_CLOUD_PROJECT="demo").query_rewrite == "off" and S(GOOGLE_CLOUD_PROJECT="demo", QUERY_REWRITE="on").query_rewrite == "on"
+    assert S(GOOGLE_CLOUD_PROJECT="demo").query_rewrite_model == "gemini-3.1-flash-lite" \
+        and S(GOOGLE_CLOUD_PROJECT="demo", QUERY_REWRITE_MODEL="gemini-3.6-flash").query_rewrite_model == "gemini-3.6-flash"
+    for bad in ("yes", "ON", "auto", ""):
+        try:
+            S(GOOGLE_CLOUD_PROJECT="demo", QUERY_REWRITE=bad)
+            raise AssertionError(f"QUERY_REWRITE={bad!r} was accepted - the revision would search the question while its environment says on")
+        except pydantic.ValidationError as e:
+            assert "QUERY_REWRITE=" in str(e) and "off or on" in str(e), str(e)
     if importlib.util.find_spec("pydantic_settings"):
         r = subprocess.run([sys.executable, "-c", "import config"], cwd=API, capture_output=True, text=True,
                            env={**os.environ, "GOOGLE_CLOUD_PROJECT": "demo", "RETRIEVAL_BACKEND": "firestore", "RETRIEVAL_MODE": "hybrid"})
@@ -629,7 +652,10 @@ def main() -> int:
         r = subprocess.run([sys.executable, "-c", "import config"], cwd=API, capture_output=True, text=True,
                            env={**os.environ, "GOOGLE_CLOUD_PROJECT": "demo", "RETRIEVAL_BACKEND": "firestore", "RETRIEVAL_MODE": "dense"})
         assert r.returncode == 0, r.stderr[-300:]
-        ok("config.py, from the environment: RETRIEVAL_BACKEND=firestore RETRIEVAL_MODE=hybrid fails the import with the fix in the message; dense starts")
+        r = subprocess.run([sys.executable, "-c", "import config"], cwd=API, capture_output=True, text=True,
+                           env={**os.environ, "GOOGLE_CLOUD_PROJECT": "demo", "RETRIEVAL_BACKEND": "firestore", "RETRIEVAL_MODE": "dense", "QUERY_REWRITE": "yes"})
+        assert r.returncode != 0 and "QUERY_REWRITE='yes': off or on" in r.stderr, "the service started with QUERY_REWRITE=yes"
+        ok("config.py, from the environment: RETRIEVAL_BACKEND=firestore RETRIEVAL_MODE=hybrid fails the import with the fix in the message; dense starts; QUERY_REWRITE=yes fails the import")
     else:
         skip("pydantic-settings not installed: config.py's refusal exercised on the class, not from the environment")
     main_src = read("deploy/services/rag-api/main.py")
@@ -639,14 +665,34 @@ def main() -> int:
         and "'managed_chunks': stages.get('managed_chunks', 0)" in fns["usage_row"] and "'policy_fallback': stages.get('policy_fallback', 0)" in fns["usage_row"], \
         "/version says the default store; the row says the store that served the pool and whether the tenant's policy chose it"
     ok("config.py: Settings refuses RETRIEVAL_MODE=hybrid with RETRIEVAL_BACKEND=firestore, an unknown mode and an unknown RETRIEVAL_GRAPH, naming the fix; RERANK_TIMEOUT_S, GRAPH_HOPS and GRAPH_CAP are settings; /version reports the mode and the switch that passed")
+    ok("config.py: QUERY_REWRITE is off by default and on when asked, anything else refused with off | on named; QUERY_REWRITE_MODEL is gemini-3.1-flash-lite unless set")
 
     # ------------------------------------------------------------------ main.py: the handlers, lifted, against fakes
     schemas = load(os.path.join(API, "schemas.py"), "schemas_under_test")
     assert schemas.FILTER_KEYS == ("doc_type", "kind") and schemas.RAGResponse.model_fields["cached_tokens"].default == 0
     mlog, stored, recorded, calls, gen_seen, gs_seen = [], [], [], {"rerank": 0, "generate": 0, "stream": 0}, [], []
     msettings = SimpleNamespace(semantic_cache="off", armor="off", generator_model="gemini-3.6-flash", model_backend="vertex",
-                                prompt_id="documind-rag", prompt_version="v3", retrieval_mode="dense", retrieval_graph="off", retrieval_backend="firestore")
+                                prompt_id="documind-rag", prompt_version="v3", retrieval_mode="dense", retrieval_graph="off", retrieval_backend="firestore",
+                                query_rewrite="off", query_rewrite_model="gemini-3.1-flash-lite")
     cache = SimpleNamespace(lookup=lambda *a, **k: None, store=lambda *a, **k: stored.append(a), scope_of=lambda f, k, v: "scope")
+    # rewrite.py (workshop lesson 2.5): search_query() lifted with shared/query_rewrite.py itself (stdlib) and a scripted model;
+    # /v1/query calls it, so the handler below runs the real stage - off for every check until the stage's own block
+    from shared import query_rewrite as qrw
+    rw_answers, rw_calls, rw_embeds = [], [], []
+
+    class _RwModels:
+        """google-genai's models.generate_content as query_rewrite.rewrite() calls it: the next scripted query, or an error."""
+        def generate_content(self, model, contents, config):
+            rw_calls.append((model, contents, config))
+            got = rw_answers.pop(0)
+            if isinstance(got, Exception):
+                raise got
+            return SimpleNamespace(parsed={"query": got}, text=None, usage_metadata=SimpleNamespace(
+                prompt_token_count=400, candidates_token_count=20, thoughts_token_count=0, cached_content_token_count=0))
+    rwns = {"json": json, "time": time, "settings": msettings, "query_rewrite": qrw, "_client": SimpleNamespace(models=_RwModels()),
+            "embed_query": lambda q: rw_embeds.append(q) or [0.7, 0.8],
+            "log": SimpleNamespace(info=lambda s: mlog.append(json.loads(s)), warning=lambda s: mlog.append(json.loads(s))), "__builtins__": __builtins__}
+    lift(read("deploy/services/rag-api/rewrite.py"), rwns, names=("search_query",))
     mns = {"time": time, "json": json, "contextmanager": contextmanager, "HTTPException": _HTTPException, "Depends": lambda f: None,
            "verify_iap": None, "StreamingResponse": lambda gen, media_type=None: gen, "QueryRequest": schemas.QueryRequest,
            "tracer": SimpleNamespace(start_as_current_span=lambda name: nullcontext()),
@@ -658,7 +704,7 @@ def main() -> int:
            "retrieval_backend_for": lambda tenant_id, backend: (backend, 0),
            "screen_prompt": lambda q, t: "off", "screen_response": lambda text, guard: (guard, ""), "_fingerprint": lambda t: "fp1",
            "embed_query": lambda q: [0.1, 0.2], "_record": lambda usd: recorded.append(usd), "_fs": lambda: None, "semantic_cache": cache,
-           "rerank_fell_back": rns["rerank_fell_back"], "__builtins__": __builtins__}
+           "rerank_fell_back": rns["rerank_fell_back"], "search_query": rwns["search_query"], "__builtins__": __builtins__}
     lift(main_src, mns, names=("_ms", "stage", "modality_of", "check_filters", "empty_pool_answer", "usage_row", "_semantic_hit", "_semantic_store", "query", "stream", "passages"),
          bare=("query", "stream", "passages"), assigns=("EMPTY_POOL_ANSWER",))
     user = {"email": "a@acme.example"}
@@ -893,6 +939,72 @@ def main() -> int:
     mns["retrieve"] = lambda *a, **k: [dict(c) for c in src]
     ok("main.py: /v1/query puts the ANN tier's share of the pool (vector_chunks) and the backend chosen for the request (retrieval_backend) in the answer's stages, the row's value")
 
+    # ------------------------------------------------------------------ main.py + rewrite.py: workshop lesson 2.5's rewrite stage
+    # The rewrite changes what is SEARCHED, never what is reranked or answered: retrieve() gets search_query()'s pair, rerank()
+    # and generate() get req.query, and the answer cache keeps the question's own vector. One call line, on /v1/query only.
+    fq = fns["query"]
+    assert fq.count("search_query(") == 1 and fq.index("_semantic_hit(") < fq.index("search_query(") < fq.index("retrieve("), \
+        "one rewrite call, after the answer cache's lookup, before retrieval"
+    assert "rerank(req.query, chunks" in fq and "generate(req.query, chunks" in fq and "_semantic_store(req, qvec, ans" in fq
+    assert all("search_query" not in fns[h] for h in ("stream", "passages", "version")), "/v1/stream, /v1/passages and /version do not rewrite"
+    seen_r, seen_k, seen_g = [], [], []
+    saved = mns["retrieve"], mns["rerank"], mns["generate"]
+    mns["retrieve"] = lambda q, t, k, filters=None, vec=None, backend=None: seen_r.append((q, vec)) or [dict(c) for c in src]
+    mns["rerank"] = lambda q, chunks, k, tenant_id=None: seen_k.append(q) or chunks[:k]
+    mns["generate"] = lambda q, chunks, tenant_id, model=None, backend=None: seen_g.append(q) or fake_generate(q, chunks, tenant_id, model=model, backend=backend)
+    e3 = schemas.QueryRequest(query="What is the notice period for a confirmed E3?", tenant_id="acme")
+    n = len(mlog)
+    ans = mns["query"](e3, user=user)                    # QUERY_REWRITE=off, the default
+    assert seen_r[-1] == (e3.query, [0.1, 0.2]) and seen_k[-1] == seen_g[-1] == e3.query and not rw_calls and not rw_embeds, (seen_r[-1], rw_calls)
+    assert not {"rewrite", "search_query", "rewrite_ms"} & set(ans.stages) and [r["event"] for r in mlog[n:]] == ["query"], (ans.stages, mlog[n:])
+    got = rwns["search_query"](e3.query, [0.1, 0.2], {})
+    assert got == (e3.query, [0.1, 0.2]) and not rw_calls, "off: the question and its vector, as they came"
+    msettings.query_rewrite = "on"
+    rewritten = "notice period applicable to a confirmed E3 employee"
+    rw_answers.append(rewritten)
+    n, n_store = len(mlog), len(stored)
+    ans = mns["query"](e3, user=user)
+    assert seen_r[-1] == (rewritten, [0.7, 0.8]) and rw_embeds == [rewritten], (seen_r[-1], rw_embeds)
+    assert seen_k[-1] == seen_g[-1] == e3.query, "rerank() and generate() must get the person's own question, never the rewrite"
+    assert stored[n_store:] and stored[-1][2] == e3.query and stored[-1][3] == [0.1, 0.2], "the answer cache keeps the question and its own vector"
+    assert (ans.stages["rewrite"], ans.stages["search_query"]) == ("rewritten", rewritten) and isinstance(ans.stages["rewrite_ms"], int), ans.stages
+    schemas.RAGResponse.model_validate(ans.model_dump())   # the response model takes the stage's strings (stages: dict[str, int | str])
+    model, contents, cfg = rw_calls[-1]
+    assert model == "gemini-3.1-flash-lite" and cfg["thinking_config"] == {"thinking_budget": 0} and cfg["http_options"]["retry_options"] == {"attempts": 1}
+    rows_ = [r for r in mlog[n:] if r["event"] == "query_rewrite"]
+    assert len(rows_) == 1 and rows_[0]["outcome"] == "rewritten" and rows_[0]["tenant"] == "acme" and mlog[-1]["event"] == "query", mlog[n:]
+    assert set(rows_[0]) == {"event", "surface", "tenant", "outcome", "error", "dropped", "model", "tokens_in", "tokens_out", "cost_usd", "ms",
+                             "prompt_version"} and "notice" not in json.dumps(rows_[0]), "the line carries no question, rewrite or literal"
+    for answer, outcome, error in (("notice period applicable to a confirmed E2 employee", "rejected", None),   # the grade changed: refused
+                                   (TimeoutError("3 s"), "fallback", "TimeoutError"),                         # the call failed
+                                   ("What is the notice period for a confirmed E3", "same", None)):           # the question, given back
+        rw_answers.append(answer)
+        n = len(mlog)
+        ans = mns["query"](e3, user=user)
+        assert seen_r[-1] == (e3.query, [0.1, 0.2]) and seen_k[-1] == seen_g[-1] == e3.query, (outcome, seen_r[-1])
+        assert (ans.stages["rewrite"], ans.stages["search_query"]) == (outcome, e3.query), (outcome, ans.stages)
+        line_ = next(r for r in mlog[n:] if r["event"] == "query_rewrite")
+        assert (line_["outcome"], line_["error"], line_["dropped"]) == (outcome, error, 1 if outcome == "rejected" else 0), line_
+    rwns["embed_query"] = lambda q: (_ for _ in ()).throw(RuntimeError("embedding quota"))
+    rw_answers.append(rewritten)
+    ans = mns["query"](e3, user=user)
+    assert seen_r[-1] == (e3.query, [0.1, 0.2]) and ans.stages["rewrite"] == "fallback" and mlog[-2]["error"] == "RuntimeError", (seen_r[-1], ans.stages)
+    rwns["embed_query"] = lambda q: rw_embeds.append(q) or [0.7, 0.8]
+    calls_before = len(rw_calls)
+    cache.lookup = lambda *a, **k: {"answer": {"answer": "Sixty days.", "citations": [{"chunk_id": "acme#1", "source_uri": "gs://b/acme/hr.md", "page": 2,
+                                                                                       "quote": "sixty days", "score": 0.9}], "confidence": "high", "answerable": True},
+                                    "model": "gemini-3.6-flash"}
+    ans = mns["query"](e3, user=user)
+    assert ans.cache_hit == "semantic" and len(rw_calls) == calls_before and "rewrite" not in ans.stages, "a cache hit retrieves nothing, so asks no rewrite"
+    cache.lookup = lambda *a, **k: None
+    msettings.query_rewrite = "off"
+    assert not rw_answers
+    mns["retrieve"], mns["rerank"], mns["generate"] = saved
+    ok("main.py + rewrite.py (workshop lesson 2.5): QUERY_REWRITE=off hands retrieve() req.query and qvec with no model call, no line and the stages untouched; "
+       "on, an accepted rewrite is searched with its own embedding while rerank() and generate() get req.query and the answer cache the question's vector; "
+       "a rewrite that changes a grade (rejected), a failed call or embedding (fallback) and the question given back (same) search the question; "
+       "one query_rewrite line per call with no question text; a cache hit asks nothing; /v1/stream, /v1/passages and /version never call it")
+
     def fake_stream(q, chunks, tenant_id, model=None, backend=None):
         gs_seen.append([c["id"] for c in chunks])
         yield "packed", [chunks[0], chunks[2]]                      # the budget dropped acme#1
@@ -944,7 +1056,7 @@ def main() -> int:
            "DraftCitation": schemas.DraftCitation, "ModelDraft": schemas.ModelDraft, "RAGResponse": schemas.RAGResponse, "resolve": schemas.resolve,
            "settings": gsettings, "pack_chunks": cb.pack_chunks, "estimate_tokens": cb.estimate_tokens, "TokenBudget": cb.TokenBudget,
            "TenantCacheManager": _TenantCacheManager, "__builtins__": __builtins__}
-    lift(gen_src, gns, assigns=("SYSTEM", "DATED_RULE", "GATEWAY_JSON_RULE", "GATEWAY_ROUTES", "_gateway_token", "_client", "log"))
+    lift(gen_src, gns, assigns=("SYSTEM", "DATED_RULE", "GATEWAY_JSON_RULE", "GATEWAY_ROUTES", "_gateway_token", "RETRY", "_client", "log"))
     gns["log"] = SimpleNamespace(info=lambda s: glog.append(json.loads(s)), warning=lambda s: glog.append(json.loads(s)), error=lambda s: glog.append(json.loads(s)))
     SYSTEM, DATED_RULE = gns["SYSTEM"], gns["DATED_RULE"]
     q = "what is the notice period?"
@@ -967,6 +1079,7 @@ def main() -> int:
     evs = list(gns["generate_stream"](q, []))
     prompt = seen["contents"][0]
     assert b.system == cb.estimate_tokens(SYSTEM + DATED_RULE + prompt[len(SYSTEM):]), "the budget's fixed text drifted from the prompt generate_stream sends"
+    assert seen["contents"][-1].endswith("never JSON."), "the stream's last part no longer asks for prose: the Chat page drew JSON answers raw"
     recorded_budget = []
     real_pack = gns["pack_chunks"]
     gns["pack_chunks"] = lambda chunks, budget, count_fn=None: recorded_budget.append(budget) or real_pack(chunks, budget, count_fn)
@@ -1082,7 +1195,7 @@ def main() -> int:
             url, body, headers = posted[-1]
             assert url.endswith("/v1/passages") and body == {"query": "notice period", "tenant_id": "acme", "user_id": "agent", "top_k": 4, "stream": False,
                                                              "filters": {"doc_type": "policy"}, "brain": "langgraph"}, (url, body)
-            assert headers == {"Authorization": "Bearer tok", dt.ASSERTION_HEADER: "jwt"}, headers
+            assert headers == {"Authorization": "Bearer tok", dt.ASSERTION_HEADER: "jwt", "x-documind-assertion": "jwt"}, headers
             assert got == {"passages": [{k: whole[k] for k in dt.PASSAGE_KEYS}], "answerable": True,
                            "usage": {"model": "none", "tokens_in": 0, "tokens_out": 0, "cached_tokens": 0, "cost_usd": 0.0}}, got
             replies.append({"passages": [], "answer": "DocuMind did not search for an answer.", "answerable": False,

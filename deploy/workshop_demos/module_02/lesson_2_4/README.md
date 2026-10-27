@@ -71,37 +71,37 @@ Expected shape, not a promised result:
 
 ```text
 endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321  deployed: documind_chunks_v1
-backend: vector  mode: dense (default)  current_only: off (default)  top_k_retrieve: 20 (default)
+backend: vector  mode: dense (default)  current_only: off  top_k_retrieve: 20 (default)
 acme: retrieval_backend=vector
-zeta: retrieval_backend=default (the deployment RETRIEVAL_BACKEND)
+zeta: retrieval_backend=vertex_search
 acme: data_region=any
 ```
 
 ### demo_03_the_firestore_rung_by_hand_the_api_s_three_predicates_on_firestore_s_own_vector.py
 
-Run the cell as it is, then twice more with a filter in front of its first line: F='{"doc_type":"policy"}' python - <<'PY' and F='{"kind":"text"}' python - <<'PY', the rest unchanged. The worker stamped the lane's uploads doc_type: unknown, so the first filter empties the pool on this rung exactly as it did on the index in lesson 2.1, and the second keeps it whole.
+The cell runs the rung three times on one embedding: with no caller filter, with {"doc_type":"policy"}, and with {"kind":"text"}. The worker stamped the lane's uploads doc_type: unknown, so the second empties the pool on this rung exactly as it did on the index in lesson 2.1, and the third keeps it whole. With the switch off it asks for 80 rows and keeps the first 20 current ones, as the function does.
 
 **`step_01_the_rung_under_three_predicate_sets(session)` — The Firestore rung by hand: the API's three predicates on Firestore's own vector index / Do it: the rung under three predicate sets**
 
-Run the cell as it is, then twice more with a filter in front of its first line: F='{"doc_type":"policy"}' python - <<'PY' and F='{"kind":"text"}' python - <<'PY', the rest unchanged. The worker stamped the lane's uploads doc_type: unknown, so the first filter empties the pool on this rung exactly as it did on the index in lesson 2.1, and the second keeps it whole.
+The cell runs the rung three times on one embedding: with no caller filter, with {"doc_type":"policy"}, and with {"kind":"text"}. The worker stamped the lane's uploads doc_type: unknown, so the second empties the pool on this rung exactly as it did on the index in lesson 2.1, and the third keeps it whole. With the switch off it asks for 80 rows and keeps the first 20 current ones, as the function does.
 
-Operation: bash — run in the operator shell (a Python cell; one embedding, a few dozen Firestore reads).
+Operation: bash — run in the operator shell (a Python cell; one embedding, three vector queries and a count, a few hundred Firestore reads).
 
 Expected shape, not a promised result:
 
 ```text
-predicates: tenant_id -> 20 rows, every one found_by firestore
-   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+predicates: tenant_id -> 20 rows of 80 nearest, every one found_by firestore
+   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.6xxx
    ...
-index needed: (tenant_id, embedding) | reads billed, at most: 1x for 1xxx index entries + 20 documents
+index needed: (tenant_id, embedding) | reads billed, at most: 2x for 2xxx index entries + 80 documents
 
-predicates: tenant_id, doc_type (doc_type=policy) -> 0 rows, every one found_by firestore
-index needed: (tenant_id, doc_type, embedding) | reads billed, at most: 1x for 1xxx index entries + 0 documents
+predicates: tenant_id, doc_type (doc_type=policy) -> 0 rows of 0 nearest, every one found_by firestore
+index needed: (tenant_id, doc_type, embedding) | reads billed, at most: 2x for 2xxx index entries + 0 documents
 
-predicates: tenant_id, kind (kind=text) -> 20 rows, every one found_by firestore
-   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+predicates: tenant_id, kind (kind=text) -> 20 rows of 80 nearest, every one found_by firestore
+   NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.6xxx
    ...
-index needed: (tenant_id, kind, embedding) | reads billed, at most: 1x for 1xxx index entries + 20 documents
+index needed: (tenant_id, kind, embedding) | reads billed, at most: 2x for 2xxx index entries + 80 documents
 ```
 
 ### demo_04_moving_one_tenant_beneath_the_index_by_hand_and_back.py
@@ -118,8 +118,8 @@ Expected shape, not a promised result:
 
 ```text
 acme: retrieval_backend=firestore
-backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
-backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 1xxx | answerable True | first 1 hr_policy_2026.md | A confirmed employee at grade E3 or above ...
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 1xxx | answerable True | first 1 hr_policy_2026.md | A confirmed employee at grade E3 or above ...
 ```
 
 **`step_02_the_same_predicates_on_the_chosen_rung_and(session)` — Moving one tenant beneath the index by hand, and back / Do it: the same predicates on the chosen rung, and two tenants that do not cross**
@@ -131,10 +131,10 @@ Operation: bash — run in the operator shell (four questions, a few rupees).
 Expected shape, not a promised result:
 
 ```text
-backend firestore | vector_chunks 0 | pool 0 | retrieve_ms 4xx | answerable False | first - | The corpus holds nothing near this question: no passage of this
-backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
-backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 5xx | answerable True | first x hr_policy_2026.md | ... Rs 40,000 ...
-backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first x hr_policy_zeta_2026.md | ... Rs 25,000 ...
+backend firestore | vector_chunks 0 | pool 0 | retrieve_ms 4xx | answerable False | first - | The corpus holds nothing near this question: no passage of t
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 1xxx | answerable True | first 1 hr_policy_2026.md | A confirmed employee at grade E3 or above ...
+backend firestore | vector_chunks 0 | pool 20 | retrieve_ms 1xxx | answerable True | first x hr_policy_2026.md | ... Rs 40,000 ...
+backend vertex_search | vector_chunks 0 | pool 20 | retrieve_ms 2xxx | answerable True | first x hr_policy_zeta_2026.md | ... Rs 25,000 ...
 ```
 
 **`step_03_the_smoke_s_line_for_a_chosen_rung_then_th(session)` — Moving one tenant beneath the index by hand, and back / Do it: the smoke's line for a chosen rung, then the pin back**
@@ -150,7 +150,7 @@ Expected shape, not a promised result:
 ```text
 [ -- ] vector tier  this request ran on firestore — skipped
 acme: retrieval_backend=vector
-backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 1xxx | answerable True | first 1 hr_policy_2026.md | A confirmed employee at grade E3 or above ...
   [PASS] vector tier  20 of 20 chunks came from the index
 ```
 
@@ -162,14 +162,14 @@ Do it: a candidate that cannot reach the index
 
 Do it: a candidate that cannot reach the index
 
-Operation: bash — run in the operator shell (one new revision, no traffic; one question to it; one log read; ask() from step 4).
+Operation: bash — run in the operator shell (one new revision, no traffic; one question to it; the log read until its line lands, a minute at most; ask() from step 4).
 
 Expected shape, not a promised result:
 
 ```text
-candidate: backend vector | vector_chunks 0 | pool 20 | answerable True | citations 3
+candidate: backend vector | vector_chunks 0 | pool 20 | answerable True | citations 1
 the smoke would say: [FAIL] vector tier  RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1
-2026-09-2xT1x:xx:xx.xxxxxxZ	acme	... documind_chunks_nonesuch ...
+2026-09-2xT1x:xx:xx.xxxxxxZ	acme	404 Index 'documind_chunks_nonesuch' is not found.
 ```
 
 **`step_02_a_candidate_that_cannot_reach_the_index(session)` — The chaos rung: an index that will not answer, on a candidate that takes no traffic / Do it: a candidate that cannot reach the index**
@@ -182,8 +182,8 @@ Expected shape, not a promised result:
 
 ```text
 template now: documind_chunks_v1
-backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
-100;documind-api-00048-xyz
+backend vector | vector_chunks 20 | pool 20 | retrieve_ms 1xxx | answerable True | first 1 hr_policy_2026.md | A confirmed employee at grade E3 or above ...
+100	documind-api-000xx-xxx
 ```
 
 ### demo_06_the_probe_the_kit_s_read_only_check_of_the_combined_filters.py
@@ -221,15 +221,16 @@ Operation: bash — run in the operator shell, in $DEMO_ROOT (read-only: the pla
 Expected shape, not a promised result:
 
 ```text
-index: documind-chunks  datapoints: 4xxx  shards: 1  update: STREAM_UPDATE
+index: documind-chunks  datapoints: 2xxx  shards: 1  update: STREAM_UPDATE
 endpoint: documind-endpoint  deployed: documind_chunks_v1  synced: 2026-09-2xT1x:xx:xx.xxxxxxZ
 {"event": "backfill_vectors_plan", "index": "projects/NUMBER/locations/asia-south1/indexes/1234567890123456789", "tenant": "acme", "current_chunks": 1xxx, "needs_document_embedding": 0, "invalid_chunks": 0, "embedding_task_type": "RETRIEVAL_DOCUMENT", "note": "Pause uploads/undo/batch writers; keep answer caches off during repair and validation."}
 
 by retrieval backend (which store served the pool; 13 September 2026)
 retrieval_backend      answers    tok_in  tok_out       USD       INR  p95 ms  unans
 ------------------------------------------------------------------------------------
-firestore                    5      xxxx      xxx    0.0xxx      x.xx    2xxx   0.20
-vector                       6      xxxx      xxx    0.0xxx      x.xx    2xxx   0.00
+firestore                    5      xxxx      xxx    0.0xxx      x.xx    xxxx   0.20
+vector                       6      xxxx      xxx    0.0xxx      x.xx    xxxx   0.00
+vertex_search                1      xxxx      xxx    0.0xxx      x.xx    xxxx   0.00
 ```
 
 ### demo_08_what_the_rung_costs_where_it_cannot_go_and_the_policy_that_sends_a_tenant_home.py
@@ -273,6 +274,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.4_Fallback_WIX.html`. All 43 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `fc9115e7693b7a3af4ab9f5c5711b8b67aea351b`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.4_Fallback_WIX.html`. All 43 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `2000fe0ff4fbd82eeb07904063f9c4800a401941`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

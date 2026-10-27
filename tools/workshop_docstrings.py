@@ -52,7 +52,16 @@ NESTED = {
     'aligned': "Count how many of the question's ideas a sentence holds in the same order, gaps allowed.",
     'cross': "The toy cross-encoder: read question and passage together and score the passage's best-aligned sentence.",
     'tok': 'Mint a fresh identity token for this service account and the API audience; never save the credential.',
+    # 3.9's cells
+    'inr': 'Format a rupee amount as whole rupees, rounded half up and grouped the Indian way (2,76,393).',
     'index_leg': 'Encode the chunk text sparsely and sum query-weight times chunk-weight for shared hashed dimensions.',
+    # 4.3's cells
+    'jobs_of': 'Read one workflow file with the standard library: its triggers and, per job, what it needs, its condition, its approving environment, whether it signs in to Google, and its eval lines.',
+    'section': 'Return the lines of one top-level key of a workflow file (on: or jobs:), up to the next top-level key.',
+    'gcloud_json': 'Run one gcloud command against the project with --format=json and return the parsed output.',
+    'stream_rows': 'Read the stream usage rows documind-api logged since a given time from Cloud Logging, newest first, as their payloads.',
+    'api_json': "GET one Google API URL with the operator's access token and return the parsed JSON.",
+    'windows': "Read one log metric's per-tenant counts in five-minute windows over the last six hours, aligned the way the unanswerable alert aligns them.",
     'ask': 'Send this example request to the selected API and return its response for the following comparison.',
     'run': 'Run the specified CLI argument list and return its output; propagate command failures.',
     'output': 'Read the named Terraform output used to identify the actual deployed vector resources.',
@@ -97,6 +106,8 @@ NESTED = {
     'shaped': "Apply temperature, top-k and top-p to one step's logits and return the probabilities the pick draws from.",
     'sample': 'Pick the first candidate whose running total of probability passes the draw u.',
     'generate': 'Run the toy decode loop (score, shape, pick, append) from one seed until the end token or the cap.',
+    # 8.3's cells
+    'line': "Print one row of the measuring table: a group's documents, characters, chunks, characters sent and requests.",
 }
 CLASS_SUMMARIES = {
     'ApiClient': 'Call the deployed lesson API with audience-bound authentication and explicit project configuration.',

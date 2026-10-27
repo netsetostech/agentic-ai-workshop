@@ -53,7 +53,7 @@ EXCERPTS = {
     "withdrawn_fn": ("services/ingest/idempotency.py - withdrawn(): the tombstone, asked twice", block(IDM, "def withdrawn(", end="def reactivate(")),
     "retire_cli": ("services/ingest/reconcile.py - --retire: what make retire writes", "        if not a.apply:\n" + block(REC, 'print(f"would withdraw {uri}', n=12)),
     "restore_cli": ("services/ingest/reconcile.py - --restore: the way back", block(REC, "    if a.restore:", end="    if a.backfill:")),
-    "retire_mk": ("mk/lifecycle.mk - retire and restore, as make runs them", block("mk/lifecycle.mk", "retire: guard-project", n=4) + "\n\n" + block("mk/lifecycle.mk", "restore: guard-project", n=3)),
+    "retire_mk": ("mk/lifecycle.mk - retire and restore, as make runs them", block("mk/lifecycle.mk", "retire: guard-project", n=5) + "\n\n" + block("mk/lifecycle.mk", "restore: guard-project", n=3)),
     "walk_states": ("services/ingest/reconcile.py - the walk's plan: withdrawn is kept, retired is re-ingested", block(REC, '        elif row.get("status") == "withdrawn":', n=12)),
     "fingerprint_fn": ("services/ingest/idempotency.py - refresh_fingerprint(): the cache follows the ledger", block(IDM, "def refresh_fingerprint(", n=200)),
 }
@@ -100,7 +100,7 @@ JS = """<script>
       retireCurrent(v.id); activate(v);
       S.ledger = 'indexed'; S.log = 'the worker: ingest_reactivated for ' + v.id + ' - its retired rows flipped back, embedded 0; the newer version retired in turn.'; }},
     retire: {ok: function(){ return !!current() && S.ledger === 'indexed'; }, run: function(){
-      retireCurrent(null); S.ledger = 'withdrawn'; S.log = 'make retire: reconcile_withdrawn - every current row retired with a 30-day expiry, the ledger row says withdrawn, the fingerprint moved. The object stays in the bucket.'; }},
+      retireCurrent(null); S.ledger = 'withdrawn'; S.log = 'make retire: reconcile_withdrawn - every current row retired with a 30-day expiry, the ledger row says withdrawn, the ids out of the index, the fingerprint moved. The object stays in the bucket.'; }},
     restore: {ok: function(){ return S.ledger === 'withdrawn'; }, run: function(){
       var v = retirable()[retirable().length - 1]; S.ledger = 'retired';
       if (v){ retireCurrent(v.id); activate(v); S.ledger = 'indexed';

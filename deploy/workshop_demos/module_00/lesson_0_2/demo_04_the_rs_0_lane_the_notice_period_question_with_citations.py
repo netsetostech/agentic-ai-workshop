@@ -1,6 +1,6 @@
 """Lesson 0.2: The Rs 0 lane: the notice-period question, with citations
 
-The lane gets a venv of its own, ~/rag-local-venv. Its packages are the chat service's, LangChain, LangGraph, Chroma and the Ollama client among them, installed on top of the service's image pins as services/chat/requirements-local.txt asks. Keeping them out of ~/rag-shell-venv leaves the operator pins exactly where rag_check_python_dependencies expects them, and every later session runs that check; the kit's CI keeps the chat service's pins in a venv of their own for the same reason. Then Ollama pulls the model, once. Start it in the second terminal, so the first stays free for questions. One line in this block matters more than it looks. The recipe seeds from the kit's root and serves from services/chat, and the store's default path, ./documind_chroma, is relative, so the two commands would open two different directories: the service would find an empty store and answer local corpus is empty. Exporting one absolute path as DOCUMIND_CHROMA_DIR gives both commands the same directory. From the first terminal. The health check first: it names the profile, and the brains this service can run. From the first terminal. The health check first: it names the profile, and the brains this service can run. The service has 4 brains (langchain, langgraph, adk and direct), and langchain is the default: a tool loop in which the model decides when to search. This lesson asks the direct brain, which has no loop at all: one retrieve() for the top 5, then one call to the model with those quotes as its only context. It does not depend on a small model choosing the right tool, which the comment in profile.py warns it sometimes will not. Module 5 compares the brains. Press Ctrl+C in the second terminal. The directory stays on disk, and a Python cell can open it the way the service does, with the same build_store() and the same retrieve():
+The lane gets a venv of its own, ~/rag-local-venv. Its packages are the chat service's, LangChain, LangGraph, Chroma and the Ollama client among them, installed on top of the service's image pins as services/chat/requirements-local.txt asks. Keeping them out of ~/rag-shell-venv leaves the operator pins exactly where rag_check_python_dependencies expects them, and every later session runs that check; the kit's CI keeps the chat service's pins in a venv of their own for the same reason. Then Ollama pulls the model, once. Start it in the second terminal, so the first stays free for questions. From the first terminal. The health check first: it names the profile, and the brains this service can run. From the first terminal. The health check first: it names the profile, and the brains this service can run. The service has 4 brains (langchain, langgraph, adk and direct), and langchain is the default: a tool loop in which the model decides when to search. This lesson asks the direct brain, which has no loop at all: one retrieve() for the top 5, then one call to the model with those quotes as its only context. It does not depend on a small model choosing the right tool, which the comment in profile.py warns it sometimes will not. Module 5 compares the brains. Press Ctrl+C in the second terminal. The directory stays on disk, and a Python cell can open it the way the service does, with the same build_store() and the same retrieve():
 
 Run order inside this file:
 1. Install the lane, once (source window 11)
@@ -52,17 +52,10 @@ def step_01_install_the_lane_once(session):
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_01)
 
-# Original CLI workflow for step_02_start_the_lane.
-COMMANDS_02 = """cd "${DEMO_ROOT:-$HOME/deploy_module_rag}" && source "$HOME/rag-local-venv/bin/activate"
-export DOCUMIND_CHROMA_DIR="$PWD/documind_chroma"     # one directory for the seed and the service
-make chat-local                                       # seeds acme, then serves until Ctrl+C
-
-"""
-
 def step_02_start_the_lane(session):
     """Run Start the lane at this checkpoint.
 
-    Start it in the second terminal, so the first stays free for questions. One line in this block matters more than it looks. The recipe seeds from the kit's root and serves from services/chat, and the store's default path, ./documind_chroma, is relative, so the two commands would open two different directories: the service would find an empty store and answer local corpus is empty. Exporting one absolute path as DOCUMIND_CHROMA_DIR gives both commands the same directory.
+    Start it in the second terminal, so the first stays free for questions.
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
     Operations: bash — run in the second terminal, and leave it running.
@@ -72,8 +65,11 @@ def step_02_start_the_lane(session):
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: [awaiting the author's run: data/chat_local.txt]
     """
-    # Preserve the kit CLI's arguments, conditions and observation order.
-    session.shell(COMMANDS_02)
+    from pathlib import Path
+    lane_python = Path.home() / "rag-local-venv" / "bin" / "python"   # the venv step 1 made, not the IDE's
+    session.start_local_service(["make", "chat-local", f"PY={lane_python}"], "http://localhost:8081/health",
+                                timeout=600)   # a first run seeds the corpus before the server answers
+    print("Owned lane log:", session.state["local_service"]["log"])
 
 # Original CLI workflow for step_03_ask_it.
 COMMANDS_03 = """curl -s localhost:8081/health | python -m json.tool
@@ -128,7 +124,7 @@ def step_04_ask_it(session):
     session.shell(COMMANDS_04)
 
 # Original CLI workflow for step_05_stop_the_lane_then_read_the_store_directly.
-COMMANDS_05 = """cd "$DEMO_ROOT" && DOCUMIND_PROFILE=local DOCUMIND_CHROMA_DIR="$PWD/documind_chroma" \\
+COMMANDS_05 = """cd "$DEMO_ROOT" && DOCUMIND_PROFILE=local \\
   "$HOME/rag-local-venv/bin/python" - <<'PY'
 import warnings; warnings.filterwarnings("ignore", category=UserWarning)
 from shared.profile import CHROMA_COLLECTION, build_store
@@ -170,7 +166,7 @@ def step_05_stop_the_lane_then_read_the_store_directly(session):
     from the date the resignation is acknowledged in writing. Unused earned leave may not be
     set off against the notice period.
     """
-    # Preserve the kit CLI's arguments, conditions and observation order.
+    session.stop_local_service()   # the page: Ctrl+C in the second terminal
     session.shell(COMMANDS_05)
 
 def demonstrate(session):

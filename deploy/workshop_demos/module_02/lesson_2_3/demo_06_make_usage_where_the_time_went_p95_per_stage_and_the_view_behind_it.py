@@ -62,7 +62,7 @@ COMMANDS_02 = """gcloud logging read 'resource.type="cloud_run_revision" AND res
   --project "$PROJECT" --freshness 24h --limit 40 --format=json \\
   | python -c "import sys, json; [print(json.dumps(e['jsonPayload'])) for e in json.load(sys.stdin) if 'jsonPayload' in e]" > /tmp/rows53.jsonl
 python -c "import json; rows = [json.loads(l) for l in open('/tmp/rows53.jsonl')]; print(len(rows), 'rows;', sum(int(r.get('rerank_fallback') or 0) for r in rows), 'with rerank_fallback 1;', sum(1 for r in rows if not r.get('pool')), 'with an empty pool')"
-head -c 700 /tmp/rows53.jsonl
+head -c 700 /tmp/rows53.jsonl; echo
 
 """
 

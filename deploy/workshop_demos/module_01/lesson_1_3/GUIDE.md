@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_1.3_Embeddings_WIX.html`, reviewed at blob `56ae46416219aee8c45075960c9f86bab98015ac`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_1.3_Embeddings_WIX.html`, reviewed at blob `91794cb6f727b4b8fc4a76fc59be7b03f06fbaf5`. Learners read that page on the course site; this guide keeps its prose.
 
 A chunk becomes searchable the moment it has its 768 numbers. This lesson opens the step that makes them in DocuMind: which model, under which task profile, how many texts per request, what is stamped on the row so the lane can tell its own vectors from anyone else's, and how a re-issued document keeps the vectors of every clause that did not change. You will read the stamp off a real row, validate every row of a tenant with the kit's own function, re-issue the handbook and watch 281 vectors carry over while 2 are made, then undo it for nothing.
 
@@ -194,7 +194,7 @@ The worker's planner on the two versions of the handbook, with a stand-in for wh
 
 #### Do it on the lane: revision 2 over the same name
 
-The upload must keep the object name, `acme/hr_policy_2026.md`, or it is a new source and nothing is held. The loop then waits for the worker's `ingest_ok` line and prints its counts. Cost: two clauses, 453 characters, about a hundredth of a paisa; a Markdown file pays no Document AI.
+The upload must keep the object name, `acme/hr_policy_2026.md`, or it is a new source and nothing is held. The loop then waits for the worker's `ingest_ok` line and prints its counts. Cost: two clauses, 453 characters, about a tenth of a paisa; a Markdown file pays no Document AI.
 
 #### See it in the UI, then read it three more ways
 

@@ -83,7 +83,7 @@ EXCERPTS = {
     "sched_tf": ("terraform/reconcile.tf - 23:30 IST, after the night switch", block("terraform/reconcile.tf", "# 23:30 IST, after documind-off", n=9)),
     "metric_tf": ("terraform/alerts.tf - the drift, read off the last line", block("terraform/alerts.tf", "# The night's number.", end="# Two nights, not one")),
     "policy_tf": ("terraform/alerts.tf - the pager: two nights, not one", block("terraform/alerts.tf", "# Two nights, not one", n=14)),
-    "mk_job": ("mk/lifecycle.mk - reconcile, reconcile-job and backfill-current", block(MK, "# the full reconciliation", n=4) + "\n\n" + block(MK, "# once, after the ledger ships", n=4) + "\n\n" + block(MK, "# the nightly job, from the ingest image", end="# the versions view")),
+    "mk_job": ("mk/lifecycle.mk - reconcile, reconcile-job and backfill-current", block(MK, "# the full reconciliation", n=5) + "\n\n" + block(MK, "# once, after the ledger ships", n=4) + "\n\n" + block(MK, "# the nightly job, from the ingest image", end="# the versions view")),
     "smoke_doc": ("smoke/smoke_reindex.py - the six checks", block("smoke/smoke_reindex.py", "Checks:", n=9)),
     "mk_smoke": ("mk/lifecycle.mk - smoke-reindex", block(MK, "# the document lifecycle, smoked", n=6)),
 }

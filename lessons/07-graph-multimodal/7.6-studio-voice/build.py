@@ -352,8 +352,8 @@ def door(filename, content_type):                             # POST /v1/media/u
 
 for fn, ct in (("townhall.zip", "application/zip"), ("../globex/townhall_2026_q1.mp4", "video/mp4")):
     print(f"upload-url {fn} as {ct}: {door(fn, ct)}")
-code, body = door("townhall_2026_q1.mp4", "video/mp4")
-print(f"upload-url townhall_2026_q1.mp4 as video/mp4: {code}, a PUT into gs://{body['bucket']}/{body['blob']}, signed for 15 minutes")
+code, body = door("townhall_door.mp4", "video/mp4")         # a name of its own: 7.5's object holds the video's name
+print(f"upload-url townhall_door.mp4 as video/mp4: {code}, a PUT into gs://{body['bucket']}/{body['blob']}, signed for 15 minutes")
 data = open("evals/corpus/acme/townhall_2026_q1.mp4", "rb").read()        # lesson 7.5's video
 since = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 put = urllib.request.Request(body["url"], data=data, method="PUT", headers={"Content-Type": "video/mp4"})
@@ -367,7 +367,9 @@ for _ in range(30):
     if rows:
         break
 for e in reversed(rows):
-    print("the worker:", json.dumps(e["jsonPayload"]))"""
+    print("the worker:", json.dumps(e["jsonPayload"]))
+subprocess.run(["gcloud", "storage", "rm", f"gs://{body['bucket']}/{body['blob']}"], capture_output=True, text=True, check=True)
+print(f"removed gs://{body['bucket']}/{body['blob']}: a copy no ledger row names")"""
 CELLS["door"] = heredoc(DOOR_PY)
 
 VOICE_SETUP = """P = os.environ["PROJECT"]
@@ -449,7 +451,8 @@ assert f"https://storage.googleapis.com/{PROJ}-media/acme/gen/{KEY}.png?X-Goog-A
 DR = OUT["door"]
 assert "upload-url townhall.zip as application/zip: (400, \"content_type must be one of [" in DR, DR
 assert "upload-url ../globex/townhall_2026_q1.mp4 as video/mp4: (400, 'filename must be a bare name')" in DR, DR
-assert f"a PUT into gs://{PROJ}-uploads/{VIDEO}, signed for 15 minutes" in DR and f"PUT {len(MP4):,} bytes straight to the bucket: HTTP 200" in DR, DR
+assert f"a PUT into gs://{PROJ}-uploads/acme/townhall_door.mp4, signed for 15 minutes" in DR and f"PUT {len(MP4):,} bytes straight to the bucket: HTTP 200" in DR, DR
+assert DR.rstrip().endswith(f"removed gs://{PROJ}-uploads/acme/townhall_door.mp4: a copy no ledger row names"), DR
 assert f'the worker: {{"event": "ingest_duplicate", "doc_key": "{KV}"}}' in DR, DR
 SP = OUT["speak"]
 assert "the answer: The CFO said EMEA was the one region that shrank: revenue fell 5.2 per cent" in SP, SP

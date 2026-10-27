@@ -1,0 +1,117 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>tok</code> from the block above. Steps 4 to 7 run offline at Rs 0 and need no project: the first <code>make agent-turn</code> or <code>make agent-eval</code> builds <code>~/graph-venv</code> with the chat image's pins (lesson 5.4 may have made it already), which takes a few minutes once. Step 3 uses the chat service on your lane; steps 8 and 9 call <code>%%MODEL%%</code> on location <code>global</code> and rag-api's <code>/v1/passages</code> as <code>documind-ui-sa</code>.</p>
+<p>The bench's desk searches by class, and drops every passage that has none (<code>services/chat/desk_agent.py</code>, <code>_search()</code>). Lesson 10.4 gives each document its class, and this lesson comes first, so run its one line now: it writes acme's and zeta's registries from <code>evals/manifest.json</code> and relabels their stored rows, as lesson 10.4 explains. A second run finds nothing to change. It ends with a <code>relabel_applied</code> line for each company; an exit status of 3 means BigQuery deferred a statement, and its last line says to run it again later. A <code>pin_miss</code> in its plan means the object on your lane is not the version the manifest records, and lesson 10.4 shows how a person re-pins it.</p></div>
+%%CELL_CLASSES%%
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; The UI</span><h3>The Chat page: an agent whose reasoning you see only on the bill</h3><p>Two agent brains, one figure question, and a caption with no thinking in it.</p></div></div>
+
+<h4>Definition</h4>
+<p>Open the DocuMind UI and its Chat page. Choose <code>langchain</code> in the sidebar's Brain list and ask the question below. Then choose <code>adk</code> and ask it again. Under each answer, the caption names the brain, the tools its turn called, the time it took and the turn's rupees.</p>
+<p><em>%%QUESTION%%</em></p>
+%%OUT_UI_CHAT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both brains are agent loops, lesson 5.1's and lesson 5.7's, on the same model as the bench. <code>langchain</code> sends thinking <code>low</code> (<code>shared/profile.py</code>). <code>adk</code> sends no level, so Gemini thinks at its own default for the model: <code>services/chat/brains.py</code> builds its <code>LlmAgent</code> with no planner and no thinking setting. Their tools are <code>retrieve</code> and <code>calculate_processing_cost</code> (<code>services/chat/tools.py</code>), and neither works out a gratuity. So whatever figure each brain wrote, the model did the arithmetic itself, and nothing on the page says how. The caption's rupees include every thinking token the turn spent, and the page shows none of them.</p>
+<p>The figure the calculator returns in step 4 is Rs 2,40,000: %%FORMULA%%. Hold your brains' figures against it.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The loop</span><h3>The loop, its recorder and the figure check, offline</h3><p>The Desk agent's loop with a recorder inside its limits, at Rs 0.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>_loop()</code> builds the agent the Desk builds: LangChain's <code>create_agent</code> over the desk's tools and prompt, with the Desk's own middleware, the turn's limits (<code>DeskTurnLimits</code>) and the guard. The bench adds one middleware between the two, the recorder. It wraps each model call: it sends <code>THINKING</code> with the call when you set one, and keeps the call's tokens as <code>call_record()</code> splits them. langchain-google-genai 4.4.0 counts Gemini's thinking inside <code>output_tokens</code> and reports it again as <code>output_token_details["reasoning"]</code>. So the visible tokens are the output less the thinking, and the rupees bill both at the output price. The figure check reads the model's answer the other way round: every figure written in it must be in a calculator's result, in the question or in a passage the turn read.</p>
+
+<h4>The code</h4>
+@@loop@@
+@@record@@
+@@rule@@
+@@unsupported@@
+
+<h4>Do it: one turn</h4>
+<p>With <code>OFFLINE=1</code>, <code>make agent-turn</code> runs the bench on a scripted model and the kit's own corpus: no project, no credential, no network. The question is the gratuity row of the task set.</p>
+%%CELL_TURN_LOOP%%
+%%OUT_TURN_LOOP%%
+
+<h4>Do it: the same turn at four thinking levels</h4>
+%%CELL_LEVELS_OFF%%
+%%OUT_LEVELS_OFF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three model calls: a search, the calculator, the answer. The model's text says Rs 2,40,000 and so does the calculator. The lines under "Worked out in code" are code's, written from the calculator's result, and the figure check finds nothing unsupported.</p>
+<p>Every count is the script's: four characters a token, and %%SCRIPT_TH%%. So the four levels move only the thinking column and the rupees, from Rs %%LEV_MIN_RS%% at minimal to Rs %%LEV_HIGH_RS%% at high, while the input stays at %%LEV_IN%% tokens: thinking is output. On your lane, the model decides how much it thinks at each level, and step 8 measures it.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 2 &middot; ReAct and a plan</span><h3>Prompted ReAct, parsed by code; and a plan first, offline</h3><p>The same question through react_text and plan_first, at Rs 0.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>react_text</code> is a two-node LangGraph graph, <code>think</code> then <code>act</code>. <code>think</code> sends one call with no tool bound. Its system prompt holds the desk's own prompt, <code>REACT_PROTOCOL</code>, and each tool's declaration as a line of JSON. Its user turn holds the transcript: the question, then every step as code read it, each followed by the Observation code wrote. The call carries the stop sequence, and it goes through the loop's own two wrappers, the turn's limits around the recorder, so the Meter counts and prices each call as it does the loop's. <code>read_step()</code> reads the reply. First comes the cut. Then a Final Answer ends the turn; exactly one Action becomes a tool call, which <code>act</code> runs through LangGraph's <code>ToolNode</code> with the brains' timed wrapper; anything else is a format error, written back as the next Observation for the model to correct.</p>
+<p><code>plan_first</code> is the loop with <code>PLAN_FIRST</code> ahead of the desk's prompt, and nothing else.</p>
+
+<h4>The code</h4>
+@@protocol@@
+@@read_step@@
+@@think@@
+@@plan_first@@
+
+<h4>Do it: prompted ReAct</h4>
+%%CELL_TURN_REACT_OFF%%
+%%OUT_TURN_REACT_OFF%%
+
+<h4>Do it: a plan first</h4>
+%%CELL_TURN_PLAN_OFF%%
+%%OUT_TURN_PLAN_OFF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The same search, the same calculator, the same answer, by three routes. <code>react_text</code>'s model wrote each step as text, and code ran each Action and wrote each Observation: %%REACT_VIS%% visible tokens against the loop's %%LOOP_VIS%%.</p>
+<p>It also read %%REACT_IN%% tokens against the loop's %%LOOP_IN%%, but most of that gap is the script's doing. <code>react_text</code> carries its %%N_TOOLS%% tools as text, which the script counts. The loop's script counts no declarations, and Gemini does: with them, the loop's three calls read about %%LOOP_IN_DECL%%. What is left on a lane is the protocol, about %%PROTOCOL_TOKENS%% tokens a call, and the transcript's labels. The difference that stays is in the output: the Thought lines, and on a thinking model, the thinking as well.</p>
+<p><code>plan_first</code>'s prompt is %%PLAN_C1_EXTRA_IN%% tokens longer on every call, for the instruction. It wrote its plan once, %%PLAN_EXTRA_VIS%% more visible tokens in call 1, and read it back on every later call: call 2 read %%PLAN_EXTRA_IN%% tokens more than the loop's. Then it did exactly what the loop did. Nothing ran the plan, and nothing had to.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 2 &middot; Change it</span><h3>Change it: delete the parser's cut</h3><p>A model that writes its own Observation, once with the cut and once without.</p></div></div>
+
+<h4>Definition</h4>
+<p>A stop sequence is a request to the endpoint, and an endpoint that does not honour it lets the model run on. The kit's scripted text model can play one. With <code>--invent</code>, it writes past its calculator's Action: <code>Observation: %%INVENT%%</code>, then a Thought and a Final Answer built on its own observation. <code>make agent-turn</code> takes it as <code>INVENT=1</code>; <code>INVENT=</code> with a figure of your own writes that figure instead.</p>
+@@invent@@
+
+<h4>Do it: first, with the cut</h4>
+%%CELL_INVENT%%
+%%OUT_INVENT%%
+<p>The parser read up to the Action and cut the rest: the three lines under "cut by the parser" were never read. Code ran the calculator, wrote the real Observation, and the model answered Rs 2,40,000.</p>
+
+<h4>Do it: delete the cut, and run it again</h4>
+%%CELL_CUT%%
+%%OUT_CUT%%
+
+<h4>Put it back</h4>
+%%CELL_RESTORE%%
+%%OUT_RESTORE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>With the line gone, <code>read_step()</code> read the whole reply, found a Final Answer after the invented Observation, and ended the turn there: two calls, no calculation, and the answer Rs 2,50,000, a figure no tool produced. The Desk would have shown it with nothing under "Worked out in code". The figure check caught it, because no calculator, question or passage wrote 2,50,000.</p>
+<p>That is why the cut is a line of code and not a sentence in a prompt. <code>REACT_PROTOCOL</code> already tells the model never to write an Observation, and a model that runs past its stop sequence can run past that sentence too. <code>git checkout</code> put the line back, and <code>grep -c</code> counts it once again. The kit's own test makes the same deletion in memory (<code>commands/tests/test_agent_patterns.py</code>).</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 2 &middot; The rows</span><h3>The %%N_CALC%% calculator rows, scored offline and paired</h3><p>The task set's calculator slice through the three patterns at Rs 0, then the paired difference.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>evals/agent_tasks.jsonl</code> holds %%N_TASKS%% rows: %%N_CALC%% calculator rows, %%N_LOOKUP%% lookups, %%CHAINED%%a trap and a refusal. <code>SLICE=calc</code> takes the %%N_CALC%% calculator rows: a gratuity three ways, carry-forward for acme and for zeta, encashment with a cap the question invents, accrual, two notice periods, a wage deadline and a committee threshold. <code>CHECK=1</code> recomputes each row's figure with <code>desk_calc</code> and checks that the hard gate lets each question through. Then every row goes through every pattern. <code>score()</code> marks a run correct when its answer states the row's figure and no wrong one, and gives it provenance when a calculator of the row returned that figure and the figure check finds nothing unsupported.</p>
+<p>Offline, the scripted model slips on about one run in five, on purpose: it writes the figure itself, right, with no calculator behind it. A single turn never slips; an eval run does.</p>
+
+<h4>The code</h4>
+@@score@@
+@@mk@@
+
+<h4>Do it: check the rows, then run them</h4>
+%%CELL_CHECK%%
+%%OUT_CHECK%%
+%%CELL_EVAL_OFF%%
+%%OUT_EVAL_OFF%%
+
+<h4>Do it: the paired difference, at Rs 0</h4>
+<p>One cell splits the saved runs by pattern and prints what a call of each pattern read, thought and wrote; for <code>react_text</code>, it also counts the replies that ran past the stop and the Actions code could not read, with the bench's own parser. Then <code>COMPARE=</code> pairs each pattern with the loop, row by row.</p>
+%%CELL_PAIRED_OFF%%
+%%OUT_PAIRED_OFF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every pattern is correct on all %%N_CALC%% rows and verified on %%N_PROV%%. The script slipped on %%SLIPS%% in all three patterns: the same rows, because its slips depend on the row and the run, not on the pattern. The gratuity answer was right, and the figure check flagged its 2,40,000, which no calculator returned. The threshold's answer is a yes, which the figure check cannot flag; only "no threshold_check call returned it" catches that one. That is what provenance is for.</p>
+<p>The paired lines say what %%N_CALC%% tied rows prove about which pattern is better: nothing. With no row where two patterns disagree, the difference is 0 and its interval runs from -%%TIE_HALF%% to +%%TIE_HALF%% points, wider than the %%MARGIN%%-point margin on both sides. The rupees are the script's: Rs %%EVAL_OFF_LOOP%%, %%EVAL_OFF_REACT%% and %%EVAL_OFF_PLAN%% a run for the loop, ReAct and the plan.</p></div>

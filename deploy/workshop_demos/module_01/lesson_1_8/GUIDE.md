@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_1.8_Restore_Reconcile_WIX.html`, reviewed at blob `8889e75f35fcc52db957363e2e142eb5b523f6d8`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_1.8_Restore_Reconcile_WIX.html`, reviewed at blob `1071cdd21108fa3390a4d88102c100d4069b8275`. Learners read that page on the course site; this guide keeps its prose.
 
 Start with a document that answers a question. Delete its cloud file and show why the index can still answer. Preview the reconciliation plan, apply retirement, and prove that storage and the index agree again. Then upload the exact original bytes and watch the worker reuse the existing embeddings. A fresh fixture, exact source checks and a clean baseline make each change visible.
 

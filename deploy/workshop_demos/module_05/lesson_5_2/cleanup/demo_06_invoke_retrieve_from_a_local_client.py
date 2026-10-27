@@ -3,7 +3,7 @@
 At lesson end: Do it: stop the server
 
 Run order inside this file:
-1. Do it: stop the server (source window 19)
+1. Do it: stop the server (source window 23)
 
 Prerequisites: workshop setup; see this lesson README.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -54,7 +54,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_19', step_01_stop_the_server),
+        ('source_23', step_01_stop_the_server),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=True, finalize=False)
 
 

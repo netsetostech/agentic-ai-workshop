@@ -561,6 +561,7 @@ import io  # noqa: E402
 
 rv.load_corpus = lambda: corpus
 rv.fetch_current_shas = lambda *a, **k: None
+rv.fetch_media_names = lambda *a, **k: None          # the ledger unread: a media row asks for its kind
 REP = Path(tempfile.mkdtemp(prefix="lesson71-live-")) / "report.json"
 
 

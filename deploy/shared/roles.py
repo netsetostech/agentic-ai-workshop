@@ -12,6 +12,8 @@ add_member writes the member document whole, without merge: a role kept there wo
     grc_member         grievance cases and their status
     privacy            privacy requests
     desk_eval          the Desk's eval routes, for the eval accounts (the routed Desk, workshop lesson 10.4)
+    doc_approver       approves or rejects a withdrawal a model asked for, as the second person (workshop lesson 5.8,
+                       shared/approvals.py); it opens no desk and reads no queue
 
 roles_for() is the one reader. A member with no role document is ["employee"]. A document lists every role it grants,
 so "employee" is never implied beside it: ["leaver"] is a leaver and nothing else. A person on no roster has no role
@@ -29,7 +31,7 @@ import re
 from datetime import datetime, timezone
 
 EMPLOYEE, LEAVER = "employee", "leaver"
-ROLES = (EMPLOYEE, LEAVER, "people_ops", "payroll", "grc_member", "privacy", "desk_eval")
+ROLES = (EMPLOYEE, LEAVER, "people_ops", "payroll", "grc_member", "privacy", "desk_eval", "doc_approver")
 RESERVED = ("desk_reviewer", "desk_pilot")
 IC_ROLE = re.compile(r"^ic_member:([a-z0-9_-]{1,40})$")
 UNREAD = "unread"            # what a failed read returns; never written

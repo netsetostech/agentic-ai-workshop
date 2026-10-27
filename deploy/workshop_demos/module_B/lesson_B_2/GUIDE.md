@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_B.2_Tokens_Embeddings_WIX.html`, reviewed at blob `1395591d92dec2c9a56f1342d31a0d356441f8a6`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_B.2_Tokens_Embeddings_WIX.html`, reviewed at blob `fb775486b8dc9dcea9744341eb3de5626e11017f`. Learners read that page on the course site; this guide keeps its prose.
 
 Every call the kit makes to Gemini is counted and billed in tokens, and every search it runs compares embeddings. This page builds both from the bottom, on your laptop. You will train a tokenizer small enough to read on two clauses of the kit's handbook, put the kit's two token estimates beside plain character counts, and price a sentence with the kit's own prices the way lesson 3.4 prices an answer. Then you will ask gemini-3.6-flash for its own count of that sentence, embed three clauses and two questions with text-embedding-005 under the task types the kit uses, and compare them by cosine similarity in numpy. Two cells call Vertex AI in your project, for a fraction of a paisa; the rest never leave your machine.
 

@@ -94,9 +94,17 @@ emitters = sorted({m for p in pb.kit_runtime_files("*.py") if "__pycache__" not 
                    for src in [p.read_text(encoding="utf-8", errors="replace")]
                    for m in re.findall(r'(?:audit_emit|audit_log\.emit|\bemit)\("([a-z_.]+)"', src)
                    + [a for args in re.findall(r'_pending\(rec, ([^{]*)\{', src) for a in re.findall(r'"([a-z_]+\.[a-z_]+)"', args)]})
-assert emitters == ["case.close", "case.open", "case.update", "dlp.finding", "doc.upload", "query.submit", "role.grant",
-                    "role.revoke", "tenant.create"], emitters  # doc.mirror goes through a name (managed.py)
-assert "audit" not in (KIT / "services" / "ingest" / "reconcile.py").read_text(encoding="utf-8").replace("AUDIT_BUCKET", "")  # a withdrawal writes no event
+assert emitters == ["approval.approve", "approval.reject", "approval.request", "case.close", "case.open", "case.update", "dlp.finding",
+                    "doc.upload", "doc.withdraw", "query.submit", "role.grant", "role.revoke", "tenant.create"], emitters
+# doc.mirror goes through a name (managed.py). The approval events and doc.withdraw are shared/approvals.py's (workshop
+# lesson 5.8, 13 October 2026): a withdrawal from the shell, make retire, still writes no event - its branch of
+# reconcile.py has no audit call - and doc.withdraw is written only by --approved, the operator's run of a withdrawal a
+# second person approved on the chat service, after that same branch has written the tombstone.
+RECONCILE = (KIT / "services" / "ingest" / "reconcile.py").read_text(encoding="utf-8")
+RETIRE_BRANCH = RECONCILE[RECONCILE.index("    if a.retire:"):RECONCILE.index("    if a.restore:")]
+assert "audit" not in RETIRE_BRANCH.replace("AUDIT_BUCKET", "") and "approvals" not in RETIRE_BRANCH    # make retire writes no event
+assert "rec = approvals.withdrawn(db, rec, run_by=" in RECONCILE and RECONCILE.index("    if a.approved:") < RECONCILE.index("    if a.retire:")
+assert 'audit_log.emit("doc.withdraw"' in (KIT / "shared" / "approvals.py").read_text(encoding="utf-8")
 assert 'st.metric("Chunks with findings", len(df))' in (KIT / DASH).read_text(encoding="utf-8")
 assert "max_delivery_attempts = 12" in (KIT / "terraform" / "eventarc.tf").read_text(encoding="utf-8")
 aud_src = (KIT / AUD).read_text(encoding="utf-8")

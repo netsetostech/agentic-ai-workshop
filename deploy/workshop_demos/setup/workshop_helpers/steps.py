@@ -89,6 +89,12 @@ def native_context(session):
                     sys.modules[name] = before_modules[name]
                 else:
                     sys.modules.pop(name, None)
+                    # A package loaded before the cell keeps its submodule as an attribute, and `from shared import
+                    # query_rewrite` reads that attribute first: 2.5's next cell got the module from before its own
+                    # edit ("6 rules left" after deleting one, 21 October 2026). Drop it with the module.
+                    parent, _, child = name.rpartition(".")
+                    if parent and getattr(sys.modules.get(parent), child, None) is module:
+                        delattr(sys.modules[parent], child)
 
 
 def run_steps(session, steps, *, retry_failed=False, cleanup=False, finalize=True):

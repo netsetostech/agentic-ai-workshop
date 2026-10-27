@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_1.2_Parse_Chunk_WIX.html`, reviewed at blob `b099dbefa1a1ac6ed8c033e6e86ca49edce9f313`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_1.2_Parse_Chunk_WIX.html`, reviewed at blob `89efcf7cb5d1c6fd37ffa133add6ec2be9423059`. Learners read that page on the course site; this guide keeps its prose.
 
 Before a document can be searched it has to be read, and before it can be cited it has to be cut into pieces small enough to compare with a question. This lesson opens the two steps that do that in DocuMind: the parser that turns a PDF into pages of text through Document AI, and the chunker that turns text into addressed pieces. You will count pages, cut a handbook into clauses, cut an Act into page windows, and compare the pieces two different parsers make of the same document on your own lane.
 
@@ -132,6 +132,8 @@ The amendment Act is four pages and globex does not hold it, so ingesting it the
 
 Four pages, five chunks: the count is pypdf's, the chunks are Document AI's text cut per page. Your chunk count may differ by one, because the two readers do not always agree on where a line ends, which is exactly what step 7 is about.
 
+Then take it out of globex again. Globex is the tenant that holds no maternity law: golden row iso-06 asks it for the longest maternity benefit and must be refused, and a copy left here answers it from this Act, which fails that row in every live eval from Module 3 on. `make retire` withdraws a source: its chunks leave the pool and the index, and the object stays in the bucket. Lesson 1.7 reads what it writes.
+
 The worker learned the page count for free, decided the file was small enough for the push lane, sent it to Document AI in one slice, and wrote `pages: 4` on its log line. The same field on the CGST Act's line reads 236 and sixteen requests were made for it; over 250 and the line would have been `ingest_queued_batch` instead.
 
 ### Chunk by section: the handbook becomes 283 clauses
@@ -214,7 +216,7 @@ The asymmetry is worth remembering when you design an update: parsing is paid pe
 
 Eight checks, each one block above, each with the value that proves it on your lane.
 
-One new source: `globex/maternity_benefit_amendment_act_2017.pdf`, four pages, five chunks, a few paise of Document AI. Everything else was read, not written. Lesson 1.3 takes the chunks you cut today and gives each one its 768 numbers, with the stamp that lets the lane tell its own vectors from anyone else's.
+One source in and out again: `globex/maternity_benefit_amendment_act_2017.pdf`, four pages, five chunks, a few paise of Document AI, then withdrawn. Its object stays in the bucket, and its ledger row says withdrawn, so globex still holds no maternity law. Everything else was read, not written. Lesson 1.3 takes the chunks you cut today and gives each one its 768 numbers, with the stamp that lets the lane tell its own vectors from anyone else's.
 
 Netsetos GenAI on GCP · Module 1 RAG foundation · Lesson 1.2 Parse documents and compare chunk boundaries · v5.0
 

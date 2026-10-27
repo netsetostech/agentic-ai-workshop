@@ -32,6 +32,10 @@ Manual browser actions and long asynchronous waits pause at a named checkpoint. 
 
 After upgrading from a previous layout, run the lesson's finish file first, then set this lesson number in `workshop_demos/setup/start_new_session.py` and run it. It archives evidence; it does not delete your fixtures. Old progress is never silently treated as completion of the new section files.
 
+## Optional extensions
+
+- [optional/demo_07_the_loop_the_model_chooses_its_tools.py](optional/demo_07_the_loop_the_model_chooses_its_tools.py) — The scripted model always asks for both searches. Whether Gemini does is the model's choice. This cell makes the first model call of a turn by hand: the brains' own model from shared/profile.py, the kit's two tools bound to it, the system prompt, and the same two-part question. It prints the tool calls in the one message that comes back, then the tokens and the rupees. It is one call to gemini-3.6-flash on your project, under a rupee. No tool runs, and rag-api is not called.
+
 ## Finish and restore
 
 - [setup/restore_settings.py](setup/restore_settings.py) — At lesson end: DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. make up pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like acme:acme_497809ff...#rag-532341da71fe, a page of null even for a PDF, and stages.retrieval_backend: rag_engine. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors. The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.
@@ -83,7 +87,7 @@ Updated IAM policy for service [documind-chat].   (seven times, one per account:
    documind-evalzeta-sa, documind-evalglobex-sa, documind-evalleaver-sa,
    documind-evalgrc-sa)
 >> documind-gchat-sa does not exist yet (terraform/desk.tf: make plan up; documind-gchat-sa only with GCHAT_DOOR=true) - not bound
-... job exists - continuing   (or: Job [documind-checkpoint-setup] has successfully been created.)
+Job [documind-checkpoint-setup] has successfully been deployed.
 Execution [documind-checkpoint-setup-xxxxx] has successfully completed.
 ...
 >> you@example.com may mint tokens as documind-ui-sa
@@ -136,7 +140,7 @@ Operation: bash — run in the operator shell, in the kit (the one retrieve(), c
 Expected shape, not a promised result:
 
 ```text
-5 citations | answerable True | confidence high | 2.7 s
+1 citations | answerable True | confidence high | 2.7 s
   first: {'chunk_id': 'acme:aaaaaaaa#0', 'page': 3, 'score': 0.94}
   rag-api's own answer: Gratuity is payable on termination after not less than five years of continuous service [1
 ```
@@ -154,13 +158,13 @@ Operation: bash — run in the operator shell, in the kit (a small chat function
 Expected shape, not a promised result:
 
 ```text
-direct    tool_calls ['retrieve']  refusals []  citations 5  3180 ms
+direct    tool_calls ['retrieve']  refusals []  citations 1  3180 ms
       Gratuity is payable on termination after not less than five years of continuous service [1].
 ```
 
 ### demo_07_the_loop_the_model_chooses_its_tools.py
 
-Do it
+Do it The cell runs the kit's own LangChain brain on your machine, with a scripted model and a stand-in rag-api, so it calls nothing on your lane and costs nothing. The model asks for two searches in one message: the notice period, and the earned leave encashed on exit. The stand-in takes 1.5 seconds over the first and 1 second over the second, and both answers include LV-07, the handbook's clause on leave at exit. The cell prints when each search reached the stand-in and when it was answered, the citations each result carried, and the turn's list and citations. It runs in ~/graph-venv, lesson 5.4's venv with the chat image's pins, and the first cell makes it if it is missing.
 
 **`step_01_the_loop_the_model_chooses_its_tools(session)` — The loop: the model chooses its tools / Do it**
 
@@ -171,12 +175,60 @@ Operation: bash — run in the operator shell, in the kit (the LangChain loop on
 Expected shape, not a promised result:
 
 ```text
-langchain tool_calls ['retrieve']  refusals []  citations 5 n [1, 2, 3, 4, 5]  7240 ms
+langchain tool_calls ['retrieve']  refusals []  citations 1 n [1]  7240 ms
       After five years of continuous service, under the Payment of Gratuity Act, 1972 [1].
-  langchain tool_calls ['retrieve', 'calculate_processing_cost']  refusals []  citations 3 n [1, 2, 3]  11350 ms
+  langchain tool_calls ['retrieve', 'calculate_processing_cost']  refusals []  citations 1 n [1]  11350 ms
       The handbook has 283 pages [1]. At the priority tier (USD 0.12 a page) they cost USD 33.96, abou
-  direct    tool_calls ['retrieve']  refusals []  citations 3  3420 ms
+  direct    tool_calls ['retrieve']  refusals []  citations 1  3420 ms
       The documents give no per-page price for processing the handbook; the April invoice bills priori
+```
+
+**`step_02_two_searches_at_once_offline(session)` — The loop: the model chooses its tools / Do it: two searches at once, offline**
+
+The cell runs the kit's own LangChain brain on your machine, with a scripted model and a stand-in rag-api, so it calls nothing on your lane and costs nothing. The model asks for two searches in one message: the notice period, and the earned leave encashed on exit. The stand-in takes 1.5 seconds over the first and 1 second over the second, and both answers include LV-07, the handbook's clause on leave at exit. The cell prints when each search reached the stand-in and when it was answered, the citations each result carried, and the turn's list and citations. It runs in ~/graph-venv, lesson 5.4's venv with the chat image's pins, and the first cell makes it if it is missing.
+
+Operation: bash — run in the operator shell, in the kit (lesson 5.4's ~/graph-venv with the chat image's pins; a minute the first time).
+
+Expected shape, not a promised result:
+
+```text
+graph-venv ok: langchain 1.4.0
+```
+
+**`step_03_two_searches_at_once_offline(session)` — The loop: the model chooses its tools / Do it: two searches at once, offline**
+
+The cell runs the kit's own LangChain brain on your machine, with a scripted model and a stand-in rag-api, so it calls nothing on your lane and costs nothing. The model asks for two searches in one message: the notice period, and the earned leave encashed on exit. The stand-in takes 1.5 seconds over the first and 1 second over the second, and both answers include LV-07, the handbook's clause on leave at exit. The cell prints when each search reached the stand-in and when it was answered, the citations each result carried, and the turn's list and citations. It runs in ~/graph-venv, lesson 5.4's venv with the chat image's pins, and the first cell makes it if it is missing.
+
+Operation: bash — run in the operator shell, in the kit (the kit's LangChain brain on your machine: a scripted model, a stand-in rag-api; no lane, no cost).
+
+Expected shape, not a promised result:
+
+```text
+one model message asked for 2 searches; the stand-in rag-api's log:
+    'notice period'                   arrived at 0.0 s, answered at 1.5 s
+    'earned leave encashed on exit'   arrived at 0.0 s, answered at 1.0 s
+  at once: True (both arrived before either was answered); 1.5 s for the two, where one after the other takes 2.5 s
+  what the model read, one result for each call:
+    'notice period'                   [3] NP-03  [4] PB-02  [1] LV-07
+    'earned leave encashed on exit'   [1] LV-07  [2] LV-01
+  tool_calls ['retrieve', 'retrieve']; the turn's citations: [1] LV-07, [2] LV-01, [3] NP-03, [4] PB-02
+  the answer: Sixty days [3]; at most 45 days of earned leave are encashed [1].
+```
+
+### optional/demo_07_the_loop_the_model_chooses_its_tools.py
+
+The scripted model always asks for both searches. Whether Gemini does is the model's choice. This cell makes the first model call of a turn by hand: the brains' own model from shared/profile.py, the kit's two tools bound to it, the system prompt, and the same two-part question. It prints the tool calls in the one message that comes back, then the tokens and the rupees. It is one call to gemini-3.6-flash on your project, under a rupee. No tool runs, and rag-api is not called.
+
+**`step_01_optional_does_gemini_ask_for_two_at_once(session)` — The loop: the model chooses its tools / Optional: does Gemini ask for two at once?**
+
+The scripted model always asks for both searches. Whether Gemini does is the model's choice. This cell makes the first model call of a turn by hand: the brains' own model from shared/profile.py, the kit's two tools bound to it, the system prompt, and the same two-part question. It prints the tool calls in the one message that comes back, then the tokens and the rupees. It is one call to gemini-3.6-flash on your project, under a rupee. No tool runs, and rag-api is not called.
+
+Operation: bash — optional: run in the operator shell, in the kit (one Gemini call with the kit's two tools; no tool runs; under a rupee).
+
+Expected shape, not a promised result:
+
+```text
+[awaiting the author's run: data/parallel_live.txt]
 ```
 
 ### demo_08_the_rows_what_each_brain_cost_and_which_row_records_it.py
@@ -223,6 +275,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_5.1_Agent_Loop_WIX.html`. All 25 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `95a50fda25e996ce7c223e579e4c5a7596c02941`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_5.1_Agent_Loop_WIX.html`. All 33 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `9abad409dcccc34daf6650ea28d882e0b674dc4a`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

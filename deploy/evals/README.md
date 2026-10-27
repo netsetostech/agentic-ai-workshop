@@ -201,6 +201,39 @@ figures); `route_eval.py --predictions` scores a run with every rate's denominat
 `route_probe.py` measures four model facts on a lane (`make route-probe`). `make desk-check` runs the offline
 half.
 
+## agent_tasks.jsonl - the agent bench's task set (Module 10)
+
+One row per question an agent pattern is scored on (lessons 10.1-10.3 and 10.5): calculator rows whose figure the
+kit's own `shared/desk_calc.py` recomputes (the gratuity on Rs 52,000 a month after 7 years 8 months is Rs 2,40,000),
+single-hop lookups from golden, a provenance trap and a refusal. Every row carries its expected figure, the clause or
+section it rests on and the figures a right answer never states. `agent_eval.py --check` recomputes every figure and
+runs the hard gate on every question (`make agent-eval CHECK=1`); a run scores correctness, provenance (a calculator
+wrote the figure, `desk_calc.unsupported()`), model calls, thinking and visible tokens and rupees, offline on a
+scripted model or on a lane; `paired.py` compares two arms on the same rows. The rows are model drafts until people
+write a held-out split.
+
+## adversarial/attacks.jsonl - the attack set on rag-api's doors (Module 4)
+
+One row per attack sent through one door of rag-api (`/v1/query`, `/v1/stream`, `/v1/passages`), with who sends it, the
+attack (injection, override, exfiltration, pii, or none for the plain question), the control that holds it and the
+outcomes that mean it failed (lesson 4.9). Lesson 4.8's four probes are its first four rows. A structural row is held by
+code that always runs and fails the run when it opens; a behavioural row is held by Model Armor or by SYSTEM's rules and
+is scored as an attack success rate, never a gate. `run_attacks.py --offline` checks the set (each forbidden word in
+another tenant's corpus and not the row's own, each planted word in none of the row's tenant's documents) and runs it
+against a stand-in of rag-api's own door functions, each control switched off in turn: a structural row that stays held
+with its control off is vacuous and fails. `make attack-eval` runs it on a lane, once with the guard off and once on a
+candidate with `ARMOR=on`. Lesson 10.8 adds the agents' rows to the same file. Nothing tunes on them: no training,
+route or judge set reads this file.
+
+## route_arms.jsonl - the Desk's arms set (Module 10)
+
+Twelve dev rows in the route set's schema on which lesson 10.5 runs the Desk's three arms (B routed, C code only, A*
+one agent): five figure rows a calculator decides (fig-01 to fig-06; fig-04, a chain across two desks, is not written
+yet), jn-03, and six lookups a clause answers, the last seven as `routes.jsonl` has them. `make route-eval
+ROUTES=evals/route_arms.jsonl ARM=...` runs an arm on them, `route_eval.py --compare` pairs the arms' reports and
+`combine.py` combines their saved runs; `tests/test_route_arms.py` recomputes every figure with `shared/desk_calc.py`.
+Dev rows only: a comparison on them is indicative until people write a test split.
+
 ## Refreshing the real documents
 
 A publisher moves files. When `fetch_real.py` reports a 404, find the Act on the ministry's site

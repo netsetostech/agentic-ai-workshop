@@ -1,12 +1,11 @@
 """Lesson 0.2: Diagnose a first failure: one loosened row
 
-The most common way an eval suite rots, made on purpose, caught, read and repaired. Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. One line changed: the row's must_contain went from ["60"] to []. Now run the gate. Repair it
+The most common way an eval suite rots, made on purpose, caught, read and repaired. Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Picture a red live run on lk-06 the night before a release. The fastest way to green is to loosen the row: empty its must_contain, and any answer at all passes. That edit is the commonest way an eval suite rots, because the row stays in the file looking like a test. The offline gate exists to refuse it. Make the edit in your clone: Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. Git sees it. This is what the clone is for: every change you make to the kit is visible, and reversible, against the commit you pulled. One line changed: the row's must_contain went from ["60"] to []. Now run the gate.
 
 Run order inside this file:
 1. Diagnose a first failure: one loosened row (source window 29)
 2. Diagnose a first failure: one loosened row (source window 31)
 3. Diagnose a first failure: one loosened row (source window 33)
-4. Repair it (source window 36)
 
 Prerequisites: demo_05_prove_a_first_success_make_dryrun.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -78,7 +77,7 @@ def step_02_diagnose_a_first_failure_one_loosened_row(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: diff --git a/evals/golden.jsonl b/evals/golden.jsonl
-    index 50b46d6..e2d97fb 100644
+    index 6177059..8f889ca 100644
     --- a/evals/golden.jsonl
     +++ b/evals/golden.jsonl
     @@ -6 +6 @@
@@ -89,7 +88,9 @@ def step_02_diagnose_a_first_failure_one_loosened_row(session):
     session.shell(COMMANDS_02)
 
 # Original CLI workflow for step_03_diagnose_a_first_failure_one_loosened_row.
-COMMANDS_03 = """cd "$DEMO_ROOT" && make dryrun
+COMMANDS_03 = """cd "$DEMO_ROOT" && make dryrun 2>&1 | tee /tmp/dryrun-loosened.out && status=0 || status=$?
+[ "$status" -ne 0 ] && grep -q 'lk-06: an answerable row with no must_contain' /tmp/dryrun-loosened.out   # the gate refused the loosened row
+
 
 """
 
@@ -109,7 +110,7 @@ def step_03_diagnose_a_first_failure_one_loosened_row(session):
       DocuMind AI — Tier-A offline dry run
       ------------------------------------------------------------
       [SKIP] extract       kit-only checkout (the learner repo): deploy/ is the extracted tree, nothing to compare  (Ns)
-      [PASS] py_compile    125 python files parse  (Ns)
+      [PASS] py_compile    150 python files parse  (Ns)
       [PASS] imports       all local imports resolve  (Ns)
       [PASS] shared-deps   every google.cloud client a shared module opens is pinned by its importers  (Ns)
       [PASS] requirements  11 files, all deps pinned  (Ns)
@@ -118,36 +119,6 @@ def step_03_diagnose_a_first_failure_one_loosened_row(session):
     """
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_03)
-
-# Original CLI workflow for step_04_repair_it.
-COMMANDS_04 = """git -C "$DEMO_ROOT" checkout -- evals/golden.jsonl     # the committed row comes back
-git -C "$DEMO_ROOT" diff --stat                         # prints nothing: the clone is clean again
-cd "$DEMO_ROOT" && make dryrun
-
-"""
-
-def step_04_repair_it(session):
-    """Run Repair it at this checkpoint.
-
-    Repair it
-
-    Args: session is the active lesson run, with validated settings and saved prerequisites.
-    Operations: bash — run in the first terminal: repair, check, run again.
-    Returns: None; observations are printed or saved by the lesson code.
-    Failures propagate to the session; inspect its failed attempt before continuing.
-
-    Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: == eval gate: OFFLINE (no credentials, no cost) ==
-      65 golden rows over 3 tenants, 27 documents
-
-      [PASS] falsifiable
-      [PASS] anchors
-      [PASS] coverage
-
-      The golden set is sound. It can go red, and it still contains the rows that would.
-    """
-    # Preserve the kit CLI's arguments, conditions and observation order.
-    session.shell(COMMANDS_04)
 
 def demonstrate(session):
     """Run this section in source order, saving each function's outcome.
@@ -159,7 +130,6 @@ def demonstrate(session):
         ('source_29', step_01_diagnose_a_first_failure_one_loosened_row),
         ('source_31', step_02_diagnose_a_first_failure_one_loosened_row),
         ('source_33', step_03_diagnose_a_first_failure_one_loosened_row),
-        ('source_36', step_04_repair_it),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

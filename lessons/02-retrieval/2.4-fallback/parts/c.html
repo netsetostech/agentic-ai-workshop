@@ -42,15 +42,16 @@ evidence: {'doc_type': 'unknown', 'kind': 'text'} | current off: 5 rows | curren
 python commands/lane.py backfill-vectors --tenant acme            <span class="cm"># the same as: make backfill-vectors PROJECT=$PROJECT TENANT_ONLY=acme</span>
 make usage PROJECT=$PROJECT HOURS=1 | sed -n '/by retrieval backend/,/^$/p'</pre></div>
 
-<div class="cw"><div class="ch-bar"><span>expected (your counts; the plan's zeros are the point, and the firestore row is step 4's)</span><span class="ro">read only</span></div><pre tabindex="0">index: %%INDEX_NAME%%  datapoints: 4xxx  shards: 1  update: STREAM_UPDATE
+<div class="cw"><div class="ch-bar"><span>expected (your counts; the plan's zeros are the point, the firestore row is step 4's acme and the vertex_search row its zeta)</span><span class="ro">read only</span></div><pre tabindex="0">index: %%INDEX_NAME%%  datapoints: 2xxx  shards: 1  update: STREAM_UPDATE
 endpoint: %%ENDPOINT_NAME%%  deployed: documind_chunks_v1  synced: 2026-09-2xT1x:xx:xx.xxxxxxZ
 {"event": "backfill_vectors_plan", "index": "projects/NUMBER/locations/asia-south1/indexes/1234567890123456789", "tenant": "acme", "current_chunks": 1xxx, "needs_document_embedding": 0, "invalid_chunks": 0, "embedding_task_type": "RETRIEVAL_DOCUMENT", "note": "Pause uploads/undo/batch writers; keep answer caches off during repair and validation."}
 
 by retrieval backend (which store served the pool; 13 September 2026)
 retrieval_backend      answers    tok_in  tok_out       USD       INR  p95 ms  unans
 ------------------------------------------------------------------------------------
-firestore                    5      xxxx      xxx    0.0xxx      x.xx    2xxx   0.20
-vector                       6      xxxx      xxx    0.0xxx      x.xx    2xxx   0.00</pre></div>
+firestore                    5      xxxx      xxx    0.0xxx      x.xx    xxxx   0.20
+vector                       6      xxxx      xxx    0.0xxx      x.xx    xxxx   0.00
+vertex_search                1      xxxx      xxx    0.0xxx      x.xx    xxxx   0.00</pre></div>
 
 <div class="wjh"><div class="wjh-title">What just happened</div>
 <p>The index reported its own count, a few thousand datapoints across the three tenants, synced; the plan found every current acme row already carrying a document-profile vector and nothing invalid, so a repair would upload them all and embed none; and the usage rows showed the last hour split by rung, the minutes acme spent pinned in a row of their own with the one unanswerable question from the emptied pool counted against it. That table is also where a day of silent fallbacks would show: a <code>vector</code> row whose answers came from beneath still reads <code>vector</code> here, which is why the smoke reads <code>vector_chunks</code> and not this column.</p></div>
@@ -62,7 +63,7 @@ vector                       6      xxxx      xxx    0.0xxx      x.xx    2xxx   
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
 <thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
 <tbody>
-<tr><td>A question on the rung</td><td data-label="Costs">Firestore reads: one per hundred index entries the flat scan visits and one per document returned, at the listed read rate; about %%READS_EST%% for a tenant the size of acme's mirror</td><td data-label="On your lane">a fraction of a paisa each; steps 3 and 4</td></tr>
+<tr><td>A question on the rung</td><td data-label="Costs">Firestore reads: one per hundred index entries the flat scan visits and one per document returned, at the listed read rate; with the current switch off a question returns the %%FETCH%% rows the rung asks for, not the %%TOPK%% it keeps, so about %%READS_EST%% for a tenant the size of acme's mirror</td><td data-label="On your lane">a fraction of a paisa each; steps 3 and 4</td></tr>
 <tr><td>The kit's index</td><td data-label="Costs">the deployed index bills by the hour whether it is asked or not; a question on the rung saves nothing there</td><td data-label="On your lane">unchanged by this lesson</td></tr>
 <tr><td>A pin</td><td data-label="Costs">one Firestore write; the API re-reads it within a minute, no deploy</td><td data-label="On your lane">step 4, twice</td></tr>
 <tr><td>The candidate</td><td data-label="Costs">nothing idle at <code>MIN_INSTANCES</code> 0; one question at the generator's rate</td><td data-label="On your lane">step 5, a rupee, then reverted</td></tr>
@@ -105,9 +106,9 @@ any  tenant, a store in us-central1  -> may hold it</pre></div>
 <thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
 <tbody>
 <tr><td>1</td><td data-label="Claim">Firestore finds the same clause from the rows alone</td><td data-label="The check">step 3, the first run</td><td data-label="Pass looks like">NP-03 first, <code>found_by firestore</code></td></tr>
-<tr><td>2</td><td data-label="Claim">The caller's filters are predicates on the rung too</td><td data-label="The check">step 3, the two runs with F</td><td data-label="Pass looks like">0 rows under <code>doc_type=policy</code>, 20 under <code>kind=text</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The caller's filters are predicates on the rung too</td><td data-label="The check">step 3, the second and third runs</td><td data-label="Pass looks like">0 rows under <code>doc_type=policy</code>, 20 under <code>kind=text</code></td></tr>
 <tr><td>3</td><td data-label="Claim">A pin moves one tenant beneath the index without a deploy</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>backend firestore | vector_chunks 0</code> within a minute</td></tr>
-<tr><td>4</td><td data-label="Claim">Two tenants on two rungs do not cross</td><td data-label="The check">step 4, the last two questions</td><td data-label="Pass looks like">Rs 40,000 for acme, Rs 25,000 for zeta</td></tr>
+<tr><td>4</td><td data-label="Claim">Two tenants on two stores do not cross</td><td data-label="The check">step 4, the last two questions</td><td data-label="Pass looks like">Rs 40,000 for acme, Rs 25,000 for zeta</td></tr>
 <tr><td>5</td><td data-label="Claim">A chosen rung is not a fault</td><td data-label="The check">step 4, the first smoke</td><td data-label="Pass looks like"><code>[ -- ] vector tier ... skipped</code></td></tr>
 <tr><td>6</td><td data-label="Claim">An index that raises is answered from beneath, logged</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>backend vector | vector_chunks 0</code>, a <code>vector_search_fallback</code> line</td></tr>
 <tr><td>7</td><td data-label="Claim">The smoke refuses that pair, and the template is back</td><td data-label="The check">step 5</td><td data-label="Pass looks like">the <code>[FAIL] vector tier</code> sentence; <code>template now: documind_chunks_v1</code></td></tr>
@@ -116,7 +117,7 @@ any  tenant, a store in us-central1  -> may hold it</pre></div>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
 <div class="box box-teal"><div class="box-title">What changed on your lane</div>
-<p>Nothing that serves traffic. acme's pin went to <code>firestore</code> and back to <code>vector</code>, where lesson 1.1 left it. A candidate revision of the API took no traffic and its wrong index name was replaced by the real one on the template before the tag was dropped; run <code>make plan</code> if you want Terraform's word that the service matches its declaration. The probe wrote <code>operator-evidence/firestore-combined-filters.json</code> inside the kit's clone. The questions you asked are usage rows, five of them under <code>firestore</code>. Lesson 2.5 rewrites the question before it reaches this pool and measures whether that helps; Module 3 then takes the pool into the prompt.</p></div>
+<p>Nothing that serves traffic. acme's pin went to <code>firestore</code> and back to <code>vector</code>, where the setup put it; the setup's last window returns it to <code>rag_engine</code> when you finish, and zeta's <code>vertex_search</code> pin was never touched. A candidate revision of the API took no traffic and its wrong index name was replaced by the real one on the template before the tag was dropped; run <code>make plan</code> if you want Terraform's word that the service matches its declaration. The probe wrote <code>operator-evidence/firestore-combined-filters.json</code> inside the kit's clone. The questions you asked are usage rows, five of them under <code>firestore</code> and zeta's under <code>vertex_search</code>. Lesson 2.5 rewrites the question before it reaches this pool and measures whether that helps; Module 3 then takes the pool into the prompt.</p></div>
 
 </div>
 

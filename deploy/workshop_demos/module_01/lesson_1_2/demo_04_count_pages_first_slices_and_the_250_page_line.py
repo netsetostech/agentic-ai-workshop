@@ -1,10 +1,11 @@
 """Lesson 1.2: Count pages first: slices, and the 250-page line
 
-The same count, on the PDFs in your kit folder, with the same library. The cell prints pages and slices per PDF, then the totals and what one parse of the whole corpus would cost at each processor's list price - the rates as the course reads them on the pricing page, to re-verify before quoting. The amendment Act is four pages and globex does not hold it, so ingesting it there is a fresh source, one Document AI request, and a few paise. Then read the worker's line for it, which carries the page count as pages.
+The same count, on the PDFs in your kit folder, with the same library. The cell prints pages and slices per PDF, then the totals and what one parse of the whole corpus would cost at each processor's list price - the rates as the course reads them on the pricing page, to re-verify before quoting. The amendment Act is four pages and globex does not hold it, so ingesting it there is a fresh source, one Document AI request, and a few paise. Then read the worker's line for it, which carries the page count as pages. Four pages, five chunks: the count is pypdf's, the chunks are Document AI's text cut per page. Your chunk count may differ by one, because the two readers do not always agree on where a line ends, which is exactly what step 7 is about. Then take it out of globex again. Globex is the tenant that holds no maternity law: golden row iso-06 asks it for the longest maternity benefit and must be refused, and a copy left here answers it from this Act, which fails that row in every live eval from Module 3 on. make retire withdraws a source: its chunks leave the pool and the index, and the object stays in the bucket. Lesson 1.7 reads what it writes.
 
 Run order inside this file:
 1. Do it: count the corpus, Rs 0 (source window 12)
 2. Prove it on the lane: one small PDF, four pages (source window 14)
+3. Prove it on the lane: one small PDF, four pages (source window 16)
 
 Prerequisites: demo_03_parse_document_ai_chosen_by_residency.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -85,6 +86,27 @@ def step_02_prove_it_on_the_lane_one_small_pdf_four_pa(session):
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_02)
 
+# Original CLI workflow for step_03_prove_it_on_the_lane_one_small_pdf_four_pa.
+COMMANDS_03 = """make retire PROJECT=$PROJECT SOURCE=globex/maternity_benefit_amendment_act_2017.pdf 2>/dev/null | grep -o '"event": "reconcile_withdrawn", "gcs_uri": "[^"]*"'
+
+"""
+
+def step_03_prove_it_on_the_lane_one_small_pdf_four_pa(session):
+    """Run Prove it on the lane: one small PDF, four pages at this checkpoint.
+
+    Four pages, five chunks: the count is pypdf's, the chunks are Document AI's text cut per page. Your chunk count may differ by one, because the two readers do not always agree on where a line ends, which is exactly what step 7 is about. Then take it out of globex again. Globex is the tenant that holds no maternity law: golden row iso-06 asks it for the longest maternity benefit and must be refused, and a copy left here answers it from this Act, which fails that row in every live eval from Module 3 on. make retire withdraws a source: its chunks leave the pool and the index, and the object stays in the bucket. Lesson 1.7 reads what it writes.
+
+    Args: session is the active lesson run, with validated settings and saved prerequisites.
+    Operations: bash — run in the operator shell, in $DEMO_ROOT (Rs 0: rows flagged and five datapoints removed).
+    Returns: None; observations are printed or saved by the lesson code.
+    Failures propagate to the session; inspect its failed attempt before continuing.
+
+    Example: Run this file after its README prerequisites, or set a breakpoint in this function.
+    Observe: "event": "reconcile_withdrawn", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/globex/maternity_benefit_amendment_act_2017.pdf"
+    """
+    # Preserve the kit CLI's arguments, conditions and observation order.
+    session.shell(COMMANDS_03)
+
 def demonstrate(session):
     """Run this section in source order, saving each function's outcome.
 
@@ -94,6 +116,7 @@ def demonstrate(session):
     run_steps(session, [
         ('source_12', step_01_count_the_corpus_rs_0),
         ('source_14', step_02_prove_it_on_the_lane_one_small_pdf_four_pa),
+        ('source_16', step_03_prove_it_on_the_lane_one_small_pdf_four_pa),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

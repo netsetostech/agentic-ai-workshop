@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_B.3_Transformer_Block_WIX.html`, reviewed at blob `8a7a005243dfd1f5be3db61c27dc263c3c01451f`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_B.3_Transformer_Block_WIX.html`, reviewed at blob `56dcf35da6845bea8b04332ae803fdc70522f633`. Learners read that page on the course site; this guide keeps its prose.
 
 Gemini, the model family that writes DocuMind's answers, is built from transformer blocks, and every token the kit sends it passes through every one of them. This page builds one block in numpy on a six-word sentence, a part at a time, so that each part is a few lines you can read and a matrix you can check: the words as vectors, one attention head and its weights, two heads joined, the residual path, layer normalization and the feed-forward step. You will watch a head's weights add up to 1 in every row, every word leave layer normalization at mean 0 and variance 1, and the block hand back six vectors of eight numbers, ready for the next block. Then you will see where the kit meets the same design: in the token counts it plans every call around.
 

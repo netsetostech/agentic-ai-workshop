@@ -68,12 +68,12 @@ for Q in "What is the total payable on invoice INV-2026-0412?" "What is the noti
   echo "$Q"; ask "$API" "$Q"; ask "$CAND" "$Q"
 done</pre></div>
 
-<div class="cw"><div class="ch-bar"><span>expected (your ids and milliseconds differ; the citations agreeing or not is the measurement)</span><span class="ro">read only</span></div><pre tabindex="0">What is the total payable on invoice INV-2026-0412?
-   documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 6xx | pool 20 | vector_chunks 20
-   candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 7xx | pool 20 | vector_chunks 20
+<div class="cw"><div class="ch-bar"><span>expected (your ids, citation counts and milliseconds differ; on an asia-south1 lane retrieve_ms can be about 2 s on the live revision and 3 s or more on the hybrid candidate; the citations agreeing or not is the measurement)</span><span class="ro">read only</span></div><pre tabindex="0">What is the total payable on invoice INV-2026-0412?
+   documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms xxxx | pool 20 | vector_chunks 20
+   candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms xxxx | pool 20 | vector_chunks 20
 What is the notice period for a confirmed E3?
-   documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 6xx | pool 20 | vector_chunks 20
-   candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 7xx | pool 20 | vector_chunks 20</pre></div>
+   documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms xxxx | pool 20 | vector_chunks 20
+   candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms xxxx | pool 20 | vector_chunks 20</pre></div>
 
 <div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the undo: the variable removed, the tag dropped, the live mode read again)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
   --remove-env-vars RETRIEVAL_MODE --quiet
@@ -81,11 +81,11 @@ gcloud run services update-traffic documind-api --region "$REGION" --project "$P
 curl -s "$API/version" -H "Authorization: Bearer $(tok "$API")" | python -c "import sys, json; print('live mode:', json.load(sys.stdin)['retrieval_mode'])"
 gcloud run services describe documind-api --region "$REGION" --project "$PROJECT" --format='value(status.traffic[].percent,status.traffic[].revisionName)'</pre></div>
 
-<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">live mode: dense
-100;documind-api-00042-xyz</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected (your revision name differs; gcloud's value() puts a tab between the percent and the name)</span><span class="ro">read only</span></div><pre tabindex="0">live mode: dense
+100	documind-api-00042-xyz</pre></div>
 
 <div class="wjh"><div class="wjh-title">What just happened</div>
-<p>A second revision of the API came up with hybrid on, answered on its own URL, took no traffic, and was asked the same questions as the live one. The citations are the reranker's choice from the pool, so hybrid can only change them by changing which twenty candidates arrive, not their order; where the citations agreed, the pool's membership was the same and hybrid changed nothing for that question, which step 5's bound predicted for a 0.3 leg over a dense pool that already held the anchor; where they differed, the difference is the finding, and the gate that decides whether it is a good one is lesson 7's, <code>make eval-live</code> against the candidate URL. Then the variable was removed, so the next candidate does not inherit it, and the tag was dropped. The next <code>make plan</code> may show the service template moved; <code>make up</code> puts it back.</p></div>
+<p>A second revision of the API came up with hybrid on, answered on its own URL, took no traffic, and was asked the same questions as the live one. The citations are the model's: <code>resolve()</code> keeps one for each chunk the answer cites, and the reranker only orders the pool and cuts it to the chunks the model reads. So hybrid can only change them by changing which twenty candidates arrive, not their order; where the citations agreed, hybrid changed nothing the answer drew on for that question, which step 5's bound predicted for a 0.3 leg over a dense pool that already held the anchor; where they differed, the difference is the finding, and the gate that decides whether it is a good one is lesson 4.4's, <code>make eval-live</code> against the candidate URL. Then the variable was removed, so the next candidate does not inherit it, and the tag was dropped. The next <code>make plan</code> may show the service template moved; <code>make up</code> puts it back.</p></div>
 
 <!-- ============================ STEP 8 ============================ -->
 <div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What hybrid costs, where it cannot go, and what the harness does not measure</h3><p>The rupee line, the two places the mode is refused or degrades, and the column that lets a day of hybrid be compared with a day of dense.</p></div></div>
@@ -136,7 +136,7 @@ firestore  dense  -> allowed</pre></div>
 <thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
 <tbody>
 <tr><td>1</td><td data-label="Claim">The lane serves dense unless told otherwise</td><td data-label="The check">the setup box; <code>/version</code> in step 7</td><td data-label="Pass looks like"><code>mode: dense (default)</code>, <code>retrieval_mode: dense</code></td></tr>
-<tr><td>2</td><td data-label="Claim">The index's sparse ruler buries the invoice; BM25 finds it</td><td data-label="The check">step 3</td><td data-label="Pass looks like">anchor rank in the hundreds, then rank 1</td></tr>
+<tr><td>2</td><td data-label="Claim">The index's sparse ruler buries the invoice; BM25 finds it</td><td data-label="The check">step 3</td><td data-label="Pass looks like">anchor rank in the hundreds or beyond, then rank 1</td></tr>
 <tr><td>3</td><td data-label="Claim">The same holds for a clause without its code in the question</td><td data-label="The check">step 3, NP-03</td><td data-label="Pass looks like">hundreds against 1 again</td></tr>
 <tr><td>4</td><td data-label="Claim">Dense, sparse-only and fused are three queries to one endpoint</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the anchor in the dense and fused lists, absent from the sparse one</td></tr>
 <tr><td>5</td><td data-label="Claim">The kit's RRF reproduces the index's fused order</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>the legs differ: True</code> first, then <code>first is the same: True</code>, heads agree on 4 or 5 of 5</td></tr>
@@ -147,7 +147,7 @@ firestore  dense  -> allowed</pre></div>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
 <div class="box box-teal"><div class="box-title">What changed on your lane</div>
-<p>Nothing that serves traffic. Step 7 created two revisions of the API that took none and removed the tag and the variable again; the service's live revision never changed. The ablation left <code>~/ablate.jsonl</code>, one line per arm, which lesson 7 reads as a baseline. The bench in step 1 keeps whatever you pasted only until you leave the page. Lesson 2.3 takes the pool this lesson measured and studies the reranker that cuts it to the citations you see.</p></div>
+<p>Nothing that serves traffic. Step 7 created two revisions of the API that took none and removed the tag and the variable again; the service's live revision never changed. The ablation left <code>~/ablate.jsonl</code>, one line per arm, which lesson 4.4 reads as a baseline. The bench in step 1 keeps whatever you pasted only until you leave the page. Lesson 2.3 takes the pool this lesson measured and studies the reranker that cuts it to the citations you see.</p></div>
 
 </div>
 

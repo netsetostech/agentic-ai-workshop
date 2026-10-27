@@ -1589,7 +1589,12 @@ print(f"lk-06: {rows['lk-06']['question']}")
 print(f"POSH:  {POSH}")"""
 GCHATQS_OUT = run_cell(GCHATQS_PY)
 assert GCHATQS_OUT == f"lk-06: {Q06_TEXT}\nPOSH:  {POSH}\n", GCHATQS_OUT
-CONV = {"q06_ack": chat_event(Q06_TEXT, "spaces/DMSPACE/messages/MESSAGEA")}
+r = gclient.post("/", json=tg.ADDED, headers=CHAT_EVENT)                # installing the app adds it to your direct message
+assert r.status_code == 200, (r.status_code, r.text)
+CONV = {"welcome": r.json()["hostAppDataAction"]["chatDataAction"]["createMessageAction"]["message"]}
+assert CONV["welcome"] == greplies.welcome() and not PUBLISHED and not POSTED    # the card alone: nothing reaches the Desk
+assert greplies.WELCOME_TITLE == gcards.TITLE and greplies.WELCOME.startswith("Ask me a question about your company's handbook")
+CONV["q06_ack"] = chat_event(Q06_TEXT, "spaces/DMSPACE/messages/MESSAGEA")
 assert CONV["q06_ack"] == {"text": greplies.ACK} and len(PUBLISHED) == 1 and not POSTED
 pushed = json.loads(base64.b64decode(PUBLISHED[0]))
 assert set(pushed) == {"key", "kind", "email", "space", "thread", "session_id", "question"} and pushed["email"] == WS
@@ -1598,6 +1603,8 @@ r = gclient.post("/work", headers={"authorization": "Bearer gchatpush"},
                  json={"message": {"data": PUBLISHED[0], "messageId": "1"}, "subscription": f"projects/{LANE_ID}/subscriptions/{gmain.SUBSCRIPTION}"})
 assert r.status_code == 204 and len(POSTED) == 1, (r.status_code, r.text)
 CONV["q06_card"] = {k: v for k, v in POSTED[0]["body"].items() if k != "thread"}
+assert POSTED[0]["body"]["thread"] == {"name": pushed["thread"]} == {"name": tg.THREAD}                 # in your message's thread
+assert POSTED[0]["params"]["messageReplyOption"] == gpost.REPLY_OPTION == "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
 assert POSTED[0]["params"]["messageId"] == gevents.client_id(pushed["key"]) and len(POSTED[0]["params"]["messageId"]) == 63
 CONV["posh"] = chat_event(POSH, "spaces/DMSPACE/messages/MESSAGEB")
 assert len(PUBLISHED) == 1 and len(POSTED) == 1                       # a gate hit is answered at once, never queued
@@ -1607,6 +1614,7 @@ assert [(d["route"], d["user"], d["delegate"], d["case_type"]) for d in G_DESK] 
     ("handbook", WS, "gchat", None), ("case", None, None, "sensitive")], G_DESK
 G_ROW = [j for svc, j in G_ROWS if j.get("event") == "gchat"]
 assert [(j["kind"], j["outcome"], j["queued"], j["user"], j["class"]) for j in G_ROW] == [
+    ("added", "welcome", False, WS, None),                         # no words came with it, so it names you
     ("message", "queued", True, None, None), ("message", "gate", False, None, "sensitive")], G_ROW   # before the class: nobody
 assert [j["outcome"] for svc, j in G_ROWS if j.get("event") == "gchat_answer"] == ["answer"]
 assert not [j for svc, j in G_ROWS if j.get("event") in ("desk_delegation_refused", "desk_delegation_denied", "gchat_verify_failed")]
@@ -1659,8 +1667,10 @@ def said(who: str, words: str) -> str:
 
 
 CONV_TEXT = [f"In a direct message with {gcards.TITLE}, as {WS}:", "",
+             said(gcards.TITLE, "(when you install the app)"), *card_text(CONV["welcome"]), "",
              said("you", Q06_TEXT), said(gcards.TITLE, CONV["q06_ack"]["text"]),
-             said(gcards.TITLE, "(then, posted by the bridge's worker)"), *card_text(CONV["q06_card"]), "",
+             said(gcards.TITLE, "(then, in your message's thread, posted by the bridge's worker)"),
+             *card_text(CONV["q06_card"]), "",
              said("you", POSH), said(gcards.TITLE, "(at once, with no acknowledgement)"), *card_text(CONV["posh"])]
 assert CONV["q06_ack"]["text"] == greplies.ACK
 OUT["gchatconv"] = "\n".join(CONV_TEXT) + "\n"
@@ -2236,8 +2246,9 @@ WIN = {f"CELL_{k.upper()}": bash_window(CELL_LABELS[k], v) for k, v in CELLS.ite
 WIN.update({f"OUT_{k.upper()}": out_window(OUT_LABELS[k], v) for k, v in OUT.items()})
 WIN["OUT_GCHATCONV"] = out_window(
     "conversation (a stand-in run of the kit's own code, not a recorded Google Chat session: the bridge and the Desk are "
-    "the kit's, the two messages are the kit's placeholder events, and Google's side is stood in. Google Chat draws each "
-    "card in its own layout, and the answer's words and quotes are your models' and your retriever's)", CONV_OUT)
+    "the kit's, the install and the two messages are the kit's placeholder events, and Google's side is stood in. Google "
+    "Chat draws each card in its own layout, and the answer's words and quotes are your models' and your "
+    "retriever's)", CONV_OUT)
 
 STACK.close()
 api_srv.shutdown()
@@ -2407,6 +2418,7 @@ assert STATS["N_SMOKE_DESK"] == "8" and STATS["N_SMOKE_CASES"] == "11", (STATS["
 E = lambda v: html.escape(str(v), quote=False)  # noqa: E731
 STATS.update({                                  # the Google Chat door's numbers and words, from the kit
     "GCHAT_ACK": E(greplies.ACK), "HR_TITLE": E(gcards.TITLE), "SUB_HB": E(gcards.SUBTITLES["handbook"]),
+    "GCHAT_WELCOME": E(greplies.WELCOME.split(". ")[0] + "."),
     "SUB_LAW": E(gcards.SUBTITLES["statute"]), "POSH_BUTTON": E(gcards.POSH_BUTTON), "POSH_MEMBERS": E(gcards.POSH_MEMBERS),
     "RATE_PER_MIN": WORDS[gmain.RATE_PER_MIN], "QUESTION_MAX": f"{gevents.QUESTION_MAX:,}", "GATE_S": str(gmain.GATE_BUDGET_S),
     "CHECK_S": str(gmain.CHECK_BUDGET_S), "WORK_S": str(gmain.WORK_TIMEOUT_S), "MAX_ATTEMPTS": WORDS[gmain.MAX_ATTEMPTS],

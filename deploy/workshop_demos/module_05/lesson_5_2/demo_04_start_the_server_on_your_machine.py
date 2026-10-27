@@ -3,7 +3,7 @@
 Do it
 
 Run order inside this file:
-1. Do it (source window 13)
+1. Do it (source window 17)
 
 Prerequisites: demo_03_expose_what_the_server_declares.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -52,7 +52,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_13', step_01_start_the_server_on_your_machine),
+        ('source_17', step_01_start_the_server_on_your_machine),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

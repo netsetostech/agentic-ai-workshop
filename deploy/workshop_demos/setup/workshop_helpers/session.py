@@ -97,6 +97,12 @@ class DemoSession:
             raise RuntimeError(f"Another attempt holds {self.lock}. If its process was killed, use setup/recover_session.py after checking that no demo is running.") from exc
         try:
             os.write(self._lock_fd, f"pid={os.getpid()}\n{self.script}\n".encode())
+            if self.live:
+                # The sign-in first, before a run or an attempt is recorded (21 October 2026): an expired ADC used to
+                # fail every file of a lesson after creating its run, and the run then owed a finish before
+                # start_new_session.py would allow another, though nothing had run.
+                from .auth import checked_credentials
+                checked_credentials()
             pointer = self.base / "active.json"
             identity = {"project": self.config.project, "tenant": self.config.tenant_id,
                         "kit_root": str(self.config.kit_root), "region": self.config.cloud_run_region}
@@ -379,7 +385,7 @@ class DemoSession:
         self.state["pin_ready_after"] = time.time() + 65  # API tenant-settings TTL is 60s.
         self.save()
 
-    def start_local_service(self, args, health_url, *, expected_health=None):
+    def start_local_service(self, args, health_url, *, expected_health=None, timeout=90):
         """Start an owned local process without holding the lesson lock indefinitely.
         
         Logs are redirected before detaching, and the PID is saved before polling.
@@ -405,7 +411,7 @@ class DemoSession:
                                        stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         self.state["local_service"] = {"pid": process.pid, "args": args, "cwd": str(self.config.kit_root), "log": str(log_path)}
         self.save()
-        deadline = time.monotonic() + 90
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f"Local service exited with {process.returncode}; inspect {log_path}.")

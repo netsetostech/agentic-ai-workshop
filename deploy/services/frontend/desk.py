@@ -498,7 +498,7 @@ def draft_view(draft: dict) -> None:
     with st.container(border=True):
         st.markdown(f"**{_md(CASE_NAMES.get(_word(v.get('case_type')), 'Your request'))}**: not sent yet")
         _person_view(v)
-        with st.form("desk_draft"):
+        with st.form("desk_draft_form"):     # session_state's "desk_draft" holds the draft; a form may not share its key
             summary = st.text_area("In your own words (you can change this)", value=str(v.get("summary") or ""),
                                    max_chars=SUMMARY_MAX, height=140)
             share = (st.checkbox("Also share this with the HR team", value=bool(v.get("people_ops_opt_in")))

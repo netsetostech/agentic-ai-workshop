@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_4.8_DLP_Guard_Audit_WIX.html`, reviewed at blob `b60e0c11b63c21fda4508d9185902d1106f5f2ee`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_4.8_DLP_Guard_Audit_WIX.html`, reviewed at blob `b2f5cb46737991055dc2c816ed3298c1fde06029`. Learners read that page on the course site; this guide keeps its prose.
 
 Lessons 4.6 and 4.7 settled who may ask. This lesson is about what may be read, what may be said, and what is written down. You upload a note carrying the kit's synthetic PAN, GSTIN, Aadhaar and mobile, and find each one recorded by type, never by value. You switch Model Armor on for a candidate revision and send it a plain question, an injection in English, the same injection in Hinglish and a question about a PAN. Then you read the audit events the upload left in a bucket that refuses to delete them, and you check what the admin console's audit tab can and cannot show.
 
@@ -152,7 +152,7 @@ The writer every service shares, the bucket that keeps what it writes, and the t
 
 #### Definition
 
-`emit()` checks the action against the 23 registered names, builds one event and uploads it as one object. The path starts with the day and the actor's tenant, so one tenant's day is one prefix to list. The bucket's retention policy is five years. Until an object is that old, Cloud Storage refuses to delete or overwrite it, for the project's owner as much as anyone else. Locking is a separate decision. A locked policy can never be shortened or removed, and Google puts a lien on the project, so neither the bucket nor the project can be deleted until the last object ages out. That is why the lab leaves the policy unlocked unless you deploy with `AUDIT_LOCK=true`. The worker holds only `roles/storage.objectCreator` on the bucket: it can add an object and nothing else. The cell lists today's acme objects, prints the newest `dlp.finding` event field by field, reads the retention settings, and then tries to delete that event. The delete must be refused. The cell attempts it only when the bucket reports a retention period.
+`emit()` checks the action against the 27 registered names, builds one event and uploads it as one object. The path starts with the day and the actor's tenant, so one tenant's day is one prefix to list. The bucket's retention policy is five years. Until an object is that old, Cloud Storage refuses to delete or overwrite it, for the project's owner as much as anyone else. Locking is a separate decision. A locked policy can never be shortened or removed, and Google puts a lien on the project, so neither the bucket nor the project can be deleted until the last object ages out. That is why the lab leaves the policy unlocked unless you deploy with `AUDIT_LOCK=true`. The worker holds only `roles/storage.objectCreator` on the bucket: it can add an object and nothing else. The cell lists today's acme objects, prints the newest `dlp.finding` event field by field, reads the retention settings, and then tries to delete that event. The delete must be refused. The cell attempts it only when the bucket reports a retention period.
 
 #### The code
 
@@ -208,7 +208,7 @@ Each point below is checked in the kit's code, and the build asserts it, so this
 
 - The DLP tab's metric says "Chunks with findings" and counts documents. The label dates from `inspect_and_log()`, which wrote one record per chunk; nothing calls it now.
 
-- A withdrawal is not audited. `doc.delete` is registered, the tab offers it, and nothing emits it.
+- A withdrawal from the shell is not audited. `make retire`'s branch of `reconcile.py` writes no event, so what you did in step 8 left no trace in the bucket. Since lesson 5.8 wired an approval into the chat service, the one withdrawal the bucket records is the one a second person approved there and the operator then ran with `make withdraw-run`: that run writes `doc.withdraw`, after the same tombstone. `doc.delete` is registered, the tab offers it, and nothing emits it.
 
 ### Verify it yourself: the checklist
 

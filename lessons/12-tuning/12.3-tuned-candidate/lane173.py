@@ -8,7 +8,9 @@ What is stood in, and how:
                   no [N] marks, as its training rows taught; it states both figures jn-06 needs, and gives one of the
                   two figures on jn-03 and jn-09. Under LANE173_CANDIDATE=v3 the candidate is v3's endpoint (steps 7
                   and 8): the house style with its marks, the same join misses; under LANE173_DEMO step 8's three
-                  questions get the answers DEMO holds.
+                  questions get the answers DEMO holds. A third revision, the untuned base (gemini-3.1-flash-lite at its
+                  untuned tag, step 6's comparison), answers every row as the live one does, so on the stand-in every
+                  row that moved between the live revision and the candidate moved with the tuning.
   Cloud Run       gcloud run services / revisions describe: two revisions' settings, from LANE173_RUN.
   Cloud Logging   gcloud logging read: the usage rows those answers leave, priced by the kit's cost.price() in the build.
   Evaluation      vertexai.evaluation.EvalTask: groundedness, instruction following and the pairwise choice, decided by
@@ -123,17 +125,19 @@ def _golden() -> list:
 
 
 def _body(answer: str, cites: list, answerable: bool, rev: str) -> dict:
-    model = {"live": "gemini-3.6-flash", "cand": ENV("LANE173_ENDPOINT", ""), "cand3": ENV("LANE173_ENDPOINT_V3", "")}[rev]
+    model = {"live": "gemini-3.6-flash", "untuned": "gemini-3.1-flash-lite", "cand": ENV("LANE173_ENDPOINT", ""),
+             "cand3": ENV("LANE173_ENDPOINT_V3", "")}[rev]
+    served = rev in ("live", "untuned")                                     # a model name, served as Google serves it
     return {"answer": answer, "citations": cites, "answerable": answerable, "confidence": "high" if answerable else "low",
             "model": model, "backend": "vertex", "cache_hit": "none", "tokens_in": 7400,
-            "tokens_out": len(answer) // 4 + (150 if rev == "live" else 20),        # the served model thinks at LOW; the tuned lite barely
-            "stages": {"retrieve_ms": 400, "rerank_ms": 200, "generate_ms": 1500 if rev == "live" else 900, "pool": 12}}
+            "tokens_out": len(answer) // 4 + (150 if served else 20),        # the served model thinks at LOW; the tuned lite barely
+            "stages": {"retrieve_ms": 400, "rerank_ms": 200, "generate_ms": {"live": 1500, "untuned": 800}.get(rev, 900), "pool": 12}}
 
 
 def reply(row: dict, rev: str) -> tuple:
     """(status, body) for one golden row from one revision."""
     t, mc = row["tenant"], row.get("must_contain", [])
-    cand = rev != "live"
+    cand = rev not in ("live", "untuned")                                    # the untuned base answers as the live one does
     outcome = (CAND_MISS if cand else LIVE_MISS).get(row["id"], "ok")
 
     def cite():
@@ -155,18 +159,21 @@ def reply(row: dict, rev: str) -> tuple:
 
 
 def ask(api_url, question, tenant, email, token, retries=1):
-    """run_eval.ask and judge.py's collection, answered by the revision the URL names (the candidate is v3's under LANE173_CANDIDATE=v3)."""
+    """run_eval.ask and judge.py's collection, answered by the revision the URL names (the candidate is v3's under LANE173_CANDIDATE=v3;
+    the untuned tag is the untuned base)."""
     if email == ENV("DOCUMIND_OUTSIDER_EMAIL", "outsider@not-a-tenant.invalid"):
         return 403, {}, 120
     rev = "live"
     if api_url.startswith("https://candidate---"):
         rev = "cand3" if ENV("LANE173_CANDIDATE") == "v3" else "cand"
+    elif api_url.startswith("https://untuned---"):
+        rev = "untuned"
     if ENV("LANE173_DEMO") and question in DEMO:
         answer, cites = DEMO[question][rev]
         return 200, _body(answer, cites, bool(cites), rev), 2100 if rev == "live" else 1000
     row = next(r for r in _golden() if r["question"] == question and r["tenant"] == tenant)
     status, body = reply(row, rev)
-    return status, body, 2100 if rev == "live" else 1000
+    return status, body, {"live": 2100, "untuned": 1400}.get(rev, 1000)
 
 
 def chunk_text(chunk_id: str) -> str:

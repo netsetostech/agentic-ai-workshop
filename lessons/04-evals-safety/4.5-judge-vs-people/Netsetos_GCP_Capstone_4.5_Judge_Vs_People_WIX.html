@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 4.5 Check the LLM judge against people - twenty frozen rows, your labels, a second reader, and the judge's agreement with chance taken out | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+/* the agreement board: two readers or the judge against one, a rubric, a cut, the rows, the 2x2 */
+.ab-ctl{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px;}
+.ab-ctl button,.ab-pick button{font:inherit;font-size:13px;background:#f0fdfa;color:var(--teal-dark);border:1px solid #99f6e4;border-radius:999px;padding:6px 12px;min-height:44px;cursor:pointer;}
+.ab-ctl button[aria-pressed="true"]{background:var(--teal);border-color:var(--teal);color:#fff;}
+.ab-cut{display:flex;flex-direction:column;gap:2px;font-size:var(--small-size);color:var(--navy);margin:0 0 10px;}
+.ab-cut input{width:100%;min-height:44px;accent-color:var(--teal);}
+.ab-cut input:disabled{opacity:.45;}
+.ab-cutv{font-family:var(--mono);font-size:12px;color:var(--teal-dark);}
+.ab-chips{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px;}
+.ab-chips button{font-family:var(--mono);font-size:11.5px;min-width:56px;min-height:44px;padding:2px 6px;border-radius:8px;border:1px solid #a7f3d0;background:#ecfdf5;color:#065f46;cursor:pointer;}
+.ab-chips button.no{border-color:#fca5a5;background:#fef2f2;color:#991b1b;}
+.ab-chips button.off{border-color:var(--border);background:var(--card);color:#64748b;}
+.ab-chips button.c{box-shadow:inset 0 -3px 0 #c2410c;}
+.ab-chips button.fl{font-style:italic;font-weight:700;}
+.ab-chips button.sel{outline:2px solid var(--navy);outline-offset:1px;}
+.ab-grid{display:grid;grid-template-columns:minmax(0,1.1fr) repeat(2,minmax(0,1fr));gap:4px;font-size:12.5px;margin:0 0 8px;}
+.ab-grid span{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 8px;line-height:1.35;min-width:0;overflow-wrap:anywhere;}
+.ab-grid span.h{background:transparent;border:0;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;color:var(--navy);letter-spacing:.5px;}
+.ab-grid b{display:block;font-family:var(--mono);font-size:20px;color:var(--navy);}
+.ab-grid .ok{border-left:4px solid var(--teal);}
+.ab-grid .bad{border-left:4px solid #c2410c;}
+.ab-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:8px 0;font-size:12.5px;line-height:1.55;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.ab-box b.h{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
+.ab-box p{margin:0 0 6px;font-size:12.5px;}
+.ab-out p{font-family:var(--mono);font-size:12px;margin:0 0 3px;}
+.ab-ctx{white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;background:var(--bg);border-radius:6px;padding:6px 8px;}
+.ab-sw p{display:grid;grid-template-columns:2.4em minmax(0,.7fr) minmax(0,1.5fr) minmax(0,1.5fr) 3.4em;gap:6px;margin:0;padding:3px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11.5px;}
+.ab-sw p.hd{font-weight:700;color:var(--navy);}
+.ab-sw p.cur{background:var(--teal-light);font-weight:700;}
+.ab-sw span{min-width:0;overflow-wrap:anywhere;}
+@media (hover:hover) and (pointer:fine){.ab-ctl button:hover,.ab-chips button:hover,.ab-pick button:hover{filter:brightness(.96);}}
+.ab-ctl button:active,.ab-chips button:active,.ab-pick button:active{filter:brightness(.9);}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.5</div>
+<h1>Check the LLM judge against people: <span>twenty frozen rows, your labels, a second reader, and the judge's agreement with chance taken out</span></h1>
+<p>Lesson 4.2 ran the judge and ended on its own advice: where the gate and the judge disagree, read the row. This lesson measures how often the judge reads a row the way people do. About 20 of a lane's answers are frozen with the full text of the chunks they cite. You label every row on two questions, grounded and answers the question, yes or no. Then the kit sets your labels beside a second reader's and beside the judge's ratings of the same rows: the 2x2, raw agreement, Cohen's kappa, and the bad answers the judge would let through. Once you have labelled, everything runs on files, at Rs 0.</p>
+<div class="hero-chips"><div class="hero-chip">make label-sheet: 20 rows</div><div class="hero-chip">grounded? answers the question?</div><div class="hero-chip">Cohen's kappa</div><div class="hero-chip">a second reader</div><div class="hero-chip">true-pass and false-pass</div><div class="hero-chip">CUT on a 1 to 5 metric</div><div class="hero-chip">Rs 0</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Agreement with chance taken out: people first, then the judge</a></li>
+<li><a href="#s2">The words: reader, rubric, label, frozen set, row_sha, constructed row, agreement, chance, kappa, the 2x2, the two rates, CUT</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Label the frozen rows yourself, blind</a></li>
+<li><a href="#s4">Two people on the same rows: Cohen's kappa</a></li>
+<li><a href="#s5">The judge on the same rows: true-pass, false-pass and the cut</a></li>
+<li><a href="#s6">Your lane's judge on the frozen rows: the ratings step 5 reads until the author's ship</a></li>
+<li><a href="#s7">Kappa by hand, and the judge's own reasons</a></li>
+<li><a href="#s8">How the rows were chosen, why the judge still only advises, and what it costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why a judge's scores mean something only once they agree with people's on the same rows, how Cohen's kappa takes chance out of agreement, and how a cut on the judge's 1 to 5 metric trades true passes against false ones. Then you label 20 frozen rows yourself and measure your agreement with a second reader and with the judge, at Rs 0.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Agreement with chance taken out: people first, then the judge</h3><p>Why a mean cannot say whether the judge is right, and how two readers, then the judge, are held to the same rows.</p></div></div>
+
+<p><strong>A judge's mean says how it rated, not whether it rated right.</strong> Lesson 4.2's judge ends in an Experiments run of means: the share of answers judged grounded, the average instruction-following score. Those numbers are only as good as the judge, and a judge is a prompt template with a model behind it. To know how far to trust one, you need people's labels on the same rows. Then the judge's verdict on each row can be set beside theirs, row by row, and counted.</p>
+
+<p><strong>People first.</strong> Before a judge is held to people, the people are held to each other. Two readers label the same rows from the same guide. If they split often, the question is unclear, or the guide is, and agreeing with either of them says little about a judge. So the kit measures two readers on a rubric before it measures the judge on it.</p>
+
+<p><strong>Raw agreement flatters; kappa takes chance out.</strong> Two readers who both say yes to nine rows in ten agree on most rows by chance alone. Cohen's kappa subtracts what chance would give: <code>kappa = (p_o - p_e) / (1 - p_e)</code>, where p_o is the share of rows the two label alike and p_e the share they would label alike if each kept their own counts of yes and no and gave them out at random. Take the kit's worked table: 50 rows, 20 both yes, 5 and 10 split, 15 both no. The two readers label 35 of the 50 rows alike, so p_o is 0.70. But one says yes 25 times and the other 30, so chance alone would give p_e = 0.50, and kappa is 0.40. 1 is perfect agreement, 0 is no better than chance, and below 0 is worse than chance.</p>
+
+<p><strong>Then the judge, with people as the reference.</strong> Every row lands in one cell of a 2x2: true pass (people pass it, the judge passes it), false fail, false pass and true fail. Two rates come out of it. The true-pass rate is the share of the rows people pass that the judge passes too. The false-pass rate is the share of the rows people fail that the judge passes anyway: the bad answers it would let through, which is the error that matters when a judge vouches for answers. Groundedness is the judge's own 0 or 1. Its second metric, instruction_following in the SDK that lesson 4.2 pins, is scored 1 to 5, so a cut turns it into pass or fail: CUT or more passes. The kit starts at 4, and the cut is yours to move.</p>
+
+<p><strong>At twenty rows, every rate is a range.</strong> One row of twenty moves a rate by five points, so the kit prints each rate as k of n with a 95% Wilson interval. Suppose people fail 7 of twenty rows, about a third, and the judge passes none of them: its false-pass rate is <code>0/7 = 0.0% [0.0%, 35.4%]</code>, and the true rate could still be as high as 35.4%. That is why the judge stays an adviser in this lesson, as it was in lesson 4.2.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128221;</div><div>
+<p><strong>Moderating a board exam's marking.</strong> Before a new examiner marks board papers alone, the head examiner hands over twenty scripts that two senior examiners have already marked, without showing their marks. First the head examiner sets the two seniors side by side: if they split on many scripts, the marking scheme is unclear, and nobody can be judged against it yet. Then the new examiner's marks go beside the seniors'. Agreeing on scripts that everyone passes proves little. What counts is how many weak scripts the new examiner passed. Your sheet and the author's are the two seniors' marks, and the LLM judge is the new examiner.</p></div></div>
+
+<div class="diagram">
+<div class="dg-title">From a lane's answers to agreement - the kit's files and targets for this lesson</div>
+<div class="spine">
+<div class="node"><b>judge.py --save-rows</b>The lane's answers to the 65 golden rows, each with the full text of the chunks it cites and the judge's ratings: the live revision's, and a cheaper candidate's for more failures. The author ran it once.</div>
+<div class="down">&darr;</div>
+<div class="node code"><b>build_judge_set.py --freeze</b>About 20 rows, one per question, picked without the judge's ratings: up to a third that fail the gate's own rules, constructed rows so that a third fail groundedness, the rest passing. <code>evals/judge_set.json</code></div>
+<div class="down">&darr;</div>
+<div class="band">
+<div class="node"><b>you</b><code>make label-sheet</code>, then a spreadsheet: <code>evals/reports/judge_labels.csv</code></div>
+<div class="node code"><b>L1, the author</b><code>evals/judge_labels.L1.csv</code></div>
+<div class="node code"><b>L2, a peer</b><code>evals/judge_labels.L2.csv</code></div>
+<div class="node job"><b>the judge</b><code>make judge-frozen</code>: <code>evals/judge_set.ratings.jsonl</code></div>
+</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>judge_agree.py</b>People: two sheets, kappa per rubric. Judge: the ratings against one sheet, the 2x2, the true-pass and false-pass rates, the cut. Rs 0, and it gates nothing.</div>
+</div>
+<div class="legend"><span class="l-code">ships in the kit</span><span class="l-job">a model reads the rows</span></div>
+</div>
+
+<h4>The agreement board: two readers, or the judge against one</h4>
+<p>The board below holds the kit's judge fixture: 9 synthetic rows, 2 of them constructed, two made-up readers, FX1 and FX2, and the ratings of the stand-in judge the kit's tests use. Pick a rubric and who to set against whom, tap a row to read it, and flip a label to see what one row does. Try these:</p>
+<ul>
+<li><strong>Two people, groundedness.</strong> FX1 and FX2 agree on <code>8/9 = 88.9% [56.5%, 98.0%]</code>. Chance alone would give 0.59, so kappa is 0.73. The one row they split on, fx-12, is constructed: FX2 passed an answer carrying a sentence its context never said.</li>
+<li><strong>Tap fx-01 and flip FX1's label.</strong> Both readers said yes to that row. Agreement falls to <code>7/9 = 77.8% [45.3%, 93.7%]</code> and kappa to 0.53: one row of 9 did that.</li>
+<li><strong>Two people, answers the question.</strong> Kappa is 0.73 again, and the split is fx-04: half an answer, which FX2 let through and the guide calls a no.</li>
+<li><strong>The judge against FX1, groundedness.</strong> Kappa 0.50. The judge passes fx-07, an answer about a sabbatical its context never mentions: the stand-in looks only for digits, and this answer writes its numbers in words. It fails fx-06, a refusal that claims nothing, because the refusal names a year its context does not hold.</li>
+<li><strong>The judge, answers the question: drag the cut.</strong> At 4, the false-pass rate is <code>1/3 = 33.3% [6.1%, 79.2%]</code>. At 3, fx-04's half answer passes too: <code>2/3 = 66.7% [20.8%, 93.9%]</code>, and kappa drops to 0.18. At 1 every row passes, and kappa is 0.00: a judge that passes everything agrees with people no better than chance.</li>
+</ul>
+
+<div class="diagram ab" data-set="fixture">
+<div class="dg-title">Agreement board - the kit's judge fixture: 9 synthetic rows, two made-up readers, the tests' stand-in judge</div>
+<div class="ab-ctl ab-rub" role="group" aria-label="The rubric"></div>
+<div class="ab-ctl ab-mode" role="group" aria-label="Who is set against whom"></div>
+<label class="ab-cut">The judge's cut on its 1 to 5 metric<input class="ab-slide" type="range" min="1" max="5" step="1" value="4"><span class="ab-cutv"></span></label>
+<div class="ab-chips"></div>
+<div class="ab-grid"></div>
+<div class="ab-box ab-out" aria-live="polite"></div>
+<div class="ab-box ab-sw" hidden></div>
+<div class="ab-box ab-pick"></div>
+<p class="dg-cap">The arithmetic is <code>agreement.py</code>'s and <code>judge_agree.py</code>'s, ported. The build ran all 80 states of this board, every rubric, side, cut and single flip, through the kit's own functions, and every 2x2 table of up to 20 rows, 10,625 of them, and the board had to print the same counts, rates, intervals and kappas.</p>
+</div>
+
+
+<p>The fixture's judge is not Gemini. The kit's tests rate these rows with a stand-in, a fixed rule, so that the tests run anywhere at Rs 0 and their numbers never move. It is crude on purpose, and its blind spot is the one a real judge can share: an unsupported sentence with no figure in it.</p>
+<div class="cw"><div class="ch-bar"><span>evals/tests/test_judge_rows.py - rule(): the stand-in judge that rated the fixture&#x27;s rows</span><span class="ro">read only</span></div><pre tabindex="0">CITE = re.compile(r<span class="st">&quot;\[\d+(?:\s*,\s*\d+)*\]&quot;</span>)
+NUM = re.compile(r<span class="st">&quot;\d+(?:,\d+)*(?:\.\d+)?&quot;</span>)
+...
+<span class="kw">def</span> <span class="fn">figures</span>(text: str) -&gt; set:
+    <span class="kw">return</span> {n.replace(<span class="st">&quot;,&quot;</span>, <span class="st">&quot;&quot;</span>) <span class="kw">for</span> n <span class="kw">in</span> NUM.findall(CITE.sub(<span class="st">&quot;&quot;</span>, text <span class="kw">or</span> <span class="st">&quot;&quot;</span>))}
+
+
+<span class="kw">def</span> <span class="fn">rule</span>(context: str, response: str, reference: str):
+    <span class="st">&quot;&quot;&quot;The stand-in judge: groundedness 0 when the answer holds a figure its context does not, else 1; the second
+    metric 5, 3 or 1 as all, some or none of the reference&#x27;s words are in the answer, and for a row with no
+    reference (one the corpus cannot answer) 5 when the answer holds no figure, else 2. A crude rule, so it misses
+    an unsupported sentence without a figure, as a real judge can.&quot;&quot;&quot;</span>
+    loose = sorted(figures(response) - figures(context))
+    grounded = (<span class="nu">0.0</span>, f<span class="st">&quot;stand-in: {&#x27;, &#x27;.join(loose)} not in the context&quot;</span>) <span class="kw">if</span> loose <span class="kw">else</span> (<span class="nu">1.0</span>, <span class="st">&quot;stand-in: every figure is in the context&quot;</span>)
+    want = (reference <span class="kw">or</span> <span class="st">&quot;&quot;</span>).split()
+    <span class="kw">if</span> <span class="kw">not</span> want:
+        follow = (<span class="nu">2.0</span>, <span class="st">&quot;stand-in: a figure for a question the context cannot answer&quot;</span>) <span class="kw">if</span> figures(response) <span class="kw">else</span> \
+                 (<span class="nu">5.0</span>, <span class="st">&quot;stand-in: it says what the context does not hold&quot;</span>)
+    <span class="kw">else</span>:
+        hit = sum(w <span class="kw">in</span> response <span class="kw">for</span> w <span class="kw">in</span> want)
+        follow = (<span class="nu">5.0</span> <span class="kw">if</span> hit == len(want) <span class="kw">else</span> <span class="nu">3.0</span> <span class="kw">if</span> hit <span class="kw">else</span> <span class="nu">1.0</span>, f<span class="st">&quot;stand-in: {hit} of {len(want)} reference words in the answer&quot;</span>)
+    <span class="kw">return</span> grounded, follow</pre></div>
+
+
+<div class="box box-amber"><div class="box-title">What the board is not</div>
+<p>It calls no model and reads no lane. The fixture's rows are synthetic, every question ends "(fixture)", and FX1 and FX2 were made up for the kit's tests, so its numbers are a worked example, not a verdict on any judge. From step 3 the same arithmetic runs on the frozen set: your labels, the author's, a peer's and the real judge's ratings, and step 5 puts the author's rows on this board.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: reader, rubric, label, frozen set, row_sha, constructed row, agreement, chance, kappa, the 2x2, the two rates, CUT</h3><p>Fifteen rows, each with where it lives in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Reader</strong></td><td data-label="Meaning">A person or a judge who labels every row of the same set. A person's id is pseudonymous, never a name or an email.</td><td data-label="In the kit"><code>you</code>, <code>L1</code> the author, <code>L2</code> a peer, the judge</td></tr>
+<tr><td><strong>Rubric</strong></td><td data-label="Meaning">One question asked of every row, from a written guide. Two here.</td><td data-label="In the kit"><code>groundedness</code>, <code>answers_the_question</code></td></tr>
+<tr><td><strong>Label</strong></td><td data-label="Meaning">Yes or no, for one rubric on one row.</td><td data-label="In the kit">a sheet's two label columns</td></tr>
+<tr><td><strong>Frozen set</strong></td><td data-label="Meaning">About 20 of a lane's answers, frozen with the full text of the chunks they cite, so every reader reads the same rows.</td><td data-label="In the kit"><code>evals/judge_set.json</code></td></tr>
+<tr><td><strong>row_sha</strong></td><td data-label="Meaning">Twelve hex digits of the question, the context and the answer. A label belongs to the answer it was given on.</td><td data-label="In the kit">a sheet's last column</td></tr>
+<tr><td><strong>Constructed row</strong></td><td data-label="Meaning">A copy of an answer that passed, with one sentence its context does not support, cited as if it did. The sheet does not say which rows these are.</td><td data-label="In the kit"><code>constructed: true</code>; 5 sentences take turns</td></tr>
+<tr><td><strong>Raw agreement, p_o</strong></td><td data-label="Meaning">The share of rows two readers label alike.</td><td data-label="In the kit"><code>agree k/n</code></td></tr>
+<tr><td><strong>Chance agreement, p_e</strong></td><td data-label="Meaning">The share they would label alike by chance, keeping each reader's own counts: for each label, one reader's share of it times the other's, summed.</td><td data-label="In the kit"><code>by chance</code></td></tr>
+<tr><td><strong>Cohen's kappa</strong></td><td data-label="Meaning"><code>(p_o - p_e) / (1 - p_e)</code>: 1 perfect, 0 chance, below 0 worse. Undefined when both readers gave every row one and the same label.</td><td data-label="In the kit"><code>agreement.cohen_kappa()</code></td></tr>
+<tr><td><strong>The 2x2</strong></td><td data-label="Meaning">Four kinds of row, with people as the reference: true pass, false fail, false pass, true fail.</td><td data-label="In the kit"><code>agreement.table()</code></td></tr>
+<tr><td><strong>True-pass rate</strong></td><td data-label="Meaning">Of the rows people pass, the share the judge passes too.</td><td data-label="In the kit"><code>true-pass k/n [interval]</code></td></tr>
+<tr><td><strong>False-pass rate</strong></td><td data-label="Meaning">Of the rows people fail, the share the judge passes anyway: the bad answers it lets through.</td><td data-label="In the kit"><code>false-pass k/n [interval]</code></td></tr>
+<tr><td><strong>Wilson interval</strong></td><td data-label="Meaning">The 95% range that a rate of k in n is consistent with. At twenty rows it is wide.</td><td data-label="In the kit"><code>route_eval.wilson()</code></td></tr>
+<tr><td><strong>CUT</strong></td><td data-label="Meaning">The judge's second metric, scored 1 to 5, passes at CUT or more.</td><td data-label="In the kit"><code>CUT=4</code> by default; <code>SWEEP=1</code> prints every cut</td></tr>
+<tr><td><strong>Per-row ratings</strong></td><td data-label="Meaning">Each row the judge rated, with each metric's score and the judge's explanation.</td><td data-label="In the kit"><code>judge.py --save-rows</code>; <code>evals/judge_set.ratings.jsonl</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: <em>agreement</em> is not <em>accuracy</em>. Kappa says how far two readers agree beyond chance; it does not say which of them is right. People are the reference here because the rubric is theirs, not because a person cannot be wrong: on the board, FX2 passed a constructed sentence.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder. The UI is not used, and nothing on this page asks the API, so the setup's pin of acme to the kit's index changes nothing here. Every step except step 6 reads files and costs nothing; step 6 needs lesson 4.2's <code>~/judge-venv</code> and asks Vertex AI Evaluation for 40 ratings. The lesson reads four files: the frozen set <code>evals/judge_set.json</code>, the author's labels <code>evals/judge_labels.L1.csv</code>, a peer's <code>evals/judge_labels.L2.csv</code> and the judge's ratings <code>evals/judge_set.ratings.jsonl</code>. They are recorded from the author's run and are <strong>not in the kit yet</strong>; once they are, the setup block's <code>git pull</code> brings them. Until then you build each one yourself, and every step says how: you freeze your own set (step 3, one judge run over lesson 4.2's saved answers), a colleague labels it as your second reader (step 4), and your lane's judge rates it (step 6, which step 5 then reads). Labelling takes the longest: allow time to read every row's context in full.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Your labels</span><h3>Label the frozen rows yourself, blind</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/demo_03_label_the_frozen_rows_yourself_blind.py" target="_blank" rel="noopener"><code>demo_03_label_the_frozen_rows_yourself_blind.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A blank sheet of the frozen rows, filled in a spreadsheet, then checked against the set.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make label-sheet</code> writes a CSV with one row per frozen answer: its id, your reader id, the two label columns, an optional note, then the question, the answer, the context that answer cites, and <code>row_sha</code>, a hash of those three. Every reader reads the same rows: you, the author and a peer from the same guide, and the judge through its own template. The sheet does not say which rows are constructed, and the target never overwrites a sheet that exists, so running it twice cannot wipe your labels. <code>--check</code> then holds the filled sheet to the frozen set: every row once, each labelled on the same answer, yes or no in both columns, one reader id. The author's and the peer's sheets ship in a public kit, so a reader id is a short pseudonym of letters, digits, <code>-</code> and <code>_</code>, and the check refuses an email.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>mk/evaluation.mk - label-sheet: a blank sheet of the frozen rows for one reader</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The judge set (lesson 4.5): about twenty of a lane&#x27;s answers, frozen with the full text of the chunks they cite</span>
+<span class="cm"># (evals/judge_set.json), so every reader - you, the author, a peer and the judge - reads the same rows. A blank label</span>
+<span class="cm"># sheet for one person: groundedness and answers_the_question, yes or no, on every row, with the question, the answer</span>
+<span class="cm"># and the context to read by. It never overwrites a sheet. LABELS= the file (default evals/reports/judge_labels.csv);</span>
+<span class="cm"># READER= the pseudonymous id on it (default you). Check a filled one: python evals/build_judge_set.py --check FILE.</span>
+label-sheet:
+	$(PY) evals/build_judge_set.py --emit $(<span class="kw">or</span> $(LABELS),evals/reports/judge_labels.csv) --reader $(<span class="kw">or</span> $(READER),you)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/build_judge_set.py - GUIDE: the two rubrics, as every reader is told them</span><span class="ro">read only</span></div><pre tabindex="0">GUIDE = (
+    <span class="st">&quot;groundedness: yes when every claim in the answer is supported by the context on its row. Read the context, not &quot;</span>
+    <span class="st">&quot;what you know: a true sentence the context does not hold is unsupported. A refusal claims nothing, so it is &quot;</span>
+    <span class="st">&quot;grounded. One unsupported sentence makes the row a no.&quot;</span>,
+    <span class="st">&quot;answers_the_question: yes when the answer gives what the question asks for. When the context does not hold the &quot;</span>
+    <span class="st">&quot;answer, saying so is a yes and a guess is a no; when it does hold it, a refusal or half an answer is a no.&quot;</span>,
+    <span class="st">&quot;note: optional - one line on why, written before you compare with anyone.&quot;</span>,
+)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/build_judge_set.py - --emit and --check, from the module&#x27;s docstring</span><span class="ro">read only</span></div><pre tabindex="0">--emit writes a blank label sheet (CSV) <span class="kw">for</span> one reader: id, reader, groundedness, answers_the_question <span class="kw">and</span> note, then
+the question, the answer <span class="kw">and</span> the context to read by, <span class="kw">and</span> row_sha (a hash of the three). Fill yes <span class="kw">or</span> no <span class="kw">in</span> both label
+columns on every row; note <span class="kw">is</span> optional. It never overwrites a file: a sheet that exists may hold someone&#x27;s labels.
+--check holds a filled sheet to the frozen set: every row once <span class="kw">and</span> no other, labelled on the same answer (row_sha),
+yes <span class="kw">or</span> no <span class="kw">in</span> both columns, one pseudonymous reader id. Exit <span class="nu">1</span> lists what <span class="kw">is</span> wrong; exit <span class="nu">2</span> <span class="kw">is</span> a file that <span class="kw">is</span> missing.</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/build_judge_set.py - row_sha(): a label belongs to the answer it was given on</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">row_sha</span>(row: dict) -&gt; str:
+    <span class="st">&quot;&quot;&quot;Twelve hex digits of the question, the context and the answer: a label belongs to the answer it was given on.&quot;&quot;&quot;</span>
+    text = json.dumps([row.get(<span class="st">&quot;question&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>, row.get(<span class="st">&quot;context&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>, row.get(<span class="st">&quot;response&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>], ensure_ascii=<span class="kw">False</span>)
+    <span class="kw">return</span> hashlib.sha256(text.encode(<span class="st">&quot;utf-8&quot;</span>)).hexdigest()[:<span class="nu">12</span>]</pre></div>
+
+
+<div class="box box-red"><div class="box-title">Label before you read further</div>
+<p>Steps 4 to 8 print the author's labels, a peer's and the judge's ratings of these very rows, and steps 5 and 8 mark the constructed ones. Read any of them first and your labels are no longer your own. Fill your sheet, check it, then go on.</p></div>
+
+<h4>Do it first: a frozen set, your own while the kit has none</h4>
+<p>While your kit has no <code>evals/judge_set.json</code>, freeze your own. <code>make judge</code> with <code>--save-rows</code> rates lesson 4.2's saved answers, <code>evals/reports/judge72.json</code>, and writes every rated row beside its question, context and answer. If that file is gone, <code>--reuse</code> collects the answers afresh, 65 questions to your API, about Rs 29.01. Each row gets two Evaluation requests either way. <code>--freeze</code> then picks 20 of the rated rows by the rules in step 8 and writes them to <code>evals/reports/judge_set.json</code>. Git ignores that folder, so the author's set can arrive later without a clash. The kit's targets read your set while the kit has none, and the author's once it ships. Skip the block if the first line says a set is there.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit, in lesson 4.2&#x27;s judge venv (only while there is no frozen set: 130 Evaluation requests over lesson 4.2&#x27;s saved answers, or 65 fresh answers first if they are gone)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">test -f evals/judge_set.json -o -f evals/reports/judge_set.json &amp;&amp; echo "a frozen set is in your kit: skip this block" || {
+make judge PROJECT="$PROJECT" PY="$HOME/judge-venv/bin/python" \
+  JUDGE_ARGS="--reuse evals/reports/judge72.json --save-rows evals/reports/judge45_rows.jsonl" &amp;&amp;
+python evals/build_judge_set.py --freeze evals/reports/judge45_rows.jsonl --set evals/reports/judge_set.json
+}</pre></div>
+
+
+<h4>Do it: your sheet</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: a blank sheet of the frozen rows for you; it never overwrites one)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make label-sheet</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit&#x27;s own output over the author&#x27;s recorded files, laid out as in your kit: yours is the same)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_set.json]</pre></div>
+
+
+<p>Open <code>evals/reports/judge_labels.csv</code> in a spreadsheet or a text editor. For each row, read the context first, then the answer, then the question again, and write <code>yes</code> or <code>no</code> under both label columns. Write a note on any row you hesitate over, now: step 4 prints it beside the other reader's. Here is one filled row of the kit's fixture, as a sheet holds it:</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>id</th><th>reader</th><th>groundedness</th><th>answers_the_question</th><th>note</th><th>question</th><th>answer</th><th>context</th><th>row_sha</th></tr></thead>
+<tbody>
+<tr><td><code>fx-03</code></td><td data-label="reader"><code>FX1</code></td><td data-label="groundedness"><code>yes</code></td><td data-label="answers_the_question"><code>no</code></td><td data-label="note">the cap is in the context</td><td data-label="question">What is the per-trip cap on domestic travel reimbursement? (fixture)</td><td data-label="answer">The documents do not say what the per-trip cap is.</td><td data-label="context">[1] FX-EXP-12. Domestic travel is reimbursed up to Rs 40,000 per trip. (synthetic fixture text)</td><td data-label="row_sha"><code>e3931463482f</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The answer refuses, so it claims nothing: grounded, yes. But the context holds the cap, so a refusal does not answer the question: no. The reader's note says why: "the cap is in the context". Save the sheet as CSV with every column kept and in the same order. A spreadsheet may add a byte-order mark, Windows line endings or a capitalised YES; the check reads all three. Then check it:</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: holds a filled sheet to the frozen set)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python evals/build_judge_set.py --check evals/reports/judge_labels.csv
+python evals/build_judge_set.py --check evals/judge_labels.L1.csv      # the author's sheet, shipped with the kit</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (over the author&#x27;s recorded files, laid out as in your kit: your line counts your own labels, so its numbers are dots here; the author&#x27;s line is exact)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_set.json]</pre></div>
+
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>exists and may hold labels: nothing written</code> from <code>make label-sheet</code> means you made the sheet before, and your labels are in it; delete it only to start again. <code>evals/judge_set.json: not found</code> means there is no frozen set yet, the kit's or yours: run the block before the sheet, which freezes your own. <code>N problem(s) against the frozen set</code> from <code>--check</code> lists each row and what is wrong with it: a blank, a word other than yes or no, a row missing or there twice, two reader ids, or <code>labelled on another answer</code>, which means the sheet was made from another freeze.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>make label-sheet</code> wrote one row for each frozen answer, with the guide printed above it, and <code>--check</code> counted your yes and no for each rubric. Those counts already matter. A reader who says yes to nearly every row leaves little room for agreement beyond chance, as step 4 shows. The author's line is the same check on the sheet the kit ships. Your sheet sits in <code>evals/reports/</code>, which git ignores, so the kit stays clean.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Two readers</span><h3>Two people on the same rows: Cohen's kappa</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/demo_04_two_people_on_the_same_rows_cohen_s_kappa.py" target="_blank" rel="noopener"><code>demo_04_two_people_on_the_same_rows_cohen_s_kappa.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The author's sheet is your second reader; the kit counts your agreement with it, then takes chance out.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make judge-agree PEOPLE=1</code> reads two sheets of the same frozen rows: yours, and by default the author's, <code>evals/judge_labels.L1.csv</code>. For each rubric it prints the 2x2 of the two readers' labels, raw agreement with its Wilson interval, the agreement chance alone would give, Cohen's kappa, and the rows the two differ on, with both notes. The arithmetic is <code>evals/agreement.py</code>: standard library only and counted in whole rows, so the worked table gives exactly 0.40, and two readers who each gave every row one and the same label get <code>undefined</code>, never a perfect 1. <code>AGAINST=</code> names another reader's sheet. The kit also ships a peer's, <code>evals/judge_labels.L2.csv</code>, labelled once and blind; with the author's, it makes the recorded pair.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>evals/agreement.py - raw agreement flatters; kappa takes chance out (the module&#x27;s docstring)</span><span class="ro">read only</span></div><pre tabindex="0">A reader <span class="kw">is</span> a person <span class="kw">or</span> a judge, <span class="kw">and</span> a label <span class="kw">is</span> anything two readers can give a row (yes <span class="kw">and</span> no, <span class="kw">pass</span> <span class="kw">and</span> fail, a
+<span class="kw">class</span>). Raw agreement <span class="kw">is</span> the share of rows the two label alike. It flatters: two readers who <span class="kw">pass</span> nine rows <span class="kw">in</span> ten
+agree on most rows by chance alone. Cohen<span class="st">&#x27;s kappa takes chance out:
+
+    kappa = (p_o - p_e) / (1 - p_e)
+
+p_o is the share of rows labelled alike. p_e is the share the two would label alike if each kept their own label
+counts and gave them out at random: for each label, A&#x27;</span>s share of it times B&#x27;s, summed. <span class="nu">1</span> <span class="kw">is</span> perfect agreement, <span class="nu">0</span> <span class="kw">is</span>
+no better than chance, below <span class="nu">0</span> <span class="kw">is</span> worse. Kappa <span class="kw">is</span> undefined when p_e <span class="kw">is</span> <span class="nu">1</span>, which happens only when both readers gave
+every row one <span class="kw">and</span> the same label: there <span class="kw">is</span> nothing left to agree on beyond chance, so it <span class="kw">is</span> reported <span class="kw">as</span> undefined,
+never <span class="kw">as</span> perfect.</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/agreement.py - chance() and cohen_kappa(), counted in whole rows</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">chance</span>(a, b) -&gt; float | <span class="kw">None</span>:
+    <span class="st">&quot;&quot;&quot;p_e: the share of rows the two would label alike by chance, from each reader&#x27;s own label counts. None for no rows.&quot;&quot;&quot;</span>
+    a, b = _pair(a, b)
+    n = len(a)
+    <span class="kw">if</span> <span class="kw">not</span> n:
+        <span class="kw">return</span> <span class="kw">None</span>
+    ca, cb = Counter(a), Counter(b)
+    <span class="kw">return</span> sum(ca[k] * cb[k] <span class="kw">for</span> k <span class="kw">in</span> ca) / (n * n)
+
+
+<span class="kw">def</span> <span class="fn">cohen_kappa</span>(a, b) -&gt; float | <span class="kw">None</span>:
+    <span class="st">&quot;&quot;&quot;Cohen&#x27;s kappa of two readers&#x27; labels on the same rows, over any label set. None with no rows, or when both
+    readers gave every row one and the same label (p_e = 1: undefined, not perfect). Counted in whole rows, so the
+    worked table gives exactly 0.4 and a reader with one label throughout, against one with two, exactly 0.&quot;&quot;&quot;</span>
+    a, b = _pair(a, b)
+    n = len(a)
+    <span class="kw">if</span> <span class="kw">not</span> n:
+        <span class="kw">return</span> <span class="kw">None</span>
+    alike = sum(x == y <span class="kw">for</span> x, y <span class="kw">in</span> zip(a, b))
+    ca, cb = Counter(a), Counter(b)
+    by_chance = sum(ca[k] * cb[k] <span class="kw">for</span> k <span class="kw">in</span> ca)              <span class="cm"># p_e, in units of 1 / n^2</span>
+    <span class="kw">if</span> by_chance == n * n:
+        <span class="kw">return</span> <span class="kw">None</span>
+    <span class="kw">return</span> (alike * n - by_chance) / (n * n - by_chance)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/judge_agree.py - compare(): two readers on the rows both labelled</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">compare</span>(ref: dict[str, bool], test: dict[str, bool], ids: list[str]) -&gt; dict:
+    <span class="st">&quot;&quot;&quot;Two readers&#x27; verdicts on the rows both gave one: the 2x2 with `ref` as the reference, raw agreement, chance,
+    kappa and the rows they differ on.&quot;&quot;&quot;</span>
+    ids = [i <span class="kw">for</span> i <span class="kw">in</span> ids <span class="kw">if</span> i <span class="kw">in</span> ref <span class="kw">and</span> i <span class="kw">in</span> test]
+    r, t = [ref[i] <span class="kw">for</span> i <span class="kw">in</span> ids], [test[i] <span class="kw">for</span> i <span class="kw">in</span> ids]
+    <span class="kw">return</span> {<span class="st">&quot;ids&quot;</span>: ids, <span class="st">&quot;table&quot;</span>: ag.table(r, t), <span class="st">&quot;agree&quot;</span>: ag.agreement(r, t), <span class="st">&quot;chance&quot;</span>: ag.chance(r, t),
+            <span class="st">&quot;kappa&quot;</span>: ag.cohen_kappa(r, t), <span class="st">&quot;differ&quot;</span>: [i <span class="kw">for</span> i <span class="kw">in</span> ids <span class="kw">if</span> ref[i] != test[i]]}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>mk/evaluation.mk - judge-agree: PEOPLE=1 for two sheets, or the judge against one</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Agreement on the judge set, Rs 0. PEOPLE=1: your sheet (LABELS=) against the author&#x27;s labels of the same rows, or</span>
+<span class="cm"># AGAINST= another reader&#x27;s - Cohen&#x27;s kappa per rubric, the 2x2, the rows you differ on. Without PEOPLE: the judge&#x27;s</span>
+<span class="cm"># ratings of the same rows (RUN=, default the author&#x27;s capture evals/judge_set.ratings.jsonl; make judge-frozen writes</span>
+<span class="cm"># your own) against your sheet - the true-pass and false-pass rates with Wilson intervals, and kappa. The judge&#x27;s 1-5</span>
+<span class="cm"># metric passes at CUT or more (default 4); SWEEP=1 prints every cut.</span>
+judge-agree:
+	$(PY) evals/judge_agree.py $(<span class="kw">if</span> $(PEOPLE),people $(<span class="kw">or</span> $(LABELS),evals/reports/judge_labels.csv) $(<span class="kw">or</span> $(AGAINST),evals/judge_labels.L1.csv),judge $(<span class="kw">or</span> $(RUN),evals/judge_set.ratings.jsonl) $(<span class="kw">or</span> $(LABELS),evals/reports/judge_labels.csv) --cut $(<span class="kw">or</span> $(CUT),<span class="nu">4</span>) $(<span class="kw">if</span> $(SWEEP),--sweep,))</pre></div>
+
+
+<h4>Do it: the worked table, and the kit's own tests</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: the worked table, then the kit&#x27;s own tests of the arithmetic)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python evals/agreement.py --selftest
+python -m unittest discover -s evals/tests -p test_agreement.py 2&gt;&amp;1 | tail -3</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit&#x27;s own output, produced when this page was built: yours should match it)</span><span class="ro">read only</span></div><pre tabindex="0">selftest: the worked table of 50 rows (20 both yes, 5 and 10 split, 15 both no) agrees on 35/50 = 70.0% [56.2%, 80.9%], 0.50 by chance, kappa 0.40; identical labels 1.00; one label throughout undefined; a reader with one label against one with two 0.00
+Ran 18 tests in ...s
+
+OK</pre></div>
+
+
+<h4>Do it: you against the author, then the author against the peer</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: two sheets, kappa per rubric)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make judge-agree PEOPLE=1                       # your sheet against the author's
+make judge-agree PEOPLE=1 LABELS=evals/judge_labels.L1.csv AGAINST=evals/judge_labels.L2.csv   # the author against the peer</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the second command, over the author&#x27;s recorded files, laid out as in your kit: the author against the peer. The first prints the same blocks for you against the author)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_set.json]</pre></div>
+
+
+<h4>Do it, while the kit has no author's sheet: a colleague as your second reader</h4>
+<p>Until the author's sheet ships, kappa needs a second person. Make a colleague a sheet of the same rows under their own pseudonym. They label it blind, from the guide alone, without seeing yours. Then check their sheet and count your agreement with it. The author-against-peer line above waits for the recorded pair.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: only while the kit has no author&#x27;s sheet; a blank sheet for your colleague)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make label-sheet LABELS=evals/reports/judge_labels.peer.csv READER=peer</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: once your colleague has filled their sheet, blind)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python evals/build_judge_set.py --check evals/reports/judge_labels.peer.csv
+make judge-agree PEOPLE=1 AGAINST=evals/reports/judge_labels.peer.csv   # your sheet against your colleague's</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read kappa before agree. On a rubric where both readers say yes to most rows, agreement can look high while kappa stays low, because chance alone would supply most of it. Then read the rows the two of you differ on, with both notes: each is a slip, a place where the guide is unclear, or a real judgement call. The author and the peer are the recorded pair: two people who labelled the same rows blind, once each. Where careful readers split often on a rubric, the rubric is the problem, not the readers, and the judge's agreement with either of them on it is worth little until the guide is sharper. One row moves kappa a long way at this size: on the board, flipping one of nine rows took it from 0.73 to 0.53.</p></div>
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The judge</span><h3>The judge on the same rows: true-pass, false-pass and the cut</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/demo_05_the_judge_on_the_same_rows_true_pass_false_pass_and_the_cut.py" target="_blank" rel="noopener"><code>demo_05_the_judge_on_the_same_rows_true_pass_false_pass_and_the_cut.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The judge's ratings of the frozen rows, held to your labels and to the author's, at a cut you choose.</p></div></div>
+
+<h4>Definition</h4>
+<p>Lesson 4.2's judge kept only means. <code>judge.py --save-rows</code> writes every row it rated beside its question, context and answer, with each metric's score and the judge's explanation, and the author's run of it rated the frozen rows once: <code>evals/judge_set.ratings.jsonl</code>, which ships with the kit once it is recorded. Until then the ratings are your lane's own: run step 6 first, whose second line is this step's comparison against your sheet, and read <code>RUN=evals/reports/judge_set.ratings.jsonl</code> into every <code>make judge-agree</code> here. <code>make judge-agree</code>, without <code>PEOPLE</code>, sets those ratings against one sheet, yours by default, and your labels are the reference. Groundedness is the judge's own 0 or 1. Its second metric is whichever of FULFILLMENT, INSTRUCTION_FOLLOWING or QUESTION_ANSWERING_QUALITY the SDK names, scored 1 to 5, and it passes at <code>CUT</code> or more, 4 unless you say otherwise. For each rubric the kit prints the 2x2, the true-pass and false-pass rates with their intervals, raw agreement and kappa, the false-pass rate on constructed and natural rows apart, and the rows you and the judge differ on. A rating counts only where the judge rated the very answer you labelled, the same <code>row_sha</code>. The command exits 0 whatever the agreement: it measures the judge and gates nothing.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>evals/judge_agree.py - the judge mode, from the module&#x27;s docstring</span><span class="ro">read only</span></div><pre tabindex="0">judge RATINGS SHEET: the judge<span class="st">&#x27;s per-row ratings of the same rows (judge.py --save-rows; make judge-frozen) against
+one person&#x27;</span>s labels, which are the reference. Groundedness <span class="kw">is</span> the judge<span class="st">&#x27;s 0 or 1. The second metric - the one the
+SDK names, FULFILLMENT, INSTRUCTION_FOLLOWING or QUESTION_ANSWERING_QUALITY, scored 1 to 5 - is cut: CUT or more is a
+pass (default 4, a starting value: the cut is the lesson&#x27;</span>s slider). Per rubric: the 2x2; the true-<span class="kw">pass</span> rate (of the rows people <span class="kw">pass</span>, the share the judge passes) <span class="kw">and</span>
+the false-<span class="kw">pass</span> rate (of the rows people fail, the share the judge passes: the bad answers it would let through), each
+<span class="kw">with</span> a Wilson interval; raw agreement <span class="kw">and</span> kappa; the false-<span class="kw">pass</span> rate on constructed <span class="kw">and</span> natural rows apart; <span class="kw">and</span> the
+rows they differ on. --sweep adds every cut <span class="kw">from</span> <span class="nu">1</span> to <span class="nu">5</span>, so the trade a cut makes <span class="kw">is</span> on one screen.
+
+A row <span class="kw">is</span> compared only where the judge rated the very answer the person labelled (the same row_sha): ratings of
+other answers are left out, row by row, <span class="kw">and</span> named. Exit <span class="nu">2</span> when an input <span class="kw">is</span> missing <span class="kw">or</span> unreadable, <span class="kw">or</span> a sheet fails
+build_judge_set.py --check; otherwise <span class="nu">0</span>, whatever the agreement - this measures the judge, it gates nothing.</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/judge.py - --save-rows: evaluate() keeps the table row by row</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">if</span> save_rows:              <span class="cm"># --save-rows (lesson 4.5): the same table, row by row, beside the rows it rates</span>
+        <span class="kw">try</span>:
+            print(f<span class="st">&quot;  per-row ratings: {write_ratings(save_rows, result.metrics_table, judged or [], run_name)} rows written to {save_rows}&quot;</span>)
+        <span class="kw">except</span> Exception <span class="kw">as</span> e:  <span class="cm"># noqa: BLE001 - the run is recorded; a file that cannot be written is said, not raised</span>
+            print(f<span class="st">&quot;  per-row ratings: not written - {type(e).__name__}: {e}&quot;</span>)
+...
+<span class="kw">def</span> <span class="fn">write_ratings</span>(path: str, table, judged: list[dict], run_name: str) -&gt; int:
+    <span class="st">&quot;&quot;&quot;--save-rows: one JSON line per row the judge rated - the row as main() holds it (its question, the context and
+    the answer the judge read), then `run` and `ratings`: each metric&#x27;s score and explanation, and a pair&#x27;s choice.
+    The summary is a mean; setting the judge beside people (lesson 4.5) needs it row by row. A metric&#x27;s columns are
+    found by suffix, as the by-shape block finds groundedness/score, because their prefix moves between SDK
+    versions. Rows are matched by id, or by position if the table carries none.&quot;&quot;&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/judge_agree.py - read_ratings(): only a rating of the very answer you labelled counts</span><span class="ro">read only</span></div><pre tabindex="0">    sha = {r[<span class="st">&quot;id&quot;</span>]: bjs.row_sha(r) <span class="kw">for</span> r <span class="kw">in</span> frozen}
+...
+        <span class="kw">if</span> bjs.row_sha(x) != sha[rid]:
+            other.append(rid)
+            <span class="kw">continue</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/judge_agree.py - verdicts() and sweep(): what the CUT turns into pass and fail</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">verdicts</span>(scores: dict[str, float], rubric: str, cut: int = CUT) -&gt; dict[str, bool]:
+    <span class="st">&quot;&quot;&quot;The judge&#x27;s pass or fail per row: groundedness is its 0 or 1; the second metric passes at `cut` or more.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> {i: (s &gt;= <span class="nu">1</span> <span class="kw">if</span> rubric == <span class="st">&quot;groundedness&quot;</span> <span class="kw">else</span> s &gt;= cut) <span class="kw">for</span> i, s <span class="kw">in</span> scores.items()}
+
+
+<span class="kw">def</span> <span class="fn">sweep</span>(scores: dict[str, float], ref: dict[str, bool], ids: list[str]) -&gt; list[dict]:
+    <span class="st">&quot;&quot;&quot;The second metric at every cut from 1 to 5, against the reference: what the CUT slider moves.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> [{<span class="st">&quot;cut&quot;</span>: c, **compare(ref, verdicts(scores, <span class="st">&quot;answers_the_question&quot;</span>, c), ids)} <span class="kw">for</span> c <span class="kw">in</span> range(<span class="nu">1</span>, <span class="nu">6</span>)]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/agreement.py - the 2x2 and the two rates, from the module&#x27;s docstring</span><span class="ro">read only</span></div><pre tabindex="0">With people <span class="kw">as</span> the reference <span class="kw">and</span> a judge under test, the 2x2 table counts four kinds of row: true <span class="kw">pass</span> (both <span class="kw">pass</span>),
+false fail (people <span class="kw">pass</span>, the judge fails), false <span class="kw">pass</span> (people fail, the judge passes) <span class="kw">and</span> true fail (both fail). The
+true-<span class="kw">pass</span> rate <span class="kw">is</span> the share of the rows people <span class="kw">pass</span> that the judge passes too; the false-<span class="kw">pass</span> rate <span class="kw">is</span> the share of the
+rows people fail that the judge passes anyway, the error that lets a bad answer through. Each <span class="kw">is</span> printed <span class="kw">as</span> k of n
+<span class="kw">with</span> route_eval.wilson()&#x27;s <span class="nu">95</span>% interval, because at twenty rows one row moves a rate by several points.</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/agreement.py - table(), true_pass() and false_pass()</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">table</span>(reference, test) -&gt; dict[str, int]:
+    <span class="st">&quot;&quot;&quot;The 2x2 of pass (True) and fail (False): the reference (people) against the reader under test (a judge, or a
+    second person).&quot;&quot;&quot;</span>
+    reference, test = _pair(reference, test)
+    t = {<span class="st">&quot;true_pass&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;false_fail&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;false_pass&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;true_fail&quot;</span>: <span class="nu">0</span>}
+    <span class="kw">for</span> r, j <span class="kw">in</span> zip(reference, test):
+        t[(<span class="st">&quot;true_&quot;</span> <span class="kw">if</span> bool(r) == bool(j) <span class="kw">else</span> <span class="st">&quot;false_&quot;</span>) + (<span class="st">&quot;pass&quot;</span> <span class="kw">if</span> j <span class="kw">else</span> <span class="st">&quot;fail&quot;</span>)] += <span class="nu">1</span>
+    <span class="kw">return</span> t
+
+
+<span class="kw">def</span> <span class="fn">true_pass</span>(t: dict[str, int]) -&gt; tuple[int, int]:
+    <span class="st">&quot;&quot;&quot;(k, n): of the n rows the reference passes, the k the reader under test passes too.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> t[<span class="st">&quot;true_pass&quot;</span>], t[<span class="st">&quot;true_pass&quot;</span>] + t[<span class="st">&quot;false_fail&quot;</span>]
+
+
+<span class="kw">def</span> <span class="fn">false_pass</span>(t: dict[str, int]) -&gt; tuple[int, int]:
+    <span class="st">&quot;&quot;&quot;(k, n): of the n rows the reference fails, the k the reader under test passes anyway.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> t[<span class="st">&quot;false_pass&quot;</span>], t[<span class="st">&quot;false_pass&quot;</span>] + t[<span class="st">&quot;true_fail&quot;</span>]</pre></div>
+
+
+<h4>Do it: the judge against you, then against the author</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: the judge&#x27;s ratings of the same rows against one sheet)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make judge-agree                                 # the judge against your sheet, cut at 4
+make judge-agree LABELS=evals/judge_labels.L1.csv   # the judge against the author</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the second command, over the author&#x27;s recorded files, laid out as in your kit: the judge against the author. The first prints the same blocks against your sheet)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_set.json]</pre></div>
+
+
+<h4>Change it: move the cut</h4>
+<p><code>CUT=3</code> passes the second metric at 3 or more, and <code>SWEEP=1</code> adds every cut from 1 to 5 under the two blocks, the current one marked. There is nothing to restore: a run without <code>CUT</code> is back at 4.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (Rs 0: the Change-it; nothing to restore, because CUT is not a setting)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make judge-agree CUT=3 SWEEP=1                   # your sheet: a looser cut, and every cut beside it
+make judge-agree LABELS=evals/judge_labels.L1.csv CUT=3 SWEEP=1   # the author's</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the second command, over the author&#x27;s recorded files, laid out as in your kit: the author&#x27;s sheet at CUT=3, then every cut)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_set.json]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the false-pass rate first: of the answers people failed, how many the judge would have waved through. A looser cut passes more rows, so the true-pass and false-pass rates can only rise together; a stricter one can only lower both. Kappa sums the trade up but hides which way the judge errs, so read the two rates. Constructed rows test groundedness on purpose: each carries one sentence its context does not hold, cited as if it did, so a judge that passes them is passing invented facts. Then set your two runs side by side. If the judge agrees with the author more than with you, read the rows where you and the author differ before you blame the judge.</p></div>
+
+<h4>The cut, row by row, on the author's rows</h4>
+<p>The same board as step 1, on the frozen set, with the author as the first reader and the peer as the second. Set it to the judge and answers the question, drag the cut, and watch which rows change sides.</p>
+<div class="box box-amber"><div class="box-title">The author's rows on the board</div><p>They join this board when the frozen set, the two sheets and the judge's ratings are recorded: [awaiting the author&#x27;s run: data/judge_set.json]</p></div>
+
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The Evaluation service</span><h3>Your lane's judge on the frozen rows: the ratings step 5 reads until the author's ship</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/demo_06_your_lane_s_judge_on_the_frozen_rows_the_ratings_step_5_reads_until_the_author_s.py" target="_blank" rel="noopener"><code>demo_06_your_lane_s_judge_on_the_frozen_rows_the_ratings_step_5_reads_until_the_author_s.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The same rows through Vertex AI Evaluation on your project, then your judge's ratings against your labels.</p></div></div>
+
+<h4>Definition</h4>
+<p>While the kit has no ratings, this step is how the judge's ratings reach you, and step 5 reads them. Once the author's ship, they are one judge: the author's run of the Evaluation service, at one time, with one template. Yours may rate differently, because a judge is its template and its model, and both move. <code>make judge-frozen</code> sends the frozen rows, as frozen, to Vertex AI Evaluation from lesson 4.2's venv. <code>--reuse</code> loads them from the frozen set, the kit's <code>evals/judge_set.json</code> or your own <code>evals/reports/judge_set.json</code>, so nothing asks the API, and <code>--no-enrich</code> keeps each row's context as the readers saw it instead of reading the cited chunks again from Firestore. It costs two Evaluation requests a row, 40 in all, in <code>us-central1</code>, and writes one Experiments run in <code>documind-eval</code> whose name starts <code>api-frozen-</code> and ends with the templates' hash, as in lesson 4.2. Your ratings go to <code>evals/reports/judge_set.ratings.jsonl</code>, so the author's file stays as it was.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>mk/evaluation.mk - judge-frozen: your lane&#x27;s judge on the frozen rows</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Your lane&#x27;s judge on the frozen rows (lesson 4.5): judge.py rates the frozen set as it stands - the kit&#x27;s</span>
+<span class="cm"># evals/judge_set.json, or your own evals/reports/judge_set.json (4.5&#x27;s step 3) while the kit has none - with --reuse and</span>
+<span class="cm"># --no-enrich (the context people labelled), two Vertex AI Evaluation requests a row, nothing asked of the API. Ratings go</span>
+<span class="cm"># to RUN= (default evals/reports/judge_set.ratings.jsonl). In the judge&#x27;s venv: PY=&quot;$HOME/judge-venv/bin/python&quot;.</span>
+judge-frozen: guard-project
+	@test -n <span class="st">&quot;$(wildcard evals/judge_set.json evals/reports/judge_set.json)&quot;</span> || { echo <span class="st">&quot;no frozen set yet: freeze your own into evals/reports/judge_set.json (lesson 4.5, step 3); the author&#x27;s evals/judge_set.json ships once recorded&quot;</span> &gt;&amp;<span class="nu">2</span>; exit <span class="nu">2</span>; }
+	$(PY) evals/judge.py --api-url frozen:$(firstword $(wildcard evals/judge_set.json evals/reports/judge_set.json)) --project $(PROJECT) --reuse $(firstword $(wildcard evals/judge_set.json evals/reports/judge_set.json)) --no-enrich --label frozen --save-rows $(<span class="kw">or</span> $(RUN),evals/reports/judge_set.ratings.jsonl) $(JUDGE_ARGS)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/judge.py - --no-enrich: the judge reads the context people labelled, not a fresh store read</span><span class="ro">read only</span></div><pre tabindex="0">    ap.add_argument(<span class="st">&quot;--no-enrich&quot;</span>, action=<span class="st">&quot;store_true&quot;</span>,
+                    help=<span class="st">&quot;judge each row&#x27;s context as it stands, with no store read: a frozen row keeps the text its readers labelled (lesson 4.5)&quot;</span>)
+...
+    <span class="kw">if</span> a.no_enrich:
+        print(<span class="st">&quot;  context: as each row holds it (--no-enrich: no store read)&quot;</span>)</pre></div>
+
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (while the kit has no author&#x27;s ratings: 40 Vertex AI Evaluation requests, two a row; nothing asked of the API)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make judge-frozen PROJECT="$PROJECT" PY="$HOME/judge-venv/bin/python"
+make judge-agree RUN=evals/reports/judge_set.ratings.jsonl      # your lane's judge against your sheet</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane, with RUN=evals/judge_set.ratings.jsonl: the run that rated the rows your kit ships; yours writes to evals/reports/ and names its own run)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_frozen.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Once the author's ratings ship, two judges have rated the same frozen rows: the author's run and yours. If the template hashes in the two run names differ, they are different judges, and their agreement with you can differ for that reason alone. Set your run's false-pass rate beside the author's capture's, both against your own sheet. A judge whose agreement moves with its template has to be measured again each time the SDK changes, which is why the hash rides in every run name.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>Kappa by hand, and the judge's own reasons</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_04/lesson_4_5/demo_07_kappa_by_hand_and_the_judge_s_own_reasons.py" target="_blank" rel="noopener"><code>demo_07_kappa_by_hand_and_the_judge_s_own_reasons.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Two standard-library cells over the files themselves, with no kit function between you and the count.</p></div></div>
+
+<p>The first cell reads your sheet and the author's with Python's <code>csv</code> module, counts p_o and p_e by hand, and checks the result against the kit's <code>cohen_kappa()</code>. It is this lesson's arithmetic in a screenful, and it runs anywhere Python does.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (a Python cell; Rs 0: it reads two sheets)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import collections, csv, io, os, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path.insert(0, "evals")
+from agreement import cohen_kappa            # the kit's, only to check the count by hand below
+
+MINE, THEIRS = "evals/reports/judge_labels.csv", "evals/judge_labels.L1.csv"
+if not os.path.exists(THEIRS):                # no author's sheet in the kit yet: your colleague's (step 4)
+    THEIRS = "evals/reports/judge_labels.peer.csv"
+
+
+def sheet(path):
+    """{id: row} of a filled label sheet: UTF-8 as make label-sheet writes it, or a spreadsheet's cp1252."""
+    raw = open(path, "rb").read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252", errors="replace")
+    return {r["id"].strip(): r for r in csv.DictReader(io.StringIO(text, newline=""))}
+
+
+def by_hand(a, b):
+    """Raw agreement, chance agreement and Cohen's kappa of two readers' labels, from counts alone."""
+    n = len(a)
+    p_o = sum(x == y for x, y in zip(a, b)) / n
+    ca, cb = collections.Counter(a), collections.Counter(b)
+    p_e = sum(ca[k] * cb[k] for k in ca) / (n * n)
+    return p_o, p_e, None if p_e == 1 else (p_o - p_e) / (1 - p_e)
+
+
+mine, theirs = sheet(MINE), sheet(THEIRS)
+ids = sorted(mine)
+me, them = mine[ids[0]]["reader"].strip(), theirs[ids[0]]["reader"].strip()
+print(f"{len(ids)} rows: {me} ({MINE}) against {them} ({THEIRS})")
+for rubric in ("groundedness", "answers_the_question"):
+    a = [mine[i][rubric].strip().lower() for i in ids]
+    b = [theirs[i][rubric].strip().lower() for i in ids]
+    p_o, p_e, k = by_hand(a, b)
+    kit = cohen_kappa(a, b)
+    same = k == kit if k is None or kit is None else abs(k - kit) &lt; 1e-12
+    print(f"  {rubric}: {me} says yes {a.count('yes')} times, {them} {b.count('yes')}; p_o {p_o:.2f}, p_e {p_e:.2f}, "
+          f"kappa {'undefined' if k is None else f'{k:.2f}'} (agreement.cohen_kappa: {'the same' if same else 'DIFFERENT'})")
+    split = [f"{i} ({me} {x}, {them} {y})" for i, x, y in zip(ids, a, b) if x != y]
+    print(f"    split on {len(split)}: {', '.join(split) or 'no row'}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the same cell with MINE set to &quot;evals/judge_labels.L2.csv&quot;, the peer&#x27;s sheet, over the author&#x27;s recorded files: yours reads your own)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_labels.L1.csv]</pre></div>
+
+
+<p>The second reads the judge's ratings file directly and prints each row where the judge and you disagree, with the judge's score and its own explanation. It is lesson 4.2's advice made concrete: where they disagree, read the row. It skips <code>judge_agree.py</code>'s <code>row_sha</code> check, because both files come from the same frozen set.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (a Python cell; Rs 0: it reads your sheet and the judge&#x27;s ratings)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import csv, io, json, os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
+MINE, RATINGS, CUT = "evals/reports/judge_labels.csv", "evals/judge_set.ratings.jsonl", 4
+if not os.path.exists(RATINGS):               # no author's ratings in the kit yet: your lane's (step 6)
+    RATINGS = "evals/reports/judge_set.ratings.jsonl"
+SECOND = ("fulfillment", "instruction_following", "question_answering_quality")   # judge.py's names, in its order
+
+
+def sheet(path):
+    """{id: row} of a filled label sheet: UTF-8 as make label-sheet writes it, or a spreadsheet's cp1252."""
+    raw = open(path, "rb").read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252", errors="replace")
+    return {r["id"].strip(): r for r in csv.DictReader(io.StringIO(text, newline=""))}
+
+
+mine = sheet(MINE)
+rated = [json.loads(line) for line in open(RATINGS, encoding="utf-8") if line.strip()]
+second = next(m for m in SECOND if any(m in x["ratings"] for x in rated))
+me = next(iter(mine.values()))["reader"].strip()
+for rubric, metric in (("groundedness", "groundedness"), ("answers_the_question", second)):
+    print(f"{rubric}: the judge's {metric}, a pass at {1 if metric == 'groundedness' else CUT} or more")
+    for x in rated:
+        i, got = x["id"], x["ratings"].get(metric) or {}
+        if i not in mine or got.get("score") is None:
+            continue
+        judge = got["score"] &gt;= (1 if metric == "groundedness" else CUT)
+        person = mine[i][rubric].strip().lower() == "yes"
+        if judge != person:
+            why = " ".join((got.get("explanation") or "").split())
+            print(f"  {i}: {me} {'pass' if person else 'fail'}, the judge {got['score']:g}: {why[:140]}{'...' if len(why) &gt; 140 else ''}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the same cell with MINE set to &quot;evals/judge_labels.L1.csv&quot;, the author&#x27;s sheet, over the recorded files: yours lists the rows you and the judge differ on)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/judge_set.ratings.jsonl]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The hand count matched <code>cohen_kappa()</code>, because kappa is nothing but counts: how many rows alike, and how many yes and no each reader gave. The judge's explanations are what a mean never shows. On a false pass, read whether the judge missed the unsupported sentence or read the context differently from you; on a false fail, whether it marked a refusal down for a figure it named. Neither cell writes anything.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>How the rows were chosen, why the judge still only advises, and what it costs</h3><p>The freeze's rules and the author's freeze, the limits of twenty rows, and the rupees.</p></div></div>
+
+<h4>How the rows were chosen</h4>
+<p>The frozen set came from the author's lane: <code>judge.py --save-rows</code> on the live revision's answers to all 65 golden rows, and on a <code>gemini-3.1-flash-lite</code> candidate's answers to the same rows, for more failures. <code>build_judge_set.py --freeze</code> then picked about 20 rows, one per question, without looking at the judge's ratings: rows chosen by the judge's own verdict would bias every rate measured against it. A natural failure is found by the gate's own figure and refusal rules, run on the frozen answer. Natural failures seldom fail groundedness, so constructed rows make up that third, each with one of 5 sentences, used only where its key phrase is absent from that row's context and answer.</p>
+<div class="cw"><div class="ch-bar"><span>evals/build_judge_set.py - --freeze: how about twenty rows are picked, from the module&#x27;s docstring</span><span class="ro">read only</span></div><pre tabindex="0">--freeze picks --rows rows, one per question, <span class="kw">and</span> writes them to --set (evals/judge_set.json) <span class="kw">in</span> judge.py<span class="st">&#x27;s collection
+shape, so judge.py --reuse evals/judge_set.json --no-enrich (make judge-frozen) rates exactly these rows. It keeps no
+judge score, and it picks without one: rows chosen by the judge&#x27;</span>s own verdict would bias every rate measured against
+it. The rules are the gap plan<span class="st">&#x27;s (S1), scaled to twenty:
+
+  - A third of the rows should fail. The kit&#x27;</span>s computed check finds the natural failures: the gate<span class="st">&#x27;s figure and
+    refusal rules on the frozen answer (run_eval.contains), without the citation checks, which need the lane - an
+    answerable row refused, answered without its figure, an unanswerable row answered, or a figure that must not
+    appear. Up to a third are picked, one shape after another.
+  - A refusal claims nothing, so it is grounded, and a missing figure is a short answer rather than an unsupported
+    one: natural failures seldom fail groundedness. So groundedness&#x27;</span>s third <span class="kw">is</span> made up <span class="kw">with</span> constructed rows. Each
+    <span class="kw">is</span> a copy of an answer that passed, <span class="kw">with</span> one sentence its context does <span class="kw">not</span> support, cited <span class="kw">as</span> <span class="kw">if</span> it did. It keeps
+    the question<span class="st">&#x27;s id, says constructed: true and records the sentence (added), so natural and constructed rows are
+    counted apart. The sheet a person labels does not say which is which.
+  - The rest are answers that passed, one shape after another, so refusals and isolation rows are in the set too.
+  - Within a shape the order is a hash of the arm and the id, so the same capture always freezes to the same set.
+  - Nothing that names a lane is frozen (a project number or id, a personal mailbox), and a tuned endpoint&#x27;</span>s path <span class="kw">is</span>
+    written <span class="kw">as</span> <span class="st">&quot;an endpoint&quot;</span>: the set ships <span class="kw">in</span> a public kit.</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/build_judge_set.py - computed(): the gate&#x27;s figure and refusal rules on a frozen answer</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">computed</span>(row: dict) -&gt; str:
+    <span class="st">&quot;&quot;&quot;The gate&#x27;s figure and refusal rules on one answer, in live()&#x27;s words: &quot;pass&quot;, or why not. live() also checks
+    each citation against the lane&#x27;s ledger, which a frozen row cannot.&quot;&quot;&quot;</span>
+    text = row.get(<span class="st">&quot;response&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>
+    why = <span class="st">&quot;&quot;</span>
+    <span class="kw">for</span> never <span class="kw">in</span> row.get(<span class="st">&quot;must_not_contain&quot;</span>) <span class="kw">or</span> []:
+        <span class="kw">if</span> contains(text, never):
+            why = f<span class="st">&quot;answer contained {never!r}&quot;</span>
+    said = bool(row.get(<span class="st">&quot;answerable_said&quot;</span>))
+    <span class="kw">if</span> <span class="kw">not</span> row.get(<span class="st">&quot;answerable&quot;</span>):
+        <span class="kw">return</span> SHOULD_REFUSE <span class="kw">if</span> said <span class="kw">else</span> (why <span class="kw">or</span> <span class="st">&quot;pass&quot;</span>)
+    <span class="kw">if</span> <span class="kw">not</span> said:
+        <span class="kw">return</span> REFUSED
+    want = row.get(<span class="st">&quot;must_contain&quot;</span>) <span class="kw">or</span> []
+    <span class="kw">if</span> <span class="kw">not</span> all(contains(text, w) <span class="kw">for</span> w <span class="kw">in</span> want):
+        <span class="kw">return</span> f<span class="st">&quot;answered without {want}&quot;</span>
+    <span class="kw">return</span> why <span class="kw">or</span> <span class="st">&quot;pass&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/build_judge_set.py - ADDED: the sentences a constructed row gains</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Constructed rows: one sentence that no answer&#x27;s context supports, and the phrase that must be absent from that row&#x27;s</span>
+<span class="cm"># context and answer before the sentence is used (run_eval.contains, so &quot;seven working days&quot; counts as present).</span>
+ADDED = (
+    (<span class="st">&quot;Requests under this clause are decided within 7 working days of receipt&quot;</span>, <span class="st">&quot;7 working days&quot;</span>),
+    (<span class="st">&quot;The rule was last revised on 14 February 2025&quot;</span>, <span class="st">&quot;14 February 2025&quot;</span>),
+    (<span class="st">&quot;It applies equally to contract staff from 1 January 2027&quot;</span>, <span class="st">&quot;1 January 2027&quot;</span>),
+    (<span class="st">&quot;A copy must also be filed with the regional office within 45 days&quot;</span>, <span class="st">&quot;45 days&quot;</span>),
+    (<span class="st">&quot;Approval from two senior managers is needed in every case&quot;</span>, <span class="st">&quot;two senior managers&quot;</span>),
+)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>output, the author&#x27;s freeze, recorded: python evals/build_judge_set.py --freeze evals/reports/judge45_rows.jsonl flash-lite=evals/reports/cand45_rows.jsonl</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/freeze.txt]</pre></div>
+
+
+<h4>Why the judge still only advises</h4>
+<ul>
+<li><strong>Twenty rows are a sample, not a calibration.</strong> With about 7 failing rows on a rubric, even a judge that passes none of them has a false-pass rate of <code>0/7 = 0.0% [0.0%, 35.4%]</code>. A cut picked by reading the sweep on these same rows is also fitted to them: with no rows held out, it is a starting value, which is what the kit calls its default.</li>
+<li><strong>A new template is a new judge.</strong> Every run name carries the templates' hash. When it changes, the agreement measured here belongs to the old judge.</li>
+<li><strong>The labels measure; they never tune.</strong> No prompt, threshold or model on this page is changed from them.</li>
+<li><strong>Only computed checks block.</strong> Lesson 4.2's gate decides a release; <code>judge_agree.py</code> exits 0 whatever the agreement.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><code>make label-sheet</code>, <code>--check</code>, <code>make judge-agree</code>, the two cells</td><td data-label="Costs">nothing: they read files</td><td data-label="On your lane">every run</td></tr>
+<tr><td><code>make judge-frozen</code>, while the kit has no author's ratings</td><td data-label="Costs">40 Vertex AI Evaluation requests; no answers from the API, so no usage rows</td><td data-label="On your lane">the Evaluation service's own line on the bill</td></tr>
+<tr><td>The author's capture, once</td><td data-label="Costs">65 answers from the live revision and 65 from a flash-lite candidate, about Rs 34.26 at the course's typical answer of 2,000 tokens in and 300 out, plus their Evaluation requests</td><td data-label="On your lane">not repeated: the frozen set ships with the kit</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A frozen set is in your kit: the author's, or yours from step 3</td><td data-label="The check">step 3, <code>make label-sheet</code></td><td data-label="Pass looks like"><code>rows for you</code> and the guide</td></tr>
+<tr><td>2</td><td data-label="Claim">Your sheet labels every frozen row</td><td data-label="The check">step 3, <code>--check</code></td><td data-label="Pass looks like"><code>Ready for judge_agree.py.</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The kit's kappa is right</td><td data-label="The check">step 4, the self-test and the tests</td><td data-label="Pass looks like"><code>kappa 0.40</code>, <code>Ran 18 tests</code> and <code>OK</code></td></tr>
+<tr><td>4</td><td data-label="Claim">Your agreement with a second reader is measured</td><td data-label="The check">step 4, the first command</td><td data-label="Pass looks like">a kappa per rubric, you against <code>L1</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The recorded pair was read</td><td data-label="The check">step 4, the second command</td><td data-label="Pass looks like">a kappa per rubric, <code>L1</code> against <code>L2</code>, and the rows they split on</td></tr>
+<tr><td>6</td><td data-label="Claim">The judge's agreement with you is measured</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>true-pass</code> and <code>false-pass</code> for each rubric</td></tr>
+<tr><td>7</td><td data-label="Claim">The cut's trade was seen</td><td data-label="The check">step 5, <code>CUT=3 SWEEP=1</code></td><td data-label="Pass looks like">five cuts, the judge's passes never rising as the cut rises</td></tr>
+<tr><td>8</td><td data-label="Claim">Your lane's judge rated the rows (needed while the kit has no ratings)</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>per-row ratings: ... rows written to evals/reports/judge_set.ratings.jsonl</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Kappa is only counts</td><td data-label="The check">step 7, the first cell</td><td data-label="Pass looks like"><code>agreement.cohen_kappa: the same</code> on both rubrics</td></tr>
+<tr><td>10</td><td data-label="Claim">The judge's reasons were read</td><td data-label="The check">step 7, the second cell</td><td data-label="Pass looks like">every row you and the judge differ on, with its explanation</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>On your machine: <code>evals/reports/judge_labels.csv</code>, your labels, which git ignores. If you ran step 6, also <code>evals/reports/judge_set.ratings.jsonl</code>, ignored too, and one run in the Experiments experiment <code>documind-eval</code> whose name starts <code>api-frozen-</code>, which stays until you delete it. Nothing asked the API, so no usage rows were written, and nothing deployed changed. Nothing in the kit changed either, so the setup block's <code>git pull</code> keeps working. Module 4 now turns from quality to security: lesson 4.6 traces an authenticated identity into tenant membership.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.5 Check the LLM judge against people &middot; v5.0</p><p>Next: Lesson 4.6 Trace authenticated identity into tenant membership.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var SETS = {"fixture":{"A":"FX1","B":"FX2","second":"instruction_following","rows":[{"i":"fx-01","s":"lookup","c":0,"k":"pass","d":"","q":"How many days of earned leave carry forward into the next year? (fixture)","a":"Up to 30 days of earned leave carry forward into the next year [1].","x":"[1] FX-LV-01. Up to 30 days of unused earned leave carry forward into the next year. (synthetic fixture text)","A":[1,1],"B":[1,1],"nA":"","nB":"","g":1.0,"m":5.0,"ge":"stand-in: every figure is in the context","me":"stand-in: 1 of 1 reference words in the answer"},{"i":"fx-03","s":"lookup","c":0,"k":"refused","d":"","q":"What is the per-trip cap on domestic travel reimbursement? (fixture)","a":"The documents do not say what the per-trip cap is.","x":"[1] FX-EXP-12. Domestic travel is reimbursed up to Rs 40,000 per trip. (synthetic fixture text)","A":[1,0],"B":[1,0],"nA":"the cap is in the context","nB":"unsupported or unanswered","g":1.0,"m":1.0,"ge":"stand-in: every figure is in the context","me":"stand-in: 0 of 1 reference words in the answer"},{"i":"fx-04","s":"join","c":0,"k":"answered without ['60 days', '30']","d":"","q":"What notice period applies, and how much earned leave carries forward? (fixture)","a":"The notice period is 60 days [1].","x":"[1] FX-NP-03. A confirmed employee serves a notice period of 60 days. (synthetic fixture text)\n[2] FX-LV-01. Up to 30 days of unused earned leave carry forward into the next year. (synthetic fixture text)","A":[1,0],"B":[1,1],"nA":"gives the notice period, not the leave","nB":"answers the first half, good enough","g":1.0,"m":3.0,"ge":"stand-in: every figure is in the context","me":"stand-in: 2 of 3 reference words in the answer"},{"i":"fx-05","s":"join","c":1,"k":"pass","d":"The rule was last revised on 14 February 2025 [1].","q":"How many days of notice, and how many of paternity leave? (fixture)","a":"Notice is 60 days [1], and paternity leave is 10 days [2]. The rule was last revised on 14 February 2025 [1].","x":"[1] FX-NP-03. A confirmed employee serves a notice period of 60 days. (synthetic fixture text)\n[2] FX-LV-04. Paternity leave is 10 days, taken within six months of the birth. (synthetic fixture text)","A":[0,1],"B":[0,1],"nA":"the added sentence is not in the context","nB":"unsupported or unanswered","g":0.0,"m":5.0,"ge":"stand-in: 14, 2025 not in the context","me":"stand-in: 4 of 4 reference words in the answer"},{"i":"fx-06","s":"refusal","c":0,"k":"pass","d":"","q":"What was the revenue in FY2024? (fixture)","a":"The documents cover FY2026 only, not FY2024.","x":"[1] FX-AR-01. Revenue for FY2026 was Rs 1,005 crore. (synthetic fixture text)","A":[1,1],"B":[1,1],"nA":"","nB":"","g":0.0,"m":2.0,"ge":"stand-in: 2024 not in the context","me":"stand-in: a figure for a question the context cannot answer"},{"i":"fx-07","s":"refusal","c":0,"k":"answered, should refuse","d":"","q":"How long is the sabbatical after five years of service? (fixture)","a":"Employees get a sabbatical of six months after five years of service [1].","x":"[1] FX-LV-09. Leave without pay may be granted for personal reasons, at the manager's discretion. (synthetic fixture text)","A":[0,0],"B":[0,0],"nA":"the context says nothing of a sabbatical","nB":"unsupported or unanswered","g":1.0,"m":5.0,"ge":"stand-in: every figure is in the context","me":"stand-in: it says what the context does not hold"},{"i":"fx-09","s":"isolation","c":0,"k":"pass","d":"","q":"What is the per-trip cap on domestic travel reimbursement? (fixture)","a":"Zeta's documents do not state a per-trip cap.","x":"[1] FX-ZT-02. Zeta reimburses travel against receipts. (synthetic fixture text)","A":[1,1],"B":[1,1],"nA":"","nB":"","g":1.0,"m":5.0,"ge":"stand-in: every figure is in the context","me":"stand-in: it says what the context does not hold"},{"i":"fx-10","s":"version","c":0,"k":"pass","d":"","q":"What notice period applies under the current policy? (fixture)","a":"Under the current policy the notice period is 60 days [1].","x":"[1] FX-NP-03 (revision 1). A confirmed employee serves a notice period of 60 days. (synthetic fixture text)","A":[1,1],"B":[1,1],"nA":"","nB":"","g":1.0,"m":5.0,"ge":"stand-in: every figure is in the context","me":"stand-in: 2 of 2 reference words in the answer"},{"i":"fx-12","s":"lookup","c":1,"k":"pass","d":"Requests under this clause are decided within 7 working days of receipt [1].","q":"How many days does a vendor have to cure a material breach? (fixture)","a":"A vendor has 30 days to cure a material breach after written notice [1]. Requests under this clause are decided within 7 working days of receipt [1].","x":"[1] FX-MSA-07. A vendor has 30 days to cure a material breach after written notice. (synthetic fixture text)","A":[0,1],"B":[1,1],"nA":"the added sentence is not in the context","nB":"reads like the policy","g":0.0,"m":5.0,"ge":"stand-in: 7 not in the context","me":"stand-in: 2 of 2 reference words in the answer"}]}}, CUT = 4;
+function fix(x, d){                       /* Python's format(x, '.Nf'): toFixed, except an exact tie rounds to even */
+var a = Math.abs(x), t = a * Math.pow(2, d + 1);
+if (t === Math.floor(t) && t % 2 === 1) { var m = Math.floor(a * Math.pow(10, d)); if (m % 2) m += 1;
+return (x < 0 ? '-' : '') + (m / Math.pow(10, d)).toFixed(d); }
+return x.toFixed(d); }
+function wilson(k, n){                                     /* route_eval.wilson(), z 1.96 */
+if (n <= 0) return null;
+var z = 1.96, p = k / n, z2 = z * z, centre = p + z2 / (2 * n), margin = z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n));
+return [Math.max(0, (centre - margin) / (1 + z2 / n)), Math.min(1, (centre + margin) / (1 + z2 / n))]; }
+function rate(k, n){                                       /* route_eval.rate() */
+if (n === 0) return '0/0 (no rows)';
+var w = wilson(k, n); return k + '/' + n + ' = ' + fix(100 * k / n, 1) + '% [' + fix(100 * w[0], 1) + '%, ' + fix(100 * w[1], 1) + '%]'; }
+function counts(a, b){ var ca = {}, cb = {}, bc = 0, k;
+a.forEach(function(x){ ca[x] = (ca[x] || 0) + 1; }); b.forEach(function(x){ cb[x] = (cb[x] || 0) + 1; });
+for (k in ca) if (cb[k]) bc += ca[k] * cb[k];
+return bc; }
+function chance(a, b){ var n = a.length; return n ? counts(a, b) / (n * n) : null; }          /* agreement.chance() */
+function kappa(a, b){                                      /* agreement.cohen_kappa(): whole rows, undefined when p_e is 1 */
+var n = a.length, alike = 0, bc, i;
+if (!n) return null;
+for (i = 0; i < n; i++) if (a[i] === b[i]) alike++;
+bc = counts(a, b);
+return bc === n * n ? null : (alike * n - bc) / (n * n - bc); }
+function fk(k){ return k === null ? 'undefined' : fix(k, 2); }                                   /* agreement.fmt_kappa() */
+function table(r, t){                                      /* agreement.table(): the reference against the reader under test */
+var o = {true_pass: 0, false_fail: 0, false_pass: 0, true_fail: 0};
+for (var i = 0; i < r.length; i++) o[(!!r[i] === !!t[i] ? 'true_' : 'false_') + (t[i] ? 'pass' : 'fail')]++;
+return o; }
+function has(o, k){ return Object.prototype.hasOwnProperty.call(o, k); }
+function compare(ref, test, ids){                          /* judge_agree.compare() */
+var use = ids.filter(function(i){ return has(ref, i) && has(test, i); }), r = use.map(function(i){ return ref[i]; }),
+t = use.map(function(i){ return test[i]; }), al = 0;
+for (var j = 0; j < r.length; j++) if (r[j] === t[j]) al++;
+return {ids: use, table: table(r, t), agree: [al, use.length], chance: chance(r, t), kappa: kappa(r, t),
+differ: use.filter(function(i){ return ref[i] !== test[i]; })}; }
+function verdicts(S, rub, cut){ var o = {}; for (var i in S) if (has(S, i)) o[i] = rub ? S[i] >= cut : S[i] >= 1; return o; }  /* judge_agree.verdicts() */
+function fpOf(A, jv, ids, keep){ var a = {}, j = {};
+keep.forEach(function(i){ if (has(A, i)) a[i] = A[i]; if (has(jv, i)) j[i] = jv[i]; });
+var t = compare(a, j, ids).table; return rate(t.false_pass, t.false_pass + t.true_fail); }
+function state(D, rub, mode, cut, flips){                  /* judge_agree.py's people and judge modes, on one board */
+var ids = [], A = {}, B = {}, S = {}, built = [], jv = null, o, t;
+D.rows.forEach(function(r){ ids.push(r.i); A[r.i] = flips && flips[r.i] ? !r.A[rub] : !!r.A[rub]; B[r.i] = !!r.B[rub];
+var s = rub ? r.m : r.g; if (s !== null && s !== undefined) S[r.i] = s; if (r.c) built.push(r.i); });
+if (mode === 'people') o = compare(A, B, ids); else { jv = verdicts(S, rub, cut); o = compare(A, jv, ids); }
+o.agreeS = rate(o.agree[0], o.agree[1]); o.chanceS = o.chance === null ? '-' : fix(o.chance, 2); o.kappaS = fk(o.kappa);
+if (mode === 'judge') {
+t = o.table; o.tp = rate(t.true_pass, t.true_pass + t.false_fail); o.fp = rate(t.false_pass, t.false_pass + t.true_fail);
+if (built.length) { o.fpC = fpOf(A, jv, ids, built); o.fpN = fpOf(A, jv, ids, ids.filter(function(i){ return built.indexOf(i) < 0; })); }
+o.missing = ids.filter(function(i){ return !has(jv, i); });
+if (rub === 1) o.sweep = [1, 2, 3, 4, 5].map(function(c){ var w = compare(A, verdicts(S, 1, c), ids), u = w.table;
+return {cut: c, passes: u.true_pass + u.false_pass, n: w.ids.length, tp: rate(u.true_pass, u.true_pass + u.false_fail),
+fp: rate(u.false_pass, u.false_pass + u.true_fail), kappa: fk(w.kappa)}; });
+}
+return o; }
+var RUB = ['groundedness', 'answers the question'];
+function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function yn(v){ return v ? 'yes' : 'no'; }
+Array.prototype.forEach.call(document.querySelectorAll('.ab[data-set]'), function(root){
+var D = SETS[root.getAttribute('data-set')]; if (!D) return;
+var q = function(c){ return root.querySelector('.' + c); };
+var st = {rub: 0, mode: 'people', cut: CUT, sel: null, flips: [{}, {}]};
+var rubBox = q('ab-rub'), modeBox = q('ab-mode'), cut = q('ab-slide'), cutNote = q('ab-cutv'), chips = q('ab-chips'),
+grid = q('ab-grid'), out = q('ab-out'), sw = q('ab-sw'), pick = q('ab-pick');
+rubBox.innerHTML = RUB.map(function(t, k){ return '<button type="button" data-rub="' + k + '">' + t + '</button>'; }).join('');
+modeBox.innerHTML = '<button type="button" data-mode="people">' + esc(D.A) + ' against ' + esc(D.B) + '</button>'
++ '<button type="button" data-mode="judge">the judge against ' + esc(D.A) + '</button>';
+function render(){
+var flips = st.flips[st.rub], s = state(D, st.rub, st.mode, st.cut, flips), judging = st.mode === 'judge', slid = judging && st.rub === 1;
+Array.prototype.forEach.call(rubBox.children, function(b){ b.setAttribute('aria-pressed', String(+b.getAttribute('data-rub') === st.rub)); });
+Array.prototype.forEach.call(modeBox.children, function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === st.mode)); });
+cut.disabled = !slid; cut.value = String(st.cut);
+cutNote.textContent = slid ? 'CUT ' + st.cut + ': the judge passes a row whose ' + D.second + ' is ' + st.cut + ' or more'
+: judging ? 'groundedness is the judge\'s own 0 or 1: there is nothing to cut' : 'the cut moves only the judge\'s verdicts';
+chips.innerHTML = D.rows.map(function(r){
+var cls = s.ids.indexOf(r.i) < 0 ? ['off'] : s.differ.indexOf(r.i) >= 0 ? ['no'] : [];
+if (r.c) cls.push('c'); if (flips[r.i]) cls.push('fl'); if (st.sel === r.i) cls.push('sel');
+return '<button type="button" data-i="' + esc(r.i) + '" class="' + cls.join(' ') + '">' + esc(r.i) + '</button>'; }).join('');
+var t = s.table, X = judging ? ['judge pass', 'judge fail'] : [D.B + ' yes', D.B + ' no'],
+W = judging ? ['true pass', 'false fail', 'false pass', 'true fail'] : ['both yes', 'split', 'split', 'both no'];
+grid.innerHTML = '<span class="h">' + esc(D.A) + ' down, ' + (judging ? 'the judge' : esc(D.B)) + ' across</span><span class="h">' + esc(X[0]) + '</span><span class="h">' + esc(X[1]) + '</span>'
++ '<span class="h">' + esc(D.A) + ' yes</span><span class="ok"><b>' + t.true_pass + '</b>' + W[0] + '</span><span class="bad"><b>' + t.false_fail + '</b>' + W[1] + '</span>'
++ '<span class="h">' + esc(D.A) + ' no</span><span class="bad"><b>' + t.false_pass + '</b>' + W[2] + '</span><span class="ok"><b>' + t.true_fail + '</b>' + W[3] + '</span>';
+var lines = ['agree ' + s.agreeS + '; by chance ' + s.chanceS + '; kappa ' + s.kappaS
++ (s.kappa === null && s.ids.length ? ' (both gave one label throughout: nothing to agree on beyond chance)' : '')];
+if (judging) {
+lines.push('true-pass ' + s.tp + ': of the rows ' + D.A + ' passes, the judge passes');
+lines.push('false-pass ' + s.fp + ': of the rows ' + D.A + ' fails, the judge passes');
+if (s.fpC) lines.push('false-pass on constructed rows ' + s.fpC + '; on natural rows ' + s.fpN);
+if (s.missing.length) lines.push('not rated: ' + s.missing.join(', '));
+}
+lines.push(s.differ.length ? 'they differ on ' + s.differ.length + ': ' + s.differ.join(', ') : 'they differ on no row');
+out.innerHTML = lines.map(function(l){ return '<p>' + esc(l) + '</p>'; }).join('');
+if (slid) {
+sw.hidden = false;
+sw.innerHTML = '<b class="h">Every cut, as SWEEP=1 prints it</b><p class="hd"><span>cut</span><span>judge passes</span><span>true-pass</span><span>false-pass</span><span>kappa</span></p>'
++ s.sweep.map(function(w){ return '<p' + (w.cut === st.cut ? ' class="cur"' : '') + '><span>' + w.cut + '</span><span>' + w.passes + '/' + w.n
++ '</span><span>' + esc(w.tp) + '</span><span>' + esc(w.fp) + '</span><span>' + esc(w.kappa) + '</span></p>'; }).join('');
+} else { sw.hidden = true; sw.innerHTML = ''; }
+var r = st.sel && D.rows.filter(function(x){ return x.i === st.sel; })[0];
+if (!r) { pick.innerHTML = '<b class="h">Pick a row</b>Tap a row above to read it: the question, the answer, the context, both readers\' labels and the judge\'s scores. Red rows are labelled differently by the two sides; an underlined row is constructed.'; return; }
+var aNow = flips[r.i] ? !r.A[st.rub] : !!r.A[st.rub], sc = st.rub ? r.m : r.g, ex = st.rub ? r.me : r.ge;
+pick.innerHTML = '<b class="h">' + esc(r.i) + ' &middot; ' + esc(r.s) + ' &middot; the gate\'s rules: ' + esc(r.k) + (r.c ? ' &middot; constructed' : '') + '</b>'
++ '<p><b>Question</b> ' + esc(r.q) + '</p><p><b>Answer</b> ' + esc(r.a) + '</p>' + (r.d ? '<p><b>The added sentence</b> ' + esc(r.d) + '</p>' : '')
++ '<p class="ab-ctx">' + esc(r.x) + '</p>'
++ '<p><b>' + esc(D.A) + '</b> ' + yn(aNow) + (flips[r.i] ? ' (flipped here: the sheet says ' + yn(r.A[st.rub]) + ')' : '') + (r.nA ? ', noting: ' + esc(r.nA) : '') + '</p>'
++ '<p><b>' + esc(D.B) + '</b> ' + yn(r.B[st.rub]) + (r.nB ? ', noting: ' + esc(r.nB) : '') + '</p>'
++ '<p><b>The judge</b> ' + (sc === null ? 'did not rate this answer' : (st.rub ? D.second : 'groundedness') + ' ' + sc + (ex ? ': ' + esc(ex) : '')) + '</p>'
++ '<p><button type="button" data-flip="' + esc(r.i) + '">Flip ' + esc(D.A) + '\'s ' + RUB[st.rub] + ' label on this row</button>'
++ (Object.keys(flips).length ? ' <button type="button" data-undo="1">Undo every flip</button>' : '') + '</p>';
+}
+rubBox.addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; st.rub = +b.getAttribute('data-rub'); render(); });
+modeBox.addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; st.mode = b.getAttribute('data-mode'); render(); });
+cut.addEventListener('input', function(){ st.cut = +cut.value; render(); });
+chips.addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; st.sel = b.getAttribute('data-i'); render(); });
+pick.addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; var f = st.flips[st.rub];
+if (b.hasAttribute('data-undo')) st.flips[st.rub] = {}; else { var i = b.getAttribute('data-flip'); if (f[i]) delete f[i]; else f[i] = true; }
+render(); });
+render();
+});
+})();
+</script>
+</body>
+</html>

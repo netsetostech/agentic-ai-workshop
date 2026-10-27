@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_12.2_Managed_Tuning_WIX.html`, reviewed at blob `8d2fab91ee14935e4fdd422af3798cf76a95b6f7`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_12.2_Managed_Tuning_WIX.html`, reviewed at blob `d1f41abcd3083351c2951ea8f156ac874787383a`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 12.1 froze a training file. Before Vertex AI trains on it, you check that it is the file the manifest describes, in the shape the trainer reads. You also check that it carries no personal data and no golden row, and that its tenant lets its text leave India. Only then do you start the job. It runs in `us-central1`, bills per training token, and returns a tuned model with an endpoint that answers from the location its path names.
 
@@ -196,7 +196,7 @@ The first cell polls the job once a minute until it ends. The poll only reads, s
 
 The cell keeps the endpoint in `~/poll172.log` and in `ENDPOINT`.
 
-The second cell asks the endpoint one question the way the generator would. It sends `SYSTEM`, one source under its header and the question, with `generator._call`'s settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: `us-central1`, the job's region; `global`, where the served model answers; and the location the generator would use, from the path.
+The second cell asks the endpoint one question the way the generator would. It sends `SYSTEM`, one source under its header and the question, with `generator._call`'s settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: `us-central1`, the job's region; `global`, where the served model answers; and the location the generator would use, from the path. It reads the answer with the generator's own `_draft()`: the tuned model learned long quotes from the rows, so a quote past the schema's 200 characters is cut, and a `generation_repaired` line says so.
 
 - The job queued, ran and succeeded. It named a tuned model and an endpoint in `us`, not in the region it ran in. That is the second proof: the endpoint's path with its location.
 

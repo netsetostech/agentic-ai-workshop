@@ -1,6 +1,6 @@
 # All modules and lessons
 
-The sequence comes from each main HTML; the 4 lessons whose main HTML is not written yet are attributed to the course plan and kit. Lessons planned but not started have no folder yet.
+The sequence comes from each main HTML; the 0 lessons whose main HTML is not written yet are attributed to the course plan and kit. Lessons planned but not started have no folder yet.
 
 - [B.1: Run Python the way the kit does: venvs, JSON and HTTP calls](module_B/lesson_B_1/README.md) — 5 files; main_html
 - [B.2: Turn text into tokens and embeddings](module_B/lesson_B_2/README.md) — 6 files; main_html
@@ -8,9 +8,10 @@ The sequence comes from each main HTML; the 4 lessons whose main HTML is not wri
 - [B.4: Encode with BERT-style models: embeddings and rankers](module_B/lesson_B_4/README.md) — 4 files; main_html
 - [B.5: Generate with GPT-style models: decoding and run-to-run variance](module_B/lesson_B_5/README.md) — 5 files; main_html
 - [0.1: Set up the Google Cloud billing account, budget and project](module_00/lesson_0_1/README.md) — 7 files; main_html
-- [0.2: Reproduce the local environment, read the master diagram and prove a first success](module_00/lesson_0_2/README.md) — 4 files; main_html
+- [0.2: Reproduce the local environment, read the master diagram and prove a first success](module_00/lesson_0_2/README.md) — 6 files; main_html
 - [0.3: Understand the project, identities and resource map, and deploy the lane](module_00/lesson_0_3/README.md) — 6 files; main_html
 - [0.4: Prove the lane, break it once, and switch it off](module_00/lesson_0_4/README.md) — 14 files; main_html
+- [0.5: Set up the cloud lane end to end: clone in Cloud Shell, create the infrastructure with Terraform, deploy every service and the UI](module_00/lesson_0_5/README.md) — 12 files; main_html
 - [1.1: Understand source, tenant, page and chunk contracts](module_01/lesson_1_1/README.md) — 8 files; main_html
 - [1.2: Parse documents and compare chunk boundaries](module_01/lesson_1_2/README.md) — 8 files; main_html
 - [1.3: Create and validate compatible embeddings](module_01/lesson_1_3/README.md) — 9 files; main_html
@@ -23,48 +24,77 @@ The sequence comes from each main HTML; the 4 lessons whose main HTML is not wri
 - [2.2: Compare dense and hybrid retrieval](module_02/lesson_2_2/README.md) — 9 files; main_html
 - [2.3: Rerank and inspect retrieved candidates](module_02/lesson_2_3/README.md) — 9 files; main_html
 - [2.4: Test fallback without losing tenant or metadata filters](module_02/lesson_2_4/README.md) — 9 files; main_html
+- [2.5: Rewrite the query before retrieval, and measure it](module_02/lesson_2_5/README.md) — 9 files; main_html
+- [2.6: Decide answer-or-refuse with a System One model (Jev)](module_02/lesson_2_6/README.md) — 8 files; main_html
+- [3.1: See run-to-run variance and thinking levels in the same prompt](module_03/lesson_3_1/README.md) — 9 files; main_html
+- [3.2: Prompt with chain of thought and few-shot exemplars](module_03/lesson_3_2/README.md) — 11 files; main_html
+- [3.3: Recognise prompt failure modes and fix them in the prompt](module_03/lesson_3_3/README.md) — 8 files; main_html
 - [3.4: Pack evidence within the context budget](module_03/lesson_3_4/README.md) — 9 files; main_html
 - [3.5: Generate structured answers, citations and refusals](module_03/lesson_3_5/README.md) — 9 files; main_html
+- [3.6: Check quotes and version prompts](module_03/lesson_3_6/README.md) — 9 files; main_html
 - [3.7: Stream answers and handle failures](module_03/lesson_3_7/README.md) — 8 files; main_html
 - [3.8: Complete the Streamlit upload-to-answer journey](module_03/lesson_3_8/README.md) — 8 files; main_html
+- [3.9: System design: a fact-checking system built from DocuMind's parts](module_03/lesson_3_9/README.md) — 9 files; main_html
 - [4.1: Build a useful evaluation dataset](module_04/lesson_4_1/README.md) — 10 files; main_html
 - [4.2: Separate offline checks, live scoring and LLM judgment](module_04/lesson_4_2/README.md) — 8 files; main_html
+- [4.3: Place evals in the pipeline: CI, the candidate gate and live traffic](module_04/lesson_4_3/README.md) — 8 files; main_html
 - [4.4: Compare one controlled change against a baseline](module_04/lesson_4_4/README.md) — 8 files; main_html
+- [4.5: Check the LLM judge against people](module_04/lesson_4_5/README.md) — 8 files; main_html
 - [4.6: Trace authenticated identity into tenant membership](module_04/lesson_4_6/README.md) — 8 files; main_html
 - [4.7: Test valid access, denied access and cross-tenant requests](module_04/lesson_4_7/README.md) — 8 files; main_html
 - [4.8: Exercise DLP, guardrails and audit behavior](module_04/lesson_4_8/README.md) — 10 files; main_html
-- [5.1: Understand tool contracts and the direct agent loop](module_05/lesson_5_1/README.md) — 9 files; main_html
+- [4.9: Read the failures first, then attack your own pipeline](module_04/lesson_4_9/README.md) — 13 files; main_html
+- [5.1: Understand tool contracts and the direct agent loop](module_05/lesson_5_1/README.md) — 10 files; main_html
 - [5.2: Expose, discover and invoke MCP tools](module_05/lesson_5_2/README.md) — 8 files; main_html
 - [5.3: Deploy MCP and verify authorized access](module_05/lesson_5_3/README.md) — 8 files; main_html
 - [5.4: Implement the main LangGraph workflow](module_05/lesson_5_4/README.md) — 6 files; main_html
 - [5.5: Diagnose tool arguments, access failures and timeouts](module_05/lesson_5_5/README.md) — 7 files; main_html
 - [5.6: Hand a question to the person the law names](module_05/lesson_5_6/README.md) — 9 files; main_html
 - [5.7: Compare the LangChain and ADK adapters](module_05/lesson_5_7/README.md) — 7 files; main_html
+- [5.8: Pause, approve, clarify and escalate: human in the loop](module_05/lesson_5_8/README.md) — 9 files; main_html
+- [6.1: Assemble the context: what rides every model call](module_06/lesson_6_1/README.md) — 8 files; main_html
 - [6.2: Compare context caching and answer caching](module_06/lesson_6_2/README.md) — 9 files; main_html
 - [6.3: Test cache scope, configuration changes and freshness](module_06/lesson_6_3/README.md) — 9 files; main_html
 - [6.4: Measure latency, avoided calls and false cache hits](module_06/lesson_6_4/README.md) — 8 files; main_html
 - [6.5: Distinguish agent state, conversation history and knowledge](module_06/lesson_6_5/README.md) — 7 files; main_html
 - [6.6: Configure and inspect durable conversation storage](module_06/lesson_6_6/README.md) — 7 files; main_html
 - [6.7: Verify restart recovery and session isolation](module_06/lesson_6_7/README.md) — 7 files; main_html
+- [6.8: Resume a paused or cut-off turn: checkpoint and resume](module_06/lesson_6_8/README.md) — 9 files; main_html
+- [6.9: Budget working memory: windowing, compaction and write rules](module_06/lesson_6_9/README.md) — 8 files; main_html
 - [7.1: Build graph evidence from source documents](module_07/lesson_7_1/README.md) — 7 files; main_html
 - [7.2: Compare Firestore and Spanner graph paths](module_07/lesson_7_2/README.md) — 8 files; main_html
 - [7.3: Configure and query managed retrieval mirrors](module_07/lesson_7_3/README.md) — 7 files; main_html
 - [7.4: Compare quality and test update/withdrawal freshness](module_07/lesson_7_4/README.md) — 7 files; main_html
 - [7.5: Query a video clip and validate media citations](module_07/lesson_7_5/README.md) — 7 files; main_html
 - [7.6: Exercise implemented Studio and voice features](module_07/lesson_7_6/README.md) — 7 files; main_html
+- [8.1: Run the ingest events through Pub/Sub, mapped to Kafka](module_08/lesson_8_1/README.md) — 8 files; main_html
+- [8.2: Change a chunker, re-embed and reconcile](module_08/lesson_8_2/README.md) — 10 files; main_html
+- [8.3: Size RAG for ten million documents](module_08/lesson_8_3/README.md) — 7 files; main_html
+- [8.4: System design: a self-updating documentation platform](module_08/lesson_8_4/README.md) — 9 files; main_html
 - [9.1: Trace and authorize gateway routes](module_09/lesson_9_1/README.md) — 7 files; main_html
 - [9.2: Serve a supplied or stock model using Ollama](module_09/lesson_9_2/README.md) — 8 files; main_html
 - [9.3: Inspect the vLLM service and the GKE alternative](module_09/lesson_9_3/README.md) — 7 files; main_html
 - [9.4: Compare actual backends and verify shutdown behavior](module_09/lesson_9_4/README.md) — 7 files; main_html
+- [10.1: Choose where the agent reasons: observe-think-act and ReAct](module_10/lesson_10_1/README.md) — 9 files; main_html
+- [10.2: Plan first or decide each step: plan-and-execute](module_10/lesson_10_2/README.md) — 11 files; main_html
+- [10.3: Check, retry or choose: the critic and refiner pattern](module_10/lesson_10_3/README.md) — 9 files; main_html
 - [10.4: Route each question to one specialist agent](module_10/lesson_10_4/README.md) — 14 files; main_html
+- [10.5: Run a desk as an agent with checked calculator arguments](module_10/lesson_10_5/README.md) — 10 files; main_html
 - [10.6: Trace the implemented A2A peer and its permissions](module_10/lesson_10_6/README.md) — 7 files; main_html
-- [11.1: Build and deploy using keyless identity](module_11/lesson_11_1/README.md) — 3 files; course_plan_and_kit
-- [11.2: Evaluate and gate the exact candidate revision](module_11/lesson_11_2/README.md) — 2 files; course_plan_and_kit
-- [11.3: Promote, roll back and repair a controlled failure](module_11/lesson_11_3/README.md) — 2 files; course_plan_and_kit
-- [11.4: Debug a wrong answer through the complete pipeline](module_11/lesson_11_4/README.md) — 7 files; main_html
+- [10.7: Hand one question to the A2A peer, and stop loops and deadlocks](module_10/lesson_10_7/README.md) — 12 files; main_html
+- [10.8: Defend agents against injected documents and poisoned tools](module_10/lesson_10_8/README.md) — 13 files; main_html
+- [10.9: Run the peer on Google's managed agent platform](module_10/lesson_10_9/README.md) — 9 files; main_html
+- [10.10: Coding agents: a Ralph loop, an AI code reviewer and paper-to-code](module_10/lesson_10_10/README.md) — 12 files; main_html
+- [10.11: System design: incident auto-remediation](module_10/lesson_10_11/README.md) — 11 files; main_html
+- [11.1: Build and deploy using keyless identity](module_11/lesson_11_1/README.md) — 9 files; main_html
+- [11.2: Evaluate and gate the exact candidate revision](module_11/lesson_11_2/README.md) — 8 files; main_html
+- [11.3: Promote, roll back and repair a controlled failure](module_11/lesson_11_3/README.md) — 8 files; main_html
+- [11.4: Debug a wrong answer through the complete pipeline](module_11/lesson_11_4/README.md) — 8 files; main_html
 - [11.5: Reconcile usage events, reports and alerts](module_11/lesson_11_5/README.md) — 7 files; main_html
 - [11.6: Exercise model routing, budgets and shutdown controls](module_11/lesson_11_6/README.md) — 7 files; main_html
-- [11.8: Complete the independent capstone and operational handover](module_11/lesson_11_8/README.md) — 2 files; course_plan_and_kit
+- [11.7: Reproduce the agent failures production shows and no eval row does](module_11/lesson_11_7/README.md) — 10 files; main_html
+- [11.8: Complete the independent capstone and operational handover](module_11/lesson_11_8/README.md) — 8 files; main_html
 - [12.1: Decide whether tuning is justified and prepare data](module_12/lesson_12_1/README.md) — 8 files; main_html
 - [12.2: Validate sanitized datasets and run managed tuning](module_12/lesson_12_2/README.md) — 8 files; main_html
 - [12.3: Compare the tuned candidate with an uncontaminated baseline](module_12/lesson_12_3/README.md) — 10 files; main_html
+- [12.4: Improve the agent safely: eval-gated self-improvement](module_12/lesson_12_4/README.md) — 13 files; main_html

@@ -87,7 +87,7 @@ li{margin-bottom:6px;}
 /* code windows: the rounded shell and the scroller are two elements */
 .cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
 .ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
-.ch-bar span{overflow-wrap:anywhere;}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
 .cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 .cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
 .cp:active{transform:scale(.96);}
@@ -251,7 +251,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 <div class="toc"><div class="toc-title">On this page</div>
 <ol>
 <li><a href="#s1">What the reranker does, and what a clock on every stage is for</a></li>
-<li><a href="#s2">The words: pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</a></li>
+<li><a href="#s2">The words: bi-encoder, cross-encoder, pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</a></li>
 <li><a href="#setup">Before you run anything: set up the shell</a></li>
 <li><a href="#s3">One answer, read end to end: the citations, their scores, the stages</a></li>
 <li><a href="#s4">The Ranking API by hand: the API's pool, the API's request, the API's order</a></li>
@@ -273,6 +273,35 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 <p><strong>Every stage has its own clock, and the row carries all three.</strong> <code>stage()</code> in main.py wraps retrieve, rerank and generate: each writes its own milliseconds into the answer's <code>stages</code> and opens a span of the same name in Cloud Trace. The usage row flattens the three clocks beside <code>pool</code>, the number of candidates the reranker saw, and the warehouse view takes the 95th percentile of each. A page that says "p95 is 3 seconds" tells you to worry; a row that says "generate is 2.6 of them" tells you where.</p>
 
 <p><strong>When the ranker does not answer, the pool by retrieval score stands in, and the row says so.</strong> The Ranking API gets <code>RERANK_TIMEOUT_S</code>, 5.0 seconds by default, for the whole call. Past it, or on any exception at all, <code>rerank()</code> sorts the pool by its retrieval score, marks every chunk, logs one <code>rerank_fallback</code> line with the error's type, and returns; the handler puts <code>rerank_fallback: 1</code> on the answer and the row, and the view sums those into a column. A worse order is a degraded answer that a person can count.</p>
+
+<h4>A bi-encoder built the pool, a cross-encoder orders it</h4>
+<p>Retrieval and reranking are the two ways an encoder can score a question against a passage. The embedding model behind retrieval is a <em>bi-encoder</em>: one text in, one vector out, and the comparison afterwards, so each chunk's vector was made once, at ingest, and a question costs one embedding and the index's arithmetic. The ranker is a <em>cross-encoder</em>: the question and one candidate go in together and one score comes out, so nothing can be computed before the question arrives, and each candidate is read afresh for every question. That is why the bi-encoder searches the corpus and the cross-encoder reads only its pool. The two names are the roles the models play; Google documents what each takes and returns, not how it is built. Lesson B.4, steps 4, 5 and 8, builds a toy of each and prices the two at the kit's scale.</p>
+
+<div class="diagram" id="encoders">
+<div class="dg-title">The two encoders - each step under the name the kit's code gives it</div>
+<div class="band">
+<div class="lane">
+<div class="lane-h">Lane 1 &middot; the bi-encoder: each text alone</div>
+<div class="band">
+<div class="node code"><b>each chunk, at ingest</b><code>indexer.py</code>: <code>text-embedding-005</code> under <code>RETRIEVAL_DOCUMENT</code>, 768 numbers, written to the index</div>
+<div class="node code"><b>the question, per request</b><code>embed_query()</code>: the same model under <code>RETRIEVAL_QUERY</code>, 768 numbers</div>
+</div>
+<div class="down">&darr;</div>
+<div class="node"><b>vector against vector</b><code>find_neighbors</code> ranks the tenant's chunks by <code>DOT_PRODUCT_DISTANCE</code> (<code>vector.tf</code>); no text is read</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>the pool: 20 candidates</b><code>num_neighbors=settings.top_k_retrieve</code>, each with its retrieval score</div>
+</div>
+<div class="lane">
+<div class="lane-h">Lane 2 &middot; the cross-encoder: the pair together</div>
+<div class="node code"><b>the question and each candidate</b><code>rerank()</code> sends the question with one <code>RankingRecord(id=str(i), content=c["text"])</code> per chunk, at most 200: text, not vectors</div>
+<div class="down">&darr;</div>
+<div class="node"><b>semantic-ranker-fast-004</b>on <code>global</code>, reads each pair and scores it</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>top_k of them, in the ranker's order</b><code>top_n</code> is the request's <code>top_k</code>; each score is written back as <code>rerank_score</code>, the citation's score</div>
+</div>
+</div>
+<p class="dg-cap">Lane 1 runs inside the <code>retrieve</code> clock, on the default path (the index, dense mode), and lane 2 inside the <code>rerank</code> clock; lane 1's pool is lane 2's input. Every name and number in the boxes is read from the kit, or checked against it, when this page is built.</p>
+</div>
 
 <div class="analogy"><div class="analogy-icon">&#128203;</div><div>
 <p><strong>The shortlist.</strong> A recruiter pulls twenty CVs from thousands by the words on them, fast, reading each CV alone; that is the retriever, and the twenty are the pool. An interviewer reads each of the twenty against the job description and orders them; that is the reranker, and the panel room seats five, which is <code>top_k</code>. The brief for the panel has a page limit, so a clerk fits in as many of the five as the pages allow, most promising first; that is the packer. The offer letter names only people who were in the room; those are the citations. Every step is timed on the file, and when the interviewer is off sick the recruiter's order goes to the room instead, with a note on the file that says so: a worse shortlist than usual, but a shortlist today, and a note someone will read.</p></div></div>
@@ -309,11 +338,13 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 <p>It is not the warehouse: <code>tenant_daily</code> runs the same GROUP BY in BigQuery over the sink's copy of the rows once the day has closed. And the four cases it can add are shaped by main.py's rules with the selftest's numbers left in place; a real fallback on your lane is step 5's business.</p></div>
 
 <!-- ============================ STEP 2 ============================ -->
-<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: bi-encoder, cross-encoder, pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
 
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
 <thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
 <tbody>
+<tr><td><strong>Bi-encoder</strong></td><td data-label="Meaning">A model that turns one text into one vector, so the question and each chunk are embedded apart and compared afterwards, by arithmetic. The chunks' half is done once, at ingest, which is what lets it search the whole corpus; it never reads a question and a chunk together.</td><td data-label="On your lane"><code>text-embedding-005</code>, 768 numbers: <code>RETRIEVAL_DOCUMENT</code> at ingest, <code>RETRIEVAL_QUERY</code> in <code>embed_query()</code>; the index compares the two by <code>DOT_PRODUCT_DISTANCE</code>.</td></tr>
+<tr><td><strong>Cross-encoder</strong></td><td data-label="Meaning">A model that reads the question and one passage as a single input and returns one score for the pair. Nothing can be computed before the question arrives, so it reads a shortlist, never the corpus.</td><td data-label="On your lane">The reranker: <code>semantic-ranker-fast-004</code>, one record per candidate in the pool; its clock is <code>stages.rerank_ms</code>.</td></tr>
 <tr><td><strong>Pool</strong></td><td data-label="Meaning">What retrieval hands the reranker: <code>TOP_K_RETRIEVE</code> candidates from the index (or the Firestore rung), retired versions and older versions of a source already dropped by <code>prefer_current()</code>.</td><td data-label="On your lane">20 by default; <code>stages.pool</code> on every answer.</td></tr>
 <tr><td><strong>Reranker, record</strong></td><td data-label="Meaning">The Ranking API's <code>semantic-ranker-fast-004</code> on the <code>global</code> location: given the question and up to 200 records, each an id (the chunk's position in the pool) and the chunk's text, it returns the top n with a relevance score each. It reads the pair; the retriever compared two vectors made apart.</td><td data-label="On your lane"><code>rerank()</code> in retriever.py; the API's service account holds <code>discoveryengine.viewer</code> for it (sa.tf).</td></tr>
 <tr><td><strong>rerank_score</strong></td><td data-label="Meaning">The ranker's score, stamped on the chunk. <code>resolve()</code> makes it the citation's <code>score</code>, clipped to 0 to 1; when the ranker stood down, the retrieval score is what the citation shows.</td><td data-label="On your lane"><code>citations[].score</code> in step 3, a retrieval score in step 5.</td></tr>
@@ -476,7 +507,7 @@ def ask(top_k):
 for k in (5, 20):
     j = ask(k); s = j["stages"]
     json.dump(j, open(f"/tmp/ans53_{k}.json", "w"))
-    print(f"\ntop_k {k}: pool {s['pool']} | from the index {s['vector_chunks']} | retrieve {s['retrieve_ms']} + rerank {s['rerank_ms']} + generate {s['generate_ms']} ms of {j['latency_ms']} | rerank_fallback {s.get('rerank_fallback', 0)} | cache_hit {j['cache_hit']}")
+    print(f"\ntop_k {k}: pool {s['pool']} | from the index {s['vector_chunks']} | retrieve {s['retrieve_ms']} + rerank {s['rerank_ms']} + generate {s['generate_ms']} ms of {j['latency_ms']} | tokens_in {j['tokens_in']} | rerank_fallback {s.get('rerank_fallback', 0)} | cache_hit {j['cache_hit']}")
     print(f"   {len(j['citations'])} citations: the sources the model used, in the order it used them; [N] in the answer is the packed position")
     for i, c in enumerate(j["citations"], 1):
         print(f"   [{i}] score {c['score']:.4f}  #{c['chunk_id'].rsplit('#', 1)[1]:>3}  {c['source_uri'].split('/')[-1][:26]:26} p.{c.get('page') or '-'}  {c['quote'][:44]!r}")
@@ -484,21 +515,20 @@ for k in (5, 20):
 print("\nsaved /tmp/ans53_5.json and /tmp/ans53_20.json for steps 4, 7 and 8")
 PY</pre></div>
 
-<div class="cw"><div class="ch-bar"><span>expected (your milliseconds, positions and quotes differ; the scores falling and the pool staying 20 are the point)</span><span class="ro">read only</span></div><pre tabindex="0">top_k 5: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 17xx ms of 28xx | rerank_fallback 0 | cache_hit none
-   3 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
-   [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'NP-03 ...'
-   [2] score 0.8xxx  #  4  hr_policy_2026.md          p.-  '...'
-   [3] score 0.6xxx  #  2  hr_policy_2026.md          p.-  '...'
-   sorted by score, the ranker's order among them: ['#1', '#4', '#2']
+<div class="cw"><div class="ch-bar"><span>expected (your milliseconds, positions, quotes and number of citations differ; the pool staying 20 and tokens_in growing about fourfold are the point)</span><span class="ro">read only</span></div><pre tabindex="0">top_k 5: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 2xxx ms of 4xxx | tokens_in 1xxx | rerank_fallback 0 | cache_hit none
+   1 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
+   [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'A confirmed employee at grade E3 or above se'
+   sorted by score, the ranker's order among them: ['#1']
 
-top_k 20: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 3xxx ms of 4xxx | rerank_fallback 0 | cache_hit none
-   4 citations: ...
-   sorted by score, the ranker's order among them: ['#1', '#4', '#2', '#7']
+top_k 20: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 2xxx ms of 4xxx | tokens_in 5xxx | rerank_fallback 0 | cache_hit none
+   1 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
+   [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'A confirmed employee at grade E3 or above se'
+   sorted by score, the ranker's order among them: ['#1']
 
 saved /tmp/ans53_5.json and /tmp/ans53_20.json for steps 4, 7 and 8</pre></div>
 
 <div class="wjh"><div class="wjh-title">What just happened</div>
-<p>Two answers came back with the same pool, twenty candidates from the index, and the same first stage, because retrieval does not read <code>top_k</code>. The reranker read all twenty both times and returned five, then twenty; the model cited three or four either way, and each citation's score was the ranker's, so a citation at 0.9 sat above one at 0.6 whatever order the model mentioned them in. The generate clock grew with the second request because the model read four times the context: that is the cost of a wider <code>top_k</code>, not in the ranker, which is priced per request, but in the tokens. Nothing says <code>rerank_fallback</code> because the ranker answered; step 5 shows the row when it does not.</p></div>
+<p>Two answers came back with the same pool, twenty candidates from the index, and the same first stage, because retrieval does not read <code>top_k</code>. The reranker read all twenty both times and returned five, then twenty; the model cited only the passages its answer used, for a notice period usually NP-03 alone, either way, and each citation's score is the ranker's, so when an answer cites several, one at 0.9 sits above one at 0.6 whatever order the model mentioned them in. What grew with the second request is <code>tokens_in</code>, about four times: the model was handed four times the context, and that is the cost of a wider <code>top_k</code>, not in the ranker, which is priced per request, but in the tokens. The generate clock need not grow with it, because the model's thinking and the answer's length weigh more on it than the prompt does. Nothing says <code>rerank_fallback</code> because the ranker answered; step 5 shows the row when it does not.</p></div>
 
 <!-- ============================ STEP 4 ============================ -->
 <div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Ranker</span><h3>The Ranking API by hand: the API's pool, the API's request, the API's order</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/demo_04_the_ranking_api_by_hand_the_api_s_pool_the_api_s_request_the_api_s_order.py" target="_blank" rel="noopener"><code>demo_04_the_ranking_api_by_hand_the_api_s_pool_the_api_s_request_the_api_s_order.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
@@ -578,7 +608,8 @@ try:
     ans = json.load(open("/tmp/ans53_5.json"))
     cited = [c["chunk_id"] for c in sorted(ans["citations"], key=lambda c: -c["score"])]
     hand = [pool[i]["id"] for i, _ in ranked[:5]]
-    print("the API's cited ids, by score:", [f"#{c.rsplit('#', 1)[1]}" for c in cited], "| by hand, first 5:", [f"#{c.rsplit('#', 1)[1]}" for c in hand])
+    at = {c["id"]: f"pool #{n + 1}" for n, c in enumerate(pool)}             # a chunk's number repeats across documents; its pool position does not
+    print("the API's citations, by score:", [at.get(c, "not in the pool") for c in cited], "| by hand, first 5:", [at[c] for c in hand])
     print("every citation is in the by-hand top 5:", all(c in hand for c in cited), "| in the same relative order:", [c for c in hand if c in cited] == cited)
 except FileNotFoundError:
     print("run step 3 first to compare with the API's citations")
@@ -589,14 +620,14 @@ PY</pre></div>
 <div class="cw"><div class="ch-bar"><span>expected (your ids, scores and milliseconds differ; the two True lines are the point)</span><span class="ro">read only</span></div><pre tabindex="0">pool: 20 current ids from the index in 9xx ms, every one found_by vector
 ranker: 20 of 20 back in 2xx ms, 20 records sent, model semantic-ranker-fast-004
    rank 1  score 0.9xxx  pool # 1  NP-03     hr_policy_2026.md
-   rank 2  score 0.xxxx  pool # x  ...       hr_policy_2026.md
+   rank 2  score 0.xxxx  pool # x  ...       ...
    ...
-the API's cited ids, by score: ['#1', '#4', '#2'] | by hand, first 5: ['#1', '#4', '#2', '#7', '#3']
+the API's citations, by score: ['pool #1'] | by hand, first 5: ['pool #1', 'pool #3', 'pool #10', 'pool #6', 'pool #18']
 every citation is in the by-hand top 5: True | in the same relative order: True
 saved /tmp/pool53.json for steps 5, 7 and 8</pre></div>
 
 <div class="wjh"><div class="wjh-title">What just happened</div>
-<p>You made the API's two calls with the API's own inputs and got the API's order. The pool came from the same endpoint under the same restrict, in the index's order with the index's scores, with the ledger's retired versions dropped as the reranker never sees them. The rank request was the kit's, record for record, and what came back was the citations' order from step 3: the model was handed those five in that order and cited three of them. Your milliseconds are the row's stages measured from a workstation instead of a container: yours to compare with the clocks, not to match. If the last line says False, the pool changed between the two calls, which a reindex in between will do; run the cell again.</p></div>
+<p>You made the API's two calls with the API's own inputs and got the API's order. The pool came from the same endpoint under the same restrict, in the index's order with the index's scores, with the ledger's retired versions dropped as the reranker never sees them. The rank request was the kit's, record for record, and what came back was the citations' order from step 3: the model was handed those five in that order and cited the ones its answer used. The positions are the pool's, because acme's pool mixes documents and a chunk's own number, the <code>#1</code> in its id, repeats from one document to the next. Your milliseconds are the row's stages measured from a workstation instead of a container: yours to compare with the clocks, not to match. If the last line says False, the pool changed between the two calls, which a reindex in between will do; run the cell again.</p></div>
 
 <!-- ============================ STEP 5 ============================ -->
 <div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Fallback</span><h3>The fallback: the pool by retrieval score, flagged on the row, forced on a candidate</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_02/lesson_2_3/demo_05_the_fallback_the_pool_by_retrieval_score_flagged_on_the_row_forced_on_a_candidat.py" target="_blank" rel="noopener"><code>demo_05_the_fallback_the_pool_by_retrieval_score_flagged_on_the_row_forced_on_a_candidat.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
@@ -670,13 +701,15 @@ export CAND="https://candidate---documind-api-$NUMBER.$REGION.run.app"
 curl -s -X POST "$CAND/v1/query" -H "Authorization: Bearer $(tok "$API")" -H "Content-Type: application/json" \
   -d '{"query":"What is the notice period for a confirmed E3?","tenant_id":"acme","stream":false,"top_k":5}' \
   | python -c "import sys, json; j = json.load(sys.stdin); s = j['stages']; print('candidate: rerank_fallback', s.get('rerank_fallback', 0), '| rerank_ms', s['rerank_ms'], '| pool', s['pool'], '| answerable', j['answerable']); [print('   score %.4f  #%s  %s' % (c['score'], c['chunk_id'].rsplit('#', 1)[1], c['source_uri'].split('/')[-1][:26])) for c in j['citations']]"
-gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="rerank_fallback"' \
-  --project "$PROJECT" --freshness 10m --limit 3 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)'</pre></div>
+for i in $(seq 1 12); do                                                     <span class="cm"># the line reaches Cloud Logging seconds after the answer</span>
+  LINE="$(gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="rerank_fallback"' \
+    --project "$PROJECT" --freshness 2m --limit 1 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)')"
+  [ -n "$LINE" ] &amp;&amp; break; sleep 5
+done
+echo "${LINE:-no rerank_fallback line in a minute: run the read again}"</pre></div>
 
 <div class="cw"><div class="ch-bar"><span>expected (your scores are the pool's; a RetryError names the same deadline through a retry)</span><span class="ro">read only</span></div><pre tabindex="0">candidate: rerank_fallback 1 | rerank_ms 1x | pool 20 | answerable True
-   score 0.7xxx  #1  hr_policy_2026.md
-   score 0.7xxx  #4  hr_policy_2026.md
-   score 0.6xxx  #2  hr_policy_2026.md
+   score 0.6xxx  #1  hr_policy_2026.md
 2026-09-2xT1x:xx:xx.xxxxxxZ	acme	DeadlineExceeded</pre></div>
 
 <div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (the undo: the variable removed, the tag dropped, the live service asked once)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag candidate \
@@ -756,7 +789,7 @@ acme                        NN    4xxx       6xx     3xx      3xxx   20.0</pre><
   --project "$PROJECT" --freshness 24h --limit 40 --format=json \
   | python -c "import sys, json; [print(json.dumps(e['jsonPayload'])) for e in json.load(sys.stdin) if 'jsonPayload' in e]" &gt; /tmp/rows53.jsonl
 python -c "import json; rows = [json.loads(l) for l in open('/tmp/rows53.jsonl')]; print(len(rows), 'rows;', sum(int(r.get('rerank_fallback') or 0) for r in rows), 'with rerank_fallback 1;', sum(1 for r in rows if not r.get('pool')), 'with an empty pool')"
-head -c 700 /tmp/rows53.jsonl</pre></div>
+head -c 700 /tmp/rows53.jsonl; echo</pre></div>
 
 <div class="cw"><div class="ch-bar"><span>expected (the fallback row is step 5's doing)</span><span class="ro">read only</span></div><pre tabindex="0">NN rows; 1 with rerank_fallback 1; 0 with an empty pool
 {"event": "query", "tenant": "acme", "user": "documind-ui-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com", "tokens_in": xxxx.0, "tokens_out": xxx.0, "cached_tokens": 0.0, "cost_usd": 0.00xxxx, "latency_ms": 2xxx.0, "answerable": true, "retrieve_ms": 6xx.0, "rerank_ms": 3xx.0, "generate_ms": 1xxx.0, "pool": 20.0, "rerank_fallback": 0.0, ...</pre></div>
@@ -846,7 +879,7 @@ first three: [('NP-03', 'vector', 0.7xxx), ('...', 'vector', 0.7xxx), ('...', 'v
 <div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the smoke: one question, the same without a token, a version read; a rupee)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">DOCUMIND_PROJECT=$PROJECT DOCUMIND_API_URL=$API DOCUMIND_TENANT=acme \
 DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$PROJECT.iam.gserviceaccount.com make smoke 2&gt;&amp;1 | grep -E "query|vector tier|no token|PASS|FAIL"</pre></div>
 
-<div class="cw"><div class="ch-bar"><span>expected (the vector-tier line is this step's; the rest are lesson 3's checks and the optional ones)</span><span class="ro">read only</span></div><pre tabindex="0">  [PASS] health  {"status":"ok"}
+<div class="cw"><div class="ch-bar"><span>expected (the vector-tier line is this step's; the rest are lesson 0.4's checks and the optional ones)</span><span class="ro">read only</span></div><pre tabindex="0">  [PASS] health  {"status":"ok"}
   [PASS] ready  ...
   [PASS] query  answerable=True citations=3  '...'
   [PASS] vector tier  20 of 20 chunks came from the index
@@ -946,7 +979,7 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
 <thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
 <tbody>
-<tr><td>1</td><td data-label="Claim">A citation's score is the ranker's, and the pool does not read top_k</td><td data-label="The check">step 3</td><td data-label="Pass looks like">scores falling from 0.9x; <code>pool 20</code> at top_k 5 and 20</td></tr>
+<tr><td>1</td><td data-label="Claim">A citation's score is the ranker's, and the pool does not read top_k</td><td data-label="The check">step 3</td><td data-label="Pass looks like">the first citation at 0.9x, any other below it; <code>pool 20</code> at top_k 5 and 20, <code>tokens_in</code> about four times as many at 20</td></tr>
 <tr><td>2</td><td data-label="Claim">The API's rank request, sent by hand, gives the API's order</td><td data-label="The check">step 4</td><td data-label="Pass looks like">two <code>True</code> on the last line</td></tr>
 <tr><td>3</td><td data-label="Claim">The fallback is the retriever's order, and every chunk is marked</td><td data-label="The check">step 5, offline</td><td data-label="Pass looks like"><code>rerank_fell_back: True</code>, scores in the 0.7s</td></tr>
 <tr><td>4</td><td data-label="Claim">A silent ranker is a flagged answer, not a 500</td><td data-label="The check">step 5, the candidate</td><td data-label="Pass looks like"><code>rerank_fallback 1</code>, <code>answerable True</code>, a <code>DeadlineExceeded</code> line</td></tr>
@@ -958,7 +991,7 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
 <div class="box box-teal"><div class="box-title">What changed on your lane</div>
-<p>Nothing that serves traffic. Step 5 created a revision of the API that took none and removed its tag and its variable again; the live revision never changed. The questions you asked left usage rows in Cloud Logging, one of them with <code>rerank_fallback 1</code>, and lesson 13's view will count it as a day with one degraded answer, which is true. The four files under <code>/tmp</code> are yours to delete. Lesson 2.4 takes the rung beneath the index, makes it answer on purpose, and shows the tenant and the filters holding on the way down.</p></div>
+<p>Nothing that serves traffic. Step 5 created a revision of the API that took none and removed its tag and its variable again; the live revision never changed. The questions you asked left usage rows in Cloud Logging, one of them with <code>rerank_fallback 1</code>, and lesson 11.5's view will count it as a day with one degraded answer, which is true. The four files under <code>/tmp</code> are yours to delete. Lesson 2.4 takes the rung beneath the index, makes it answer on purpose, and shows the tenant and the filters holding on the way down.</p></div>
 
 </div>
 

@@ -1,0 +1,112 @@
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The judge</span><h3>The judge on the same rows: true-pass, false-pass and the cut</h3><p>The judge's ratings of the frozen rows, held to your labels and to the author's, at a cut you choose.</p></div></div>
+
+<h4>Definition</h4>
+<p>Lesson 4.2's judge kept only means. <code>judge.py --save-rows</code> writes every row it rated beside its question, context and answer, with each metric's score and the judge's explanation, and the author's run of it rated the frozen rows once: <code>evals/judge_set.ratings.jsonl</code>, which ships with the kit once it is recorded. Until then the ratings are your lane's own: run step 6 first, whose second line is this step's comparison against your sheet, and read <code>RUN=evals/reports/judge_set.ratings.jsonl</code> into every <code>make judge-agree</code> here. <code>make judge-agree</code>, without <code>PEOPLE</code>, sets those ratings against one sheet, yours by default, and your labels are the reference. Groundedness is the judge's own 0 or 1. Its second metric is whichever of %%SECOND_NAMES%% the SDK names, scored 1 to 5, and it passes at <code>CUT</code> or more, %%CUT%% unless you say otherwise. For each rubric the kit prints the 2x2, the true-pass and false-pass rates with their intervals, raw agreement and kappa, the false-pass rate on constructed and natural rows apart, and the rows you and the judge differ on. A rating counts only where the judge rated the very answer you labelled, the same <code>row_sha</code>. The command exits 0 whatever the agreement: it measures the judge and gates nothing.</p>
+
+<h4>The code</h4>
+@@judge_doc@@
+@@save_rows@@
+@@row_match@@
+@@verdicts_fn@@
+@@rates_doc@@
+@@table_fn@@
+
+<h4>Do it: the judge against you, then against the author</h4>
+%%CELL_JUDGE%%
+%%OUT_JUDGE%%
+
+<h4>Change it: move the cut</h4>
+<p><code>CUT=3</code> passes the second metric at 3 or more, and <code>SWEEP=1</code> adds every cut from 1 to 5 under the two blocks, the current one marked. There is nothing to restore: a run without <code>CUT</code> is back at %%CUT%%.</p>
+%%CELL_CUT%%
+%%OUT_CUT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the false-pass rate first: of the answers people failed, how many the judge would have waved through. A looser cut passes more rows, so the true-pass and false-pass rates can only rise together; a stricter one can only lower both. Kappa sums the trade up but hides which way the judge errs, so read the two rates. Constructed rows test groundedness on purpose: each carries one sentence its context does not hold, cited as if it did, so a judge that passes them is passing invented facts. Then set your two runs side by side. If the judge agrees with the author more than with you, read the rows where you and the author differ before you blame the judge.</p></div>
+
+<h4>The cut, row by row, on the author's rows</h4>
+<p>The same board as step 1, on the frozen set, with the author as the first reader and the peer as the second. Set it to the judge and answers the question, drag the cut, and watch which rows change sides.</p>
+%%BOARD_AUTH%%
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The Evaluation service</span><h3>Your lane's judge on the frozen rows: the ratings step 5 reads until the author's ship</h3><p>The same rows through Vertex AI Evaluation on your project, then your judge's ratings against your labels.</p></div></div>
+
+<h4>Definition</h4>
+<p>While the kit has no ratings, this step is how the judge's ratings reach you, and step 5 reads them. Once the author's ship, they are one judge: the author's run of the Evaluation service, at one time, with one template. Yours may rate differently, because a judge is its template and its model, and both move. <code>make judge-frozen</code> sends the frozen rows, as frozen, to Vertex AI Evaluation from lesson 4.2's venv. <code>--reuse</code> loads them from the frozen set, the kit's <code>evals/judge_set.json</code> or your own <code>evals/reports/judge_set.json</code>, so nothing asks the API, and <code>--no-enrich</code> keeps each row's context as the readers saw it instead of reading the cited chunks again from Firestore. It costs two Evaluation requests a row, %%N_EVAL_FROZEN%% in all, in <code>us-central1</code>, and writes one Experiments run in <code>documind-eval</code> whose name starts <code>api-frozen-</code> and ends with the templates' hash, as in lesson 4.2. Your ratings go to <code>evals/reports/judge_set.ratings.jsonl</code>, so the author's file stays as it was.</p>
+
+<h4>The code</h4>
+@@frozen_target@@
+@@no_enrich@@
+
+<h4>Do it</h4>
+%%CELL_FROZEN%%
+%%OUT_FROZEN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Once the author's ratings ship, two judges have rated the same frozen rows: the author's run and yours. If the template hashes in the two run names differ, they are different judges, and their agreement with you can differ for that reason alone. Set your run's false-pass rate beside the author's capture's, both against your own sheet. A judge whose agreement moves with its template has to be measured again each time the SDK changes, which is why the hash rides in every run name.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>Kappa by hand, and the judge's own reasons</h3><p>Two standard-library cells over the files themselves, with no kit function between you and the count.</p></div></div>
+
+<p>The first cell reads your sheet and the author's with Python's <code>csv</code> module, counts p_o and p_e by hand, and checks the result against the kit's <code>cohen_kappa()</code>. It is this lesson's arithmetic in a screenful, and it runs anywhere Python does.</p>
+%%CELL_HAND%%
+%%OUT_HAND%%
+
+<p>The second reads the judge's ratings file directly and prints each row where the judge and you disagree, with the judge's score and its own explanation. It is lesson 4.2's advice made concrete: where they disagree, read the row. It skips <code>judge_agree.py</code>'s <code>row_sha</code> check, because both files come from the same frozen set.</p>
+%%CELL_REASONS%%
+%%OUT_REASONS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The hand count matched <code>cohen_kappa()</code>, because kappa is nothing but counts: how many rows alike, and how many yes and no each reader gave. The judge's explanations are what a mean never shows. On a false pass, read whether the judge missed the unsupported sentence or read the context differently from you; on a false fail, whether it marked a refusal down for a figure it named. Neither cell writes anything.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>How the rows were chosen, why the judge still only advises, and what it costs</h3><p>The freeze's rules and the author's freeze, the limits of twenty rows, and the rupees.</p></div></div>
+
+<h4>How the rows were chosen</h4>
+<p>The frozen set came from the author's lane: <code>judge.py --save-rows</code> on the live revision's answers to all %%N_GOLDEN%% golden rows, and on a <code>gemini-3.1-flash-lite</code> candidate's answers to the same rows, for more failures. <code>build_judge_set.py --freeze</code> then picked about %%ROWS%% rows, one per question, without looking at the judge's ratings: rows chosen by the judge's own verdict would bias every rate measured against it. A natural failure is found by the gate's own figure and refusal rules, run on the frozen answer. Natural failures seldom fail groundedness, so constructed rows make up that third, each with one of %%N_ADDED%% sentences, used only where its key phrase is absent from that row's context and answer.</p>
+@@freeze_rules@@
+@@computed_fn@@
+@@added@@
+%%OUT_FREEZE%%
+
+<h4>Why the judge still only advises</h4>
+<ul>
+<li><strong>Twenty rows are a sample, not a calibration.</strong> With about %%THIRD%% failing rows on a rubric, even a judge that passes none of them has a false-pass rate of <code>%%THIRD_0%%</code>. A cut picked by reading the sweep on these same rows is also fitted to them: with no rows held out, it is a starting value, which is what the kit calls its default.</li>
+<li><strong>A new template is a new judge.</strong> Every run name carries the templates' hash. When it changes, the agreement measured here belongs to the old judge.</li>
+<li><strong>The labels measure; they never tune.</strong> No prompt, threshold or model on this page is changed from them.</li>
+<li><strong>Only computed checks block.</strong> Lesson 4.2's gate decides a release; <code>judge_agree.py</code> exits 0 whatever the agreement.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><code>make label-sheet</code>, <code>--check</code>, <code>make judge-agree</code>, the two cells</td><td data-label="Costs">nothing: they read files</td><td data-label="On your lane">every run</td></tr>
+<tr><td><code>make judge-frozen</code>, while the kit has no author's ratings</td><td data-label="Costs">%%N_EVAL_FROZEN%% Vertex AI Evaluation requests; no answers from the API, so no usage rows</td><td data-label="On your lane">the Evaluation service's own line on the bill</td></tr>
+<tr><td>The author's capture, once</td><td data-label="Costs">%%N_GOLDEN%% answers from the live revision and %%N_GOLDEN%% from a flash-lite candidate, about Rs %%CAPTURE_RS%% at the course's typical answer of 2,000 tokens in and 300 out, plus their Evaluation requests</td><td data-label="On your lane">not repeated: the frozen set ships with the kit</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">A frozen set is in your kit: the author's, or yours from step 3</td><td data-label="The check">step 3, <code>make label-sheet</code></td><td data-label="Pass looks like"><code>rows for you</code> and the guide</td></tr>
+<tr><td>2</td><td data-label="Claim">Your sheet labels every frozen row</td><td data-label="The check">step 3, <code>--check</code></td><td data-label="Pass looks like"><code>Ready for judge_agree.py.</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The kit's kappa is right</td><td data-label="The check">step 4, the self-test and the tests</td><td data-label="Pass looks like"><code>kappa 0.40</code>, <code>Ran %%N_TESTS%% tests</code> and <code>OK</code></td></tr>
+<tr><td>4</td><td data-label="Claim">Your agreement with a second reader is measured</td><td data-label="The check">step 4, the first command</td><td data-label="Pass looks like">a kappa per rubric, you against <code>L1</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The recorded pair was read</td><td data-label="The check">step 4, the second command</td><td data-label="Pass looks like">a kappa per rubric, <code>L1</code> against <code>L2</code>, and the rows they split on</td></tr>
+<tr><td>6</td><td data-label="Claim">The judge's agreement with you is measured</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>true-pass</code> and <code>false-pass</code> for each rubric</td></tr>
+<tr><td>7</td><td data-label="Claim">The cut's trade was seen</td><td data-label="The check">step 5, <code>CUT=3 SWEEP=1</code></td><td data-label="Pass looks like">five cuts, the judge's passes never rising as the cut rises</td></tr>
+<tr><td>8</td><td data-label="Claim">Your lane's judge rated the rows (needed while the kit has no ratings)</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>per-row ratings: ... rows written to evals/reports/judge_set.ratings.jsonl</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Kappa is only counts</td><td data-label="The check">step 7, the first cell</td><td data-label="Pass looks like"><code>agreement.cohen_kappa: the same</code> on both rubrics</td></tr>
+<tr><td>10</td><td data-label="Claim">The judge's reasons were read</td><td data-label="The check">step 7, the second cell</td><td data-label="Pass looks like">every row you and the judge differ on, with its explanation</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>On your machine: <code>evals/reports/judge_labels.csv</code>, your labels, which git ignores. If you ran step 6, also <code>evals/reports/judge_set.ratings.jsonl</code>, ignored too, and one run in the Experiments experiment <code>documind-eval</code> whose name starts <code>api-frozen-</code>, which stays until you delete it. Nothing asked the API, so no usage rows were written, and nothing deployed changed. Nothing in the kit changed either, so the setup block's <code>git pull</code> keeps working. Module 4 now turns from quality to security: lesson 4.6 traces an authenticated identity into tenant membership.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.5 Check the LLM judge against people &middot; v5.0</p><p>Next: Lesson 4.6 Trace authenticated identity into tenant membership.</p></div>

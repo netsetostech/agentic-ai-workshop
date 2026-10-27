@@ -1,0 +1,87 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.8</div>
+<h1>Resume a paused or cut-off turn: <span>checkpoint and resume</span></h1>
+<p>A turn is not one call. It is a run of steps, and LangGraph saves a checkpoint after every one: the question, the model's request for a tool, the tool's result, the answer. So a turn that stops halfway is not lost. Its last checkpoint says what was due next, and <code>graph.invoke(None, config)</code> runs exactly that, without repeating a step. You read your own conversation back from your lane, step by step. You finish the kit's cut-off turn from its checkpoint, then watch what the chat service does instead when the next question arrives. Last, you export your thread, replay and fork it on your machine with Gemini, and check that the lane's rows never moved.</p>
+<div class="hero-chips"><div class="hero-chip">checkpoint</div><div class="hero-chip">next</div><div class="hero-chip">invoke(None)</div><div class="hero-chip">make thread</div><div class="hero-chip">make replay</div><div class="hero-chip">fork</div><div class="hero-chip">repair_thread</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A turn, checkpoint by checkpoint</a></li>
+<li><a href="#s2">The words: checkpoint, step, source, next, resume, replay, fork, repair</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Your conversation, read back step by step</a></li>
+<li><a href="#s4">A turn cut off mid-flight, resumed from its checkpoint</a></li>
+<li><a href="#s5">What the chat service does instead: a new question, and the repair</a></li>
+<li><a href="#s6">One step read back, and the thread exported</a></li>
+<li><a href="#s7">Your thread replayed and forked on your machine</a></li>
+<li><a href="#s8">The table, read directly</a></li>
+<li><a href="#s9">Why it is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a checkpoint's <code>next</code> shows that a turn was cut off, and why resuming it is <code>invoke(None)</code> and not a new question. Then you will prove it: your UI conversation read back step by step, the kit's cut-off turn finished from its checkpoint, a replay that matches, and your lane's thread replayed and forked on your machine while its rows stay as they were.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A turn, checkpoint by checkpoint</h3><p>What a checkpoint holds, what a cut-off turn looks like, and the ways on from it.</p></div></div>
+
+<p><strong>A turn is a chain of checkpoints.</strong> The LangGraph brain runs a turn as steps. The question is applied, the agent node calls the model, the tools node runs the search the model asked for, and the agent node reads the result and answers. After every step the checkpointer saves a checkpoint: the messages so far, each channel's version, the step number, what wrote it, and the checkpoint before it. Lesson 6.6 counted them, five for a turn with one search. Each checkpoint names its parent, so a thread is a chain you can walk back.</p>
+
+<p><strong><code>next</code> is the work still due.</strong> A checkpoint does not store which node runs after it. LangGraph works that out from the channels' versions and the graph's edges, which is why reading a thread back means rebuilding the brain's graph, with a model that is never called. When a turn ends, its last checkpoint's <code>next</code> is empty. When a turn stops halfway, because the process running it stopped, the last checkpoint keeps a <code>next</code>. <code>tools</code> means the model asked for a search and the search never ran. The kit ships such a thread, <code>evals/threads/cut_off_turn.json</code>: its second turn was cut off by closing its stream right after the model asked for <code>retrieve</code>.</p>
+
+<p><strong>Resuming is <code>invoke(None)</code>.</strong> Calling the graph with no input on that checkpoint resumes it. LangGraph runs only what is due, the tool and then the model, and nothing before them again: the model's first call is not repeated, the search runs once, and no rupee is spent twice. Calling the graph with a new question is a different thing. LangGraph treats new input as a new run, and discards the tasks the last checkpoint left unfinished. The model's request stays in the thread with no answer, and every later turn sends it again.</p>
+
+<p><strong>A paused turn is the same checkpoint, stopped on purpose.</strong> Lesson 5.8's approval graph calls <code>interrupt()</code> where a person must decide, the checkpointer keeps the turn waiting there, and the decision resumes it with <code>Command(resume=...)</code>. That is also input that continues a checkpoint rather than starting a run. The chat service uses it only for a company whose <code>agent_actions</code> switch an operator set to <code>approval</code> (lesson 5.8's step 8); for every other company, and by default, no turn on your lane pauses. This lesson resumes turns that were cut off.</p>
+
+<p><strong>Replay and fork, on a copy.</strong> <code>invoke(None)</code> from an earlier checkpoint replays the turn from there, as a new branch beside the old line. <code>update_state()</code> on an earlier checkpoint with a different question, then <code>invoke(None)</code>, is a fork. The thread keeps every branch, and <code>get_state_history()</code> lists them all. The kit does neither on the lane. <code>make thread</code> reads your thread in a database session that cannot write, and <code>make replay</code> copies it into a saver on your machine and replays and forks the copy.</p>
+
+<p><strong>The chat service never resumes.</strong> Every <code>/v1/chat</code> request carries a question, so the brain always calls the graph with new input, and the request that was cut off has no caller left to ask. The kit repairs a thread in one case only, when the framework's recursion limit trips: <code>limits.repair_thread()</code> answers every open call with an error and ends the turn. A turn cut off any other way stays open on the lane.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127951;</div><div>
+<p><strong>A rain-stopped match.</strong> The scorer writes down every ball as it is bowled, so the scorebook says where the match stands after each one. Rain stops play just after the fielding side asks for a review, before the third umpire has ruled. When play resumes, nobody bowls the over again: the umpires restart from the last entry, the review is decided first, and the over goes on from there. Had play simply restarted with a fresh over, the review would sit in the book unanswered for the rest of the match, and only an umpire's ruling could close it. The broadcaster's replay of the over changes nothing in the scorebook. Nor does the commentators' "what if he had bowled it fuller", which plays a different ball from the same moment.</p></div></div>
+
+<h4>The kit's cut-off thread, step by step</h4>
+<p>This is the kit's own cut-off thread, read from <code>evals/threads/cut_off_turn.json</code> when this page was built: two turns, %%N_CK%% checkpoints. Step through it, then choose what happens at the cut. Each way on was run on the kit's LangGraph brain when this page was built, with step 4's offline script, and asks the same next question: <em>%%ASK%%</em></p>
+
+<div class="diagram pc" id="cr">
+<div class="dg-title">evals/threads/cut_off_turn.json - its checkpoints, then one way on from the cut</div>
+<div class="pc-box"><b class="h">The thread</b>
+<div class="cr-chain" id="cr-chain"></div>
+<div><button class="cr-btn" type="button" id="cr-prev">Previous step</button><button class="cr-btn" type="button" id="cr-next">Next step</button></div>
+<div class="fs-grid" id="cr-out" aria-live="polite"></div>
+<ol class="cr-msgs" id="cr-msgs"></ol>
+<p class="cr-wait" id="cr-wait"></p></div>
+<div class="pc-box"><b class="h">From the cut, step %%CUT_STEP%%</b>
+<div class="pc-in"><label>What happens next<select id="cr-way"></select></label></div>
+<p class="cr-say" id="cr-say" aria-live="polite"></p></div>
+<p class="dg-cap">The ringed chip is the cut. A way on adds dashed chips: each is a checkpoint the kit's graph wrote when this page was built, with its step, its source, its <code>next</code>, the step it follows and its messages. Steps 4 and 5 run the same ways on in your shell.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It shows a thread the kit wrote offline with a scripted model, so the words are the script's. Its turn was cut off by a closed stream. On your lane a turn stops when the process running it stops, which no page can make happen on cue. The panel shows what such a checkpoint holds, and what each way on writes after it.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: checkpoint, step, source, next, resume, replay, fork, repair</h3><p>Thirteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Checkpoint</strong></td><td data-label="Meaning">A snapshot LangGraph saves after every step: the messages so far, each channel's version, and metadata.</td><td data-label="On your lane">a row in <code>checkpoints</code>; five for a turn with one search</td></tr>
+<tr><td><strong>Parent</strong></td><td data-label="Meaning">The checkpoint a checkpoint follows. Checkpoint ids sort by time.</td><td data-label="On your lane">a thread is a chain from its first input to its newest step</td></tr>
+<tr><td><strong>Step</strong></td><td data-label="Meaning">The checkpoint's number in its thread, -1 for the first input.</td><td data-label="On your lane">runs on across turns: after a turn with one search, the next starts at 4</td></tr>
+<tr><td><strong>Source</strong></td><td data-label="Meaning">What wrote the checkpoint: <code>input</code>, <code>loop</code>, <code>update</code> or <code>fork</code>.</td><td data-label="On your lane"><code>input</code> and <code>loop</code> for every turn; <code>update</code> where a repair wrote; <code>fork</code> only in a local replay</td></tr>
+<tr><td><strong>next</strong></td><td data-label="Meaning">The nodes due to run from a checkpoint, worked out from its versions and the graph's edges, never stored.</td><td data-label="On your lane"><code>tools</code>: the model asked for a search that has not run</td></tr>
+<tr><td><strong>Cut-off turn</strong></td><td data-label="Meaning">A turn whose last checkpoint still has a <code>next</code>.</td><td data-label="On your lane">the fixture's step %%CUT_STEP%%; on the lane, a process that stopped mid-turn</td></tr>
+<tr><td><strong>Paused turn</strong></td><td data-label="Meaning">A turn stopped on purpose by <code>interrupt()</code>, resumed with <code>Command(resume=...)</code>.</td><td data-label="On your lane">lesson 5.8's approval graph: offline, and on the lane only for a company switched to <code>agent_actions=approval</code>; by default the service does not pause</td></tr>
+<tr><td><strong>Resume</strong></td><td data-label="Meaning"><code>graph.invoke(None, config)</code>: run what that checkpoint says is due.</td><td data-label="On your lane"><code>make replay</code>, from where a cut-off turn stopped</td></tr>
+<tr><td><strong>Replay</strong></td><td data-label="Meaning">A resume from an earlier checkpoint: a new branch beside the old line.</td><td data-label="On your lane"><code>make replay AT=</code>, on your machine</td></tr>
+<tr><td><strong>Fork</strong></td><td data-label="Meaning"><code>update_state()</code> on an earlier checkpoint with a new message, then <code>invoke(None)</code>.</td><td data-label="On your lane"><code>make replay FORK=</code>, on your machine</td></tr>
+<tr><td><strong>Thread export</strong></td><td data-label="Meaning">A thread along its latest history as one JSON file, every message once.</td><td data-label="On your lane"><code>make thread EXPORT=</code>, format <code>documind-thread/1</code></td></tr>
+<tr><td><strong>Read-only session</strong></td><td data-label="Meaning"><code>SET default_transaction_read_only = on</code>, sent before the first query.</td><td data-label="On your lane"><code>make thread</code>'s connection, as the operator</td></tr>
+<tr><td><strong>Repair</strong></td><td data-label="Meaning"><code>limits.repair_thread()</code>: every open call answered with an error, then the stop answer.</td><td data-label="On your lane">only after the recursion limit trips</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold. Resume, replay and a new question all call the same graph, and what differs is the input. With no input, LangGraph continues the checkpoint you name. With a new question, it starts a new run and drops whatever that checkpoint left undone.</p>

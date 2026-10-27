@@ -40,7 +40,7 @@ every identifier with the course's placeholders, then rebuild and check:
 | 9 | `data/zero_instances.txt` | 9, instance_count after the idle window | about 16 minutes (15 of them waiting) | none: one Monitoring read |
 | 10 | `data/standing_resources.txt` | 10, the listings of what bills by the hour | seconds | none |
 | 11 | `data/resume.txt` | 11, rag_resume in a new shell | about a minute | none (the API wakes for three GETs) |
-| 12 | `data/down.txt` | 12, make down | about five minutes | destructive (see the run) |
+| 12 | `data/down.txt` | 12, make down | half an hour or more (an estimate: the index, the cluster and Cloud SQL each take minutes to delete) | destructive (see the run) |
 
 The page's prose states what each recording should show, read from the kit's code; the expectations are listed under
 each run. If a recording disagrees, the recording is right: say so, and the prose changes with it.
@@ -139,8 +139,9 @@ more than three minutes old, and `services with an instance in the last 3 minute
 
 ### 10. `data/standing_resources.txt` (step 10)
 
-Run the page's step 10 cell as written (seven read-only gcloud listings). Expect the deployed index on `e2-standard-16`
-with one replica and `SHARD_SIZE_MEDIUM` (or `e2-standard-2` and `SHARD_SIZE_SMALL`: the page covers both), Spanner
+Run the page's step 10 cell as written (seven read-only gcloud listings). Expect the deployed index on `e2-standard-2`
+with one replica and `SHARD_SIZE_SMALL`, which `vector.tf` declares for a new index (an index created before 8 October
+2026 may say `e2-standard-16` and `SHARD_SIZE_MEDIUM`: the page covers both), Spanner
 `regional-asia-south1`, `ENTERPRISE`, `100`, two `db-f1-micro` instances, the cluster in `asia-south1` (regional) with one
 `e2-standard-2` node on `pd-standard` 30, the connector on `e2-micro` with min 2. These field paths were written without
 a gcloud to test them: if a column comes back empty, fix the projection in `build.py` (`CELLS["standing"]`) and record
@@ -164,7 +165,8 @@ numpy and rank-bm25, which the setup section's pip line does not install); recor
 
 ### 12. `data/down.txt` (step 12): destructive, last
 
-Only on a lane you are finished with: it deletes every Cloud Run service and the two RAG Engine corpora.
+Only on a lane you are finished with: it deletes every Cloud Run service, the two RAG Engine corpora and everything
+Terraform can destroy.
 
 ```bash
 make down PROJECT="$PROJECT" REGION="$REGION"
@@ -172,6 +174,9 @@ make down PROJECT="$PROJECT" REGION="$REGION"
 
 Expect the cache lines, `candidate tag: none to remove`, `deleted documind-...` for the seven services and `absent`
 for documind-gchat, documind-gateway, documind-slm and documind-vllm, the corpora deleted and both pins set to
-`default`, terraform init, then `Error: Instance cannot be destroyed` for `google_discovery_engine_data_store.tenant`
-(acme and zeta), the list's eight `>>` lines, and make's non-zero exit. The Terraform resources then still exist and
-still bill; `gcloud projects delete` (or `make plan` and `make up` again, lesson 0.3) is yours to choose.
+`default`, terraform init, then terraform destroy's `Destroying...` and `Destruction complete` lines (the deployed
+index, Spanner, both Cloud SQL instances, the GKE cluster, the connector and the two data stores among them) and an
+`Error` for each bucket that still holds objects (`force_destroy = false`), the list's eight `>>` lines, and make's
+non-zero exit. It is the first run of that destroy since `managed.tf` lost `prevent_destroy` (8 October 2026): if
+anything else stops it, record the error as it is. Firestore and the buckets that hold objects remain;
+`gcloud projects delete` (or `make plan` and `make up` again, lesson 0.3) is yours to choose.

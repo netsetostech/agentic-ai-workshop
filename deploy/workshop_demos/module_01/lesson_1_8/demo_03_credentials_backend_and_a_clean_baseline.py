@@ -58,7 +58,7 @@ def main():
     Example: use Run/Debug on this file with the rag-shell-venv interpreter.
     Project settings and completed prerequisites come from the shared setup.
     """
-    with DemoSession(__file__, live=False, repeat=REPEAT) as session:
+    with DemoSession(__file__, live=True, repeat=REPEAT) as session:
         demonstrate(session)
 
 

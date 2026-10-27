@@ -8,4 +8,5 @@ Run lessons in this order, finishing/restoring each before beginning the next.
 - [11.4: Debug a wrong answer through the complete pipeline](lesson_11_4/README.md)
 - [11.5: Reconcile usage events, reports and alerts](lesson_11_5/README.md)
 - [11.6: Exercise model routing, budgets and shutdown controls](lesson_11_6/README.md)
+- [11.7: Reproduce the agent failures production shows and no eval row does](lesson_11_7/README.md)
 - [11.8: Complete the independent capstone and operational handover](lesson_11_8/README.md)

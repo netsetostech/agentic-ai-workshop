@@ -76,11 +76,11 @@ def step_02_hybrid_on_a_candidate_the_same_two_questio(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: What is the total payable on invoice INV-2026-0412?
-       documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 6xx | pool 20 | vector_chunks 20
-       candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 7xx | pool 20 | vector_chunks 20
+       documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms xxxx | pool 20 | vector_chunks 20
+       candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms xxxx | pool 20 | vector_chunks 20
     What is the notice period for a confirmed E3?
-       documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 6xx | pool 20 | vector_chunks 20
-       candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 7xx | pool 20 | vector_chunks 20
+       documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms xxxx | pool 20 | vector_chunks 20
+       candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms xxxx | pool 20 | vector_chunks 20
     """
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_02)
@@ -106,7 +106,7 @@ def step_03_hybrid_on_a_candidate_the_same_two_questio(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: live mode: dense
-    100;documind-api-00042-xyz
+    100	documind-api-00042-xyz
     """
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_03)

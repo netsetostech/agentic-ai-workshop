@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_9.1_Gateway_Routes_WIX.html`, reviewed at blob `30740fa186a22ed90c835763dc109fdeb2bf0409`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_9.1_Gateway_Routes_WIX.html`, reviewed at blob `11a84368378696ddb45d169da2cdabbf7a8e42b6`. Learners read that page on the course site; this guide keeps its prose.
 
 The gateway is one door in front of every model DocuMind can use: Gemini on the global endpoint, and the self-hosted models the next lessons deploy. It is a Cloud Run service behind IAM, and the caller's ID token is its only key. Every request passes a hook that decides whether its text may leave. Restricted text goes to the self-hosted model, with no fallback to Gemini, and confidential text is masked. Every completion carries a cost header, which the API writes on its usage row.
 

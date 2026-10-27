@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_B.4_Encoder_Models_WIX.html`, reviewed at blob `c5e0d3ccaccb4143687b69cae20a2d562c329369`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_B.4_Encoder_Models_WIX.html`, reviewed at blob `183ac279f9bf8ecd6e63246bba00999bb29a4de8`. Learners read that page on the course site; this guide keeps its prose.
 
 BERT taught a machine to read a sentence in both directions at once, by hiding words and asking for them back. Encoders in that style do two jobs in a retrieval system, and DocuMind has a model for each. The embedding model turns every chunk, once, and every question, as it arrives, into 768 numbers that are compared by arithmetic: a bi-encoder, fast enough to search the whole corpus. The ranker reads the question beside each of the 20 candidates and scores the pair: a cross-encoder, too slow for the corpus and sharper on the shortlist. You will fill hidden words from counts, score four handbook clauses with a toy bi-encoder and a toy cross-encoder, read the kit's two calls in its own code, and then score the same clauses both ways with the real models on your own project.
 

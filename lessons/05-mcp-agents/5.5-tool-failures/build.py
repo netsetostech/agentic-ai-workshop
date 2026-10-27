@@ -106,7 +106,10 @@ assert "refused %s (blocked list)" in guard_logs and '"%s took %.2fs (budget %ss
 chat_row = re.search(r'logger\.info\(json\.dumps\(\{"event": "chat",(.*?)\}\)\)', ag_src, re.S).group(1)
 assert "args" not in chat_row and '"tool_calls": out.get("tool_calls", [])' in chat_row and '"stopped_by": used["stopped_by"]' in chat_row
 assert 'WHERE jsonPayload.event IN ("query", "stream", "media")' in (KIT / "terraform/sql/tenant_daily.sql").read_text(encoding="utf-8")  # the month counts rag-api's rows
-assert "rag-api still bills it" in lim_src and '"max_llm_calls"' not in (KIT / "services/agent/agent.py").read_text(encoding="utf-8")  # the peer has no cap of its own
+peer_src = (KIT / "services/agent/agent.py").read_text(encoding="utf-8")
+PEER_CAP = int(re.search(r'os\.environ\.setdefault\("ADK_MAX_LLM_CALLS", "(\d+)"\)', peer_src).group(1))            # the peer's own cap (10.7)
+assert "rag-api still bills it" in lim_src and '"max_llm_calls": MAX_LLM_CALLS' in peer_src and "|ADK_MAX_LLM_CALLS=12\"" in (KIT / "commands/lesson-8.4.sh").read_text(encoding="utf-8")
+assert PEER_CAP == 12 and not re.search(r"budget|deadline|_INR\b", peer_src, re.I), PEER_CAP                      # model calls only
 usage = re.search(r"def usage_row\(.*?\n    return \{(.*?)\n\n\n", main_src, re.S).group(1)
 assert '"pool"' in usage and "filters" not in usage                                                                  # the row keeps no filter
 assert 'doc_type: Filter by type (policy, contract, invoice, form, research_paper, all)' in ct_src
@@ -289,13 +292,13 @@ HEALTH = json.loads(run_cell("import sys, json\nsys.path[:0] = ['.', '../..']\ni
                              cwd=KIT / "services/chat", env={"CHECKPOINT_DSN": "memory", "RAG_TIMEOUT_S": "90"}))    # the lane's 90, from lesson-12.8.sh
 LIMS = HEALTH["limits"]
 assert (LIMS["max_model_calls"], LIMS["budget_inr"], LIMS["deadline_s"], LIMS["tool_budgets_s"]["retrieve"]) == (12, 5.0, 100.0, 95.0), LIMS
-PEER_KEYS = re.search(r"JSONResponse\(\{(.*?)\}\)", (KIT / "services/agent/agent.py").read_text(encoding="utf-8"), re.S).group(1)
-PEER = {k: "..." for k in re.findall(r'"(\w+)":', PEER_KEYS)}                                 # the peer's /health keys, as its code names them
+PEER_KEYS = re.search(r"JSONResponse\(\{(.*?)\}\)", peer_src, re.S).group(1)
+PEER = {k: "..." for k in re.findall(r'"(\w+)":', PEER_KEYS)} | {"max_llm_calls": PEER_CAP}   # the peer's /health keys, as its code names them, and its cap
 OUT["limits"] = run_cell("import sys, json, argparse\nsys.path.insert(0, 'commands')\nimport lane\n"
                          f"H = {{'documind-chat': {HEALTH!r}, 'documind-agent': {PEER!r}}}\n"
                          "lane._health = lambda svc, project, region: (f'https://{svc}-NUMBER.{region}.run.app', H[svc])\n"
                          f"sys.exit(lane.cmd_limits(argparse.Namespace(project={PROJ!r}, region='asia-south1')))\n", cwd=KIT)
-assert "model calls a turn    12" in OUT["limits"] and "retrieve 95 s" in OUT["limits"] and "not on its /health (ADK defaults to 500)" in OUT["limits"], OUT["limits"]
+assert "model calls a turn    12" in OUT["limits"] and "retrieve 95 s" in OUT["limits"] and f"model calls a task    {PEER_CAP}" in OUT["limits"], OUT["limits"]
 
 # the drill: the kit's limits-drill.sh and smoke_chat.py, with a fake gcloud that keeps the service's env in a file,
 # against a stand-in chat whose /health is the kit's health() and whose limits are the kit's Meter at that env
@@ -461,7 +464,7 @@ OUT_LABELS = {
     "fail": "(this cell run on the kit's own brains.py and limits.py; the error texts are the installed LangChain's, the log's times are shown to the tenth and yours differ by a few hundredths, and the port is picked at random)",
     "loop": "(this cell run on the kit's own brains.py and limits.py)",
     "check": "(the kit's own test file, run when this page was built; your times differ)",
-    "limits": "(lane.py's cmd_limits over the kit's own health() with RAG_TIMEOUT_S=90, as lesson-12.8.sh sets it, and the peer's /health keys as its code names them; your region and NUMBER are yours)",
+    "limits": "(lane.py's cmd_limits over the kit's own health() with RAG_TIMEOUT_S=90, as lesson-12.8.sh sets it, and the peer's /health keys as its code names them, with the cap agent.py sets by default; your region and NUMBER are yours)",
     "drill": "(the kit's limits-drill.sh and smoke_chat.py against a fake gcloud and a stand-in chat whose limits are the kit's Meter; the answers, timings, token counts and rupees are invented)",
     "access": "(against a local stub; the 401 and 403 texts are agent.py's and shared/iap.py's own)",
     "filter": "(the kit's retrieve() against a local stub that filters as the lane does, then a fake gcloud)",
@@ -533,7 +536,8 @@ STATS = {"PIN_LC": PINS["langchain"], "NO_EMAIL": NO_EMAIL, "N_FAIL": str(len(W)
          "MAX_CALLS": str(LIMS["max_model_calls"]), "BUDGET_INR": f"{LIMS['budget_inr']:g}", "DEADLINE_S": f"{LIMS['deadline_s']:g}",
          "MODEL_S": f"{LIMS['model_timeout_s']:g}", "ATTEMPTS": str(LIMS["model_attempts"]), "MIN_S": f"{LIMS['min_model_s']:g}",
          "RETRIEVE_S": f"{LIMS['tool_budgets_s']['retrieve']:g}", "COST_S": f"{LIMS['tool_budgets_s']['calculate_processing_cost']:g}",
-         "BACKSTOP": str(limits.recursion_limit()), "SHELL_RAG_S": f"{SHELL_RAG_S:g}", "SHELL_RETRIEVE_S": f"{SHELL_RAG_S + 5:g}"}
+         "BACKSTOP": str(limits.recursion_limit()), "SHELL_RAG_S": f"{SHELL_RAG_S:g}", "SHELL_RETRIEVE_S": f"{SHELL_RAG_S + 5:g}",
+         "PEER_CAP": str(PEER_CAP)}
 
 if os.environ.get("CELLS_ONLY"):
     for k, v in OUT.items():

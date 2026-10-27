@@ -4,9 +4,9 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_2.1_Query_Filters_WIX.html`, reviewed at blob `eec99fabc474ce0ab221815772043a8d9d45a33f`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_2.1_Query_Filters_WIX.html`, reviewed at blob `6b560a3bcea4a2983aed9a84ab4fe1a800c3faf7`. Learners read that page on the course site; this guide keeps its prose.
 
-Module 1 put the records in place. This module reads them. A question arrives as text and leaves the API as a vector; the caller's identity, not the request, decides whose documents it may search; two named filters may narrow the search and anything else is refused before any work is done; and the index is asked with restricts that make one index serve three tenants without a leak. You will embed a question yourself and compare a direct index search with the API's citations, ask the same question of two tenants with one identity and get two answers, send the wrong filters and read the 400s, and read the stages block that says which store answered.
+Module 1 put the records in place. This module reads them. A question arrives as text and leaves the API as a vector; the caller's identity, not the request, decides whose documents it may search; two named filters may narrow the search and anything else is refused before any work is done; and the index is asked with restricts that let one index hold three tenants' rows without a leak. You will embed a question yourself and compare a direct index search with the API's citations, ask the same question of two tenants with one identity and get two answers, send the wrong filters and read the 400s, and read the stages block that says which store answered.
 
 - What retrieval sees
 
@@ -18,7 +18,7 @@ Module 1 put the records in place. This module reads them. A question arrives as
 
 - The question's vector: direct candidates and API citations
 
-- Authorized: the tenant comes from identity, and one index serves three
+- Authorized: the tenant comes from identity, and one index holds three
 
 - Filters: two keys, a 400 for everything else
 
@@ -40,7 +40,7 @@ A vector instead of a question, an identity instead of a claim, and predicates i
 
 Retrieval never sees the question; it sees its vector. The API embeds the question once, under `RETRIEVAL_QUERY`, with the model and version the worker stamped on every row in lesson 1.3, and that one vector is used twice: the answer cache looks it up first, and the retrieval sends it to the index. The vector is 768 numbers made to be compared with the document vectors on the rows, which is why the pairing matters: a question embedded under the document profile, or with another model, would still return a ranked list, and the list would be wrong. The API reads the pair from the same environment variables the worker does, so the two cannot drift apart without a deploy.
 
-The tenant comes from who is asking, never from what they ask. A request names a tenant, but the API does not believe it. The identity comes from the IAP assertion or the bearer token, verified for this service's own audience; then the roster in Firestore is asked one question: is this email on this tenant's roster? A yes proceeds; a no is a 403 before any embedding, any index call, any model. The body field that once named a user is accepted and unread, because a user named in the body is a header in disguise. The same identity may sit on several rosters, and then the same question to two tenants gets two answers from two corpora in one index, with nothing crossing between them.
+The tenant comes from who is asking, never from what they ask. A request names a tenant, but the API does not believe it. The identity comes from the IAP assertion or the bearer token, verified for this service's own audience; then the roster in Firestore is asked one question: is this email on this tenant's roster? A yes proceeds; a no is a 403 before any embedding, any index call, any model. The body field that once named a user is accepted and unread, because a user named in the body is a header in disguise. The same identity may sit on several rosters, and then the same question to two tenants gets two answers from two corpora, with nothing crossing between them: in the one index the tenant restrict keeps them apart, and a tenant pinned to a managed store is searched in its own corpus or data store.
 
 Filters are predicates on the corpus, and there are two. A caller may send `doc_type` and `kind`, each a string; `doc_type` may instead be a list of up to five classes, any of which a row may carry. They become restricts on the index query and pre-filters on the Firestore rung, the same predicate on both paths. Any other key is refused with a 400 that names the allowed keys, because a key that filters nothing on one path and everything on another is a typo that would read like an honest "nothing found". Two things are never the caller's to filter: the tenant, which is the roster's, and `current`, which is the ledger's.
 
@@ -48,9 +48,9 @@ A records room with a badge reader. You do not tell the clerk which company's fi
 
 #### Walk a request through the gates
 
-The player below is the API's query handler as a sequence of gates, with your lane's real data: the identity you send, the tenant you name, and the filters. Pick a combination and read the verdict at each gate, the restricts that would reach the index, and the answer the two handbooks would give. The travel cap is Rs 40,000 in acme's handbook and Rs 25,000 in zeta's, which is what makes one question prove the tenant restrict.
+The player below is the API's query handler as a sequence of gates, with your lane's real data: the identity you send, the tenant you name, and the filters. Pick a combination and read the verdict at each gate, the restricts that would reach the index, and the answer the two handbooks would give. The travel cap is Rs 40,000 in acme's handbook and Rs 25,000 in zeta's, which is what makes one question prove the tenant boundary, whichever store each tenant's pin names.
 
-The question is always "What is the per-trip cap on travel reimbursement?". The gates are the handler's own order: Cloud Run's door, `verify_iap`, `enforce_membership`, `check_filters`, then the restricts and the pool. The `doc_type: policy` case is real: the worker stamps a plain upload `unknown` (lesson 1.1), so the filter matches nothing and the API refuses with an empty pool rather than guessing.
+The question is always "What is the per-trip cap on travel reimbursement?". The gates are the handler's own order: Cloud Run's door, `verify_iap`, `enforce_membership`, `check_filters`, then the store the tenant's pin names, with the restricts on the index, and the pool. acme is on the index for this lesson; a lane from `make up` pins zeta to Vertex AI Search (step 4). The `doc_type: policy` case is real: the worker stamps a plain upload `unknown` (lesson 1.1), so the filter matches nothing and the API refuses with an empty pool rather than guessing.
 
 ### The words: query vector, identity, roster, filter key, restrict, pool, stages
 
@@ -116,7 +116,7 @@ Run the preflight first. This cell uses its verified settings, checks the endpoi
 
 You embedded the question with the API's configured model, searched its verified deployment with its tenant/current restricts, and inspected the returned rows. The API then reported its own backend and how many pooled chunks came from Vector Search. A backend label of `vector` alone is insufficient: the fallback path can still use Firestore. A different first citation does not invalidate the search; the API can select and reorder evidence after retrieval.
 
-### Authorized: the tenant comes from identity, and one index serves three
+### Authorized: the tenant comes from identity, and one index holds three
 
 The two checks before any work, and the question that gets two answers.
 
@@ -124,13 +124,15 @@ The two checks before any work, and the question that gets two answers.
 
 The handler's first line is `enforce_membership(user["email"], req.tenant_id)`, and `user` came from `verify_iap`: the IAP assertion when a person came through IAP, otherwise the bearer identity token verified for this service's own URL, otherwise a 401. Membership is one Firestore read on the roster, and a miss is a 403 that says so. What the request claims about itself is never consulted: `user_id` is accepted and unread, and an `x-user-email` header is only honoured in the dev mode that no deployed service runs. Because the tenant restrict is then built from the request's `tenant_id` only after the roster has allowed it, one index holds three tenants' datapoints and a caller can only ever search the ones the roster lets them name.
 
+Which store answers is a second, separate decision: the tenant's pin. The index serves every tenant pinned to it, acme here, by this lesson's preflight. zeta answers from whichever store its own pin names, and a lane brought up by `make up` pins it to Vertex AI Search, so on such a lane its answer below comes from zeta's own data store; the answer's `stages.retrieval_backend` names the store that served it. `make tenant-backend PROJECT="$PROJECT" TENANT=zeta RETRIEVAL_BACKEND=vector` puts zeta on the index, and `RETRIEVAL_BACKEND=vertex_search` puts it back; this lesson's finish restores acme's pin only. The checks in this step hold whichever store answers: the tenant is still the roster's.
+
 #### The code
 
 #### Do it: one identity, two tenants, one outsider
 
 The UI's service account, which your `tok()` impersonates, sits on all three rosters. The first two calls send it the same question against acme and zeta; the third sends the outsider's token; the fourth sends the UI's token with a header that claims to be someone else. Each line shows the HTTP status. A request turned away for a reason that passes, a model quota hit, a Cloud Run scale-up or a dropped connection, is asked once more after five seconds; anything else prints the reason the service gave instead of a traceback.
 
-One identity, two tenants, two figures, each cited to its own handbook, from one index. The outsider, on no roster, was refused before the API embedded anything. The false header was ignored: the identity is the token's, and the roster decided what that identity may search. This is the isolation the golden set's `iso-` rows assert every time the gate runs, and it holds not because the tenants' rows are in different stores but because every query carries the tenant as a restrict the caller cannot set.
+One identity, two tenants, two figures, each cited to its own handbook: acme's from the index under this lesson's pin, zeta's from the store its own pin names. The outsider, on no roster, was refused before the API embedded anything. The false header was ignored: the identity is the token's, and the roster decided what that identity may search. This is the isolation the golden set's `iso-` rows assert every time the gate runs. On the index it holds not because the tenants' rows are in different stores but because every query carries the tenant as a restrict the caller cannot set; a managed store is the tenant's own corpus or data store, chosen from the same roster-checked `tenant_id`.
 
 ### Filters: two keys, a 400 for everything else
 

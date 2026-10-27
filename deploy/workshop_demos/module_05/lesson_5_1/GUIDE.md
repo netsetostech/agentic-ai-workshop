@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_5.1_Agent_Loop_WIX.html`, reviewed at blob `95a50fda25e996ce7c223e579e4c5a7596c02941`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_5.1_Agent_Loop_WIX.html`, reviewed at blob `9abad409dcccc34daf6650ea28d882e0b674dc4a`. Learners read that page on the course site; this guide keeps its prose.
 
 An agent is a model that is allowed to call functions. What it may call, with which arguments, and what comes back is a contract, and the kit writes that contract once. Every brain shares one `retrieve()`. The tenant reaches a tool through the runtime, never through an argument the model fills. A failure comes back as data. You deploy the chat service in your lane's region and read the contract the model sees. Then you call the one `retrieve()` from your shell, and ask the same questions of two brains: the direct brain, which has no loop at all, and the LangChain loop, which decides for itself.
 
@@ -56,7 +56,7 @@ It shows the contract and the plumbing, not a model's judgement. A model may cal
 
 ### The words: tool, schema, runtime context, adapter, brain, tool_calls, refusals
 
-Eleven rows, each with the value it takes on your lane.
+Twelve rows, each with the value it takes on your lane.
 
 One distinction to hold: the schema is what the model can change, and the context is what it cannot. Everything about identity lives in the second.
 
@@ -86,7 +86,7 @@ How to tell which store answered any call: read `stages.retrieval_backend` on th
 
 Calls from the shell impersonate `documind-ui-sa`, the UI's own account, which `make roster` put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. `otok` mints a token for `documind-outsider-sa`, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.
 
-The shell, in the kit's folder, with `PROJECT`, `REGION`, `NUMBER`, `ME`, `API` and `tok`, and `adc ok` from the setup block. Step 3 builds the chat service's image and deploys it in your region, which takes several minutes. Steps 5 to 7 ask five questions through rag-api and the chat service. Nothing else changes.
+The shell, in the kit's folder, with `PROJECT`, `REGION`, `NUMBER`, `ME`, `API` and `tok`, and `adc ok` from the setup block. Step 3 builds the chat service's image and deploys it in your region, which takes several minutes. Steps 5 to 7 ask five questions through rag-api and the chat service. Nothing else changes on your lane. Step 7's offline cell makes `~/graph-venv` in your home folder if it is missing, and its optional cell makes one Gemini call.
 
 ### The chat service, in your lane's region
 
@@ -128,7 +128,7 @@ The function every brain calls, called directly, as a roster member.
 
 #### Do it
 
-Your shell ran the same function the chat service's brains run, and got the same contract back: five citations, a verdict, a confidence, and rag-api's own answer. That last field is the direct brain's whole job; the agent brains throw it away. A failure here prints `document retrieval is unavailable`, the tool layer's own words: a wrong `RAG_API_URL`, a missing role, or `adc NOT ok`. Those are the same words a model would read in a tool result, so it could tell you what went wrong.
+Your shell ran the same function the chat service's brains run, and got the same contract back: citations, a verdict, a confidence, and rag-api's own answer. That last field is the direct brain's whole job; the agent brains throw it away. The citations are the passages rag-api's answer cites, not the `top_k` it read, so their number changes from answer to answer. On a lane that kept lesson 1.1's rehearsal amendment current, the answer says six years and cites it: `evals/demo/gratuity_amendment_2026.md` substitutes six for five from 1 October 2026, and the dated rule (lesson 3.3) has the model follow the dated passage. That is your corpus answering, not a fault. A failure here prints `document retrieval is unavailable`, the tool layer's own words: a wrong `RAG_API_URL`, a missing role, or `adc NOT ok`. Those are the same words a model would read in a tool result, so it could tell you what went wrong.
 
 ### The direct brain: one retrieve(), no loop
 
@@ -142,7 +142,7 @@ A chat turn with no model in the chat service, and the tenant it was answered fo
 
 #### Do it
 
-A direct-brain answer with `retrieve` in `tool_calls`: this lesson's proof. The answer is rag-api's, with five citations, in about the time of one rag-api call. That is the floor. Every agent answer that follows has to justify its extra seconds against it. The turn was made for acme because the roster said so. Nothing in the request could have said otherwise.
+A direct-brain answer with `retrieve` in `tool_calls`: this lesson's proof. The answer is rag-api's, with the citations it used, in about the time of one rag-api call. That is the floor. Every agent answer that follows has to justify its extra seconds against it. The turn was made for acme because the roster said so. Nothing in the request could have said otherwise.
 
 ### The loop: the model chooses its tools
 
@@ -156,7 +156,23 @@ The LangChain brain is `create_agent` with the two tools, the system prompt and 
 
 #### Do it
 
-On the policy question, the model chose `retrieve` itself and wrote its own answer from the citations; it took longer than the direct brain for the same fact. Its citations are numbered 1 to 5, and its answer cites `[1]`. The cost question went to the same session, so the thread held the first turn too, and the list still names only this turn's two tools, with its citations numbered from 1 again. The second tool, `calculate_processing_cost`, priced 33.96 US dollars for 283 pages at the priority rate, Rs 2,886.60. The direct brain could only look the question up, and could only answer from what the documents say. The two brains may even give different numbers, because they consult different sources: the tool's price list, and whatever rate a document mentions. Your lists are the truth for your lane. A model that skipped the search, or searched twice, is still inside the contract.
+On the policy question, the model chose `retrieve` itself and wrote its own answer from the citations; it took longer than the direct brain for the same fact. Its citations are the passages rag-api's own answer cited, numbered from 1 for the turn, and its answer cites `[1]`: `retrieve` hands an agent what `/v1/query` returns, never the whole pool. The cost question went to the same session, so the thread held the first turn too, and the list still names only this turn's two tools, with its citations numbered from 1 again. The second tool, `calculate_processing_cost`, priced 33.96 US dollars for 283 pages at the priority rate, Rs 2,886.60. The direct brain could only look the question up, and could only answer from what the documents say. The two brains may even give different numbers, because they consult different sources: the tool's price list, and whatever rate a document mentions. Your lists are the truth for your lane. A model that skipped the search, or searched twice, is still inside the contract.
+
+#### Two searches in one message
+
+A model may ask for more than one tool in a single message. A question with two parts can come back as two `retrieve` calls side by side, and the runtime does not run them one after the other. The LangChain brain hands each call to its tools node as a task of its own, and runs a step's tasks together. The LangGraph brain's `ToolNode` runs a message's calls in a thread pool, and ADK runs them as concurrent tasks. In all three, each call then runs in the chat service's tool pool, and is waited on for no longer than its own budget (lesson 5.5). Two searches can find the same chunk. If each search numbered its own citations, one passage would carry two numbers, and the answer could cite it twice as two sources. So `search()` numbers every citation against one ledger for the turn, under a lock, and a chunk the ledger already holds keeps its number.
+
+#### Do it: two searches at once, offline
+
+The cell runs the kit's own LangChain brain on your machine, with a scripted model and a stand-in rag-api, so it calls nothing on your lane and costs nothing. The model asks for two searches in one message: the notice period, and the earned leave encashed on exit. The stand-in takes 1.5 seconds over the first and 1 second over the second, and both answers include LV-07, the handbook's clause on leave at exit. The cell prints when each search reached the stand-in and when it was answered, the citations each result carried, and the turn's list and citations. It runs in `~/graph-venv`, lesson 5.4's venv with the chat image's pins, and the first cell makes it if it is missing.
+
+Both searches reached the stand-in together, and the turn waited 1.5 seconds for the two, the time of the slower one, not 2.5. The second search answered first, so its chunks were numbered first: LV-07 became `[1]` and LV-01 `[2]`. The first search's result then carried LV-07 as `[1]` again, beside NP-03 and PB-02 as `[3]` and `[4]`. The turn has four citations, not five, and each number in the answer points at one passage. The numbers follow the order the searches answered in, not the order the model asked, so the same question can number its sources differently from one run to the next. The model reads each result with its numbers, so it cites them right either way. The build ran the same turn through the LangGraph and ADK brains too, and both gave the same overlap and the same numbers.
+
+#### Optional: does Gemini ask for two at once?
+
+The scripted model always asks for both searches. Whether Gemini does is the model's choice. This cell makes the first model call of a turn by hand: the brains' own model from `shared/profile.py`, the kit's two tools bound to it, the system prompt, and the same two-part question. It prints the tool calls in the one message that comes back, then the tokens and the rupees. It is one call to `gemini-3.6-flash` on your project, under a rupee. No tool runs, and rag-api is not called.
+
+Two calls in that message is a parallel call: in a turn on your lane they would run at once, as they did offline. One search that names both topics, or one search and then a second in the next message, is inside the contract too. The second way costs one more model call, and the time of both searches end to end.
 
 ### The rows: what each brain cost, and which row records it
 
@@ -192,9 +208,9 @@ Each point is checked in the kit's code, and the build asserts it, so this box c
 
 ### Verify it yourself: the checklist
 
-Nine checks, each one block above, each with the value that proves it on your lane.
+Ten checks, each one block above, each with the value that proves it on your lane.
 
-The chat service runs in your region, from the kit's current script, with IAP on and its checkpointer migrated. The UI's account and the outsider may invoke it, and so may the Desk's six accounts once Terraform has created them. You may mint tokens as the UI's account and the outsider. The usage rows of five retrievals and four chat turns, and one conversation of two turns in the checkpointer, session `lesson101-langchain`. The direct brain keeps no conversation. No roster, policy or setting changed. Lesson 5.2 exposes the same tools to any MCP client, and lesson 5.4 opens the LangGraph brain: the hand-built graph, its refuse node, and the checkpointer that keeps a conversation.
+The chat service runs in your region, from the kit's current script, with IAP on and its checkpointer migrated. The UI's account and the outsider may invoke it, and so may the Desk's six accounts once Terraform has created them. You may mint tokens as the UI's account and the outsider. The usage rows of five retrievals and four chat turns, and one conversation of two turns in the checkpointer, session `lesson101-langchain`. The direct brain keeps no conversation. No roster, policy or setting changed. Your home folder has `~/graph-venv`, with the chat image's pins, which lessons 5.4, 5.5 and 5.7 use too. If you ran step 7's optional cell, your project's bill has one more Gemini call, under a rupee. Lesson 5.2 exposes the same tools to any MCP client, and lesson 5.4 opens the LangGraph brain: the hand-built graph, its refuse node, and the checkpointer that keeps a conversation.
 
 Netsetos GenAI on GCP · Module 5 MCP and agents · Lesson 5.1 Understand tool contracts and the direct agent loop · v5.0
 

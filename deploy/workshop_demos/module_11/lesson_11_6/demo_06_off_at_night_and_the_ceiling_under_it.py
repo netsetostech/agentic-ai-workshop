@@ -27,10 +27,13 @@ RETRY_FAILED_STEP = False
 
 
 # Original CLI workflow for step_01_the_floor_then_the_switch.
-COMMANDS_01 = """gcloud run services update documind-ui --region "$REGION" --project "$PROJECT" --min-instances 1 --quiet   # a session day's floor
+COMMANDS_01 = """set +e +o pipefail   # as the page runs it: its expected output shows a command here failing, as the cell means it to
+gcloud run services update documind-ui --region "$REGION" --project "$PROJECT" --min-instances 1 --quiet   # a session day's floor
 make off PROJECT="$PROJECT"
 gcloud scheduler jobs describe documind-off-nightly --location "$REGION" --project "$PROJECT" \\
   --format='value(schedule,timeZone,state,lastAttemptTime)'
+true   # that failure is the cell's answer: compare the output with the page's expected window
+
 
 """
 

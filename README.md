@@ -1,7 +1,7 @@
 # agents_workshop
 
 The authoring repository of the Agents Workshop: the v5 edition of Netsetos' GenAI on GCP course, Basics and Modules
-0-12, 95 lessons that build, break and run one production system, DocuMind. Private. Two things leave it:
+0-12, 96 lessons that build, break and run one production system, DocuMind. Private. Two things leave it:
 
 - **the lesson pages**, pasted into Wix (netsetos.com) by the author;
 - **the kit**, `deploy/`, published byte for byte as the public
@@ -16,7 +16,7 @@ in one directory and each lesson has its own runnable files and heading map.
 
 | Path | What it holds |
 |---|---|
-| `course-manifest.json` | Basics, Modules 0-12 and their 95 lessons: numbers, titles, slugs, file names, status, each lesson's proof. The source of truth for names |
+| `course-manifest.json` | Basics, Modules 0-12 and their 96 lessons: numbers, titles, slugs, file names, status, each lesson's proof. The source of truth for names |
 | `lessons/NN-module/N.M-slug/` | one lesson: its page (`Netsetos_GCP_Capstone_N.M_Topic_WIX.html`, the file you paste), `build.py`, `parts/`, `data/` |
 | `pagekit/` | what every build shares: the template, `pagebuild.py`, the build runner, the page checker, the responsive audit |
 | `deploy/` | the DocuMind kit: services, Terraform, evals, smoke tests, the Makefile and `mk/`. Edited here only |

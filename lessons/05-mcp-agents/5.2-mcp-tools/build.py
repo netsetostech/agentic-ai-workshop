@@ -11,6 +11,11 @@ different places, and the one line the server logs per answered call.
 Build-time proof: the offline cell runs here on the kit's server.py with fastmcp 3.4.7, the image's pin. The live cells
 run here against the kit's own server, started on localhost exactly as the page starts it, with the token check, the
 roster, rag-api and Firestore stood in. The panel's 126 outcomes are that server's own answers.
+
+Before step 3, a box gives acme's stored rows their classes (make doc-types SEED=manifest, then APPLY=1) so the filters
+the panel and step 7 discuss behave on the lane as the page says, and its last cell (RESET=1 APPLY=1, when the lesson is
+done) puts them back to unknown, the state lesson 5.5 teaches. Those outputs are the author's recorded runs
+(RUN_LIST.md); the build checks the make target, the relabel's switches and lesson 5.5's expectation.
 """
 import ast
 import asyncio
@@ -97,7 +102,7 @@ assert PIN == "3.4.7"
 deploy72 = (KIT / "commands/lesson-7.2.sh").read_text(encoding="utf-8")
 assert "for who in documind-ui-sa documind-agent-sa documind-outsider-sa; do" in deploy72                      # who Cloud Run admits
 assert 'doc_type: str = "unknown"' in (KIT / "services/ingest/contracts.py").read_text(encoding="utf-8")
-# retrieve's doc_type list against lesson 10.4's registry: what a filter can find on a relabelled lane
+# retrieve's doc_type list against the doc_type registry (lesson 10.4's; the box before step 3 applies it): what a filter can find on a relabelled lane
 sys.path.insert(0, str(KIT))
 from shared import doc_types  # noqa: E402
 LISTED = ast.literal_eval(re.search(r"^DOC_TYPES = (\(.*\))$", sv_src, re.M).group(1))
@@ -111,6 +116,28 @@ assert NO_CLASS == ["form", "research_paper"] and UNLISTED == ["transcript"], (N
 assert not HELD & set(NO_CLASS), HELD                         # no seeded, relabelled or worker-written row can carry either
 assert "doc_type: Filter by type (policy, contract, invoice, form, research_paper, all)" in (KIT / "services/chat/tools.py").read_text(encoding="utf-8")
 WORDS = {6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+# step 1's Invoke paragraph: one tools/call runs one tool, and the server numbers no citation (the chat service's ledger,
+# tools._number, is not in it)
+assert "_number" not in sv_src and "ledger" not in sv_src and '    return out                       # the citations contract' in sv_src
+
+# the box before step 3: make doc-types (mk/agents.mk) - desk_ops.py's registry and view, then relabel.py's plan or apply
+AGENTS_MK = (KIT / "mk/agents.mk").read_text(encoding="utf-8")
+DOC_TYPES_RECIPE = AGENTS_MK[AGENTS_MK.index("\ndoc-types: guard-project\n"):].split("\n\n", 1)[0]
+assert "doc-types --tenant $(TENANT) $(if $(SEED),--seed $(SEED),)" in DOC_TYPES_RECIPE
+assert "VECTOR_INDEX_NAME=$${VECTOR_INDEX_NAME:-$$(cd $(TF_DIR) && terraform output -raw vector_index_name 2>/dev/null)}" in DOC_TYPES_RECIPE
+assert "MANAGED_MIRROR=$(MANAGED_MIRROR) BQ_CHUNK_TABLE=$(PROJECT).rag_data.chunk_source" in DOC_TYPES_RECIPE
+assert "services/ingest/relabel.py --project $(PROJECT) --tenant $(TENANT) $(if $(APPLY),--apply,) $(if $(RESET),--reset,)" in DOC_TYPES_RECIPE
+assert "RESET=1 plans every row back to\n# unknown (the state of workshop lessons 2.1 and 5.5, for rehearsing them), the registry kept." in AGENTS_MK
+assert re.search(r"^MANAGED_MIRROR\s+\?= both$", (KIT / "Makefile").read_text(encoding="utf-8"), re.M)
+RELABEL = (KIT / "services/ingest/relabel.py").read_text(encoding="utf-8")
+assert '"every row of the tenant, current and retired, back to unknown (media: its media type); "\n                         "the registry is kept"' in RELABEL
+assert "--apply refuses an empty VECTOR_INDEX_NAME" in RELABEL and "        return 3\n" in RELABEL and "BigQuery deferred {deferred} statement(s)" in RELABEL
+assert "  6. the tenant's answer_cache entries are expired, on every --apply that has a registered version (or --reset)" in RELABEL
+assert "  7. nothing is re-uploaded, and nothing is re-embedded unless a row's embedding is not the declared one" in RELABEL
+assert 'display_name = "documind-chunks"' in (KIT / "terraform/vector.tf").read_text(encoding="utf-8")   # the box reads the index by it
+# lesson 5.5 teaches the unknown state: the box puts acme's rows back to it
+assert "The worker stamps every text upload <code>unknown</code>, as lesson 2.1 found" in (
+    ROOT / "lessons/05-mcp-agents/5.5-tool-failures/parts/b.html").read_text(encoding="utf-8")
 
 # ------------------------------------------------------------------ the cells
 PIP = f'python -m pip install -q "fastmcp=={PIN}" "uvicorn=={UVI}"   # the MCP image\'s pins, in the operator venv\npython -c \'import fastmcp; print("fastmcp", fastmcp.__version__)\''
@@ -195,11 +222,22 @@ for line in open("/tmp/mcp121.log"):
         print(f"  mcp_call {e['tool']}  tenant {e['tenant']}  caller {e['caller'].split('@')[0]}  via {e['via']}  {rest}")"""
 
 
+INDEX = ('export VECTOR_INDEX_NAME="$(gcloud ai indexes list --region="$REGION" --project="$PROJECT" \\\n'
+         "  --filter='displayName=documind-chunks' --format='value(name)')\"")
+LABELS = (INDEX + '; echo "index: $VECTOR_INDEX_NAME"     # the index the relabel re-upserts, read off your lane\n'
+          'make doc-types PROJECT="$PROJECT" TENANT=acme SEED=manifest   # the registry from the manifest, the view, the plan\n'
+          'make doc-types PROJECT="$PROJECT" TENANT=acme APPLY=1         # the plan applied, store by store')
+RESET = ("# when you finish the lesson: acme's rows back to what the worker wrote, as lesson 5.5 expects; the registry stays\n"
+         + INDEX + "\n" + 'make doc-types PROJECT="$PROJECT" TENANT=acme RESET=1 APPLY=1')
+
+
 def heredoc(body: str, prefix: str = "", python: str = "python") -> str:
     return f"{prefix}{python} - <<'PY'\n{body}\nPY"
 
 
 CELLS = {
+    "labels": LABELS,
+    "reset": RESET,
     "pip": PIP,
     "expose": heredoc(EXPOSE_PY),
     "start": START,
@@ -289,7 +327,7 @@ iap.identity = identity
 tenancy.tenant_for = lambda email: (ROSTER.get(email) or [None])[0]
 tenancy.is_member = lambda email, tenant: tenant in ROSTER.get(email, [])
 DOCS = {DOCS!r}
-CLASS = {STAND_CLASS!r}                            # the classes lesson 10.4's relabel wrote on the chunk rows
+CLASS = {STAND_CLASS!r}                            # the classes the relabel (the box before step 3) wrote on the chunk rows
 class Snap:
     def __init__(self, d): self.d = d
     def to_dict(self): return self.d
@@ -384,6 +422,8 @@ finally:
     rag.shutdown()
 OUT["stop"] = run_cell(LOG_PY.replace("/tmp/mcp121.log", PAGE_LOG.as_posix()))
 assert len(OUTCOMES) == 126, len(OUTCOMES)
+OUT["labels"] = pb.recorded(LESSON, "doc_types.txt")                   # the box before step 3: the author's runs (RUN_LIST.md)
+OUT["reset"] = pb.recorded(LESSON, "doc_types_reset.txt")
 
 D, I = OUT["discover"], OUT["invoke"]
 assert D.startswith("HTTP 200, text/event-stream, first line: event: message") and "tools/list: 4 tools" in D, D
@@ -419,6 +459,8 @@ def out_window(label: str, text: str) -> str:
 
 
 CELL_LABELS = {
+    "labels": "run in the operator shell, in the kit (acme's registry from the manifest, then its stored rows relabelled: a few minutes)",
+    "reset": "run in the operator shell when you finish the lesson, not now",
     "pip": "run in the operator shell, in the kit (fastmcp in the operator venv)",
     "expose": "run in the operator shell, in the kit (the server imported and listed in memory; no network)",
     "start": "run in the operator shell, in the kit (the kit's server on your machine, in the background)",
@@ -427,6 +469,8 @@ CELL_LABELS = {
     "stop": "run in the operator shell, in the kit (stop the server, read what it logged)",
 }
 OUT_LABELS = {
+    "labels": "(the author's run; your versions, chunk counts and unregistered uploads are your lane's)",
+    "reset": "(the author's run, at the end of the lesson)",
     "pip": "",
     "expose": f"(this cell run on the kit's own server.py with fastmcp {PIN})",
     "start": "(the kit's own server's /health, started as this cell starts it)",

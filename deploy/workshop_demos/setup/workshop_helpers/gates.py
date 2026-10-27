@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import sys
 
 
 def expect_failure(session, args, *, status, messages):
@@ -39,6 +40,31 @@ def expect_guard(session, args, *, stop):
     return status
 
 
+def route_gate(session, *, exemplars, report):
+    """Run the router over the dev rows with the live classifier, keep its report, and read its dev gates.
+
+    route_eval.py writes the report, then prints lesson 10.4's dev gates as FAIL lines and exits 1. Lesson 3.2
+    compares two arms, so a red gate is a reading the page shows, not an error, and the next arm must still run:
+    under the demo's one-command-per-step check the kit arm's exit 1 stopped the run before the none arm (21 October
+    2026). A crash exits 1 too but writes no report, so a fresh report is what tells the two apart.
+
+    Example: route_gate(session, exemplars="kit", report=Path.home() / "exemplars_kit.json")
+    """
+    path = Path(report)
+    if path.exists():
+        path.replace(session.attempt / (path.name + ".previous"))
+    args = [sys.executable, "evals/route_eval.py", "--live-l1", "--project", session.config.project,
+            "--exemplars", exemplars, "--report", str(path)]
+    status = session.command(args, check=False)
+    if status not in {0, 1} or not path.exists():
+        raise RuntimeError(f"route_eval exited {status} without a fresh report; inspect the command log.")
+    if not json.loads(path.read_text(encoding="utf-8")).get("decisions"):
+        raise RuntimeError("The router report has no decisions.")
+    print("Router dev gates:", "hold" if status == 0 else "FAIL, a reading here: this lesson compares the arms",
+          "| report:", path)
+    return status
+
+
 def live_gate(session, *, report, source=None, expect_red=False, api=None):
     """Keep a live gate's report and status so later functions can inspect red rows.
     
@@ -65,7 +91,7 @@ def live_gate(session, *, report, source=None, expect_red=False, api=None):
     rows = value.get("records", [])
     if not rows:
         raise RuntimeError("The gate report has no evaluated rows.")
-    print("Gate exit:", status, "| report:", path, "| failed:", value.get("failed"))
+    print("make's exit:", status, "(run_eval's own: 0 green, 1 blocked, 2 a leak)" if status else "", "| report:", path, "| failed:", value.get("failed"))
     if expect_red:
         if status != 2 or any(r.get("outcome") != "ok" for r in rows) or not any(not r["pass"] for r in rows):
             raise RuntimeError("Expected evaluated answers failing the golden assertions. An HTTP/auth/schema error or a green gate does not prove this experiment.")

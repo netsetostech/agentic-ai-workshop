@@ -27,8 +27,11 @@ RETRY_FAILED_STEP = False
 
 
 # Original CLI workflow for step_01_break_it_once_a_tenant_nobody_lists.
-COMMANDS_01 = """# on purpose: no DOCUMIND_TENANT, which the Makefile's header example leaves out too
+COMMANDS_01 = """set +e +o pipefail   # as the page runs it: the cell prints its own exit status, which a failure must reach
+# on purpose: no DOCUMIND_TENANT, which the Makefile's header example leaves out too
 env -u DOCUMIND_TENANT make smoke DOCUMIND_API_URL="$API" DOCUMIND_PROJECT="$PROJECT"; echo "exit status: $?"
+true   # the status it printed is the cell's answer: compare it with the page's prose
+
 
 """
 

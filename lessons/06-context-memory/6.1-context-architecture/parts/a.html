@@ -1,0 +1,96 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.1</div>
+<h1>Assemble the context: <span>what rides every model call</span></h1>
+<p>A model keeps nothing between calls. Each time a chat brain calls Gemini it sends the whole context again: the system prompt, the tool declarations, the thread so far and the question, and from the second call on the model's own calls and what the tools gave back. This lesson takes one turn apart, source by source, on each of DocuMind's five brains, and prices every source in rupees. Then it moves one setting, TOP_K, to see which part of the bill moves with it. You run it offline first, for Rs 0, then on your lane, where the model's own counter counts each source.</p>
+<div class="hero-chips"><div class="hero-chip">six sources a call</div><div class="hero-chip">prompt and declarations: %%FIXED1_PCT%%% of call 1</div><div class="hero-chip">a model call inside the search</div><div class="hero-chip">TOP_K: the Change-it</div><div class="hero-chip">count_tokens: not billed</div><div class="hero-chip">OFFLINE=1: Rs 0</div><div class="hero-chip">turn 3: the thread rides too</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What rides every model call</a></li>
+<li><a href="#s2">The words: context, source, system prompt, tool declaration, thread, question, the model's calls, tool result, rag-api's own call, estimate, count_tokens, residual, TOP_K, list price</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The UI: one number for the whole turn</a></li>
+<li><a href="#s4">The kit: where each brain assembles its call</a></li>
+<li><a href="#s5">Offline: one turn split by source, for Rs 0</a></li>
+<li><a href="#s6">On your lane: the model's own counter, and the probe</a></li>
+<li><a href="#s7">Five brains, one question, on your lane</a></li>
+<li><a href="#s8">Change it: TOP_K, and which part of the bill moves</a></li>
+<li><a href="#s9">The thread rides every call too</a></li>
+<li><a href="#s10">Why the split is measured this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s11">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a brain sends its model on each call of a turn, source by source, and what each source costs. Then you will prove it on your lane: one turn on each brain split into its system prompt, tool declarations, thread, question and tool results, with their tokens and rupees, and one setting moved to see which part of the bill moves with it.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What rides every model call</h3><p>A model keeps nothing between calls, so each call carries the whole context, and each token of it is billed on every call it rides.</p></div></div>
+
+<p><strong>A model keeps nothing between calls.</strong> Gemini answers each request from what that request carries, and from nothing else. A chat brain's turn is usually two calls. In the first the model asks for a search; in the second it answers from what came back. So the second call has to carry everything the first did, plus the search. A request has three fields, and the kit's command, <code>make context-sources</code>, splits them into six sources. The system instruction is the <em>system prompt</em>. The declared functions are the <em>tool declarations</em>. The contents, the conversation as a list of turns, are the <em>thread so far</em>, the <em>question</em>, <em>the model's calls</em> earlier in this turn, and the <em>tool results</em> those calls brought back.</p>
+
+<p><strong>Every token is billed on every call it rides.</strong> gemini-3.6-flash costs $%%RATE_IN%% per million input tokens: Rs %%RS_K_IN%% a thousand, at the kit's Rs %%USD_INR%% to the dollar (<code>shared/prices.py</code>). The system prompt, the declarations, the thread and the question ride every call of the turn. The model's calls and the tool results ride every call after the search. A long system prompt or a long list of tools is paid for twice in a two-call turn, and up to %%MAX_CALLS%% times in a turn that runs to the chat service's cap.</p>
+
+<p><strong>The brains assemble the request differently.</strong> LangChain's <code>create_agent</code> and the hand-built LangGraph node send the same request, token for token. ADK adds a line of its own to the system prompt and declares the same two tools in a longer form. The Desk's statute agent, the one lesson 10.5 runs, brings its own prompt and %%N_DESK_TOOLS%% tools. The direct brain makes no model call of its own: rag-api's answer is the turn.</p>
+
+<p><strong>The search has a model call inside it.</strong> A chat brain's <code>retrieve</code> asks rag-api's <code>/v1/query</code>. rag-api packs the top_k chunks into a prompt of its own and answers with its own model call; lesson 3.4 shows how it packs that prompt. rag-api bills the call on its own usage row, and the turn's Meter charges it to the turn. What comes back to the chat model as its tool result is not the chunks. It is the citations rag-api's answer chose, each a quote of one clause. The Desk's search asks <code>/v1/passages</code> instead, which returns each passage's whole text and makes no model call.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128222;</div><div>
+<p><strong>A trunk call to a consultant who keeps no notes.</strong> You pay by the minute, and the consultant forgets everything when the line drops. So every call starts the same way. You read out the standing instructions, the list of errands you can run for him, what was said on every earlier call, and today's question. When he asks for a record, you hang up, send a runner to the record room and call again: the whole file once more, and now the runner's slip as well. The record keeper is paid by the page he reads, and his slip carries only the lines he chose to quote. Ask him to read three files instead of five and his fee drops, but the slip you read out on the next call changes little. Ask the record room for photocopies of whole files instead, and every file it reads is one more thing to read out on the next call.</p>
+<p>The consultant is the model and each call is a model call. The standing instructions are the system prompt, the errands are the tool declarations, the earlier calls are the thread and this turn's own requests, and the slip is the tool result. The record keeper is rag-api, whose own model call reads top_k chunks and quotes the clauses its answer chose. The photocopies are the Desk's <code>/v1/passages</code>.</p></div></div>
+
+<h4>One turn, by source: every brain, every source, in tokens and rupees</h4>
+<p>Pick a brain, a TOP_K and a turn. Each bar is one model call, split by source and drawn to one scale; the grey bar is rag-api's own call inside the search. Pick a bar to list its sources, with each one's tokens, its share of the call and its rupees. Under it is the turn by source, as the command prints it.</p>
+
+<div class="diagram cx" id="cx">
+<div class="dg-title">One turn by source: make context-sources OFFLINE=1, on every brain, when this page was built</div>
+<div class="cx-ctl">
+<div class="cx-grp"><b>Brain</b><div class="cx-seg" id="cx-brain"></div></div>
+<div class="cx-grp"><b>TOP_K</b><div class="cx-seg" id="cx-topk"></div></div>
+<div class="cx-grp"><b>Turn</b><div class="cx-seg" id="cx-turn"></div></div>
+</div>
+<div class="cx-chart">
+<div class="cx-legend"><span><i class="cx-key k-system"></i>system prompt</span><span><i class="cx-key k-tools"></i>tool declarations</span><span><i class="cx-key k-thread"></i>thread so far</span><span><i class="cx-key k-question"></i>question</span><span><i class="cx-key k-calls"></i>the model's calls</span><span><i class="cx-key k-results"></i>tool results</span><span><i class="cx-key k-chunks"></i>rag-api: the chunks it packed</span><span><i class="cx-key k-ragfix"></i>rag-api: its prompt and the question</span></div>
+<div id="cx-rows"></div>
+<div class="cx-axis" id="cx-axis" aria-hidden="true"></div>
+</div>
+<div class="cx-detail" id="cx-detail" aria-live="polite"></div>
+<p class="cx-note" id="cx-note"></p>
+<div class="cx-tot" id="cx-tot"></div>
+<p class="dg-cap">Computed when this page was built: the kit's own command, <code>context_sources.py --offline --json</code>, run %%N_RUNS%% times on the kit you clone, once for each brain, TOP_K and turn the buttons offer. The brain, its adapter, its tools and its limits ran as they run on your lane. A script answered at the google-genai boundary in the model's place, and the search was the Rs 0 lane's, over the kit's own corpus. Every count is an estimate, a quarter of the characters each part carries (rag-api's own estimator), so the sources add up exactly; on your lane the model's own counter counts them (step 6). The rupees are list price on those estimates. Offline, nothing is billed.</p>
+</div>
+
+<p><strong>The fixed price of asking.</strong> On a fresh turn, the LangGraph brain's first call is %%CALL1%% tokens, and %%FIXED1%% of them (%%FIXED1_PCT%%%) are the system prompt and the tool declarations; the question is %%Q_TOK%%. The second call carries all of that again, plus the model's own call (%%CALLS_TOK%% tokens) and the search's result: %%CALL2%% tokens, %%RES5_PCT%%% of them tool results. Over the turn the declarations cost Rs %%DECL_INR%%, %%DECL_X_Q%% times what the question costs, because they are longer and ride both calls. On the statute desk, the prompt and its %%N_DESK_TOOLS%% declarations are %%DESK_FIXED_PCT%%% of call 1.</p>
+
+<p><strong>The search holds the biggest call.</strong> Inside the search, rag-api's own prompt is %%RAG_IN5%% tokens: its system prompt %%RAG_SYS%%, the %%N_CIT5%% chunks it packed %%RAG_CHUNKS5%%, the question %%RAG_Q%%. That is more than both of the chat model's calls together, %%TURN_INPUT%%. The turn costs Rs %%TURN_INR%%: Rs %%MODEL_INR%% for the chat model's two calls and Rs %%RAG_INR%% for rag-api's answer. The direct brain pays the second alone, Rs %%DIRECT_INR%%. The Desk pays no rag-api call at all, but its tool results are whole passages: %%DESK_RES5%% tokens, and Rs %%DESK_TURN_INR%% for the turn.</p>
+
+<p><strong>TOP_K, offline.</strong> Set TOP_K to 3 and two things shrink. rag-api packs three chunks instead of five, %%RAG_IN3%% tokens in. The tool results drop from %%RES5%% to %%RES3%% tokens. The system prompt, the declarations and the question do not move. Offline, the search returns all of the top_k passages, as if rag-api had cited every one. On your lane it returns only the citations rag-api's answer chose, so there TOP_K mostly moves the grey bar, not the orange one. Step 8 measures the difference. The Desk's passages move on both.</p>
+
+<div class="box box-amber"><div class="box-title">What the widget is not</div>
+<p>It is not your lane. The script does not think, so no call carries thinking tokens, and nothing was cached. Its tool results are the Rs 0 lane's citations: every one of the top_k passages, each quoted to up to 500 characters, where rag-api's are the clauses its answer chose, at most twenty-five words each, or a passage's first 500 characters for a source the answer cited only in its prose. And every count is an estimate. Step 6 runs the same turn on your lane, where each call's tokens are its own usage and each source is counted by the model's <code>count_tokens</code>.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: context, source, system prompt, tool declaration, thread, question, the model's calls, tool result, rag-api's own call, estimate, count_tokens, residual, TOP_K, list price</h3><p>Fourteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Context</strong></td><td data-label="Meaning">Everything one model call is sent: the system instruction, the tool declarations and the contents. The model reads nothing else.</td><td data-label="On your lane">sent whole, on each call of a turn</td></tr>
+<tr><td><strong>Source</strong></td><td data-label="Meaning">One of the six parts <code>make context-sources</code> splits a call into, by where it sits in the request.</td><td data-label="On your lane">system prompt, tool declarations, thread so far, question, the model's calls, tool results</td></tr>
+<tr><td><strong>System prompt</strong></td><td data-label="Meaning">The instructions, in the request's <code>system_instruction</code>. No checkpoint stores it: the brain puts it in front of every call.</td><td data-label="On your lane"><code>brains.SYSTEM</code>, %%SYS_CHARS%% characters; ADK adds a line; the Desk has its own</td></tr>
+<tr><td><strong>Tool declaration</strong></td><td data-label="Meaning">A tool's name, its description and its parameters, as the brain's adapter serialises them for the model.</td><td data-label="On your lane">2 for the chat brains, %%N_DESK_TOOLS%% for the statute desk</td></tr>
+<tr><td><strong>Thread so far</strong></td><td data-label="Meaning">The earlier turns of the conversation: their questions, the model's calls, the results and the answers.</td><td data-label="On your lane">empty in a new session; <code>TURNS=3</code> fills it</td></tr>
+<tr><td><strong>Question</strong></td><td data-label="Meaning">This turn's message from the person.</td><td data-label="On your lane">the command's default: <em>%%QUESTION%%</em></td></tr>
+<tr><td><strong>The model's calls</strong></td><td data-label="Meaning">The function calls the model made earlier in this turn. Each later call sends them back.</td><td data-label="On your lane"><code>retrieve(query=...)</code></td></tr>
+<tr><td><strong>Tool result</strong></td><td data-label="Meaning">What a tool returned to the model, sent with every call after it.</td><td data-label="On your lane">a chat brain's search: the citations rag-api's answer chose; the Desk's: each passage's whole text</td></tr>
+<tr><td><strong>rag-api's own call</strong></td><td data-label="Meaning">The model call inside a chat brain's search: rag-api's prompt with the chunks it packed, and its answer. rag-api bills it on its row; the turn's Meter charges it to the turn.</td><td data-label="On your lane">at most <code>max_context_tokens</code> %%MAX_CTX%% in</td></tr>
+<tr><td><strong>Estimate</strong></td><td data-label="Meaning">A quarter of the characters, at least one token: rag-api's own <code>estimate_tokens</code>, which <code>OFFLINE=1</code> uses for every count.</td><td data-label="On your lane">offline only</td></tr>
+<tr><td><strong>count_tokens</strong></td><td data-label="Meaning">The model's own counter: the tokens a request would bill, counted without generating anything. It is not billed.</td><td data-label="On your lane">on location global, a few requests per call</td></tr>
+<tr><td><strong>Residual</strong></td><td data-label="Meaning">What a call billed, its <code>prompt_token_count</code>, less what was counted for it, source by source.</td><td data-label="On your lane">0 offline; on your lane, what <code>count_tokens</code> did not count</td></tr>
+<tr><td><strong>TOP_K</strong></td><td data-label="Meaning">The <code>top_k</code> the command sends with every search, whatever the model asked for. The declaration does not change.</td><td data-label="On your lane">1 to %%TOP_K_MAX%%; the declaration's default is 5</td></tr>
+<tr><td><strong>List price</strong></td><td data-label="Meaning">Tokens at the model's standard rate in <code>shared/prices.py</code>, at Rs %%USD_INR%% to the dollar; a cached token at a tenth of the input rate.</td><td data-label="On your lane">flash: $%%RATE_IN%% in, $%%RATE_OUT%% out, per million</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the model is billed per call, not per turn. A source that rides every call is paid for on every call, so the same thousand tokens cost twice as much in a turn that calls the model twice.</p>

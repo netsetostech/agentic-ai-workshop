@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 8.3 Size RAG for ten million documents - the kit's constants and its own corpus, scaled until something breaks | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+/* the calculator: four inputs, one row per line of the bill or the limit it meets */
+.sz-in{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:8px 14px;margin:0 0 6px;}
+.sz-in label{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.sz-in select{font:inherit;font-size:16px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.sz-in input[type=range]{width:100%;min-height:44px;accent-color:var(--teal);}
+.sz-sum{font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal-dark);margin:6px 0 8px;overflow-wrap:anywhere;}
+.sz-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:8px 10px;border:1px solid var(--border);border-left-width:4px;border-left-color:#0891b2;border-radius:10px;background:var(--card);margin:0 0 6px;font-size:12.5px;line-height:1.5;color:var(--slate);}
+.sz-row b{color:var(--navy);}
+.sz-row .v{font-family:var(--mono);color:var(--navy);text-align:right;white-space:nowrap;}
+.sz-row .why{grid-column:1 / -1;overflow-wrap:anywhere;}
+.sz-row.money{border-left-color:var(--teal);}
+.sz-row.limit{border-left-color:#c2410c;background:#fff7ed;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 8 &middot; Ingestion practical &middot; Lesson 8.3</div>
+<h1>Size RAG for ten million documents: <span>the kit's own constants and its own corpus, scaled until something breaks</span></h1>
+<p>Your lane holds the kit's 27 text documents. This lesson asks what the same kit would need for 10,000,000: how many vectors, how many gibibytes of index, how many embedding requests, how many rupees and how many days. Every answer is arithmetic on three kinds of number: the kit's constants, the kit's corpus as the kit's own chunker counts it, and the prices and limits Google publishes. None of them is a guess, and every number on this page is computed from those three when the page is built.</p>
+<p>The arithmetic is the easy half. The useful half is the four places where the kit, exactly as it is today, stops working long before ten million: two that grow faster than the corpus, and two that stay fixed while the corpus grows past them. You will read each one in the kit's code, and see what would change it.</p>
+<div class="hero-chips"><div class="hero-chip">2,000-character chunks</div><div class="hero-chip">250 texts a request</div><div class="hero-chip">768 numbers a vector</div><div class="hero-chip">102.11 chunks a document</div><div class="hero-chip">1.02 billion vectors</div><div class="hero-chip">2,921.4 GiB of index</div><div class="hero-chip">30 documents in flight</div><div class="hero-chip">a 1,200-second walk</div><div class="hero-chip">1 replica</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What sizing a RAG system means</a></li>
+<li><a href="#s2">The words: chunk, request, vector, shard, replica, compaction, in flight, fingerprint, walk</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The UI: your corpus, counted by the lane</a></li>
+<li><a href="#s4">The kit's numbers: the chunk, the request, the vector, the shard, the row</a></li>
+<li><a href="#s5">Measure the corpus with the kit's own chunker</a></li>
+<li><a href="#s6">REST: the index's own size</a></li>
+<li><a href="#s7">Direct reads: Firestore's counts and the worker's seconds</a></li>
+<li><a href="#s8">Ten million: what breaks first, and what it costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how one document becomes chunks, requests, vectors and rows, how those multiply to ten million, and which four limits in the kit break first. Then you will measure your own lane, its counts, its index and its seconds per document, and put your numbers into the same arithmetic.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What sizing a RAG system means</h3><p>One average document turned into numbers, multiplied, and set beside every price and limit it meets.</p></div></div>
+
+<p><strong>Sizing</strong> a RAG system means turning one average document into the numbers each part of the system sees, then multiplying by the number of documents. In DocuMind a document becomes <em>chunks</em>, pieces of up to 2,000 characters. Each chunk travels to the embedding model inside a <em>request</em>, comes back as a <em>vector</em> of 768 numbers, goes into the Vector Search index, and is written to Firestore as a row. Count those for an average document, multiply by 10,000,000, and put each total beside the price or the limit that applies to it. That is the whole method.</p>
+
+<p>Three kinds of number go into it, and this page keeps them apart. <strong>The kit's constants</strong> set the rules: 2,000-character chunks with 200 characters of overlap, at most 250 texts and about 15,000 tokens in one embedding request, 768 numbers a vector, 30 documents worked on at once, a nightly walk with 1,200 seconds to finish, one replica. <strong>The corpus</strong> sets the averages: the kit's 27 text documents, chunked by the kit's own code, make 2,757 chunks, 102.11 a document. <strong>Google's prices and limits</strong>, which the kit does not hold, turn totals into rupees and machines: how much one shard of an index holds, what a serving node costs an hour, what 1,000 characters cost to embed. Those were read on 12 October 2026, and step 8 links each one, because they change.</p>
+
+<p>Most of what grows, grows in a straight line. Ten times the documents is ten times the vectors, the gibibytes and the rupees, and a straight line is easy to read once you have one point on it. Sizing is really the search for what does not grow that way. Two things in the kit grow faster than the corpus, because every new document makes them re-read the documents before it. Two others stay the same size while the corpus grows past them: a fixed number of documents in flight, and a fixed number of replicas. Step 8 reads all four in the kit's code.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127835;</div><div>
+<p><strong>A wedding caterer in Jaipur, planning for ten thousand guests from a tasting for twenty-seven.</strong> The recipe card says what one plate holds: two rotis, a katori of dal, a spoon of pickle. The tasting shows what twenty-seven guests actually ate, second helpings included. The mandi's rate list, dated that morning, turns kilos into rupees. Multiply, and the flour, the dal and the bill all grow in a straight line. Then the caterer looks at the kitchen. It has thirty burners, however many guests come. The head cook insists on recounting every plate already served before sending out the next one. One night-watchman must walk past every table before dawn. And there is one serving counter.</p>
+<p>The recipe card is the kit's constants, the tasting is the kit's corpus counted by its own chunker, and the dated rate list is Google's price page. The thirty burners are the worker's 30 documents in flight. The head cook's recount is the corpus fingerprint, which reads every indexed document of a tenant on every ingest. The night-watchman is the nightly walk and its 1,200 seconds, and the serving counter is the index's one replica. At twenty-seven guests none of these matters. At ten thousand, each is the first thing to fail.</p></div></div>
+
+<h4>The calculator: ten million, from the kit's numbers</h4>
+<p>The calculator is this page's arithmetic, running in your browser. Pick how many documents, what they look like (the kit's own documents of that kind supply the averages), how many tenants they belong to, and the shard size. Each row is one line of the bill or one limit, and a row turns orange where the kit, as it is, breaks. Prices are Google's list prices for Mumbai (asia-south1), where your lane runs, except the embedding model's, which the kit calls in us-central1. They were read on 12 October 2026, at Rs 85 to the dollar.</p>
+
+<div class="diagram" id="sz">
+<div class="dg-title">Ten million documents, from the kit's own numbers</div>
+<div class="sz-in">
+<label>Documents: <span id="sz-n-v">10,000,000</span><input type="range" id="sz-n" min="0" max="13" step="1" value="11" aria-label="Documents"></label>
+<label>What they look like<select id="sz-shape"><option value="corpus" selected>The kit&#x27;s corpus, as mixed (27)</option><option value="statute">Acts and Codes (17)</option><option value="handbook">Handbooks and policies (4)</option><option value="short">Short documents (6)</option></select></label>
+<label>Tenants they belong to<select id="sz-tenants"><option value="1" selected>1</option><option value="10">10</option><option value="100">100</option><option value="1000">1,000</option></select></label>
+<label>Vector Search shard size<select id="sz-shard"><option value="SHARD_SIZE_SMALL">SMALL: 2 GiB</option><option value="SHARD_SIZE_MEDIUM" selected>MEDIUM: 20 GiB</option><option value="SHARD_SIZE_LARGE">LARGE: 50 GiB</option></select></label>
+</div>
+<p class="sz-sum" id="sz-sum" aria-live="polite"></p>
+<div id="sz-rows"></div>
+<p class="dg-cap">Not on the calculator: what a question costs to answer, Document AI's and DLP's own prices, the storage Firestore's point-in-time recovery adds, and the sparse half and the filters every vector carries, which Google says take shard space too. So every figure is a floor. The four kinds are averages of the kit's own documents: 17 Acts and Codes, 4 handbooks and policies, 6 short contracts, invoices, reports and transcripts, or all 27 as the corpus mixes them.</p>
+</div>
+
+<p>Read the default first: 10,000,000 documents shaped like the kit's corpus, all in one tenant, on MEDIUM shards. The straight lines are big but ordinary. 1,021,111,111 vectors make 2,921.4 GiB of index, which takes 147 MEDIUM shards and costs Rs 82.22 lakh a month to serve; embedding the corpus once costs Rs 27.33 lakh. Two rows are orange, and they are the lesson. The fingerprint row says the load would read Firestore 50,000,005,000,000 times, which is Rs 148.75 crore, more than everything else on the page together. The ingest row says that at 30 documents at a time, Document AI alone would take 150.3 days. Now move the tenants to 1,000: the fingerprint's reads fall about a thousandfold, because they grow with the square of each tenant's size, not with the corpus. Then move the documents down until both orange rows turn blue: that is roughly the size the kit, as it is, was built for.</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: chunk, request, vector, shard, replica, compaction, in flight, fingerprint, walk</h3><p>Twelve terms, each with its value on your lane and at ten million documents of the corpus's mix.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th><th>At ten million</th></tr></thead>
+<tbody>
+<tr><td><strong>Chunk</strong></td><td data-label="Meaning">A piece of a document the kit embeds, stores and retrieves: up to 2,000 characters, overlapping the next by 200, cut at a sentence when one is near. A section under a <code>## </code> heading is one chunk unless it is longer than that.</td><td data-label="On your lane">2,757 from the 27 text documents, by the kit's chunker (step 5)</td><td data-label="At ten million">1,021,111,111</td></tr>
+<tr><td><strong>Embedding request</strong></td><td data-label="Meaning">One call to <code>text-embedding-005</code> carrying many chunks. The kit sends at most 250 texts and about 15,000 tokens; the model refuses more than 250 texts or 20,000 tokens.</td><td data-label="On your lane">95, 3.52 a document</td><td data-label="At ten million">35,185,185</td></tr>
+<tr><td><strong>Vector</strong></td><td data-label="Meaning">What the model returns for one chunk: 768 numbers. The index stores each number in 4 bytes, so a vector is 3,072 bytes.</td><td data-label="On your lane">one per current chunk, text and media</td><td data-label="At ten million">1,021,111,111</td></tr>
+<tr><td><strong>Data size</strong></td><td data-label="Meaning">Google's measure of an index: vectors times dimensions times 4 bytes. It decides the shards, the serving bill and the build and update charges.</td><td data-label="On your lane">8.1 MiB for the text chunks (step 6 computes yours)</td><td data-label="At ten million">2,921.4 GiB</td></tr>
+<tr><td><strong>Shard, shard size</strong></td><td data-label="Meaning">A slice of the index served by one node. SMALL holds 2 GiB on an e2-standard-2, MEDIUM 20 GiB on an e2-standard-16, LARGE 50 GiB on an e2-highmem-16.</td><td data-label="On your lane">one shard; vector.tf creates a new index SMALL and leaves an existing one the size it has (step 6 reads it)</td><td data-label="At ten million">1,461 SMALL, 147 MEDIUM or 59 LARGE</td></tr>
+<tr><td><strong>Replica</strong></td><td data-label="Meaning">One more copy of every shard on its own node. Replicas carry more queries a second and keep the index up while a node restarts.</td><td data-label="On your lane">1, as the minimum and the maximum</td><td data-label="At ten million">still 1</td></tr>
+<tr><td><strong>Streaming update, compaction</strong></td><td data-label="Meaning">The kit's index takes each new vector as it comes (STREAM_UPDATE), billed per GiB streamed in. Every so often Google rebuilds the index to fold the streamed vectors in, billed as a full rebuild.</td><td data-label="On your lane">Rs 0.30 to stream the text chunks in; Rs 2.01 a compaction</td><td data-label="At ten million">Rs 1.12 lakh to stream in; Rs 7.45 lakh a compaction</td></tr>
+<tr><td><strong>In flight</strong></td><td data-label="Meaning">Documents being worked on at the same moment. The worker takes one document per instance and runs at most 30 instances.</td><td data-label="On your lane">30</td><td data-label="At ten million">still 30</td></tr>
+<tr><td><strong>Corpus fingerprint</strong></td><td data-label="Meaning">A hash of a tenant's indexed documents, so the answer cache knows when the corpus changed. Every ingest recomputes it by reading every indexed document row of the tenant.</td><td data-label="On your lane">a few dozen reads per ingest</td><td data-label="At ten million">50,000,005,000,000 reads for one tenant's load</td></tr>
+<tr><td><strong>Nightly walk</strong></td><td data-label="Meaning">The reconcile job: it lists every object in the bucket and every ledger row, compares them, and repairs the difference. One task, 1,200 seconds, off unless you turn it on.</td><td data-label="On your lane">off by default</td><td data-label="At ten million">30,000,000 objects and rows a night</td></tr>
+<tr><td><strong>Firestore floor</strong></td><td data-label="Meaning">The bytes Firestore bills for a chunk's row and its eight vector-index entries, by Google's published size rules. A floor, because some indexes are not counted.</td><td data-label="On your lane">59,092 bytes a chunk on average</td><td data-label="At ten million">56,195.2 GiB</td></tr>
+<tr><td><strong>Calibration</strong></td><td data-label="Meaning">Replacing a number the page cannot know with one your lane measured: here, the seconds one document takes in the worker.</td><td data-label="On your lane">your ingest's request latencies (step 7)</td><td data-label="At ten million">3.86 days for every second a document takes</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two pairs in this table are easy to confuse, and the lesson keeps them apart. A <em>chunk</em> is text and a <em>vector</em> is numbers: the bill for embedding counts characters, the bill for the index counts vectors. And a <em>shard</em> is a slice of the data while a <em>replica</em> is a copy of all of it: more data means more shards, more questions a second means more replicas, and the kit fixes the second at one.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_08/lesson_8_3/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_08/lesson_8_3/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_08/lesson_8_3/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson asks DocuMind no question: it reads counts, sizes and logs, and no read on this page depends on which store answers. The two windows below are on every page; you can skip both here, or pin acme now and put it back at the end if you want the UI's answers to come from the kit's index while you read. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. If you ran it, leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The deployed UI</span><h3>The UI: your corpus, counted by the lane</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_08/lesson_8_3/demo_03_the_ui_your_corpus_counted_by_the_lane.py" target="_blank" rel="noopener"><code>demo_03_the_ui_your_corpus_counted_by_the_lane.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The chunk counts the lane recorded, document by document, before any arithmetic.</p></div></div>
+
+<p>Every size on this page starts from one number: how many chunks a document becomes. Your lane has already counted them, document by document, when the worker ingested the corpus. Read those counts first, in the browser, where an operator would. The UI's address is built from your project number, as the setup block built <code>API</code>:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (prints your UI&#x27;s address)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">echo "https://documind-ui-$NUMBER.$REGION.run.app"     # open it signed in as yourself, then Documents</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the format: NUMBER is your project number)</span><span class="ro">read only</span></div><pre tabindex="0">https://documind-ui-NUMBER.asia-south1.run.app</pre></div>
+
+
+<p>Open it signed in to Google as yourself and choose <strong>Documents</strong>. The page shows your tenant's ledger under <strong>Versions</strong>: one row per current version of every document, with its status, its <code>chunks</code>, how many of them a re-issue reused or embedded, and when it was indexed. The caption above the table counts the current versions and prints the corpus fingerprint, a hash step 8 comes back to. Your email maps to acme, so these are acme's rows.</p>
+
+<p>Now set the <code>chunks</code> column beside the kit's own count of the same documents. The table below is acme's 17 text documents as the kit's chunker counts them, run when this page was built (step 5 runs the same code on your machine):</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Document</th><th>Type</th><th>Uploaded as</th><th>Characters</th><th>Chunks offline</th><th>Requests</th></tr></thead>
+<tbody>
+<tr><td><code>hr_policy_2026</code></td><td data-label="Type">policy</td><td data-label="Uploaded as">.md: the same text, the same count</td><td data-label="Characters">160,385</td><td data-label="Chunks offline">283</td><td data-label="Requests">4</td></tr>
+<tr><td><code>msa_acme_2026</code></td><td data-label="Type">contract</td><td data-label="Uploaded as">.md: the same text, the same count</td><td data-label="Characters">927</td><td data-label="Chunks offline">6</td><td data-label="Requests">1</td></tr>
+<tr><td><code>inv_2026_0412</code></td><td data-label="Type">invoice</td><td data-label="Uploaded as">.md: the same text, the same count</td><td data-label="Characters">780</td><td data-label="Chunks offline">1</td><td data-label="Requests">1</td></tr>
+<tr><td><code>annual_report_2026</code></td><td data-label="Type">report</td><td data-label="Uploaded as">.md: the same text, the same count</td><td data-label="Characters">707</td><td data-label="Chunks offline">4</td><td data-label="Requests">1</td></tr>
+<tr><td><code>townhall_2026_q1</code></td><td data-label="Type">transcript</td><td data-label="Uploaded as">.md: the same text, the same count</td><td data-label="Characters">1,698</td><td data-label="Chunks offline">1</td><td data-label="Requests">1</td></tr>
+<tr><td><code>code_on_wages_2019</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 29 pages: Document AI's text</td><td data-label="Characters">95,812</td><td data-label="Chunks offline">65</td><td data-label="Requests">3</td></tr>
+<tr><td><code>payment_of_bonus_act_1965</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 31 pages: Document AI's text</td><td data-label="Characters">76,745</td><td data-label="Chunks offline">56</td><td data-label="Requests">2</td></tr>
+<tr><td><code>payment_of_gratuity_act_1972</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 10 pages: Document AI's text</td><td data-label="Characters">35,720</td><td data-label="Chunks offline">27</td><td data-label="Requests">1</td></tr>
+<tr><td><code>maternity_benefit_act_1961</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 11 pages: Document AI's text</td><td data-label="Characters">28,730</td><td data-label="Chunks offline">21</td><td data-label="Requests">1</td></tr>
+<tr><td><code>maternity_benefit_amendment_act_2017</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 4 pages: Document AI's text</td><td data-label="Characters">7,712</td><td data-label="Chunks offline">5</td><td data-label="Requests">1</td></tr>
+<tr><td><code>code_on_social_security_2020</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 116 pages: Document AI's text</td><td data-label="Characters">378,112</td><td data-label="Chunks offline">267</td><td data-label="Requests">10</td></tr>
+<tr><td><code>industrial_relations_code_2020</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 56 pages: Document AI's text</td><td data-label="Characters">193,095</td><td data-label="Chunks offline">143</td><td data-label="Requests">5</td></tr>
+<tr><td><code>osh_code_2020</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 86 pages: Document AI's text</td><td data-label="Characters">271,504</td><td data-label="Chunks offline">188</td><td data-label="Requests">7</td></tr>
+<tr><td><code>labour_codes_compliance_handbook</code></td><td data-label="Type">guidance</td><td data-label="Uploaded as">PDF, 38 pages: Document AI's text</td><td data-label="Characters">50,240</td><td data-label="Chunks offline">50</td><td data-label="Requests">2</td></tr>
+<tr><td><code>dpdp_act_2023</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 21 pages: Document AI's text</td><td data-label="Characters">64,341</td><td data-label="Chunks offline">44</td><td data-label="Requests">2</td></tr>
+<tr><td><code>it_act_2000</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 34 pages: Document AI's text</td><td data-label="Characters">107,466</td><td data-label="Chunks offline">77</td><td data-label="Requests">3</td></tr>
+<tr><td><code>cgst_act_2017</code></td><td data-label="Type">statute</td><td data-label="Uploaded as">PDF, 236 pages: Document AI's text</td><td data-label="Characters">467,764</td><td data-label="Chunks offline">390</td><td data-label="Requests">12</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The five Markdown documents went up as text, and the worker chunks text by exactly the rules the offline count uses, so their rows should match the table digit for digit. The Acts and the compliance handbook went up as PDFs: the worker sent each to Document AI, whose text is not byte for byte the pypdf text the offline count reads, so their counts can differ by a few chunks. Your table also has rows this one does not: the three figures, which the worker describes in words and embeds as one chunk each, and <code>posh_act_2013</code>, a scanned Act that only Document AI can read. The town hall is a text row unless you made its video in lesson 7.5; then the video takes its place.</p>
+
+<p>The same rows come from the shell. <code>make sources</code> reads the ledger in Firestore directly, as you, the operator, with your Application Default Credentials. The UI asked the API, as you, and the API first checked your email against acme's roster. One table, two callers:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (reads the ledger; writes nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make sources PROJECT="$PROJECT" TENANT_ONLY=acme</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your ids, counts and times are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/sources_acme.txt]</pre></div>
+
+
+<p>The last line is the ledger's summary for the tenant: its fingerprint and its count of current versions. Then the index itself. <code>make vector-status</code> asks gcloud to describe the Vector Search index and its deployment:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (two gcloud describes; changes nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make vector-status PROJECT="$PROJECT" REGION="$REGION"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your ids, counts and times are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/vector_status.txt]</pre></div>
+
+
+<p><code>vectorsCount</code> is every current chunk of all three tenants, text and media, because the worker upserts each chunk it makes current and removes the ones a re-issue retires, and since 13 October 2026 a source withdrawn by hand (<code>reconcile.py --retire</code>, lesson 1.8) or retired by the walk has its datapoints removed the same way. One case still runs ahead: a source withdrawn on an older kit, whose datapoints nothing removed, so the count exceeds the current rows by that document's chunks until the index is rebuilt. <code>shardsCount</code> is how many slices the index is cut into, and on your lane it is one. Hold both numbers: step 6 reads the same index over REST and asks how full that one shard is.</p>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit's code</span><h3>The kit's numbers: the chunk, the request, the vector, the shard, the row</h3><p>Every constant the arithmetic uses, read where the kit sets it.</p></div></div>
+
+<p>Five things grow with the corpus: chunks, embedding requests, vectors, shards and Firestore rows. Each has its rule in one place in the kit. Read them in that order.</p>
+
+<h4>The chunk</h4>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - the chunk: 2,000 characters, 200 of overlap</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># 4.1&#x27;s chunker, the shape every lesson&#x27;s corpus has: ~500 tokens per chunk, an</span>
+<span class="cm"># overlap so a sentence is never cut in half between two chunks.</span>
+CHUNK_CHARS, CHUNK_OVERLAP = <span class="nu">2000</span>, <span class="nu">200</span></pre></div>
+
+
+<p>2,000 characters with 200 of overlap. The comment's "~500 tokens per chunk" is the usual four characters a token; the kit's embedding batcher, below, counts more cautiously, at 3. The cutting is <code>_windows()</code>:</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - _windows(): cut on a sentence when one is near</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_windows</span>(text: str) -&gt; list[tuple[int, str]]:
+    <span class="st">&quot;&quot;&quot;Fixed windows with overlap, ending on a sentence when there is one nearby; (start offset, text).&quot;&quot;&quot;</span>
+    text = text.strip()
+    out, start = [], <span class="nu">0</span>
+    <span class="kw">while</span> start &lt; len(text):
+        end = min(len(text), start + CHUNK_CHARS)
+        <span class="kw">if</span> end &lt; len(text):
+            cut = text.rfind(<span class="st">&quot;. &quot;</span>, start + CHUNK_CHARS // <span class="nu">2</span>, end)
+            <span class="kw">if</span> cut != -<span class="nu">1</span>:
+                end = cut + <span class="nu">1</span>
+        piece = text[start:end].strip()
+        <span class="kw">if</span> piece:
+            out.append((start, piece))
+        <span class="kw">if</span> end &gt;= len(text):
+            <span class="kw">break</span>
+        start = max(end - CHUNK_OVERLAP, start + <span class="nu">1</span>)
+    <span class="kw">return</span> out</pre></div>
+
+
+<p>A window runs 2,000 characters, then moves back to the last full stop in its second half if it finds one, and the next window starts 200 characters before that cut. So a long text becomes a little more than its length divided by 2,000, and the characters sent to the model are more than the characters in the document: every overlap is sent twice. Text with <code>## </code> headings, which the kit's docstring calls a handbook, is cut by its headings first, one chunk per section, and a PDF's text page by page, so a page break also ends a chunk. Those two rules are why a short page or a short section costs a whole chunk: acme's contract is 927 characters, less than one window, and six chunks, the lines above its first heading and one for each of its five sections.</p>
+
+<h4>The request</h4>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - one request&#x27;s ceilings, the vector&#x27;s length, the region</span><span class="ro">read only</span></div><pre tabindex="0">EMBED_BATCH = <span class="nu">250</span>
+EMBED_TOKENS = <span class="nu">15_000</span>
+CHARS_PER_TOKEN = <span class="nu">3</span>
+DRY_RUN = os.environ.get(<span class="st">&quot;VECTOR_DRY_RUN&quot;</span>) == <span class="st">&quot;1&quot;</span>
+EMBEDDING_MODEL = os.environ.get(<span class="st">&quot;EMBEDDING_MODEL&quot;</span>, <span class="st">&quot;text-embedding-005&quot;</span>)
+EMBEDDING_VERSION = os.environ.get(<span class="st">&quot;EMBEDDING_VERSION&quot;</span>, <span class="st">&quot;1&quot;</span>)
+EMBEDDING_TASK_TYPE = <span class="st">&quot;RETRIEVAL_DOCUMENT&quot;</span>
+EMBEDDING_DIMENSIONS = <span class="nu">768</span>
+
+_embed = genai.Client(
+    enterprise=<span class="kw">True</span>,
+    project=os.environ[<span class="st">&quot;GOOGLE_CLOUD_PROJECT&quot;</span>],
+    location=<span class="st">&quot;us-central1&quot;</span>,
+)</pre></div>
+
+
+<p>Two ceilings on one request, and the shared copy of the same function says where they come from:</p>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_corpus.py - embed_batches(): why 250 and 15,000</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">embed_batches</span>(texts: list) -&gt; list:
+    <span class="st">&quot;&quot;&quot;Batches of at most EMBED_BATCH texts AND about EMBED_TOKENS tokens. text-embedding-005 takes
+    250 texts per request and 20,000 tokens across them, and a request over either limit fails
+    whole; a two-thousand-character chunk is ~500 tokens, so 250 of them are ~125,000. The first
+    live corpus load (6 Sept 2026) failed every long Act exactly here - the same rule now lives in
+    services/ingest/indexer.py.&quot;&quot;&quot;</span></pre></div>
+
+
+<p>The model takes at most 250 texts and 20,000 tokens in one request; the kit stays under both, at 250 texts and about 15,000 tokens, counting a token as 3 characters. For full chunks, the token ceiling is the one that binds: a full 2,000-character chunk counts as 666 tokens, so one request carries 22 of them, never 250. Across the corpus, with its short chunks, a request carries 29.0 on average. And the requests for one document go one after another:</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - embed_all(): the requests go one after another</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">embed_all</span>(texts: list[str]) -&gt; list[list[float]]:
+    out: list[list[float]] = []
+    <span class="kw">for</span> batch <span class="kw">in</span> batches(texts):
+        response = _embed.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=batch,
+            config={<span class="st">&quot;output_dimensionality&quot;</span>: EMBEDDING_DIMENSIONS, <span class="st">&quot;task_type&quot;</span>: EMBEDDING_TASK_TYPE},
+        )
+        vectors = [list(embedding.values) <span class="kw">for</span> embedding <span class="kw">in</span> (response.embeddings <span class="kw">or</span> [])]
+        <span class="kw">if</span> len(vectors) != len(batch) <span class="kw">or</span> any(<span class="kw">not</span> valid_vector(v) <span class="kw">for</span> v <span class="kw">in</span> vectors):
+            <span class="kw">raise</span> ValueError(<span class="st">&quot;Embedding response must contain one finite 768-dimensional vector per text&quot;</span>)
+        out.extend(vectors)
+    <span class="kw">return</span> out</pre></div>
+
+
+<p>That loop matters at scale. The worker never sends two requests for the same document at once, so the only parallelism in embedding is the number of documents in flight, which step 8 reads.</p>
+
+<h4>The vector and the index</h4>
+
+<div class="cw"><div class="ch-bar"><span>terraform/vector.tf - the index: 768 numbers a vector, streamed</span><span class="ro">read only</span></div><pre tabindex="0">    config {
+      dimensions                  = <span class="nu">768</span>
+      approximate_neighbors_count = <span class="nu">150</span>
+      distance_measure_type       = <span class="st">&quot;DOT_PRODUCT_DISTANCE&quot;</span>
+      shard_size                  = <span class="st">&quot;SHARD_SIZE_SMALL&quot;</span> <span class="cm"># a new index&#x27;s; an existing index keeps its own (ignore_changes)</span>
+      algorithm_config {
+        tree_ah_config {
+          leaf_node_embedding_count    = <span class="nu">500</span>
+          leaf_nodes_to_search_percent = <span class="nu">7</span>
+        }
+      }
+    }
+  }
+...
+  index_update_method = <span class="st">&quot;STREAM_UPDATE&quot;</span></pre></div>
+
+
+<p>768 numbers a vector, and the index stores each in 4 bytes, so Google's <em>data size</em> for your index is its vectors times 3,072 bytes. That one number decides how many shards the index needs. The shard size is a property of the index, and the kit maps each size to the machine that serves it:</p>
+
+<div class="cw"><div class="ch-bar"><span>terraform/vector.tf - the machine each shard size names</span><span class="ro">read only</span></div><pre tabindex="0">  vector_machine_by_shard = {
+    SHARD_SIZE_SMALL  = <span class="st">&quot;e2-standard-2&quot;</span>
+    SHARD_SIZE_MEDIUM = <span class="st">&quot;e2-standard-16&quot;</span>
+    SHARD_SIZE_LARGE  = <span class="st">&quot;e2-highmem-16&quot;</span>
+  }</pre></div>
+
+
+<p>On your lane, vector.tf creates a new index SMALL and leaves an existing one the size it has; step 6 reads which. The deployed index, the part that answers queries and bills by the hour, has one replica, as both the minimum and the maximum:</p>
+
+<div class="cw"><div class="ch-bar"><span>terraform/vector.tf - the deployed index: one replica, never more</span><span class="ro">read only</span></div><pre tabindex="0">  <span class="cm"># One compatible replica. MEDIUM/LARGE cost more than SMALL. A deployed index</span>
+  <span class="cm"># bills while serving; undeploy it to stop serving charges, rather than</span>
+  <span class="cm"># assuming that setting min_replica_count=0 is a supported shutdown path.</span>
+  dedicated_resources {
+    machine_spec {
+      machine_type = local.vector_machine_by_shard[google_vertex_ai_index.documind.metadata[<span class="nu">0</span>].config[<span class="nu">0</span>].shard_size]
+    }
+    min_replica_count = <span class="nu">1</span>
+    max_replica_count = <span class="nu">1</span>
+  }
+}</pre></div>
+
+
+<p>So the serving bill is a simple product: shards, times replicas (one), times the machine's hourly price, times the hours in a month. Ten million documents changes only the first factor.</p>
+
+<h4>The row</h4>
+
+<p>Every chunk the index holds is also a row in Firestore, with the chunk's text, its version flags and its vector. The rows are what the API searches when the index cannot answer:</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/indexer.py - mirror_to_firestore(): the row every chunk gets</span><span class="ro">read only</span></div><pre tabindex="0">        row = {
+            <span class="st">&quot;tenant_id&quot;</span>: doc.tenant_id,
+            <span class="st">&quot;text&quot;</span>: chunk[<span class="st">&quot;text&quot;</span>],
+            <span class="st">&quot;source_uri&quot;</span>: doc.gcs_uri,
+            <span class="st">&quot;page_start&quot;</span>: chunk.get(<span class="st">&quot;page_start&quot;</span>),
+            <span class="st">&quot;doc_type&quot;</span>: doc.doc_type,
+            <span class="st">&quot;kind&quot;</span>: chunk.get(<span class="st">&quot;kind&quot;</span>, <span class="st">&quot;text&quot;</span>),
+            <span class="st">&quot;doc_key&quot;</span>: doc.doc_key,
+            <span class="st">&quot;current&quot;</span>: <span class="kw">not</span> staged,
+            <span class="st">&quot;indexed_at&quot;</span>: firestore.SERVER_TIMESTAMP,
+            <span class="st">&quot;chunk_hash&quot;</span>: chunk.get(<span class="st">&quot;chunk_hash&quot;</span>),
+            <span class="st">&quot;locator&quot;</span>: chunk.get(<span class="st">&quot;locator&quot;</span>),
+            <span class="st">&quot;embedding_model&quot;</span>: EMBEDDING_MODEL,
+            <span class="st">&quot;embedding_version&quot;</span>: EMBEDDING_VERSION,
+            <span class="st">&quot;embedding_task_type&quot;</span>: EMBEDDING_TASK_TYPE,
+            <span class="st">&quot;sparse_encoder_version&quot;</span>: SPARSE_ENCODER_VERSION,
+            <span class="st">&quot;schema_version&quot;</span>: SCHEMA_VERSION,
+            <span class="st">&quot;embedding&quot;</span>: Vector(vector),
+        }</pre></div>
+
+
+<p>The row carries the chunk's text and its vector, which Firestore stores at 8 bytes a number, twice the index's 4. And the rows are indexed for vector search eight ways, one per combination of filters the fallback uses:</p>
+
+<div class="cw"><div class="ch-bar"><span>terraform/firestore_indexes.tf - six of the eight vector indexes on chunks</span><span class="ro">read only</span></div><pre tabindex="0">  chunks_filter_indexes = {
+    doc_type              = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;doc_type&quot;</span>]
+    current_doc_type      = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;current&quot;</span>, <span class="st">&quot;doc_type&quot;</span>]
+    kind                  = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+    current_kind          = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;current&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+    doc_type_kind         = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;doc_type&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+    current_doc_type_kind = [<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;current&quot;</span>, <span class="st">&quot;doc_type&quot;</span>, <span class="st">&quot;kind&quot;</span>]
+  }
+...
+resource <span class="st">&quot;google_firestore_index&quot;</span> <span class="st">&quot;chunks_filter_vector&quot;</span> {
+  for_each    = local.chunks_filter_indexes
+  project     = var.project_id
+  database    = google_firestore_database.main.name
+  collection  = <span class="st">&quot;chunks&quot;</span>
+  query_scope = <span class="st">&quot;COLLECTION&quot;</span>
+
+  dynamic <span class="st">&quot;fields&quot;</span> {
+    for_each = each.value
+    content {
+      field_path = fields.value
+      order      = <span class="st">&quot;ASCENDING&quot;</span>
+    }
+  }
+  fields {
+    field_path = <span class="st">&quot;__name__&quot;</span>
+    order      = <span class="st">&quot;ASCENDING&quot;</span>
+  }
+  fields {
+    field_path = <span class="st">&quot;embedding&quot;</span>
+    vector_config {
+      dimension = <span class="nu">768</span>
+      flat {}
+    }
+  }
+}</pre></div>
+
+
+<p>Six indexes come from that map and two more are declared above it in the same file; every one of them ends in the document's name and the 768-number vector. Firestore bills its storage for the rows and for every index entry, and each of the eight entries holds the whole vector again. By Google's published size rules, the corpus's average chunk is at least 59,092 bytes in Firestore: 8,044 for the row and 51,048 for its index entries, about 19 times the 3,072 bytes the same chunk counts for in Vector Search's data size. Step 8 prices it.</p>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Measure</span><h3>Measure the corpus with the kit's own chunker</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_08/lesson_8_3/demo_05_measure_the_corpus_with_the_kit_s_own_chunker.py" target="_blank" rel="noopener"><code>demo_05_measure_the_corpus_with_the_kit_s_own_chunker.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The averages the arithmetic multiplies, from the kit's code on the kit's files, in a second, with no network.</p></div></div>
+
+<p>The cell below loads every text document of the three tenants with <code>shared/documind_corpus.py</code>, the loader, chunker and batcher the notebooks share. They apply the worker's two rules, 2,000 characters with 200 of overlap and a section per <code>## </code> heading, and the worker's two ceilings on a request. It counts, by document type, the characters, the chunks, the characters sent and the requests, then multiplies by 10,000,000. It reads only files in your clone of the kit: nothing on the lane, nothing billed.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (no network: the kit&#x27;s own code on the kit&#x27;s own files)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from shared import documind_corpus as dc     # the loader, the chunker and the batcher: the worker's rules (step 4)
+from shared.prices import USD_INR             # the course's rate, Rs 85 to the dollar
+N, DIMS, GIB = 10_000_000, 768, 1 &lt;&lt; 30     # the target; indexer.py's EMBEDDING_DIMENSIONS; a gibibyte
+USD_PER_1K = 0.000025                 # text-embedding-005 input, online, per 1,000 characters (step 8)
+rows = []
+for tenant in ("acme", "globex", "zeta"):
+    for d in dc.load_documents(tenant, "evals", "documind-ai-YOUR-ID"):
+        texts = [c["text"] for c in dc.chunk_document(d, tenant)]
+        rows.append((d["doc_type"], len(d["text"]), len(texts), sum(map(len, texts)), len(dc.embed_batches(texts))))
+
+
+def line(name, group):
+    print(f"{name:10} {len(group):&gt;4} {sum(r[1] for r in group):&gt;10,} {sum(r[2] for r in group):&gt;6,} "
+          f"{sum(r[3] for r in group):&gt;10,} {sum(r[4] for r in group):&gt;8,}")
+
+
+print(f"{'doc_type':10} {'docs':&gt;4} {'characters':&gt;10} {'chunks':&gt;6} {'sent':&gt;10} {'requests':&gt;8}")
+for t in sorted({r[0] for r in rows}):
+    line(t, [r for r in rows if r[0] == t])
+line("all", rows)
+docs, chunks, sent, requests = len(rows), *(sum(r[i] for r in rows) for i in (2, 3, 4))
+k = N / docs
+print(f"\nper document: {chunks / docs:.2f} chunks, {sent / docs:,.0f} characters sent, {requests / docs:.2f} requests")
+print(f"at {N:,} documents of this mix:")
+print(f"  vectors              {chunks * k:,.0f}")
+print(f"  embedding requests   {requests * k:,.0f}")
+print(f"  dense index          {chunks * k * DIMS * 4 / GIB:,.1f} GiB ({DIMS} numbers x 4 bytes a vector)")
+print(f"  embedding, once      Rs {sent * k / 1000 * USD_PER_1K * USD_INR / 1e5:,.2f} lakh")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (this cell, run on the kit when this page was built: your output is the same, digit for digit)</span><span class="ro">read only</span></div><pre tabindex="0">doc_type   docs characters chunks       sent requests
+contract      3      2,787     18      2,697        3
+guidance      2    100,480    100    104,126        4
+invoice       1        780      1        780        1
+policy        2    320,769    566    317,383        8
+report        1        707      4        689        1
+statute      17  2,837,331  2,067  3,044,540       77
+transcript    1      1,698      1      1,698        1
+all          27  3,264,552  2,757  3,471,913       95
+
+per document: 102.11 chunks, 128,589 characters sent, 3.52 requests
+at 10,000,000 documents of this mix:
+  vectors              1,021,111,111
+  embedding requests   35,185,185
+  dense index          2,921.4 GiB (768 numbers x 4 bytes a vector)
+  embedding, once      Rs 27.33 lakh</pre></div>
+
+
+<p>Read the table from the bottom. 27 documents make 2,757 chunks and 95 requests, and the 3,471,913 characters sent are more than the 3,264,552 in the documents, because every overlap travels twice. The 17 statutes dominate: 2,067 of the 2,757 chunks. A contract is a few chunks and a Code is hundreds, so the average, 102.11 chunks a document, is a property of this mix, not of documents in general. That is why the calculator in step 1 offers four kinds: the statutes alone average 121.6 chunks, the handbooks 166.5, the short documents 4.0. Before you size a real corpus, run this measurement on a sample of it; the kind of document moves the answer more than anything else on this page.</p>
+
+<p>The last four lines are the straight lines at 10,000,000: 1,021,111,111 vectors, 35,185,185 requests, 2,921.4 GiB of dense index, and Rs 27.33 lakh to embed it once at the online price. Lesson 8.2 changes the chunker and re-embeds; at ten million documents, every such change pays that last line again.</p>
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; REST</span><h3>REST: the index's own size</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_08/lesson_8_3/demo_06_rest_the_index_s_own_size.py" target="_blank" rel="noopener"><code>demo_06_rest_the_index_s_own_size.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The index's vectors, shards and shard size, and the deployment's machine and replicas, read from the Vertex AI API.</p></div></div>
+
+<p><code>make vector-status</code> printed the fields gcloud was asked for. The API holds more: the index's shard size, its dimensions, and the deployed index's machine and replica range. The cell reads both with two GETs, then does the one sum that matters for sizing: how much of one shard your vectors fill.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (two GETs on the Vertex AI API; changes nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, subprocess, urllib.request, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+P, R = os.environ["PROJECT"], os.environ["REGION"]
+tok = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True, check=True).stdout.strip()
+base = f"https://{R}-aiplatform.googleapis.com/v1/projects/{P}/locations/{R}"
+get = lambda path: json.load(urllib.request.urlopen(urllib.request.Request(f"{base}/{path}", headers={"Authorization": f"Bearer {tok}"}), timeout=60))
+GIB, SHARD_GIB = 1 &lt;&lt; 30, {"SHARD_SIZE_SMALL": 2, "SHARD_SIZE_MEDIUM": 20, "SHARD_SIZE_LARGE": 50}   # Google's shard sizes (step 8)
+for ix in get("indexes").get("indexes", []):
+    cfg, st = ix["metadata"]["config"], ix.get("indexStats", {})
+    n, dims, shard = int(st.get("vectorsCount", 0)), int(cfg["dimensions"]), cfg.get("shardSize", "not stated")
+    print(f"index {ix['displayName']}: {n:,} vectors of {dims}, {st.get('shardsCount', 0)} shard(s), {shard}, {ix['indexUpdateMethod']}")
+    if shard in SHARD_GIB:
+        used = n * dims * 4 / GIB
+        print(f"  dense data {used * 1024:,.1f} MiB: {100 * used / SHARD_GIB[shard]:.3f}% of one {SHARD_GIB[shard]} GiB shard; "
+              f"the shard holds {int(SHARD_GIB[shard] * GIB / (dims * 4)):,} vectors of this length")
+for ep in get("indexEndpoints").get("indexEndpoints", []):
+    for d in ep.get("deployedIndexes", []):
+        res = d.get("dedicatedResources", {})
+        print(f"deployed {d['id']}: {res.get('machineSpec', {}).get('machineType')}, replicas {res.get('minReplicaCount')} to {res.get('maxReplicaCount')}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your ids, counts and times are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/index_rest.txt]</pre></div>
+
+
+<p>Three things to read. The first line is the index as Vertex AI keeps it: its vector count should equal the datapoints <code>make vector-status</code> printed, and its shard size is the one it was created with; vector.tf creates a new index SMALL and leaves an existing one the size it has. The second line is the sum: your vectors times 3,072 bytes, as a share of one shard. It is a tiny fraction, which is the point: your lane's index is nowhere near a limit. The last line is the deployment: the machine the shard size names, and replicas from 1 to 1.</p>
+
+<p>Now turn the sum around. By its dense vectors alone, one SMALL shard holds 6,845 documents of the corpus's mix, one MEDIUM shard 68,459, and one LARGE shard 171,149. Ten million documents need 1,461, 147 or 59 of them. Google's own formula for the count is the data size divided by the shard size, and its pricing page warns that "Dataset size and restricts (filtering) affect shard count". The kit's datapoints carry a sparse vector and three filters (tenant, kind and document type) beside the dense one, so the real count can only be higher.</p>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>Direct reads: Firestore's counts and the worker's seconds</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_08/lesson_8_3/demo_07_direct_reads_firestore_s_counts_and_the_worker_s_seconds.py" target="_blank" rel="noopener"><code>demo_07_direct_reads_firestore_s_counts_and_the_worker_s_seconds.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The rows the Firestore floor multiplies, and the one number no constant gives you: how long a document takes.</p></div></div>
+
+<p>Two reads finish the measurement. The first counts rows in Firestore without fetching them: a <code>count()</code> query returns one number instead of the rows it matched.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (nine Firestore count queries; writes nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
+db = firestore.Client(project=os.environ["PROJECT"])
+count = lambda q: int(q.count().get()[0][0].value)          # one aggregation: billed by the index entries it reads, not by rows
+eq = lambda q, field, value: q.where(filter=FieldFilter(field, "==", value))
+print(f"{'tenant':7} {'chunk rows':&gt;10} {'current':&gt;8} {'indexed sources':&gt;15}")
+for t in ("acme", "globex", "zeta"):
+    rows = eq(db.collection("chunks"), "tenant_id", t)
+    print(f"{t:7} {count(rows):&gt;10,} {count(eq(rows, 'current', True)):&gt;8,} "
+          f"{count(eq(eq(db.collection('sources'), 'tenant_id', t), 'status', 'indexed')):&gt;15,}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your ids, counts and times are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/firestore_counts.txt]</pre></div>
+
+
+<p><code>chunk rows</code> counts every version a tenant still holds: the current rows, and the rows a re-issue retired, which stay until their <code>expire_at</code> passes. <code>current</code> is what the index serves; added across the three tenants, it should match the index's vector count from steps 3 and 6. <code>indexed sources</code> is how many rows the fingerprint reads on every ingest to that tenant, which step 8 comes back to. Multiply your chunk rows by 59,092 bytes and you have your lane's Firestore floor for the chunks; for the 2,757 text chunks alone it is 155 MiB. At ten million documents it is 54.9 TiB.</p>
+
+<p>The second read is the calibration. Cloud Run logs every delivery Pub/Sub made to the worker, with its HTTP status and how long it took, so the median of those times is your lane's seconds per document. The cell saves the last month of deliveries, then counts them by status:</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (one Cloud Logging read; writes one file in your home directory)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-ingest" AND httpRequest.requestMethod="POST"' \
+  --project="$PROJECT" --freshness=30d --limit=1000 --format=json &gt; ~/ingest-requests.json
+python - &lt;&lt;'PY'
+import json, os, statistics, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+by = {}
+for e in json.load(open(os.path.expanduser("~/ingest-requests.json"))):
+    h = e.get("httpRequest", {})
+    by.setdefault(int(h.get("status", 0)), []).append(float(str(h.get("latency", "0s")).rstrip("s") or 0))
+for status, secs in sorted(by.items()):
+    secs.sort()
+    print(f"HTTP {status}: {len(secs):&gt;4} deliveries, median {statistics.median(secs):.1f} s, slowest {secs[-1]:.1f} s")
+taken = sorted(s for status, secs in by.items() if 200 &lt;= status &lt; 300 for s in secs)
+if taken:
+    m = statistics.median(taken)
+    print(f"at 10,000,000 documents, 30 at a time, {m:.1f} s each: {10000000 * m / 30 / 86400:,.1f} days")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your ids, counts and times are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/ingest_latency.txt]</pre></div>
+
+
+<p>Each line is one HTTP status. A <code>2xx</code> is a delivery the worker took and finished. A <code>429</code>, if you see one, is Cloud Run turning a delivery away because no instance was free; Pub/Sub tries again later, and step 8 reads what that does at scale. Anything in the 500s is a delivery that failed and will be retried. The median of the taken deliveries mixes long PDFs with short text files, and with re-deliveries that found the document already current, so treat it as this corpus's rough figure, not a constant. The last line multiplies it by 10,000,000 and divides by the 30 documents the worker takes at once. If the cell prints nothing, your lane's ingest is older than the log keeps; the calculator's ingest row still holds: 3.86 days for every second a document takes.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 6 &middot; Ten million</span><h3>Ten million: what breaks first, and what it costs</h3><p>The straight lines priced, then the four limits read in the kit's code, then what would change each one.</p></div></div>
+
+<h4>The straight lines, priced</h4>
+
+<p>First the index, by shard size. The machine and its hourly price are <a href="https://cloud.google.com/vertex-ai/pricing" target="_blank" rel="noopener">Google's for Mumbai</a>, the shard sizes are <a href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/create-manage-index" target="_blank" rel="noopener">Google's documented sizes</a>, and the count is the data size divided by the shard size, rounded up, with the kit's one replica on each:</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Shard size</th><th>A shard holds</th><th>Machine (Mumbai, an hour)</th><th>Shards at ten million</th><th>Serving a month</th></tr></thead>
+<tbody>
+<tr><td><strong>SMALL</strong></td><td data-label="A shard holds">2 GiB</td><td data-label="Machine (Mumbai, an hour)">e2-standard-2, $0.1126804</td><td data-label="Shards at ten million">1,461</td><td data-label="Serving a month">Rs 1.02 crore</td></tr>
+<tr><td><strong>MEDIUM</strong></td><td data-label="A shard holds">20 GiB</td><td data-label="Machine (Mumbai, an hour)">e2-standard-16, $0.9014432</td><td data-label="Shards at ten million">147</td><td data-label="Serving a month">Rs 82.22 lakh</td></tr>
+<tr><td><strong>LARGE</strong></td><td data-label="A shard holds">50 GiB</td><td data-label="Machine (Mumbai, an hour)">e2-highmem-16, $1.2160288</td><td data-label="Shards at ten million">59</td><td data-label="Serving a month">Rs 44.52 lakh</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Bigger shards are cheaper per gibibyte at this size: LARGE serves the same 2,921.4 GiB for Rs 44.52 lakh a month, against Rs 82.22 lakh on MEDIUM and Rs 1.02 crore on SMALL. Every line multiplies by the replica count, which the kit holds at one. Then everything else, for the same 10,000,000 documents of the corpus's mix, from <a href="https://cloud.google.com/vertex-ai/generative-ai/pricing" target="_blank" rel="noopener">the embedding price list</a>, <a href="https://cloud.google.com/vertex-ai/pricing" target="_blank" rel="noopener">Vector Search's</a> and <a href="https://cloud.google.com/firestore/pricing" target="_blank" rel="noopener">Firestore's</a>, with Firestore's bytes counted by <a href="https://firebase.google.com/docs/firestore/storage-size" target="_blank" rel="noopener">its published size rules</a>:</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Line</th><th>How it is counted</th><th>When</th><th>Rupees</th></tr></thead>
+<tbody>
+<tr><td><strong>Embedding, online</strong></td><td data-label="How it is counted">1,285,893,703,704 characters at $0.000025 per 1,000</td><td data-label="When">once</td><td data-label="Rupees">Rs 27.33 lakh</td></tr>
+<tr><td><strong>Embedding, as a batch job</strong></td><td data-label="How it is counted">the same characters at $0.00002 per 1,000</td><td data-label="When">once</td><td data-label="Rupees">Rs 21.86 lakh</td></tr>
+<tr><td><strong>Streaming the vectors in</strong></td><td data-label="How it is counted">2,921.4 GiB at $0.45 a GiB</td><td data-label="When">once</td><td data-label="Rupees">Rs 1.12 lakh</td></tr>
+<tr><td><strong>A compaction</strong></td><td data-label="How it is counted">the whole index rebuilt at $3.00 a GiB</td><td data-label="When">at least every 5 days while updates arrive</td><td data-label="Rupees">Rs 7.45 lakh</td></tr>
+<tr><td><strong>Firestore, stored</strong></td><td data-label="How it is counted">at least 56,195.2 GiB at $0.104 a GiB</td><td data-label="When">a month</td><td data-label="Rupees">Rs 4.97 lakh</td></tr>
+<tr><td><strong>Firestore, written</strong></td><td data-label="How it is counted">2 writes and 1 read a chunk</td><td data-label="When">once</td><td data-label="Rupees">Rs 2.11 lakh</td></tr>
+<tr><td><strong>The fingerprint, one tenant</strong></td><td data-label="How it is counted">50,000,005,000,000 reads</td><td data-label="When">once, during the load</td><td data-label="Rupees">Rs 148.75 crore</td></tr>
+<tr><td><strong>The nightly walk's reads</strong></td><td data-label="How it is counted">20,000,000 rows</td><td data-label="When">a night</td><td data-label="Rupees">Rs 595</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three things stand out. Embedding is a one-off, and a batch job would pay Rs 21.86 lakh for it instead of Rs 27.33 lakh. Compaction is not a one-off: Google's page says "If the oldest uncompacted data is five days old, compaction is always triggered", billed as a rebuild of the whole index, so an index that takes updates every day is rebuilt at least every five days, six times in a 30-day month: Rs 44.70 lakh. And the fingerprint line is larger than all the others put together. That one is not a pricing problem. It is the first of the four limits.</p>
+
+<h4>1. The fingerprint reads everything, on every ingest</h4>
+
+<p>After every successful ingest, the worker records the document in the ledger, then recomputes the tenant's fingerprint:</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - after every ingest: the ledger row, then the fingerprint</span><span class="ro">read only</span></div><pre tabindex="0">        finish(_db, doc.doc_key, len(chunks), counts, msg.generation)
+        record_source(_db, doc.tenant_id, msg.name, doc.gcs_uri, doc.doc_key, msg.generation,
+                      doc.sha256, len(chunks), doc.effective_from,
+                      reused=counts[<span class="st">&quot;reused&quot;</span>], embedded=counts[<span class="st">&quot;embedded&quot;</span>], retired=gone[<span class="st">&quot;retired_chunks&quot;</span>],
+                      embedding_model=EMBEDDING_MODEL, embedding_version=EMBEDDING_VERSION)
+        <span class="cm"># The cache follows the ledger: the tenant&#x27;s corpus fingerprint changes, the API sees its cache record no</span>
+        <span class="cm"># longer matches and answers uncached, make cache rebuilds the pack from the corpus that changed (12.6, 10.2).</span>
+        fingerprint = refresh_fingerprint(_db, doc.tenant_id, <span class="st">&quot;ingest_ok&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - corpus_fingerprint(): every indexed source of the tenant</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">corpus_fingerprint</span>(db: firestore.Client, tenant_id: str) -&gt; tuple[str, int]:
+    <span class="st">&quot;&quot;&quot;The hash of the tenant&#x27;s sorted current doc_keys: the identity of the corpus a cache was packed from. It changes
+    on every reindex, retirement and reactivation, and on nothing else.&quot;&quot;&quot;</span>
+    keys = sorted((s.to_dict() <span class="kw">or</span> {}).get(<span class="st">&quot;doc_key&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span> <span class="kw">for</span> s <span class="kw">in</span>
+                  db.collection(<span class="st">&quot;sources&quot;</span>).where(<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;==&quot;</span>, tenant_id).where(<span class="st">&quot;status&quot;</span>, <span class="st">&quot;==&quot;</span>, <span class="st">&quot;indexed&quot;</span>).stream())
+    <span class="kw">return</span> hashlib.sha256(<span class="st">&quot;\n&quot;</span>.join(keys).encode(<span class="st">&quot;utf-8&quot;</span>)).hexdigest()[:<span class="nu">16</span>], len(keys)</pre></div>
+
+
+<p><code>corpus_fingerprint()</code> streams every indexed source row of the tenant to hash their keys. The ledger row is written first, so the ingest of a tenant's k-th document reads k rows, and loading N documents into one tenant reads 1 + 2 + ... + N rows, which is N(N + 1)/2. That is the curve that grows faster than the corpus: double the documents and the reads go up four times. At 10,000,000 documents in one tenant it is 50,000,005,000,000 reads, Rs 148.75 crore at Firestore's Mumbai price of $0.035 per 100,000 reads. Time breaks it as well: the last ingest has to stream 10,000,000 rows inside its 600-second request, 16,667 rows a second.</p>
+
+<p>It overtakes the cost of embedding early. For the corpus's mix, embedding one document costs about as much as 9,185 Firestore reads, so once a tenant holds more than 9,185 documents, each new one costs more to fingerprint than to embed. For the statutes the crossing is at 12,793 documents; for short documents, which are cheap to embed, it is at 70. Spreading the same documents over more tenants flattens the curve, because each tenant's sum starts again from one, and the calculator's tenants control shows by how much.</p>
+
+<h4>2. The nightly walk must finish in 1,200 seconds</h4>
+
+<p>The reconcile job is the backstop for every event the worker missed. It is off unless you turn it on, and when it runs, it runs as one task, with no retry and a 1,200-second limit:</p>
+
+<div class="cw"><div class="ch-bar"><span>terraform/reconcile.tf - off unless the lane turns it on</span><span class="ro">read only</span></div><pre tabindex="0">variable <span class="st">&quot;reconcile_job&quot;</span> {
+  type        = bool
+  default     = false
+  description = <span class="st">&quot;declare and schedule documind-reconcile nightly (needs an ingest image: make build first)&quot;</span>
+}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/reconcile.tf - the nightly job: one task, no retry, 1,200 seconds</span><span class="ro">read only</span></div><pre tabindex="0">resource <span class="st">&quot;google_cloud_run_v2_job&quot;</span> <span class="st">&quot;reconcile&quot;</span> {
+  count    = local.reconcile ? <span class="nu">1</span> : <span class="nu">0</span>
+  name     = <span class="st">&quot;documind-reconcile&quot;</span>
+  location = var.region
+
+  template {
+    task_count = <span class="nu">1</span>
+    template {
+      service_account = google_service_account.ingest.email
+      max_retries     = <span class="nu">0</span>
+      timeout         = <span class="st">&quot;1200s&quot;</span></pre></div>
+
+
+<p>Before it decides anything, it loads three complete lists: every object in the uploads bucket, every <code>sources</code> row and every <code>documents</code> row:</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/reconcile.py - the walk loads three lists before it plans</span><span class="ro">read only</span></div><pre tabindex="0">    prefix = f<span class="st">&quot;{a.tenant}/&quot;</span> <span class="kw">if</span> a.tenant <span class="kw">else</span> <span class="kw">None</span>
+    objects = [{<span class="st">&quot;name&quot;</span>: b.name, <span class="st">&quot;generation&quot;</span>: str(b.generation), <span class="st">&quot;tenant_id&quot;</span>: b.name.split(<span class="st">&quot;/&quot;</span>, <span class="nu">1</span>)[<span class="nu">0</span>]}
+               <span class="kw">for</span> b <span class="kw">in</span> bucket.list_blobs(prefix=prefix) <span class="kw">if</span> <span class="st">&quot;/&quot;</span> <span class="kw">in</span> b.name]
+    ledger = {s.id: (s.to_dict() <span class="kw">or</span> {}) <span class="kw">for</span> s <span class="kw">in</span> db.collection(<span class="st">&quot;sources&quot;</span>).stream()
+              <span class="kw">if</span> <span class="kw">not</span> a.tenant <span class="kw">or</span> (s.to_dict() <span class="kw">or</span> {}).get(<span class="st">&quot;tenant_id&quot;</span>) == a.tenant}
+    documents = {s.id: (s.to_dict() <span class="kw">or</span> {}) <span class="kw">for</span> s <span class="kw">in</span> db.collection(<span class="st">&quot;documents&quot;</span>).stream()}
+    actions = plan(objects, ledger, documents)</pre></div>
+
+
+<p>At 10,000,000 documents that is 30,000,000 objects and rows, listed and held in one task's memory within 1,200 seconds: 25,000 a second, before the first comparison. The reads are cheap, Rs 595 a night. The limit is the single task and the fixed time. When the time runs out, the task is stopped, the job does not retry, no drift number is printed, and the kit's <em>Nightly reconcile failed</em> alert pages. This limit grows in a straight line, but against a ceiling that does not move.</p>
+
+<h4>3. Thirty documents in flight</h4>
+
+<p>The worker takes one document per instance and runs at most 30 instances:</p>
+
+<div class="cw"><div class="ch-bar"><span>commands/lesson-12.5.sh - the worker: one document an instance, thirty instances</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The ingest worker. Reached by nothing but the push subscription in eventarc.tf, which</span>
+<span class="cm"># delivers as documind-ingest-sa with an OIDC token - hence internal ingress, no</span>
+<span class="cm"># unauthenticated calls, and the invoker grant to that account below. Concurrency 1 (see the</span>
+<span class="cm"># Dockerfile), and a 600-second request ceiling to match the subscription&#x27;s ack deadline:</span>
+<span class="cm"># a hundred-page Act is a dozen Document AI calls and fits. Thirty instances, so a corpus</span>
+<span class="cm"># upload of thirty objects is not a queue of cold-start refusals.</span>
+...
+  --memory=2Gi --cpu=<span class="nu">2</span> --concurrency=<span class="nu">1</span> --timeout=<span class="nu">600</span> \
+  --min-instances=<span class="nu">0</span> --max-instances=<span class="nu">30</span> \</pre></div>
+
+
+<p>So every second one document spends in the worker adds 10,000,000 &divide; 30 seconds to a ten-million-document load: 3.86 days. Your median from step 7 multiplies that. The kit itself states one floor for it, Document AI's pace on a PDF:</p>
+
+<div class="cw"><div class="ch-bar"><span>services/ingest/main.py - Document AI&#x27;s pace, and the largest PDF the push lane takes</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># parser.py sends a PDF to Document AI in 15-page slices at roughly a second a page, and the</span>
+<span class="cm"># push subscription allows 600 seconds before it redelivers, so a document this size finishes</span>
+<span class="cm"># inline with room to spare. Bigger than this goes to the batch lane - a claim document the batch job consumes</span>
+<span class="cm"># (batch.py, batch.tf: no request deadline, the same pipeline as below, 13 September 2026); the largest file in</span>
+<span class="cm"># the kit&#x27;s corpus is under two hundred pages, so the corpus never takes it.</span>
+MAX_INLINE_PAGES = <span class="nu">250</span></pre></div>
+
+
+<p>At roughly a second a page, and 39.0 PDF pages in the corpus's average document, Document AI alone keeps a ten-million-document load running for 150.3 days. Then there is what happens to the documents that wait. Pub/Sub delivers each upload's event at once; an event the worker cannot take is turned away and tried again, and the subscription counts every try:</p>
+
+<div class="cw"><div class="ch-bar"><span>terraform/eventarc.tf - twelve deliveries, then the dead-letter topic</span><span class="ro">read only</span></div><pre tabindex="0">  <span class="cm"># At-least-once, with a ceiling: attempts with exponential backoff, then the message goes</span>
+  <span class="cm"># to the DLQ instead of being retried for a week. Twelve, not five: a corpus upload lands</span>
+  <span class="cm"># thirty objects at once, the worker takes one request per instance, and Cloud Run refuses</span>
+  <span class="cm"># (&quot;no available instance&quot;) while it cold-starts - the first live load sent a document</span>
+  <span class="cm"># to the DLQ on five refusals that were never the document&#x27;s fault.</span>
+  retry_policy {
+    minimum_backoff = <span class="st">&quot;10s&quot;</span>
+    maximum_backoff = <span class="st">&quot;600s&quot;</span>
+  }
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.ingest_dlq.id
+    max_delivery_attempts = <span class="nu">12</span>
+  }
+  ack_deadline_seconds = <span class="nu">600</span></pre></div>
+
+
+<p>The comment is the kit's own record that a refusal counts: the first live load sent a document to the dead-letter topic on five refusals, which is why the limit is now twelve. Twelve deliveries span at most eleven backoffs of at most 600 seconds: 110 minutes in all. Upload ten million documents at once and the last one waits 3,607.7 hours for Document AI time alone. Any document refused twelve times in those hours goes to the dead-letter topic, which lesson 8.1 reads, instead of the index. The limit was sized for thirty objects.</p>
+
+<h4>4. One replica</h4>
+
+<p>Step 4's excerpt fixes the deployed index at one replica, as both the minimum and the maximum. Replicas are what carry more questions a second. Google's sizing example on its pricing page, priced in Iowa, serves 20 million vectors of 256 dimensions at 1,000 queries a second on one e2-standard-16 node, and at 3,000 on three. The kit's index cannot add a second node when traffic grows. One replica also means no spare: a node that restarts leaves its shard unserved until it is back, and at 147 MEDIUM shards there are 147 such nodes.</p>
+
+<h4>What the kit would change</h4>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>What breaks</th><th>Where the kit sets it</th><th>What would change it</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>The fingerprint</strong></td><td data-label="Where the kit sets it"><code>idempotency.py</code>: <code>corpus_fingerprint()</code> streams every indexed source, on every ingest</td><td data-label="What would change it">An incremental fingerprint: each ingest folds its own doc_key into a running value on the ledger row, in the same write that records it, so an ingest reads one row, not all of them</td><td data-label="In the kit">Not built</td></tr>
+<tr><td><strong>The nightly walk</strong></td><td data-label="Where the kit sets it"><code>reconcile.tf</code>: one task, 1,200 seconds, no retry; <code>reconcile.py</code> loads all three lists first</td><td data-label="What would change it">A sharded walk: many tasks, each taking its own slice of the tenants or the object names, each comparing as it streams rather than after loading everything</td><td data-label="In the kit">Not built</td></tr>
+<tr><td><strong>30 in flight</strong></td><td data-label="Where the kit sets it"><code>lesson-12.5.sh</code>: <code>--concurrency=1</code>, <code>--max-instances=30</code>; <code>eventarc.tf</code>: 12 deliveries</td><td data-label="What would change it">Batch embeddings for a backfill: the load goes to a batch job at the batch price, and the one-document worker keeps the daily trickle it was built for</td><td data-label="In the kit">Not built</td></tr>
+<tr><td><strong>One replica</strong></td><td data-label="Where the kit sets it"><code>vector.tf</code>: <code>min_replica_count = 1</code>, <code>max_replica_count = 1</code></td><td data-label="What would change it">An explicit shard size chosen from the data size, and replicas that scale with the queries, two at least so one node's restart is not an outage</td><td data-label="In the kit">The shard size is declared; the replicas are not</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Three of the four are not in the kit today, and the fourth is there only in part. Each adds machinery a 27-document lane does not need, and each is now a decision you can price with the calculator. Lesson 8.4 does that for a whole design: a documentation platform that keeps itself up to date, costed at three scales from the same arithmetic.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 7 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Seven checks, each one step above, each with what a pass looks like on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The corpus makes 2,757 chunks and 95 requests by the kit's rules</td><td data-label="The check">the measuring cell, step 5</td><td data-label="Pass looks like">the <code>all</code> line reads 27, 3,264,552, 2,757, 3,471,913, 95: this page's numbers, digit for digit</td></tr>
+<tr><td>2</td><td data-label="Claim">The lane chunked the text documents the same way</td><td data-label="The check">the Versions table and <code>make sources</code>, step 3</td><td data-label="Pass looks like">the five Markdown documents' <code>chunks</code> equal the offline table; the PDFs within a few</td></tr>
+<tr><td>3</td><td data-label="Claim">The index holds every current chunk, in one shard</td><td data-label="The check"><code>make vector-status</code> and the REST read, steps 3 and 6</td><td data-label="Pass looks like">the vector count equals Firestore's current rows across the three tenants; one shard; a shard size named</td></tr>
+<tr><td>4</td><td data-label="Claim">The deployment has one replica</td><td data-label="The check">the REST read, step 6</td><td data-label="Pass looks like"><code>replicas 1 to 1</code> on the machine the shard size names</td></tr>
+<tr><td>5</td><td data-label="Claim">Your Firestore floor</td><td data-label="The check">the counts, step 7</td><td data-label="Pass looks like">chunk rows times 59,092 bytes; current rows below chunk rows when a re-issue left retired rows</td></tr>
+<tr><td>6</td><td data-label="Claim">Your seconds per document</td><td data-label="The check">the latency read, step 7</td><td data-label="Pass looks like">a median for the 2xx deliveries, and your days at 10,000,000 documents</td></tr>
+<tr><td>7</td><td data-label="Claim">The calculator is this page's arithmetic</td><td data-label="The check">step 1 at its defaults, against step 8's tables</td><td data-label="Pass looks like">the same vectors, GiB, shards and rupees; the fingerprint and ingest rows orange</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing. Every command on this page reads: the ledger and Firestore's counts, two describes and two GETs on the Vertex AI API, one Cloud Logging read, and the kit's own code on the kit's own files. The one file written is <code>~/ingest-requests.json</code> in your home directory; delete it when you are done. If you pinned acme to the kit's index in the setup section, put the pin back. The lane still bills its standing cost for every hour it is up, as lesson 0.4 priced it.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 8 Ingestion practical &middot; Lesson 8.3 Size RAG for ten million documents &middot; v5.0</p><p>Next: Lesson 8.4 System design: a self-updating documentation platform.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var D = {"stops":[27,100,300,1000,3000,10000,30000,100000,300000,1000000,3000000,10000000,30000000,100000000],"tenants":[1,10,100,1000],"start":11,"dims":768,"gib":1073741824,"inr":85,"embed":{"online":2.5e-05,"batch":2e-05},"build":3.0,"stream":0.45,"monthH":730,"replicas":1,"shardGib":{"SHARD_SIZE_SMALL":2,"SHARD_SIZE_MEDIUM":20,"SHARD_SIZE_LARGE":50},"node":{"SHARD_SIZE_SMALL":0.1126804,"SHARD_SIZE_MEDIUM":0.9014432,"SHARD_SIZE_LARGE":1.2160288},"short":{"SHARD_SIZE_SMALL":"SMALL","SHARD_SIZE_MEDIUM":"MEDIUM","SHARD_SIZE_LARGE":"LARGE"},"machine":{"SHARD_SIZE_SMALL":"e2-standard-2","SHARD_SIZE_MEDIUM":"e2-standard-16","SHARD_SIZE_LARGE":"e2-highmem-16"},"fs":{"read":3.5000000000000004e-07,"write":1.04e-06,"delete":1.2e-07,"gib_month":0.104},"writes":2,"reads":1,"inFlight":30,"walkLists":3,"walkS":1200,"timeout":600,"docai":1,"dlq":6600,"dlqMin":110,"attempts":12,"shapes":{"corpus":{"label":"the kit's corpus as it is","docs":27,"chunks":102.11111111111111,"sent":128589.37037037036,"requests":3.5185185185185186,"fs_chunk":59091.64961915125,"pdf_pages":38.96296296296296},"statute":{"label":"statute-like (an Act or a Code)","docs":17,"chunks":121.58823529411765,"sent":179090.58823529413,"requests":4.529411764705882,"fs_chunk":59298.234639574264,"pdf_pages":57.411764705882355},"handbook":{"label":"handbook-like (a policy or guidance)","docs":4,"chunks":166.5,"sent":105377.25,"requests":3.0,"fs_chunk":58486.72672672672,"pdf_pages":19.0},"short":{"label":"short-document-like (a contract, an invoice, a report, a transcript)","docs":6,"chunks":4.0,"sent":977.3333333333334,"requests":1.0,"fs_chunk":58086.125,"pdf_pages":0.0}}};
+function r0(x){ return Math.floor(x + 0.5); }
+function grp(s){ var out = ''; while (s.length > 3){ out = ',' + s.slice(-3) + out; s = s.slice(0, -3); } return s + out; }
+function grpIN(s){ if (s.length <= 3) return s; var head = s.slice(0, -3), tail = s.slice(-3), parts = [];
+  while (head.length > 2){ parts.unshift(head.slice(-2)); head = head.slice(0, -2); } if (head) parts.unshift(head); return parts.join(',') + ',' + tail; }
+function n0(x){ return grp(String(r0(x))); }
+function fx(x, d){ var m = Math.pow(10, d), s = (r0(x * m) / m).toFixed(d), i = s.indexOf('.'); return grp(i < 0 ? s : s.slice(0, i)) + (i < 0 ? '' : s.slice(i)); }
+function rupees(x){ if (x >= 1e7) return 'Rs ' + fx(r0(x / 1e5) / 100, 2) + ' crore'; if (x >= 1e5) return 'Rs ' + fx(r0(x / 1e3) / 100, 2) + ' lakh';
+  return 'Rs ' + grpIN(String(r0(x))); }
+function days(x){ var t = fx(x, 1); return t + (t === '1.0' ? ' day' : ' days'); }
+function dur(x){ if (x < 1) return fx(x * 1000, 1) + ' ms'; if (x < 60) return fx(x, 1) + ' s'; if (x < 3600) return fx(x / 60, 1) + ' min';
+  if (x < 172800){ var t = fx(x / 3600, 1); return t + (t === '1.0' ? ' hour' : ' hours'); } return days(x / 86400); }
+function inr(usd){ return usd * D.inr; }
+function scale(docs, s, tenants){
+  var chunks = docs * s.chunks, sent = docs * s.sent, dense = chunks * D.dims * 4 / D.gib, per = docs / tenants,
+      fp = tenants * per * (per + 1) / 2, o = {chunks: chunks, sent: sent, requests: docs * s.requests,
+      embed: {online: sent / 1000 * D.embed.online, batch: sent / 1000 * D.embed.batch}, dense: dense,
+      stream: dense * D.stream, compact: dense * D.build, shards: {}, serve: {},
+      fsGib: chunks * s.fs_chunk / D.gib, fsIngest: chunks * (D.writes * D.fs.write + D.reads * D.fs.read),
+      fpReads: fp, fpUsd: fp * D.fs.read, fpRate: per / D.timeout,
+      walkItems: D.walkLists * docs, walkRate: D.walkLists * docs / D.walkS, walkUsd: 2 * docs * D.fs.read,
+      ingestDays: docs / D.inFlight / 86400, docaiDays: docs * s.pdf_pages * D.docai / D.inFlight / 86400};
+  o.fsMonth = o.fsGib * D.fs.gib_month;
+  Object.keys(D.shardGib).forEach(function(size){
+    var n = Math.max(1, Math.ceil(dense / D.shardGib[size]));
+    o.shards[size] = n; o.serve[size] = D.replicas * n * D.node[size] * D.monthH; });
+  return o;
+}
+function crossover(s){ return Math.ceil(s.sent / 1000 * D.embed.online / D.fs.read); }
+function view(docs, key, tenants, size){
+  var s = D.shapes[key], o = scale(docs, s, tenants), per = docs / tenants, cross = crossover(s),
+      backlog = docs * s.pdf_pages * D.docai / D.inFlight;
+  return {chunks: n0(o.chunks), per_doc: fx(s.chunks, 2), requests: n0(o.requests), sent: n0(o.sent),
+    embed_online: rupees(inr(o.embed.online)), embed_batch: rupees(inr(o.embed.batch)),
+    gib: fx(o.dense, 1), shards: n0(o.shards[size]), serve: rupees(inr(o.serve[size])),
+    stream: rupees(inr(o.stream)), compact: rupees(inr(o.compact)),
+    fs_gib: fx(o.fsGib, 1), fs_month: rupees(inr(o.fsMonth)), fs_ingest: rupees(inr(o.fsIngest)),
+    ingest_time: dur(o.ingestDays * 86400), docai_time: s.pdf_pages ? dur(o.docaiDays * 86400) : '',
+    budget: dur(D.dlq * D.inFlight / docs),
+    backlog_h: fx(backlog / 3600, 1), dlq: backlog > D.dlq ? 'yes' : 'no',
+    fp_reads: n0(o.fpReads), fp_rs: rupees(inr(o.fpUsd)), fp_rate: n0(o.fpRate),
+    fp_over: per > cross ? 'yes' : 'no', per_tenant: n0(per),
+    walk_items: n0(o.walkItems), walk_rate: n0(o.walkRate), walk_rs: rupees(inr(o.walkUsd))};
+}
+window.__sz = {view: view};
+var root = document.getElementById('sz'); if (!root) { return; }
+var nIn = document.getElementById('sz-n'), nV = document.getElementById('sz-n-v'), shape = document.getElementById('sz-shape'),
+    ten = document.getElementById('sz-tenants'), shard = document.getElementById('sz-shard'), sum = document.getElementById('sz-sum'),
+    out = document.getElementById('sz-rows');
+function row(cls, name, value, why){
+  var d = document.createElement('div'); d.className = 'sz-row ' + cls;
+  var b = document.createElement('b'); b.textContent = name; d.appendChild(b);
+  var v = document.createElement('span'); v.className = 'v'; v.textContent = value; d.appendChild(v);
+  var w = document.createElement('span'); w.className = 'why'; w.textContent = why; d.appendChild(w);
+  out.appendChild(d);
+}
+function render(){
+  var docs = D.stops[parseInt(nIn.value, 10)], key = shape.value, tenants = parseInt(ten.value, 10), size = shard.value,
+      v = view(docs, key, tenants, size), short = D.short[size];
+  nV.textContent = n0(docs);
+  out.textContent = '';
+  row('', 'Vectors', v.chunks, v.per_doc + ' chunks a document, the average of ' + D.shapes[key].docs + ' kit documents of this kind, by the kit\'s own chunker');
+  row('money', 'Embedding, once', v.embed_online, v.requests + ' requests carrying ' + v.sent + ' characters, sent online by the worker; as a batch job at the batch price: ' + v.embed_batch);
+  row('money', 'Vector Search, serving', v.serve + ' a month', v.gib + ' GiB of dense vectors in ' + v.shards + ' ' + short + ' shard(s) of ' + D.shardGib[size] + ' GiB, one ' + D.machine[size] + ' node each, ' + D.replicas + ' replica');
+  row('money', 'Vector Search, upkeep', v.compact + ' a compaction', 'streaming the vectors in costs ' + v.stream + ' once; each compaction rebuilds the whole index at the batch-update price, at least every five days while updates keep arriving');
+  row('money', 'Firestore, stored', v.fs_month + ' a month', 'at least ' + v.fs_gib + ' GiB: every chunk row and its eight vector-index entries; writing them costs ' + v.fs_ingest + ' once');
+  row(v.dlq === 'yes' ? 'limit' : '', 'Ingest at 1 s a document', v.ingest_time,
+      D.inFlight + ' documents in flight, one per worker instance; scale this by your median from step 7. ' +
+      (v.docai_time ? 'Document AI alone, at the kit\'s "roughly a second a page", keeps the last document waiting ' + v.docai_time + '. '
+                    : 'These go up as text, so Document AI adds nothing. ') +
+      'A document that waits is refused and retried; ' + D.attempts + ' deliveries span at most ' + D.dlqMin +
+      ' minutes of backoff, and the queue clears inside that only while a document takes under ' + v.budget);
+  row(v.fp_over === 'yes' ? 'limit' : '', 'Fingerprint, during the load', v.fp_reads + ' reads',
+      v.fp_rs + ' with ' + v.per_tenant + ' documents a tenant; the last ingest streams ' + v.per_tenant + ' rows inside its ' + D.timeout + '-second request, ' + v.fp_rate + ' a second' +
+      (v.fp_over === 'yes' ? '. Past ' + n0(crossover(D.shapes[key])) + ' a tenant, one more document costs more to fingerprint than to embed' : ''));
+  row('', 'Nightly walk', v.walk_rate + ' a second', v.walk_items + ' objects and rows to list in one task of ' + n0(D.walkS) + ' seconds; its Firestore reads: ' + v.walk_rs + ' a night');
+  sum.textContent = n0(docs) + ' documents, ' + D.shapes[key].label + ': ' + v.chunks + ' vectors, ' + v.gib + ' GiB, ' + v.serve + ' a month on ' + short + ' shards, ' + v.embed_online + ' to embed';
+}
+[nIn, shape, ten, shard].forEach(function(el){ el.addEventListener('input', render); el.addEventListener('change', render); });
+render();
+})();
+</script>
+</body>
+</html>

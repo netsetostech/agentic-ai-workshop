@@ -118,7 +118,8 @@ assert "google-genai==" in (KIT / "services/ingest/requirements.txt").read_text(
 assert "it bills per training token and nothing else on the lane triggers it" in src[TUNE] and "Tuning is REGIONAL (us-central1)" in src[TUNE]
 assert "--batch writes the same requests as a Batch API file (10.3: half price, no rate limit)" in src[MT]
 # 4. the guard the code names does not exist
-assert "tools/check_auth_wiring.py holds the two equal" in src[MT] and not (ROOT / "tools/check_auth_wiring.py").exists() and not (KIT / "tools/check_auth_wiring.py").exists()
+assert "commands/tests/test_prompt_versions.py holds the two equal" in src[MT] and (KIT / "commands/tests/test_prompt_versions.py").exists()   # 13 October 2026: the comment names the test that does
+assert "make_trainset" in (KIT / "commands/tests/test_prompt_versions.py").read_text(encoding="utf-8"), "the page says commands/tests/test_prompt_versions.py holds the two SYSTEMs equal"
 # 5. the targets never mark a source: SYSTEM's rule 2 asks for [N], the UI turns each [N] into a pill, the gate counts only the citations list
 CITES = (KIT / "services/frontend/citations.py").read_text(encoding="utf-8")
 assert "2. Cite using [N] where N is the chunk number. Multiple chunks: [1,2]." in src[MT] and "html = _CITE.sub(_pill, answer)" in CITES and "_CITE = re.compile(" in CITES

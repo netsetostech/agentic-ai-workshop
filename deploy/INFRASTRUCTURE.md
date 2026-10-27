@@ -15,8 +15,9 @@ Terraform replacements into the terminal.
 - `terraform/managed.tf` declares the existing default digital parser explicitly.
   Removing an implicit `document_processing_config` used to propose replacing
   Acme and Zeta's search stores on a second plan. Their names, IDs, data and schema
-  remain the same. `prevent_destroy` blocks an accidental replacement; it is not
-  an instruction to delete or recreate a store.
+  remain the same. `commands/infrastructure.py` refuses an accidental replacement,
+  as it refuses every delete on `make plan` and `make up`; only `make down`
+  destroys a store.
 - `terraform/budget.tf` discovers the project's linked billing account when
   `billing_account_id` is omitted or empty. A supplied nonempty ID is still
   validated. This reads billing linkage; it never changes which account pays for
@@ -112,23 +113,29 @@ trust, saves confirmed inputs, validates Terraform and creates/checks a new plan
 python commands/infrastructure.py plan --project "$PROJECT" --region "$REGION"
 ```
 
-For a genuinely new CI deployment only, select the repository that will run your
-deployment workflow. This example authorizes the main repository's course branch
-even if the source was downloaded anonymously from the learners repository:
+For a genuinely new CI deployment only, name the repository whose GitHub Actions
+will deploy your lane. That is your own fork of the public kit (lesson 0.3): the
+workflows in `.github/workflows/` run from the fork, under the fork's own secrets
+and `production` environment, and `wif.tf` trusts exactly that repository, by
+its immutable numeric id, on `main`. Downloading the code anonymously from
+`netsetos/agents_workshop_learner` does not make the upstream repository your
+CI; nothing you push there runs, and it is never the trusted repository.
 
 ```bash
+FORK="your-github-user/agents_workshop_learner"          # your fork, not the upstream
 python commands/infrastructure.py prepare --project "$PROJECT" --region "$REGION" \
-  --github-repository netsetos/agentic-ai-weekend-gcp \
-  --github-repository-id 1358872052 \
-  --deploy-ref refs/heads/claude/rag-production-hardening
+  --github-repository "$FORK" \
+  --github-repository-id "$(gh api "repos/$FORK" --jq .id)" \
+  --deploy-ref refs/heads/main
 python commands/infrastructure.py plan --project "$PROJECT" --region "$REGION"
 ```
 
-If learners GitHub Actions are intentionally the deployment authority on a new
-project, use the learners repository, ID `1367035480`, and
-`refs/heads/rag-production-hardening` as the three explicit values. This is not
-required for a public clone. Existing deployments preserve their current trust;
-the helper refuses a conflicting selection instead of performing a CI migration.
+The id is read with `gh` so it is the fork's, never typed from a page; a wrong
+name fails closed because the id must match it. Existing deployments preserve
+their current trust; the helper refuses a conflicting selection instead of
+performing a CI migration (13 October 2026: this section once named the
+upstream repository and a `rag-production-hardening` branch, which no lane
+should trust).
 
 Keep all your other intended Terraform feature inputs. Existing `.tfvars` and
 `TF_VAR_` values still supply noncritical settings. The confirmed critical values
@@ -204,6 +211,7 @@ plan refusal. Native Terraform changes must also be validated/planned against
 your project. Permissions, quotas, API enablement and service readiness are live
 requirements; offline checks cannot certify them.
 
-`prevent_destroy` also blocks deliberate data-store teardown while the resource
-declaration remains. Plan any eventual cleanup separately and account for indexed
-documents, retention and data-store ID reuse delays.
+The data stores carry no `prevent_destroy` (8 October 2026): it made Terraform refuse
+`make down`'s whole destroy, so nothing was removed. `make down` now destroys them with
+the rest of the Terraform, and their indexed documents with them. Before deploying into
+the same project again, account for retention and data-store ID reuse delays.

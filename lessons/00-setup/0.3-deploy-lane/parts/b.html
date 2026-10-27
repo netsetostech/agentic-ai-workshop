@@ -58,14 +58,14 @@ state: gs://documind-ai-YOUR-ID-tfstate/documind/documind-ai-YOUR-ID</pre></div>
 <p>"Blank" here means the project from lesson 0.1 with billing linked and a budget on it, and nothing of the kit's yet: no Terraform state, no accounts, no services. Four things should exist before <code>make plan</code> and <code>make up</code> run, and the plan itself makes none of them: it reads the project, it never prepares it. Each takes a minute, and the kit's preflight then says whether the project is ready.</p>
 
 <h4>1. The APIs</h4>
-<p>A Google Cloud API is off until a project turns it on, and Terraform cannot create a resource whose API is off. <code>make apis</code> turns on the %%N_APIS%% the lane uses, in two calls, because the Service Usage API takes at most twenty at a time. It is safe to run again; an API already on stays on.</p>
+<p>A Google Cloud API is off until a project turns it on, and Terraform cannot create a resource whose API is off. <code>make apis</code> turns on the %%N_APIS%% the lane uses, in %%N_API_CALLS%% calls, because the Service Usage API takes at most twenty at a time. It is safe to run again; an API already on stays on.</p>
 @@mk_apis@@
 @@apis_two_calls@@
 <div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per project</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make apis PROJECT="$PROJECT"</pre></div>
 <p>What it prints is gcloud's own report of the operations it waited for. Step 5's preflight is the check that matters: it names any of the APIs it looks for that is still off.</p>
 
 <h4>2. A state bucket of your own</h4>
-<p>Terraform keeps its record of what it built, the state, in a bucket, so that the next plan in any shell compares the files with what exists instead of trying to create everything again. Bucket names are global: the first person in the world to create a name owns it. The Makefile's default, <code>documind-tfstate</code>, is one name for the whole world and can serve only one lane, so the setup block named yours after your project, the form the kit's own <code>smoke/preflight.sh</code> uses in its example. It exported <code>TFSTATE_BUCKET</code> and <code>TFSTATE_PREFIX</code> too, so the targets that connect to the state later (<code>make tf-backend</code>, <code>make down</code>) find this one. Versioning keeps every earlier copy of the state file, which is how a damaged state is recovered.</p>
+<p>Terraform keeps its record of what it built, the state, in a bucket, so that the next plan in any shell compares the files with what exists instead of trying to create everything again. Bucket names are global: the first person in the world to create a name owns it, so the kit names yours after your project. <code>&lt;project&gt;-tfstate</code> is the default of the Makefile and of <code>smoke/preflight.sh</code>, and the setup block exported the same name as <code>TFSTATE_BUCKET</code>, with <code>TFSTATE_PREFIX</code>, so the targets that connect to the state later (<code>make tf-backend</code>, <code>make down</code>) find this one. Versioning keeps every earlier copy of the state file, which is how a damaged state is recovered.</p>
 <div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per project</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud storage buckets create "gs://$TFSTATE_BUCKET" --project="$PROJECT" --location=asia-south1 --uniform-bucket-level-access
 gcloud storage buckets update "gs://$TFSTATE_BUCKET" --versioning
 terraform -chdir=terraform init -input=false \
@@ -157,7 +157,7 @@ gcloud iap settings set "$HOME/iap-oauth.yaml" --project="$PROJECT" &amp;&amp; r
 <h4>The other stores, and the rest of what a plan creates once</h4>
 %%STORE_TABLE%%
 
-<p>One line in <code>terraform/vector.tf</code> deserves a second look before step 10 prices it. The deployed index runs on a machine chosen by the index's <em>shard size</em>, and the index declares none, so the service picks it. The kit's own comment records an existing index whose service-selected size was MEDIUM, which deploys on <code>%%MACHINE_MEDIUM%%</code>, not on SMALL's <code>%%MACHINE_SMALL%%</code>. Step 8 reads which one your lane got.</p>
+<p>One line in <code>terraform/vector.tf</code> deserves a second look before step 10 prices it. The deployed index runs on a machine chosen by the index's <em>shard size</em>. The index declares SMALL, so a new lane's index deploys on <code>%%MACHINE_SMALL%%</code>, and the declaration is ignored once the index exists, because changing a shard size replaces the index. An index created before the kit named the size keeps the one the service picked: the kit's own comment records one whose size was MEDIUM, which deploys on <code>%%MACHINE_MEDIUM%%</code>. Step 8 reads which one your lane has.</p>
 @@vector_deploy@@
 
 <h4>%%N_RESOURCES%% resource instances, file by file</h4>

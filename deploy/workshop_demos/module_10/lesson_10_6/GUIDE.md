@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_10.6_A2A_Peer_WIX.html`, reviewed at blob `6f13d04435a34279510124166f441b32d6337022`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_10.6_A2A_Peer_WIX.html`, reviewed at blob `198a39c4324f3bc579cba2d462e705ee3292516e`. Learners read that page on the course site; this guide keeps its prose.
 
 `documind-agent` is the agent another team would build. It holds no kit code: it knows DocuMind by one address, `documind-mcp`. Other agents can reach it over A2A, through an agent card that describes it and `message/send`, which gives it a task. One task crosses three protocols: A2A from the caller to the peer, MCP from the peer to the server, and HTTPS from the server to rag-api. Each hop carries a different identity, and none carries the caller's. You read the peer's permissions from the kit's files and ask for its card with and without a token. Then you run the module's A2A gate, and trace one task through its history and the two logs.
 

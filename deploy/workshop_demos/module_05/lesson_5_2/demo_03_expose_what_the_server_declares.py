@@ -3,8 +3,8 @@
 Do it: fastmcp Do it: what the server declares
 
 Run order inside this file:
-1. Do it: fastmcp (source window 7)
-2. Do it: what the server declares (source window 9)
+1. Do it: fastmcp (source window 11)
+2. Do it: what the server declares (source window 13)
 
 Prerequisites: setup_prepare.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -99,8 +99,8 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_7', step_01_fastmcp),
-        ('source_9', step_02_what_the_server_declares),
+        ('source_11', step_01_fastmcp),
+        ('source_13', step_02_what_the_server_declares),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

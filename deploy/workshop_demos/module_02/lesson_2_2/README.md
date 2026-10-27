@@ -213,11 +213,11 @@ Expected shape, not a promised result:
 
 ```text
 What is the total payable on invoice INV-2026-0412?
-   documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 6xx | pool 20 | vector_chunks 20
-   candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms 7xx | pool 20 | vector_chunks 20
+   documind-  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms xxxx | pool 20 | vector_chunks 20
+   candidate  ['  0 inv_2026_0412.md', ' 36 cgst_act_2017.pdf', ...] | retrieve_ms xxxx | pool 20 | vector_chunks 20
 What is the notice period for a confirmed E3?
-   documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 6xx | pool 20 | vector_chunks 20
-   candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms 7xx | pool 20 | vector_chunks 20
+   documind-  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms xxxx | pool 20 | vector_chunks 20
+   candidate  ['  1 hr_policy_2026.md', '  4 hr_policy_2026.md', '  2 hr_policy_2026.md'] | retrieve_ms xxxx | pool 20 | vector_chunks 20
 ```
 
 **`step_03_hybrid_on_a_candidate_the_same_two_questio(session)` — The knob: hybrid on a candidate that takes no traffic, compared, then removed / Do it: hybrid on a candidate, the same two questions to both revisions, then undo**
@@ -230,7 +230,7 @@ Expected shape, not a promised result:
 
 ```text
 live mode: dense
-100;documind-api-00042-xyz
+100	documind-api-00042-xyz
 ```
 
 ### demo_08_what_hybrid_costs_where_it_cannot_go_and_what_the_harness_does_not_measure.py
@@ -270,6 +270,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.2_Hybrid_WIX.html`. All 40 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `e328b1eb4da48eab527de6f40bfc73967d53aefb`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.2_Hybrid_WIX.html`. All 40 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `8d99d2528071436f02857a4b2d4c68af267d27d9`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

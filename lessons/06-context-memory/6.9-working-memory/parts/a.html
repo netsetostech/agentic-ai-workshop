@@ -1,0 +1,83 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.9</div>
+<h1>Budget working memory: <span>windowing, compaction and write rules</span></h1>
+<p>A conversation's thread grows with every turn, and today every model call the chat brains make sends all of it again: every question, every answer, every search result. The kit's new window decides what one call is sent instead. The system prompt and the newest turn always go whole. Earlier turns go whole too, newest first, while they fit in %%BUDGET%% tokens, with their search results cleared. The rest are brought forward in one line that code writes. Every earlier question is masked and cut to the Desk's %%PREV%% characters. The chat service does not use the window yet. You watch a thread grow on your lane, run twenty scripted turns with and without the window at Rs 0, open one call message by message, and read the author's run of the same twenty questions against Gemini.</p>
+<div class="hero-chips"><div class="hero-chip">the whole thread, every call</div><div class="hero-chip">floor and ceiling</div><div class="hero-chip">CHAT_HISTORY_TOKENS</div><div class="hero-chip">cleared results</div><div class="hero-chip">the line brought forward</div><div class="hero-chip">mask, then 300 characters</div><div class="hero-chip">make window-check</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Every call resends the thread, and the window that caps it</a></li>
+<li><a href="#s2">The words: thread, turn, call, floor, budget, ceiling, compaction, the line, write rules</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">On your lane today: every turn sends more</a></li>
+<li><a href="#s4">The window in the kit, and one call opened up</a></li>
+<li><a href="#s5">Twenty turns, with the window and without it</a></li>
+<li><a href="#s6">Full against windowed, with Gemini</a></li>
+<li><a href="#s7">What the checkpoint keeps</a></li>
+<li><a href="#s8">Why the window is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why a conversation's calls grow with its length, the rule that holds each call under a ceiling while the thread keeps growing, and the write rules for what an earlier turn may carry into a call. Then you will prove it: your lane's input tokens climbing turn by turn, every windowed call within its ceiling over twenty turns while the whole thread passes it, one call opened message by message, and Gemini's own counts for both.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Every call resends the thread, and the window that caps it</h3><p>The record and the call, the rule at every call, and what a call may carry.</p></div></div>
+
+<p><strong>The record and the call.</strong> The checkpointer keeps every message of a conversation, its thread, under a key of tenant, person and session (lessons 6.5 to 6.8). A model call is something else: the list of messages a brain sends Gemini for one step. Today the two are the same list. The LangGraph brain sends its system prompt and then the whole thread, and <code>create_agent</code> does the same for the LangChain brain. A turn that searches makes at least two calls, one that asks for the search and one that answers from it, and each sends every earlier question, answer and search result again. So each turn sends more than the one before. Over the twenty scripted turns of step 5, the forty calls send %%SUM_FULL%% tokens between them by the kit's estimate; with the window, %%SUM_WIN%%.</p>
+
+<p><strong>No trim today.</strong> Nothing in the chat service trims, windows or summarises a conversation's thread. The budget lesson 3.4 teaches has a line for history, which rag-api's own <code>fit()</code> sets to 0 because rag-api keeps none, and its comment says what the chat service does instead: its agents "resend whole threads, untrimmed". Step 3 measures that on your lane.</p>
+
+<p><strong>The window.</strong> <code>services/chat/context_window.py</code> is new in the kit. At every model call it takes the messages the brain would send and decides, on a copy, what the call is sent. The <em>floor</em> always goes whole: the system prompt and the newest turn, which is the person's latest message and every call and result since. Earlier turns follow, newest first, each kept whole while the earlier turns fit in <code>CHAT_HISTORY_TOKENS</code>, %%BUDGET%% tokens by default, the history line of lesson 3.4's budget. A kept turn is <em>compacted</em>: each search result becomes a short "cleared" note and the call that asked for it stays, so no call is sent without a result. A refusal stays as it was, so the model still reads why. The turns that do not fit leave the call, and one line at the top of the first kept message brings them forward: which turns, and as many of their questions as still fit, each with its turn's number. Code writes that line, not a model, so it costs nothing and invents nothing. A call is therefore at most its floor plus the budget, its <em>ceiling</em>, however long the thread grows. And the window writes nothing back: the checkpoint keeps every message.</p>
+
+<p><strong>The write rules.</strong> What a call carries from earlier turns follows the Desk's rules for a person's words (lessons 5.6 and 10.4). Every earlier question, kept or listed in the line, is masked, a checked card number becoming <code>[card no.]</code> and an Aadhaar number <code>[Aadhaar]</code>, and then cut to %%PREV%% characters, the previous question the Desk keeps. The model's earlier answers are masked too. The newest question is masked and sent whole.</p>
+
+<p><strong>Not in the service yet.</strong> Nothing in the chat service imports the window, so every brain on your lane still sends the whole thread. A later change would put it in front of the brains' model, behind a switch that defaults to the whole thread. This lesson runs it where it is: in <code>make window-check</code>, offline at Rs 0, and in the author's run against Gemini.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128210;</div><div>
+<p><strong>A bank passbook.</strong> The passbook holds every entry since the account was opened: that is the checkpoint. When a page fills, nobody copies the whole book onto the next page. The next page opens with a B/F line, brought forward, printed by the machine, standing for everything before it, and the newest entries follow in full. However old the account, a page has the same number of lines. The window is that page: the newest turns in full, a fixed room, and one line at the top. The machine prints the line, not a clerk, so it never says anything the book does not hold. And the page shows only the last digits of the account number: what is carried forward is masked.</p></div></div>
+
+<h4>What one call is sent, turn by turn</h4>
+<p>Choose a turn of step 5's twenty-turn conversation and a budget for earlier turns. The top bar is what that turn's answering call sends today: the system prompt, every earlier turn as stored, and the newest turn. The bar below it, on the same scale, is what the window sends, with its ceiling marked in red. The columns show all twenty turns at the chosen budget: grey for the whole thread, teal for the window.</p>
+
+<div class="diagram" id="wd">
+<div class="dg-title">The window over make window-check's conversation - the kit's rule, run in your browser</div>
+<div class="wd-in"><label>Turn <span id="wd-n-v">20</span><input type="range" id="wd-n" min="1" max="20" step="1" value="20" aria-label="Turn"></label><label>Budget for earlier turns, in tokens (CHAT_HISTORY_TOKENS)<select id="wd-b"></select></label></div>
+<div class="wd-h">Today: the whole thread</div>
+<div class="wd-bar" id="wd-full"></div>
+<div class="wd-h">The window: the floor, the earlier turns that fit, and the line</div>
+<div class="wd-bar" id="wd-win"></div>
+<div class="wd-key"><span><b class="wd-sys"></b>system prompt</span><span><b class="wd-new"></b>the newest turn, whole</span><span><b class="wd-kept"></b>earlier turns kept, results cleared</span><span><b class="wd-line"></b>the line</span><span><b class="wd-old"></b>earlier turns as stored</span><span><b class="ck"></b>the ceiling</span></div>
+<div class="wd-cols" id="wd-cols" aria-hidden="true"></div>
+<div class="wd-axis" id="wd-axis" aria-hidden="true"></div>
+<div class="fs-grid" id="wd-out" aria-live="polite"></div>
+<div class="wd-line-box" id="wd-line" aria-live="polite"></div>
+<p class="dg-cap">Every size is the kit's own, measured when this page was built on the thread step 5's windowed run wrote: each earlier turn as the window sends it, each question's room in the line, the floor, and the context <code>window()</code> returns at each budget. Which turns stay and which questions the line lists is <code>plan()</code>, the rule's arithmetic, ported to JavaScript and checked against the Python for all %%N_CASES%% pairs of turn and budget here, the line itself character for character. Tokens are the window's estimate, four characters a token and three a message.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It is the kit's rule over one scripted conversation, not your lane: your lane's brains send the whole thread, and step 3 measures what that costs. The tokens are langchain-core's estimate, which leaves out the tool declarations every call also carries (lesson 6.1 measures those). Step 6 puts Gemini's own count beside it.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: thread, turn, call, floor, budget, ceiling, compaction, the line, write rules</h3><p>Eleven rows, each with what it is in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Thread</strong></td><td data-label="Meaning">Every message of one conversation, as the checkpoint keeps it.</td><td data-label="In the kit">keyed <code>tenant:person:session</code>; step 5's grows to %%W20_MSGS%% messages</td></tr>
+<tr><td><strong>Turn</strong></td><td data-label="Meaning">A person's message and everything after it, up to the next.</td><td data-label="In the kit"><code>turns()</code>; a call and its result always share one</td></tr>
+<tr><td><strong>Call</strong></td><td data-label="Meaning">One request to the model: the messages it is sent.</td><td data-label="In the kit">two a turn in step 5: one asks for a search, one answers</td></tr>
+<tr><td><strong>Context</strong></td><td data-label="Meaning">What one call is sent, in tokens.</td><td data-label="In the kit"><code>context_tokens</code>, by <code>count_tokens_approximately</code></td></tr>
+<tr><td><strong>Floor</strong></td><td data-label="Meaning">The system prompt and the newest turn, always sent whole.</td><td data-label="In the kit"><code>floor_tokens</code></td></tr>
+<tr><td><strong>Budget</strong></td><td data-label="Meaning">The room a call gives earlier turns.</td><td data-label="In the kit"><code>CHAT_HISTORY_TOKENS</code>, %%BUDGET%%, as <code>TokenBudget.history</code></td></tr>
+<tr><td><strong>Ceiling</strong></td><td data-label="Meaning">The floor plus the budget: no windowed call is over it.</td><td data-label="In the kit"><code>ceiling</code> in every call's report</td></tr>
+<tr><td><strong>Compaction</strong></td><td data-label="Meaning">A kept earlier turn with its search results cleared and its calls kept.</td><td data-label="In the kit"><code>CLEARED</code>; a refusal stays as it was</td></tr>
+<tr><td><strong>The line</strong></td><td data-label="Meaning">The earlier turns that do not fit, brought forward in one sentence written by code.</td><td data-label="In the kit"><code>[Earlier in this conversation, not shown here: ...]</code></td></tr>
+<tr><td><strong>Write rules</strong></td><td data-label="Meaning">What a call may carry of a person's earlier words.</td><td data-label="In the kit">masked by <code>desk_rules.mask</code>, then cut to <code>PREV_CHARS</code>, %%PREV%%</td></tr>
+<tr><td><strong>Full, windowed</strong></td><td data-label="Meaning">Today's behaviour, measured; the window in front of the model.</td><td data-label="In the kit"><code>MODE=full</code>, <code>MODE=windowed</code> (the default)</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the thread is the record, and the window is a view of it for one call. Masking and cutting change what a call reads, never what the record holds.</p>

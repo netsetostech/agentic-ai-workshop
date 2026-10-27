@@ -269,3 +269,43 @@ class GroupedTests(unittest.TestCase):
             with patch.object(s, "command", side_effect=fake_command):
                 with self.assertRaisesRegex(RuntimeError, "HTTP/auth/schema"):
                     live_gate(s, report=report, expect_red=True)
+
+    def test_route_gate_reads_a_red_gate_and_fails_a_crash(self):
+        from workshop_helpers.gates import route_gate
+        with self.open() as s:
+            report = self.kit / "exemplars_kit.json"
+            write_json(report, {"decisions": [{"id": "old"}]})                 # an earlier run's report is moved aside
+            def red(args, **kw):
+                write_json(report, {"decisions": [{"id": "r1"}]})
+                return 1                                                       # the dev gates' FAIL lines: a reading
+            with patch.object(s, "command", side_effect=red):
+                self.assertEqual(route_gate(s, exemplars="kit", report=report), 1)
+            self.assertTrue((s.attempt / "exemplars_kit.json.previous").exists())
+            with patch.object(s, "command", return_value=1):                  # a crash: exit 1 and no fresh report
+                with self.assertRaisesRegex(RuntimeError, "without a fresh report"):
+                    route_gate(s, exemplars="none", report=self.kit / "exemplars_none.json")
+
+
+class NativeContextTests(unittest.TestCase):
+    """A kit module a cell loaded is gone for the next cell, from sys.modules and from its package's attributes."""
+
+    def test_a_submodule_does_not_survive_as_its_packages_attribute(self):
+        from workshop_helpers.steps import native_context
+        with tempfile.TemporaryDirectory() as folder:
+            kit = Path(folder)
+            (kit / "pkg").mkdir()
+            (kit / "pkg" / "__init__.py").write_text("")
+            (kit / "pkg" / "mod.py").write_text("VALUE = 1\n")
+            sys.path.insert(0, str(kit))
+            self.addCleanup(lambda: [sys.modules.pop(n, None) for n in ("pkg", "pkg.mod")] and None)
+            self.addCleanup(sys.path.remove, str(kit))
+            importlib.import_module("pkg")                      # loaded before the cell, as `shared` was
+            session = type("S", (), {"config": type("C", (), {"kit_root": kit})()})()
+            with native_context(session):
+                from pkg import mod
+                self.assertEqual(mod.VALUE, 1)
+            (kit / "pkg" / "mod.py").write_text("VALUE = 22\n")  # the next cell edits the file, as 2.5's step 2 does
+            self.assertFalse(hasattr(sys.modules["pkg"], "mod"))
+            with native_context(session):
+                from pkg import mod
+                self.assertEqual(mod.VALUE, 22)

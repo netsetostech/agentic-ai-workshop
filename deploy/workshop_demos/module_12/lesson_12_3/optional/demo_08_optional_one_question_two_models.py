@@ -3,7 +3,7 @@
 Do it
 
 Run order inside this file:
-1. Do it (source window 32)
+1. Do it (source window 40)
 
 Prerequisites: optional_demo_07_optional_the_v3_candidate_and_the_gate_on_it.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -88,7 +88,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_32', step_01_optional_one_question_two_models),
+        ('source_40', step_01_optional_one_question_two_models),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

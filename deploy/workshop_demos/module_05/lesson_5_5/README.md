@@ -204,7 +204,7 @@ documind-chat  https://documind-chat-NUMBER.asia-south1.run.app
   deadline              100 s; each model call min(30 s, time left / 2), none started with under 5 s left
   tool budgets          retrieve 95 s, calculate_processing_cost 10 s
 documind-agent  https://documind-agent-NUMBER.asia-south1.run.app
-  model calls a task    not on its /health (ADK defaults to 500)
+  model calls a task    12
 ```
 
 **`step_04_a_capped_turn_on_your_lane(session)` — A turn that will not stop: the call cap, the rupees and the deadline / Do it: a capped turn on your lane**
@@ -272,6 +272,8 @@ Do it
 
 Operation: bash — run in the operator shell, in the kit (one question with and without a doc_type filter, then rag-api's rows).
 
+IDE adaptation: Before the filter, count the rows lesson 5.2's reset would still change (its plan only, nothing written): the step expects every acme text row unknown, and stops with the fix when 5.2's finish cell has not put them back, instead of passing on a filter that found classed rows.
+
 Expected shape, not a promised result:
 
 ```text
@@ -299,6 +301,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_5.5_Tool_Failures_WIX.html`. All 29 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `780a103bb4f0ddb0633a2c104547c46fa01b58c3`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_5.5_Tool_Failures_WIX.html`. All 29 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `231353ae70fcc3a72fa7234c1a540311a4f88b3e`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

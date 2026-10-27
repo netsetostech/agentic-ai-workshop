@@ -56,7 +56,7 @@ def step_01_two_calls_at_once_asyncio_gather_and_async(session):
             
             Example: self.do_GET() in the owning lesson/helper context
             """
-            global busy
+            nonlocal busy
             with lock:
                 busy += 1
                 overlap.append(busy > 1)                       # was another request already being served?

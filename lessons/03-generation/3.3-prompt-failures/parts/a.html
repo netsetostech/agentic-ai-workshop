@@ -1,0 +1,84 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.3</div>
+<h1>Recognise prompt failure modes and fix them in the prompt: <span>a failing row read with its passages, one rule tried in memory, and the refusal rows as the guard</span></h1>
+<p>Lessons 3.1 and 3.2 changed how the model is asked. This lesson starts from what came back wrong. The eval gate judges every golden row by one rule, and a row that fails says why: refused, answered without its figure, answered when it should have refused, or no answer at all. Only some of those are the prompt's to fix. A clause that never reached the model cannot be answered by any instruction, and a reply that never came back was never read. You will run the live eval with each answerable row's passages read again, sort the failing rows by where their fix lives, and try one new rule per row in the kit's prompt bench: SYSTEM edited in memory, the row asked again on the same passages, and the %%N_REF%% refusal rows asked beside it to show what the rule breaks. Nothing is committed: generator.py's SYSTEM stays byte for byte the tuning set's copy.</p>
+<div class="hero-chips"><div class="hero-chip">SYSTEM: %%N_RULES%% rules</div><div class="hero-chip">row_verdict(): the gate's why</div><div class="hero-chip">DOCUMIND_EVAL_PASSAGES=1</div><div class="hero-chip">anchors in the pool</div><div class="hero-chip">--add-rule, in memory</div><div class="hero-chip">%%N_REF%% refusal rows as the guard</div><div class="hero-chip">generator.py unchanged</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Every failure has an address: the prompt, retrieval or the code</a></li>
+<li><a href="#s2">The words: prompt failure, SYSTEM, dated rule, verdict, why, pool, anchor, quote check, address, bench, arm, guard</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">One golden question in the Chat page, read the way the gate reads it</a></li>
+<li><a href="#s4">The prompt and the gate's rule in the kit: SYSTEM, the prompt line, row_verdict() and the passage checks</a></li>
+<li><a href="#s5">The live eval, with every answerable row's pool read again</a></li>
+<li><a href="#s6">The failing rows, read with their passages, and where each fix lives</a></li>
+<li><a href="#s7">One rule per row in the bench, with the refusal rows beside it</a></li>
+<li><a href="#s8">Why the fix stays in memory: the served prompt is the trained prompt</a></li>
+<li><a href="#s9">What the fixes cost, which way the guard points, and what the bench cannot see</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn to tell a prompt failure from a failure that only looks like one: the gate says why a row failed, the row's pool says whether the model had the evidence, and only then is a new rule worth trying. Then you will prove it on your lane: a live eval with its passages, the failing rows read and sorted, three one-rule fixes in the bench, each asked beside the refusal rows, and the kit's prompt unchanged on disk.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Every failure has an address: the prompt, retrieval or the code</h3><p>Three parts of one prompt, a verdict that says what went wrong, a pool that says whose fault it is, and a rule that is never tried alone.</p></div></div>
+
+<p><strong>The prompt is three things in one string.</strong> <code>generate()</code> starts every answer from SYSTEM, the kit's %%N_RULES%% numbered rules, then the passages retrieval returned, each under a <code>[Source N]</code> header, then the question. The model reads that string and writes a structured reply: an answer, its citations with the words it quoted, a confidence and <code>answerable</code>. When a reply is wrong, the fault can lie in any of the three parts, or outside the string altogether.</p>
+
+<p><strong>The gate says what went wrong; the pool says whose fault it is.</strong> <code>run_eval.py</code> judges every reply by one rule, <code>row_verdict()</code>. An answerable row must be answered, cite its own tenant's passages and hold every <code>must_contain</code> figure; an unanswerable row must be refused. A row that fails carries a <em>why</em> in the gate's own words: <code>refused</code>, <code>answered without ['60']</code>, <code>answered without a citation</code>, <code>answered, should refuse</code>, or an HTTP status when no reply came back. The why alone cannot tell a model that ignored the clause from a model that never saw it. With <code>DOCUMIND_EVAL_PASSAGES=1</code> the gate also reads each answerable row's pool again from <code>/v1/passages</code> and records whether each <code>must_retrieve</code> anchor, a clause code such as NP-03 or a document's name, was in it.</p>
+
+<p><strong>A failure is the prompt's only when the evidence was there.</strong> If every anchor reached the pool and the reply still refused, dropped a figure or answered the wrong part, the model mishandled what it was given, and a sentence in SYSTEM can change how it handles it. If an anchor is missing, no sentence can help: the fix is retrieval's, Module 2's. If no reply came back, it is the code's: a 502 means the generator had no answer it could parse, whether the reply was cut off at its token limit twice, the second time with three times the room, or broke the answer's schema. And some failures were never the model's: the third live eval (7 Sept 2026) scored "300 or more" as wrong against a row that says three hundred, and the fix went into the gate's <code>normalise()</code>, not into the prompt.</p>
+
+<p><strong>A new rule is a trade, so it is never tried alone.</strong> A rule that makes the model answer more readily, or say more, also makes it likelier to answer where it must not. So every fix on this page is asked again on its failing row and, beside it, on the %%N_REF%% refusal rows the golden set keeps: questions no document answers, such as ACME's sabbatical policy or its revenue in FY2024. A fix that turns its row green and a refusal row red has moved the failure, not fixed it.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128232;</div><div>
+<p><strong>A bank's letters desk and its style guide.</strong> A customer complains: the bank wrote that it was "unable to advise", though its own policy plainly covered her case. Before anyone touches the style guide, the desk opens the writer's folder. If the policy page was never in it, the filing room is at fault, and no style rule would have helped. If the letter never went out because the printer jammed, the printer is. Only when the page was in the folder does the desk draft one new line for the guide. Then it rewrites the letter that was complained about, and beside it a stack of old letters that rightly said "unable to advise", because a line that makes writers answer more readily will make some of them answer where they must not. SYSTEM is the style guide, the folder is the pool, the filing room is retrieval, the printer is the code, and the stack of rightly declined letters is the refusal rows.</p></div></div>
+
+<h4>The failure desk: %%N_DESK%% golden rows, the gate's verdict and where each fix lives</h4>
+<p>Each button is a golden row with a pool of the kit's own passages and a reply written for this page to show one kind of failure. Edit the reply, untick its citation, take the clause out of the pool or let the request fail with a 502: the verdict, the quote check, the anchors and the fix's address are worked out again with the kit's rules on every change. Two to try: tick the MSA's clause into lk-12's pool and watch its address move from retrieval to the prompt; type the missing half of jn-03's answer into its reply and watch the row pass.</p>
+
+<div class="diagram" id="fd">
+<div class="dg-title">The failure desk - run_eval.py's verdict, quote check and anchor check, ported to this page</div>
+<div class="fd-cases" id="fd-cases" role="group" aria-label="Golden rows and their failures"></div>
+<div class="fd-grid"><div class="fd-card" id="fd-row"></div><div class="fd-card" id="fd-pool"></div></div>
+<div class="fd-card">
+<label class="fd-l">The reply's answer, as the model wrote it<textarea id="fd-answer" rows="3" spellcheck="false"></textarea></label>
+<div class="fd-tg">
+<label><input type="checkbox" id="fd-ok"> came back (unticked: HTTP 502)</label>
+<label><input type="checkbox" id="fd-ans"> answerable</label>
+<label><input type="checkbox" id="fd-cite"> cites <span id="fd-cite-q"></span></label>
+<label><input type="checkbox" id="fd-in"> the clause reached the pool</label>
+</div></div>
+<div class="fd-out" id="fd-out" aria-live="polite"></div>
+<p class="dg-cap">The rows are golden rows, and the passages are the kit's own chunks as <code>shared/documind_corpus.py</code> cuts them, each shown around the words that matter; the replies are this page's illustrations, not answers any model gave. The verdict is <code>row_verdict()</code>, the quote check <code>quote_check()</code> and the anchor check <code>anchors_found()</code>, ported to JavaScript with <code>normalise()</code> and <code>contains()</code>; the address is step 6's <code>address()</code>. When this page was built, node ran the port over every case and every combination of its switches, and over %%N_EXTRA%% more replies to other golden rows (a leaked figure, a retired version, a missing figure citation, a malformed body, a refusal at the door): %%N_NODE%% replies in all, and every result equalled the kit's. The desk skips the one check it cannot hold, a citation's version against the ledger, as the gate does when <code>/v1/sources</code> cannot be read.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the desk is not</div>
+<p>It is not your lane. Each reply fails one way, and a real failure is rarely that clean: a reply can refuse with half its anchors in the pool, or answer the wrong part and quote the wrong passage at once. And an anchor is evidence, not proof. A row whose only anchor is a document's name, such as lk-23's <code>industrial_relations_code_2020</code>, counts it as found when any passage of that document is in the pool, even one that does not answer. Step 6 prints, for every failing row, the sentence of its pool that holds each expected figure, so you can see the evidence rather than infer it.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: prompt failure, SYSTEM, dated rule, verdict, why, pool, anchor, quote check, address, bench, arm, guard</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Prompt failure</strong></td><td data-label="Meaning">A wrong reply from a prompt that held the evidence: the passages that answer were among its <code>[Source N]</code> blocks, and the model refused, dropped a figure, answered the wrong part or answered a question no document answers.</td><td data-label="On your lane">The rows step 6 marks <code>the prompt</code></td></tr>
+<tr><td><strong>SYSTEM</strong></td><td data-label="Meaning">The instructions every prompt starts with: a line saying who the model is, then <code>Rules:</code> and %%N_RULES%% numbered rules, set once in <code>generator.py</code>.</td><td data-label="On your lane">Rule 3 is the refusal rule, rule 5 the quote rule (step 4)</td></tr>
+<tr><td><strong>The dated rule</strong></td><td data-label="Meaning"><code>DATED_RULE</code>, a sixth rule added only when a packed passage carries an effective date: where dated sources disagree, follow the latest.</td><td data-label="On your lane">In no golden row's prompt on a lane that holds the corpus alone; never in the bench</td></tr>
+<tr><td><strong>Verdict</strong></td><td data-label="Meaning"><code>row_verdict()</code>: the gate's judgment of one reply. An outcome (<code>ok</code>, <code>error</code>, <code>denied</code>, <code>malformed</code>), whether it passed, and why not.</td><td data-label="On your lane">One record per row in the report (step 5)</td></tr>
+<tr><td><strong>why</strong></td><td data-label="Meaning">The reason a row cost a point, in the gate's words: <code>refused</code>; <code>answered without ['45', '60']</code>; <code>answered without a citation</code>; <code>answered, should refuse</code>; <code>HTTP 502</code>.</td><td data-label="On your lane">The fourth column of each row step 6 prints</td></tr>
+<tr><td><strong>Pool</strong></td><td data-label="Meaning">The passages retrieval and rerank return for a question: top_k %%TOP_K%% when the gate asks. <code>/v1/passages</code> returns the same pool with each passage's full text and calls no model.</td><td data-label="On your lane">Read again for every answerable row with <code>DOCUMIND_EVAL_PASSAGES=1</code></td></tr>
+<tr><td><strong>Anchor</strong></td><td data-label="Meaning">An entry of a row's <code>must_retrieve</code>: a clause code (NP-03) or a document's name (hr_policy_2026). Found when it is in a passage's id, source or text.</td><td data-label="On your lane"><code>anchors_found()</code>, saved on the row's record</td></tr>
+<tr><td><strong>Quote check</strong></td><td data-label="Meaning"><code>quote_check()</code>'s verdict on one citation: <code>own</code> (the quoted words are in the passage it names), <code>elsewhere</code> (in another passage of the pool), <code>absent</code>, <code>substituted</code> (no quote given, or the source cited only as a <code>[N]</code> in the prose, so the passage's opening stood in) or <code>unread</code>.</td><td data-label="On your lane"><code>quote_passage_rate</code>, an [info] line, never a threshold</td></tr>
+<tr><td><strong>Address</strong></td><td data-label="Meaning">This page's word for where a failing row's fix lives: the prompt, retrieval, the code, media, tenancy, the ledger, or <code>unread</code> when no pool was read.</td><td data-label="On your lane"><code>address()</code>, in step 6's cell and in the desk</td></tr>
+<tr><td><strong>The prompt bench</strong></td><td data-label="Meaning"><code>evals/prompt_bench.py</code>: each row's pool read once from your lane, then the kit's own <code>generate()</code>, imported in your shell, answering from that pool as many times as asked, every answer judged by <code>row_verdict()</code>.</td><td data-label="On your lane"><code>make bench BENCH_ARGS="..."</code> (step 7)</td></tr>
+<tr><td><strong>Arm</strong></td><td data-label="Meaning">One prompt the bench asks with: <code>kit</code>, generator.py's SYSTEM as the API sends it, and <code>edit</code>, carrying every change given, in memory.</td><td data-label="On your lane">Two arms in every fix run</td></tr>
+<tr><td><strong>The refusal guard</strong></td><td data-label="Meaning">The %%N_REF%% golden rows of shape <code>refusal</code>, asked in both arms beside every fix: a rule that makes the model answer where it must not turns one of them red.</td><td data-label="On your lane"><code>--shape refusal</code> in every fix command</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words carry the lesson: <em>why</em> and <em>anchor</em>. The why is what the gate saw. The anchors say whether the model could have done better with the passages it was given, and that decides whether a line of prompt is the right repair.</p>

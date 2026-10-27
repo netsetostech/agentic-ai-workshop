@@ -50,7 +50,7 @@ def step_01_the_one_retrieve_from_your_shell(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: 5 citations | answerable True | confidence high | 2.7 s
+    Observe: 1 citations | answerable True | confidence high | 2.7 s
       first: {'chunk_id': 'acme:aaaaaaaa#0', 'page': 3, 'score': 0.94}
       rag-api's own answer: Gratuity is payable on termination after not less than five years of continuous service [1
     """

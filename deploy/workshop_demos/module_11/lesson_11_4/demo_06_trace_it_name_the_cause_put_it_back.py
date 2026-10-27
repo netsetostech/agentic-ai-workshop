@@ -1,11 +1,10 @@
 """Lesson 11.4: Trace it, name the cause, put it back
 
-Do it: the trace Do it: the versions view and the two probes Do it: put version 1 back
+Do it: the trace Do it: the versions view and the two probes
 
 Run order inside this file:
 1. Do it: the trace (source window 15)
 2. Do it: the versions view and the two probes (source window 17)
-3. Do it: put version 1 back (source window 20)
 
 Prerequisites: demo_05_break_it_a_version_reaches_the_lane.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -152,9 +151,12 @@ def step_01_the_trace(session):
     print(cause(marks))
 
 # Original CLI workflow for step_02_the_versions_view_and_the_two_probes.
-COMMANDS_02 = """make sources PROJECT="$PROJECT" TENANT_ONLY=acme | grep -E "^source|hr_policy_2026"
+COMMANDS_02 = """set +e +o pipefail   # as the page runs it: its expected output shows a command here failing, as the cell means it to
+make sources PROJECT="$PROJECT" TENANT_ONLY=acme | grep -E "^source|hr_policy_2026"
 python commands/verify-vector-index.py --deploy-root "$DEMO_ROOT" --project "$PROJECT" --region "$REGION"
 GOOGLE_CLOUD_PROJECT="$PROJECT" python commands/check-firestore-fallback.py
+true   # that failure is the cell's answer: compare the output with the page's expected window
+
 
 """
 
@@ -180,37 +182,6 @@ def step_02_the_versions_view_and_the_two_probes(session):
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_02)
 
-# Original CLI workflow for step_03_put_version_1_back.
-COMMANDS_03 = """make reindex PROJECT="$PROJECT" TENANT=acme FILE=evals/corpus/acme/hr_policy_2026.md
-ask131 restored
-GOOGLE_CLOUD_PROJECT="$PROJECT" python commands/check-firestore-fallback.py | tail -1
-
-"""
-
-def step_03_put_version_1_back(session):
-    """Run Do it: put version 1 back at this checkpoint.
-
-    Do it: put version 1 back
-
-    Args: session is the active lesson run, with validated settings and saved prerequisites.
-    Operations: bash — run in the operator shell, in the kit (version 1 back, the question again, the probe again).
-    Returns: None; observations are printed or saved by the lesson code.
-    Failures propagate to the session; inspect its failed attempt before continuing.
-
-    Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: >> gs://documind-ai-YOUR-ID-uploads/acme/hr_policy_2026.md - waiting for the worker (up to 5 min)
-    >> event doc_key chunks reused embedded retired effective_from
-    >> ingest_reactivated	acme_497809ffbaa603c4...	283	283	0	283
-    >> the gate, scoped to this document, on a candidate: make eval-live PROJECT=documind-ai-YOUR-ID SOURCE=hr_policy_2026.md API=<candidate url>
-    A confirmed employee at grade E3 or above serves a notice period of 60 days [1].
-      [1] hr_policy_2026.md  version 497809ffbaa6  chunk 1  'serves a notice period of 60 days'
-      cache_hit none | backend vertex | answerable True
-      store vector | vector_chunks 20 | pool 20 | rerank_fallback 0 | policy_fallback 0
-      kept in ~/ask131-restored
-    """
-    # Preserve the kit CLI's arguments, conditions and observation order.
-    session.shell(COMMANDS_03)
-
 def demonstrate(session):
     """Run this section in source order, saving each function's outcome.
 
@@ -220,7 +191,6 @@ def demonstrate(session):
     run_steps(session, [
         ('source_15', step_01_the_trace),
         ('source_17', step_02_the_versions_view_and_the_two_probes),
-        ('source_20', step_03_put_version_1_back),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

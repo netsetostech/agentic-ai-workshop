@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_7.2_Graph_Paths_WIX.html`, reviewed at blob `1a20d1bb8fa54cb05200972a3aeeeb45d4c3e58d`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_7.2_Graph_Paths_WIX.html`, reviewed at blob `46eda3522cc7af03de4e438c5717720fff223156`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 7.1 built the handbook's graph. A walk through it has to start somewhere: a seed, the node the question is about. The kit can keep the same graph in two stores, and they find the seed in different ways. Firestore looks for a stored name inside the question, so "Who signs off on a big purchase?" finds nothing: the handbook says Purchase approval and names the CFO, and the question says neither. Spanner compares the question's meaning with every node's name, so it can start from Purchase approval, and one hop along an edge reaches the CFO.
 

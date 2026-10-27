@@ -1,0 +1,106 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>NUMBER</code>, <code>REGION</code>, <code>API</code> and <code>tok</code> from the setup block, and acme pinned to the kit's own index with the setup section's <code>make tenant-backend</code> line. On the lane: the candidate lesson 11.1's dispatch left, tagged <code>candidate</code> and taking no traffic. If you removed its tag, or never dispatched, the box in step 5 makes one from your shell. Step 3 reads lesson 11.1's run with <code>gh</code>. Step 5's gate asks the candidate every golden row: about ten minutes and about Rs %%RS_GATE%%. Nothing on this page moves traffic.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The console</span><h3>The candidate, as the console and lesson 11.1's run show it</h3><p>The revision with no traffic, its tag, its image and its GIT_SHA; then the lines of the dispatch that named it, checked it and gated it.</p></div></div>
+
+<h4>Definition</h4>
+<p>A revision is Cloud Run's unit of release. <code>documind-api</code> keeps every revision it has made, and its traffic table says which of them take requests: the serving one at 100%, and the candidate at 0% with the tag <code>candidate</code>, which gives it a URL of its own. Lesson 11.1's dispatch made the candidate as <code>sa-documind-cicd</code>. <code>make release-candidate</code> put the image <code>api:</code> and the commit on a new revision and set its <code>GIT_SHA</code> to the same commit, then <code>make record-candidate</code> wrote the revision's name to <code>.candidate-revision</code>, on GitHub's runner. The job checked that the tag URL answered as that commit and ran the live gate on it. When the gate was green, <code>promote</code> waited for its reviewer, and you said no.</p>
+
+<h4>Do it: the candidate in the console</h4>
+<p>Open Cloud Run in the console, then <code>documind-api</code>, then its Revisions tab. Two revisions matter here: the one serving 100% of traffic, and the newest, at 0% with the tag <code>candidate</code>. Select the candidate. Its container shows the image, <code>asia-south1-docker.pkg.dev/documind-ai-YOUR-ID/documind/api:</code> followed by a commit, and its variables include <code>GIT_SHA</code> with the same commit. The console shows what Cloud Run holds now. It cannot show that a gate ever judged this revision, because nothing on Cloud Run records that.</p>
+
+<h4>Do it: the dispatch's own lines</h4>
+<p>If your candidate came from lesson 11.1's dispatch, read what its <code>release-candidate</code> job printed. The cell finds the run and the job, then keeps the lines that name the revision, compare its <code>/version</code> with the commit, and give the live gate's verdict, each after the name of the step that printed it.</p>
+%%CELL_CI%%
+%%OUT_CI%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Three steps of one job held the whole binding. <em>A candidate revision, no traffic</em> recorded the revision's name, and the job handed that name to <code>promote</code> as an output. <em>The candidate answers as the tag</em> compared <code>/version</code>'s <code>git_sha</code> with the commit being released, before ten minutes of rows were spent. <em>The live gate, on the candidate</em> ran <code>make eval-live</code> on the tag URL, and only its green let <code>promote</code> start: CI gates by job dependency. None of it outlived the run. The name stayed in a job output and the verdict in a log, and no file anywhere holds the digest the gate judged or a hash of its answers. Your checkout knows none of it. Step 5 judges the same revision from your shell and keeps the record.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit</span><h3>make gate and make promote-gated, line by line</h3><p>The two targets, the checks before any row is asked, the record, and gate-check's files-then-lane order; then the kit's own tests, and every refusal as release.py prints it.</p></div></div>
+
+<h4>Definition</h4>
+<p>Both targets are in <code>mk/release.mk</code>, and each is a subcommand of <code>commands/release.py</code>, standard library only, which runs the same without make. <code>gate</code> writes nothing to Google Cloud. It reads the service and the revision, mints two tokens, calls <code>/version</code> once, and hands the rows to <code>evals/run_eval.py</code>, as <code>make eval-live</code> does, with a report path that names the revision. <code>promote-gated</code> is two recipe lines: <code>gate-check</code>, then the same <code>make promote</code> as before. make runs a target's lines in order and stops at the first that fails, so a refusal means <code>make promote</code> never starts. Plain <code>make promote</code> is unchanged and reads no record, so the candidates of Modules 4 to 12 can still be promoted by hand.</p>
+
+<h4>The code</h4>
+@@mk_gate@@
+<p>The constants say what the gate binds: the service, the two accounts whose tokens it mints, the record's format, the rule files, %%MAXH%% hours, %%SKEW_MIN_W%% minutes of clock skew, and what a revision's name and a digest look like.</p>
+@@rel_consts@@
+
+<h4>Before any row: the revision, its facts, its build</h4>
+<p><code>revision_facts()</code> reads one revision with <code>gcloud run revisions describe</code>: the service it belongs to, the digest Cloud Run resolved its image to when it made the revision, its <code>GIT_SHA</code>, and whether it is Ready. The revision names its image by that digest only. The tag the deploy gave, <code>api:COMMIT</code>, stays in the service's <code>spec.template</code>, and the template made one revision: the newest, <code>status.latestCreatedRevisionName</code>. So <code>deployed_image()</code> reads the tag from the template while the candidate is that revision, and reads nothing once a later update has made another. <code>unjudgeable()</code> turns those facts into refusals. The last two are about F43. When the tag and <code>GIT_SHA</code> disagree, the revision is not the build its <code>/version</code> claims to be. When the tag cannot be read, the gate cannot tell, so it refuses as well.</p>
+@@rel_facts@@
+<p><code>cmd_gate()</code>'s first half is all refusals. One describe of the service gives it the traffic table and the template. It stops if the candidate tag routes to any revision but the one the file names, because the tag URL would then answer from a revision <code>make promote</code> would not move traffic to. It mints the member's token for the service's canonical URL, the one audience the API accepts (step 5), and stops if the tag URL answers as another <code>GIT_SHA</code>. Every check runs before the first of %%N_ROWS%% answers is paid for.</p>
+@@rel_gate_a@@
+
+<h4>The rows, then the record</h4>
+<p>From here an earlier verdict must not stand for this gate's, so the old record and this revision's old report are deleted before the first row is asked. <code>live_gate()</code> runs <code>run_eval.py</code> against the tag URL with both tokens, its output streaming to your terminal. Afterwards the gate reads the tag again: if it moved while the rows were asked, the answers may have come from two revisions, and no record is written. Otherwise the verdict is <code>pass</code> only if <code>run_eval.py</code> exited 0 and nothing in its report blocks, which <code>report_blocked()</code> reads by <code>run_eval.py</code>'s own rules. The record is written beside itself and renamed into place, so it is whole or absent.</p>
+@@rel_gate_b@@
+@@rel_blocked@@
+
+<h4>gate-check: the files first, then the lane</h4>
+<p><code>offline_reasons()</code> reads only files: the record, <code>.candidate-revision</code>, the report and the %%N_RULES_W%% rule files. It collects every reason it finds instead of stopping at the first, so one refusal can name three problems. Only when the files agree does <code>live_reasons()</code> read the lane, with the same two describe calls the gate made: the tag, then the revision's digest, <code>GIT_SHA</code> and readiness against the record's.</p>
+@@rel_offline@@
+@@rel_live@@
+
+<h4>Do it: the kit's own tests</h4>
+<p><code>commands/tests/test_release_gate.py</code> plays every case on this page against a stand-in <code>gcloud</code> that keeps one lane's traffic table and revisions in a file. Where a POSIX <code>sh</code> is installed, as in Cloud Shell, it also runs the recipes of <code>record-candidate</code>, <code>promote-gated</code>, <code>promote</code> and <code>rollback</code> as make hands them to the shell, and shows that only the gated revision is promoted. It calls nothing in Google Cloud and costs nothing; it starts a process for every stand-in call, so give it a minute or two.</p>
+%%CELL_TESTS%%
+%%OUT_TESTS%%
+
+<h4>Read it: a gate on the stand-in lane</h4>
+<p>The same stand-in, driven from this page's build: <code>release.py gate</code> on <code>%%CAND%%</code>, with a stand-in for <code>run_eval.py</code> that writes the report a green run writes. The candidate's <code>GIT_SHA</code> is <code>COMMIT</code>, the serving revision's <code>PREVIOUS</code>, a newer candidate's <code>NEWER</code>.</p>
+%%OUT_SGATE%%
+<p>The record it wrote, whole:</p>
+%%OUT_SRECORD%%
+<p>A red gate writes a record too, and says what blocked it:</p>
+%%OUT_SRED%%
+<p>And <code>gate-check</code> on the green record, two hours after the gate:</p>
+%%OUT_SCHECK%%
+
+<h4>Every refusal, as release.py prints it</h4>
+<p><code>make gate</code> stops with exit 2. Before any row is asked, the stop leaves an earlier record as it was. Once the rows have started, the earlier record is already gone, and the stopped gate writes none. The two <code>ERROR</code> lines inside the messages are the stand-in gcloud's words; your gcloud's may read differently.</p>
+%%STOPS_TABLE%%
+<p><code>gate-check</code> exits 1 on any reason, and prints every one under the same first line, <code>REFUSED: the gate record evals/reports/gate.json does not let make promote move traffic:</code>.</p>
+%%CHECKS_TABLE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every line in both tables came from <code>commands/release.py</code> itself, run on this page's build against the kit test's stand-in lane: nothing is paraphrased. Two things to notice. The gate refuses before it spends anything: the tag, the revision's facts, its build and both tokens are checked before the first answer is paid for. And <code>gate-check</code> never reads the lane while a file disagrees, so a stale, red or renamed record is refused even with no network at all. Only the refusals marked as reading the lane needed Cloud Run, and each of them is something no file in your checkout could show.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; Your lane</span><h3>On your lane: the candidate named, the token's audience, and the gate</h3><p>The candidate's name brought into this checkout, two tokens against the tag URL, then make gate on the candidate lesson 11.1 made.</p></div></div>
+
+<h4>Definition</h4>
+<p>Three facts about your lane decide whether the gate can run. First, <code>.candidate-revision</code> must name the candidate. On the dispatch path the name stayed in a job output, so <code>make record-candidate</code> reads the revision Cloud Run made last and writes it here, and the gate's first check refuses if the tag routes anywhere else. Second, the tag URL must answer as the candidate's build. Third, every token must be minted for the service's canonical URL, <code>https://documind-api-NUMBER.asia-south1.run.app</code>, whichever URL is called. The API compares a bearer token's audience with its own <code>SELF_URL</code> on every route that answers a question, through <code>verify_iap</code>, and a token minted for the tag URL fails that check: the first gates on candidates met it as 401 on every row (F42). <code>/version</code> runs no check of its own, so whatever it answers to such a token is Cloud Run's front door alone, and the cell below shows what yours does.</p>
+
+<h4>The code</h4>
+@@mk_record@@
+@@auth_self@@
+@@main_routes@@
+@@mk_f42@@
+<p>The gate's <code>/version</code> call asks twice, because a revision with no traffic has scaled to zero and its first request waits for an instance. A 401 there names F42, and a token taken from the environment is used as it is.</p>
+@@rel_version@@
+
+<h4>Do it: name the candidate</h4>
+<p><code>make record-candidate</code> is the line <code>make release-candidate</code> ends with, run on its own. The cell then prints the traffic table and whether the file and the tag name one revision.</p>
+%%CELL_RECORD%%
+%%OUT_RECORD%%
+
+<h4>Do it: the tag URL and the audience</h4>
+<p>The cell mints two tokens as <code>documind-ui-sa</code>, one for the canonical URL and one for the tag URL, and calls the tag URL twice with each: <code>/version</code>, which checks no token itself, and <code>/v1/sources</code> for acme, which goes through <code>verify_iap</code> and acme's roster but calls no model.</p>
+%%CELL_AUDIENCE%%
+%%OUT_AUDIENCE%%
+<p>The canonical URL's token works on both routes: <code>/version</code> answers as the candidate's commit, with the model and prompt version it runs, and acme's sources come back because <code>documind-ui-sa</code> is on acme's roster. The tag URL's token is refused on <code>/v1/sources</code>. A 401 whose body says <code>invalid bearer token</code> is the API's own check against <code>SELF_URL</code>; an HTML page instead would be Cloud Run's front door refusing first. The same token's line on <code>/version</code> is the front door's answer and nothing else. That is why the gate mints both of its tokens for the canonical URL, and why a <code>/version</code> check alone could not prove a token is right.</p>
+
+<h4>Do it: the gate</h4>
+<p>About ten minutes: every golden row as the member, then the isolation rows again as the outsider. <code>run_eval.py</code>'s own lines stream between the gate's two blocks; lesson 4.3 reads them.</p>
+%%CELL_GATE%%
+%%OUT_GATE%%
+
+<div class="box box-amber"><div class="box-title">If the gate stops before the rows</div>
+<p><code>the candidate tag is on ..., but .candidate-revision names ...</code>: a revision was made after the dispatch's, so the file and the tag disagree. Make one candidate from the commit you mean to release: <code>make release-candidate PROJECT="$PROJECT" REGION="$REGION" GIT_SHA=COMMIT</code>, with the full commit step 3's lines show, puts the image the dispatch built on a new revision, moves the tag to it and records it; then run the gate again. <code>the candidate tag is on no revision</code>: the tag was removed, and the same line puts it back on a new revision. If you never dispatched, lesson 11.1's local path builds the image first. <code>could not mint a token</code>: your account lacks the token-creator role on the two accounts, which <code>make operators</code> grants. <code>answered HTTP 401</code>: a <code>DOCUMIND_ID_TOKEN</code> exported by an earlier lesson is being used as it is; <code>unset DOCUMIND_ID_TOKEN DOCUMIND_OUTSIDER_TOKEN</code> and run the gate again. <code>Cannot find service [documind-api] in region [us-central1]</code>: <code>REGION</code> is not set in this shell, so the Makefile's default stood; run the setup block.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The gate judged one revision by name, and the record now says which: the revision, the digest Cloud Run resolved its image to, the <code>GIT_SHA</code> its <code>/version</code> answered with, the sha256 of the report its rows went into, the verdict and the time. The CI gate in step 3 asked the same rows of the same revision; this one keeps what it found. If your gate was red, the record says so and what blocked it, and <code>make promote-gated</code> will refuse it until a candidate is gated green.</p></div>

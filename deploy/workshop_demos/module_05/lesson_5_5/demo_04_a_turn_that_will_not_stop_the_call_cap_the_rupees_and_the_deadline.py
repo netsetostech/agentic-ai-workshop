@@ -132,7 +132,7 @@ def step_03_your_lane_s_limits(session):
       deadline              100 s; each model call min(30 s, time left / 2), none started with under 5 s left
       tool budgets          retrieve 95 s, calculate_processing_cost 10 s
     documind-agent  https://documind-agent-NUMBER.asia-south1.run.app
-      model calls a task    not on its /health (ADK defaults to 500)
+      model calls a task    12
     """
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_03)

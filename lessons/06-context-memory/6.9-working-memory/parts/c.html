@@ -1,0 +1,59 @@
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the window is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own code and comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Whole turns, newest first.</strong> A turn runs from a person's message to the next, and a call and its result always share one; a result whose call sits in an earlier turn joins the turns between into one. So keeping or dropping whole turns never splits a pair, and no call reaches the model without the result the thread holds for it. Nothing older than a dropped turn is kept, so a call has no hole in its middle.</li>
+<li><strong>The newest turn is never cut.</strong> The question being answered is the one thing a call cannot lose, and Gemini 3 needs the thought signatures of the turn in progress, so the newest turn's model messages and results go as they are. A newest turn bigger than the budget still goes whole: the floor is not part of the budget.</li>
+<li><strong>A line written by code, not a summary.</strong> The line costs no call and states nothing the thread does not hold: which turns left, and the questions asked in them, each with its number, so the model can tell the first question from the first one listed. It rides in a person's message, never in the system prompt, because the questions are the person's words.</li>
+<li><strong>Clearing alone does not cap a call.</strong> langchain's own <code>ClearToolUsesEdit</code>, set to work from the first call and keep the newest three results, still sends %%CLEAR20%% tokens at turn 20 of step 5's thread, against the window's %%W_LAST%%, and it grows by about %%CLEAR_STEP%% tokens a turn from turn 10: it keeps every question, call and answer. Dropping whole turns is what holds a ceiling. (The build ran it on the same calls.)</li>
+<li><strong>A copy, never the record.</strong> <code>windowed()</code> wraps the model and <code>middleware()</code> is <code>create_agent</code>'s <code>wrap_model_call</code>. Neither adds a graph node, so a turn writes the checkpoints it wrote before (lesson 6.6's three and five) and <code>make thread</code> still lists every message. The kit's tests check it for both forms.</li>
+<li><strong>%%BUDGET%% tokens.</strong> The budget is the history line of rag-api's <code>TokenBudget</code> (lesson 3.4), the figure the kit had already named for a conversation's history.</li>
+<li><strong>An estimate, not Gemini's count.</strong> The window counts with langchain-core's <code>count_tokens_approximately</code>, four characters a token and three a message, the counter <code>trim_messages</code> and LangChain's context-editing middleware also default to. Step 6 prints Gemini's own count beside it.</li>
+</ul>
+
+<p>The kit's docstring says what it does not use, and why:</p>
+@@not_used@@
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>3, six questions in the UI</td><td data-label="Costs">six turns: at least twelve chat model calls, sent the whole thread (about %%UI6_IN%% tokens of input by the window's estimate, Rs %%UI6_RS%%), and six rag-api answers</td><td data-label="On your lane">what the six captions say; the log read is free</td></tr>
+<tr><td>4, one call opened up</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>5, make window-check three times</td><td data-label="Costs">nothing leaves your machine; under a minute of your CPU a run</td><td data-label="On your lane">free</td></tr>
+<tr><td>6, LIVE=1</td><td data-label="Costs">about eighty Gemini calls from your machine at twenty turns</td><td data-label="On your lane">the author's run: about Rs 80 before caching, by the kit builder's estimate; <code>TURNS=6</code> for a few rupees</td></tr>
+<tr><td>7, make thread</td><td data-label="Costs">one read-only session on the checkpoint database</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The window is not in the service.</strong> No brain, route or switch reaches <code>context_window.py</code>, and on your lane every brain sends the whole thread on every call, as step 3 measured. A later change would put it in front of the model, behind a switch that defaults to the whole thread.</li>
+<li><strong>Nothing bounds the thread itself.</strong> The checkpoint keeps every message of every conversation, and every version of the list (lesson 6.6). Retention and erasure, and memory that lasts from one conversation to the next, come later too.</li>
+<li><strong>The ADK brain and the Desk are out of reach.</strong> The ADK brain keeps its own sessions, and ADK's own compaction is marked experimental in google-adk %%PIN_ADK%%. The Desk sends its models the turn's masked question, never the thread.</li>
+<li><strong>The ceiling is the estimate's.</strong> Tool declarations and Gemini's own tokenizer are outside the window's count, so a call's real input is above the figure the window holds under its ceiling.</li>
+</ul></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Every call on your lane resends the thread</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>tokens_in</code> climbing row by row, and <code>turn 6 sent N times turn 1's input tokens</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The window writes nothing back</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>question 6 kept as typed: True</code> and <code>all %%OPEN_CALLS%% calls: 0 times</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Earlier results are cleared, the newest kept whole</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>{"cleared": true, ...}</code> in turns 8 and 9, <code>{"citations": ...</code> in turn 10</td></tr>
+<tr><td>4</td><td data-label="Claim">Earlier questions are masked, then cut</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>[card no.]</code> in the line, and <code>%%PREV%% characters of %%Q9_LEN%%</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Every windowed call stays within its ceiling</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>Every call's context was within its ceiling: yes.</code> while the thread grows to %%W20_MSGS%% messages</td></tr>
+<tr><td>6</td><td data-label="Claim">The whole thread passes that ceiling</td><td data-label="The check">step 5, <code>MODE=full</code></td><td data-label="Pass looks like"><code>From turn %%F_FIRST%% on</code>, and <code>%%F_TIMES%% times its ceiling</code> at turn 20</td></tr>
+<tr><td>7</td><td data-label="Claim">A smaller budget, a lower ceiling and less memory</td><td data-label="The check">step 5, <code>HISTORY=500</code></td><td data-label="Pass looks like">every ceiling 1,500 lower, %%H_BF%% turns brought forward at turn 20</td></tr>
+<tr><td>8</td><td data-label="Claim">Gemini takes the window, and its input levels off</td><td data-label="The check">step 6</td><td data-label="Pass looks like">twenty turns of both rows, the windowed <code>in</code> levelling off while the full one climbs, and the totals</td></tr>
+<tr><td>9</td><td data-label="Claim">The checkpoint keeps every message, masked at the door</td><td data-label="The check">step 7</td><td data-label="Pass looks like">six turns, every message, and <code>[card no.]</code> in question 6</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One conversation: step 3's six turns are in the checkpoint tables and the chat service's log, and their rupees on your bill. Nothing else. <code>make window-check</code> and step 4's cell ran on your machine, and step 7 read without writing. If you ran step 6, it billed Gemini in your project and touched no lane service. <code>~/graph-venv</code> has the chat image's pins, and <code>~/lesson69-session.txt</code> holds step 3's session id. Lesson 7.1 starts Module 7: graph evidence built from the source documents.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.9 Budget working memory: windowing, compaction and write rules &middot; v5.0</p><p>Next: Lesson 7.1 Build graph evidence from source documents.</p></div>

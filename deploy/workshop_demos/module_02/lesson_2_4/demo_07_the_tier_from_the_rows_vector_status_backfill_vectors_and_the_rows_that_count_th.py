@@ -42,7 +42,7 @@ def step_01_count_the_tier_plan_its_refill_read_the_ro(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: index: documind-chunks  datapoints: 4xxx  shards: 1  update: STREAM_UPDATE
+    Observe: index: documind-chunks  datapoints: 2xxx  shards: 1  update: STREAM_UPDATE
     endpoint: documind-endpoint  deployed: documind_chunks_v1  synced: 2026-09-2xT1x:xx:xx.xxxxxxZ
     {"event": "backfill_vectors_plan", "index": "projects/NUMBER/locations/asia-south1/indexes/1234567890123456789", "tenant": "acme", "current_chunks": 1xxx, "needs_document_embedding": 0, "invalid_chunks": 0, "embedding_task_type": "RETRIEVAL_DOCUMENT", "note": "Pause uploads/undo/batch writers; keep answer caches off during repair and validation."}
 

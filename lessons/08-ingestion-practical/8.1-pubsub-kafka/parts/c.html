@@ -1,0 +1,128 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>Direct reads: the records the push left, and the answer through the API</h3><p>Firestore read directly with your own credentials, then the API's two doors onto the same records: the ledger it serves and the question it answers.</p></div></div>
+
+<p>The push ended in writes, and two keys find them all without a search, as lesson 1.4 showed. The ledger row is named after the object, <code>sources/%%OBJECT_ID%%</code>, and it names the version's key, <code>doc_key</code>. The cell reads the ledger row, the claim, the version's chunk rows and acme's ledger summary, and holds each generation against the object's:</p>
+
+%%CELL_RECORDS%%
+%%OUT_RECORDS%%
+
+<p>Three generations, one number: the object's, the ledger's and the claim's. That equality is the trace's proof that one notice, delivered and acknowledged, produced every record. The chunk rows are the %%N_CHUNKS_W%% the worker's chunker cuts from the note by its two rules, a chunk for each <code>## </code> section and a preamble for the text above the first heading: %%LOCATORS%%. This page ran the worker's own <code>_chunk()</code> on the note when it was built, and it cut the same %%N_CHUNKS_W%%.</p>
+
+<p>Last, the API's two doors onto the same records. <code>GET /v1/sources</code> is the ledger as the UI's Versions table draws it, asked here as the UI's service account; <code>POST /v1/query</code> asks step 3's question again:</p>
+
+%%CELL_API%%
+%%OUT_API%%
+
+<p>The ledger row is the one the cell above read from Firestore, as the API serves it, with the managed stores that hold a copy. The answer cites the note: its chunk id is <code>acme:</code> followed by the note's SHA-256 and <code>#%%CITE_POS%%</code>, the NG-01 section's position, and <code>stages</code> says the pool came from the kit's own index (<code>vector</code>), because the setup pinned acme there. That citation is the last hop of the trace, and the reason for the first: for DocuMind, an upload has happened from the moment an answer can cite it. The answer left a record of its own, as every answer does: one usage row on <code>documind-api</code>'s log, <code>event</code> <code>query</code>, with its tokens and its cost, which lesson 4.3 reads.</p>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 6 &middot; The burst</span><h3>The burst: %%N_OBJECTS_W%% objects against %%SQUEEZE_W%% instances</h3><p>The worker's ceiling cut from %%MAXI_W%% to %%SQUEEZE_W%%, the kit's corpus uploaded again, and the bus's response read in the request log and in Pub/Sub's own metrics. Then the ceiling put back.</p></div></div>
+
+<p><strong>Why squeeze.</strong> A bus that pushes has to learn how fast its reader can go, and it learns only from the answers. Pub/Sub starts a subscription's push window small, widens it with each success and narrows it with each failure (<a href="%%URL_PUSH%%" target="_blank" rel="noopener">Google's push page</a>). Cloud Run holds a request that finds no free instance in its pending queue and then refuses it with a 429. The subscription counts each refusal as a failed delivery, retries it after the backoff, and charges it against the %%ATTEMPTS%% attempts; the comment in step 4's subscription is the kit's record of a first live load that learned this the hard way. At %%IN_FLIGHT%% in flight, %%N_OBJECTS%% messages are %%ROUNDS_FULL%% rounds of work; at %%SQUEEZE%% they are at least %%ROUNDS_SQ%%, and they have to queue. Squeezing the ceiling makes the reader the bottleneck, so you can watch the bus adapt to it.</p>
+
+<p><strong>Why the corpus.</strong> <code>make ingest-corpus</code> uploads the kit's corpus again: by <code>upload.sh</code>'s rule, %%N_ACME%% objects for acme, %%N_GLOBEX%% for globex and %%N_ZETA%% for zeta, %%N_OBJECTS%% in all. Each upload is a new generation, so each fires a notice, and each notice is pushed until the worker takes it. But the bytes are the ones your lane indexed when it was built, so every claim is already taken: the worker downloads the generation, hashes it, finds the claim and answers 200 <code>duplicate</code>. Nothing is parsed, nothing is embedded and no model is called. The burst costs deliveries and nothing else, as long as that "every" holds, and the first cell checks it before anything moves:</p>
+
+@@upload_rule@@
+
+%%CELL_PRECHECK%%
+%%OUT_PRECHECK%%
+
+<p>The cell applies <code>upload.sh</code>'s rule to your clone, hashes every file it would upload, and compares each hash with the ledger row for that object. A file that differs is a version your lane does not hold as current. The burst would index it, at its usual cost, and if its bytes are a version the ledger retired, it would make that old version current again. Lessons 1.6 and 6.3 put the handbook back at their ends, so on a lane that followed them every file matches. If one does not, stop here and find out why before you go on. A clone checked out on Windows with line-ending conversion, for example, turns every Markdown file into new bytes.</p>
+
+<h4>Squeeze, then upload</h4>
+<p>The ceiling is a setting of the worker's revision: the same <code>--max-instances</code> flag <code>lesson-12.5.sh</code> deploys with. Changing it deploys a new revision with the same image and the same environment. Google recommends a service-level maximum for most uses, which needs no new revision (<a href="%%URL_RUN_MAX%%" target="_blank" rel="noopener">its maximum-instances page</a>); the revision's flag is used here so that the restore at the end puts back exactly what the kit deployed.</p>
+
+%%CELL_SQUEEZE%%
+%%OUT_SQUEEZE%%
+
+<p>Now note the time and upload the corpus. Keep this shell open: the next three cells read <code>BURST_SINCE</code>. If the shell does close, export it again with the time this cell printed.</p>
+
+%%CELL_CORPUS%%
+%%OUT_CORPUS%%
+
+<p><code>upload.sh</code>'s closing lines are older than the kit's path. There is no Eventarc trigger (step 4's notice replaced it), and the pull it suggests would acknowledge, and so delete, whatever the dead-letter subscription holds. Use <code>make dlq</code>, which only looks. If your clone has lesson 7.5's town hall video, the video goes up in place of <code>townhall_2026_q1.md</code>; the count is the same.</p>
+
+<h4>What the worker saw</h4>
+<p>Give it two minutes, then read every request Cloud Run received for the worker since <code>BURST_SINCE</code>, by status and by ten-second slice, with the worker's verdicts for the same window:</p>
+
+%%CELL_BURST_LOG%%
+%%OUT_BURST_LOG%%
+
+<p>Three things to check in your output. First, every object was taken in the end: the 200s add up to %%N_OBJECTS%%, and the verdicts say <code>ingest_duplicate</code> as many times. One more of each is a redelivery, which at-least-once allows and the claim makes harmless. Second, each 429, if you have any, is a delivery Cloud Run refused before the worker saw it, so it has no worker line beside it. The retry policy holds that message back for at least the %%MIN_BO%%-second minimum before delivering it again (best effort, in Google's words), which is why the 200s spread into later slices. Third, the duplicates are invisible to the kit's lifecycle metric, which counts only %%N_COUNTED_W%% of the worker's verdicts:</p>
+
+@@events_metric@@
+
+<p>The metric counts %%COUNTED%%. <code>ingest_duplicate</code> is not among them, so a burst of %%N_OBJECTS%% deliveries moves <code>documind/ingest_events</code> by nothing at all. To count deliveries you need the request log, as above, or Pub/Sub's own metrics, next.</p>
+
+<h4>What Pub/Sub saw</h4>
+<p>Pub/Sub keeps its own counts for each subscription: the backlog (messages not yet acknowledged), the age of the oldest of them, and every push it made, by how the push ended. Cloud Run counts its instances the same way. These metrics are sampled every %%SAMPLE_S%% seconds and can take up to %%VISIBLE_S%% seconds to appear (<a href="%%URL_METRICS%%" target="_blank" rel="noopener">Google's list of metrics</a>), so run this cell at least three minutes after the upload:</p>
+
+%%CELL_BURST_METRICS%%
+%%OUT_BURST_METRICS%%
+
+<p>The backlog column is the queue's version of what Kafka calls consumer lag: messages published and not yet dealt with. The age of the oldest one is the number an operator pages on, because it grows when the reader is stuck however small the backlog is. The push columns are Pub/Sub's side of the request log: <code>ack</code> for every 2xx, <code>4xx</code> for every 429 that Cloud Run sent back. The instance column should stay at %%SQUEEZE%% or under, though Google notes that a spike can take a service past its ceiling for a brief period, so one minute at a little over %%SQUEEZE%% is not a failure of the squeeze. The last two lines are the proof that the burst did no harm: nothing was forwarded to <code>%%DLQ_TOPIC%%</code>, and <code>%%DLQ_SUB%%</code> holds nothing, because no message came near %%ATTEMPTS%% refusals.</p>
+
+<p>Notice what the kit itself would have told you about this burst: nothing, and rightly. It has two alerts on this path. One watches <code>%%DLQ_SUB%%</code>. The other, since 13 October 2026, watches <code>%%SUB%%</code>'s oldest unacknowledged message and pages when it stays over %%BACKLOG_MIN%% minutes for %%BACKLOG_FOR_MIN%% minutes, so a worker stuck at its ceiling, or down, shows up there about half an hour in, rather than when messages start reaching the dead-letter topic after their twelfth refusal, about an hour after the first by lesson 1.5's clock. A burst that clears in a few minutes, like this one, pages neither. Lesson 8.4 sets that threshold against the slowest turn one document can honestly take.</p>
+
+<h4>Put the ceiling back</h4>
+
+%%CELL_RESTORE%%
+%%OUT_RESTORE%%
+
+<p>The revision is back at %%MAXI%%, the value <code>lesson-12.5.sh</code> holds. The next <code>make deploy-services</code> would write it again in any case, because the script, not the revision, is the source. <code>make dlq</code> looks at the dead-letter subscription without acknowledging anything, and an empty list is the result you want.</p>
+
+<p><strong>The same burst on Kafka.</strong> Five consumers in one group, reading a topic of at least five partitions, would each pull at their own pace. Nothing would be refused and nothing would count against a ceiling of attempts; the backlog would show as lag that rises and falls. That is the real difference between push and pull. On a pushing bus a full reader refuses, and each refusal spends a budget that ends in the dead-letter topic. On a pulling bus a full reader simply reads later, until the records outlive their retention.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 6 &middot; Kafka</span><h3>Pub/Sub mapped to Kafka: thirteen rows, and when Kafka would be the better bus</h3><p>Every setting this page has read, set beside Kafka's nearest concept with the gap between them; then the kit's reasons for its choice, and the point where they stop holding.</p></div></div>
+
+<p>Each row starts from what your lane does, as steps 4 to 7 read it, and names Kafka's nearest concept. Kafka's side is its general model and its documented defaults. Pub/Sub's side is the kit's Terraform and Google's documentation, read on %%READ_ON%% and linked under the table.</p>
+
+%%KAFKA_TABLE%%
+
+<p>Google's pages behind the Pub/Sub column: %%SOURCES%%.</p>
+
+<h4>Why the kit's choice holds</h4>
+<p>Read the last column for what the kit would lose by moving, and almost every gap turns out to be covered by something outside the bus. Duplicates are covered by the claim on the content hash, and order by the generation guard, which acknowledges a late notice as stale (both in step 4). Replay is covered by the versioned bucket, which the nightly walk, and <code>make restore</code>, replay from by rewriting an object onto itself:</p>
+@@rewrite@@
+<p>That is the deepest point of the mapping. On Kafka the log is the record of what happened, and replay means moving an offset back along it. In the kit the bucket is the record: every generation of every object, kept by versioning. The bus is only the doorbell, and a doorbell that forgets is fine when the house keeps the parcels.</p>
+
+<h4>When Kafka would be the better bus</h4>
+<ul>
+<li><strong>A second reader that needs the history.</strong> An audit consumer, or a pipeline that re-embeds the corpus with a new model, wants every event from the beginning. On Kafka that is a new consumer group set to start from the earliest retained record. On Pub/Sub a new subscription receives only messages published after it exists, so the kit would rewrite every object, or run the walk, to make the events again.</li>
+<li><strong>Order per key.</strong> Kafka keeps a partition's records in order, and a key always maps to the same partition, so a consumer that retries a record before it moves on keeps the order. Pub/Sub orders only with ordering keys, which the publisher (here Cloud Storage) would have to set on every notice; a push subscription then holds one outstanding message per key.</li>
+<li><strong>The events as the record.</strong> If the events themselves must be kept for longer than %%RET_MAX%% days, Pub/Sub's longest retention, or for good, then a log is the store, and on Kafka retention is one topic setting.</li>
+<li><strong>Backpressure without a budget.</strong> Step 7's burst: a pulling reader that falls behind lags, while a pushed one refuses and spends attempts. A worker whose documents take minutes each, on a corpus of millions (lesson 8.3's arithmetic), lives better with lag than with a countdown to the dead-letter topic.</li>
+<li><strong>The stream itself as the work.</strong> Joins, windows and running totals over the events are what Kafka Streams is built for, reading the same log; a Pub/Sub subscription hands each message to its reader once and then forgets it.</li>
+</ul>
+<p>Before any of those, look at what Pub/Sub can do without Kafka. Topic retention (up to %%RET_MAX%% days) with seek gives replay. A pull subscriber reads at its own pace, and a pull subscription can have exactly-once delivery. Ordering keys give per-key order. Each is one setting in <code>eventarc.tf</code> and one change in the worker. Google Cloud also runs Kafka for you, as Managed Service for Apache Kafka: that takes the brokers off your on-call rota, but not the consumer code, the retry topics or the dead-letter topic, which a subscription gives the kit for nothing. For this lane the threshold is plain. While the bucket is the record and one worker is the only reader, the doorbell is enough; the day a second team needs to replay the events at its own pace, the log has earned its brokers.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 7 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eight checks, each one step above, each with what a pass looks like on your lane; then the one command that puts the note away.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">One upload, one push</td><td data-label="The check">the REST trace, step 5</td><td data-label="Pass looks like">one POST answered 200, and <code>ingest_ok</code>'s generation equal to the object's</td></tr>
+<tr><td>2</td><td data-label="Claim">Every record names the same version</td><td data-label="The check">the Firestore read, step 6</td><td data-label="Pass looks like">the ledger's and the claim's generation equal to the object's; %%N_CHUNKS%% chunk rows, all current: %%LOCATORS%%</td></tr>
+<tr><td>3</td><td data-label="Claim">The note can be cited</td><td data-label="The check">the Chat page (step 3) and the API read (step 6)</td><td data-label="Pass looks like">gate 3 and the security desk, cited from <code>%%NOTE_NAME%%</code> as <code>acme:...#%%CITE_POS%%</code>, from the <code>vector</code> backend</td></tr>
+<tr><td>4</td><td data-label="Claim">%%N_DECLARED_WC%% settings declared, %%N_DEFAULTED_W%% left to Google</td><td data-label="The check">the Pub/Sub read, step 5</td><td data-label="Pass looks like">push, %%ACK%% s, %%MIN_BO%% s to %%MAX_BO%% s, %%ATTEMPTS%% attempts from <code>eventarc.tf</code>; %%RET_S%% s retention and %%EXP_S%% s expiration from Google; no retention on the topic</td></tr>
+<tr><td>5</td><td data-label="Claim">The burst cost deliveries only</td><td data-label="The check">the pre-check and the verdicts, step 7</td><td data-label="Pass looks like">%%N_OBJECTS%% of %%N_OBJECTS%% files match the ledger; <code>ingest_duplicate %%N_OBJECTS%%</code> and no other verdict</td></tr>
+<tr><td>6</td><td data-label="Claim">The squeeze held, and refusals were delivered again</td><td data-label="The check">the request log and the metrics, step 7</td><td data-label="Pass looks like">the 200s add up to %%N_OBJECTS%%; any 429s sit in earlier slices than the 200s that followed them; instances at %%SQUEEZE%% or briefly just over</td></tr>
+<tr><td>7</td><td data-label="Claim">Nothing was dead-lettered</td><td data-label="The check">the metrics and <code>make dlq</code>, step 7</td><td data-label="Pass looks like">forwarded 0; <code>%%DLQ_SUB%%</code> at 0; an empty listing</td></tr>
+<tr><td>8</td><td data-label="Claim">The ceiling is the kit's again</td><td data-label="The check">the restore, step 7</td><td data-label="Pass looks like"><code>maxScale: '%%MAXI%%'</code> on the latest ready revision</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>When the checks are done, withdraw the note. <code>make retire</code> flags its rows as retired, with an <code>expire_at</code> %%RETENTION_DAYS%% days out, marks its ledger row <code>withdrawn</code>, removes it from the managed stores, takes its ids out of the Vector Search index (since 13 October 2026) and moves acme's fingerprint. The object stays in the bucket, and <code>make restore</code> would bring it back (lesson 1.7):</p>
+
+%%CELL_RETIRE%%
+%%OUT_RETIRE%%
+
+<p>Then put acme's pin back with the setup section's second window.</p>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One note, <code>%%OBJECT%%</code>, was indexed and then withdrawn: its %%N_CHUNKS_W%% rows are retired and expire in %%RETENTION_DAYS%% days, its ledger row says <code>withdrawn</code>, and the object stays. The %%N_OBJECTS_W%% corpus objects are each one generation newer, with the same bytes: the ledger still names their older generations, so the next walk (<code>make reconcile</code>) plans a <code>touch</code> for each, which is not drift, and with <code>APPLY=1</code> records the new generations. <code>documind-ingest</code> has two more revisions, the last at %%MAXI%% instances as before. acme's pin is back on its managed store. Lesson 8.2 changes the chunker itself, and re-embeds and reconciles what that change touches.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 8 Ingestion practical &middot; Lesson 8.1 Run the ingest events through Pub/Sub, mapped to Kafka &middot; v5.0</p><p>Next: Lesson 8.2 %%NEXT_TITLE%%.</p></div>

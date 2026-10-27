@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_9.3_VLLM_GKE_WIX.html`, reviewed at blob `383d76df919ed8e9e3c09d023f05584889c7ce6d`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_9.3_VLLM_GKE_WIX.html`, reviewed at blob `c1c3a8488e65d2434527d5959991d2ca5a30bf91`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 9.2 served the small model with Ollama. The kit holds two more ways to serve it, both optional, and no lesson deploys either. One is vLLM, an engine built to answer many requests at once, on the same Cloud Run L4. The other runs vLLM on GKE Autopilot: a pod that stays up all month, billed every hour, and the only self-serve L4 in Mumbai.
 
@@ -248,7 +248,7 @@ Each point is checked in the kit's code, and the build asserts it, so this box c
 
 - The docs lag the code. `gke/README.md` still lists "no VPC attachment", though `gke.tf` attaches `documind-vpc`. It also counts the $0.10 fee as due after the free-tier credit, which pays it for one Autopilot cluster.
 
-- `UNOWNED.md` still calls `gke.tf` Autopilot, and still says the manifest pins `vllm/vllm-openai:v0.28.0`.
+- The row in `UNOWNED.md` that called `gke.tf` Autopilot and said the manifest pins `vllm/vllm-openai:v0.28.0` is gone since 13 October 2026: `INDEX.md` names this lesson for `gke/` instead.
 
 ### Verify it yourself: the checklist
 

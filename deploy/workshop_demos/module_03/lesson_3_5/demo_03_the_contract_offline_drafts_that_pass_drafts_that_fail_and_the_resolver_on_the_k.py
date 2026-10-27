@@ -1,9 +1,9 @@
 """Lesson 3.5: The contract offline: drafts that pass, drafts that fail, and the resolver on the kit's chunks
 
-Do it: six drafts, one resolution, two refusals
+Do it: six drafts, two resolutions, two refusals
 
 Run order inside this file:
-1. Do it: six drafts, one resolution, two refusals (source window 12)
+1. Do it: six drafts, two resolutions, two refusals (source window 13)
 
 Prerequisites: setup_prepare.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -24,10 +24,10 @@ REPEAT = False
 RETRY_FAILED_STEP = False
 
 
-def step_01_six_drafts_one_resolution_two_refusals(session):
-    """Run Do it: six drafts, one resolution, two refusals at this checkpoint.
+def step_01_six_drafts_two_resolutions_two_refusals(session):
+    """Run Do it: six drafts, two resolutions, two refusals at this checkpoint.
 
-    Do it: six drafts, one resolution, two refusals
+    Do it: six drafts, two resolutions, two refusals
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
     Operations: bash — run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: nothing leaves the machine).
@@ -39,9 +39,8 @@ def step_01_six_drafts_one_resolution_two_refusals(session):
        acme:hr_policy_2026#NP-03      page 1 score 0.0 kind text quote 'NP-03 — Notice period A confirmed employee a'
        acme:hr_policy_2026#PB-02      page 1 score 0.0 kind text quote 'PB-02 — Probation New joiners serve six mont'
     RAGAnswer: {"answer": "A confirmed employee in grade E3 serves the notice period in NP-03 [1]; probation is different [2].", "citations": [{" ...
-    refused (source 0, [Source N] is 1-based): citations.0.source: Input should be greater than or equal to 1
-    refused (confidence outside high|medium|low): confidence: Input should be 'high', 'medium' or 'low'
-    refused (a quote over the draft's lim
+    source 1 listed twice, [2] only in the prose: 2 citations, [('NP-03', 'NP-03 — Notice period A confirmed em'), ('PB-02', 'PB-02 — Probation\\nNew joiners serve ')]
+    refused (source 0, [Source N] is 1-based): citations.0.source: Input should be g
     """
     import ast, sys, json
     sys.path[:0] = [".", "services/rag-api"]
@@ -62,6 +61,9 @@ def step_01_six_drafts_one_resolution_two_refusals(session):
     for c in ans.citations:
         print(f"   {c.chunk_id:30} page {c.page} score {c.score} kind {c.kind} quote {c.quote[:44]!r}")
     print("RAGAnswer:", json.dumps(ans.model_dump(), ensure_ascii=False)[:130], "...")
+    both = resolve(ModelDraft.model_validate({**good, "answer": "A confirmed E3 serves NP-03's notice period; probation is different [1, 2].",
+                                              "citations": [good["citations"][0], {"source": 1, "quote": "the same chunk, a second time"}]}), packed)
+    print("source 1 listed twice, [2] only in the prose:", len(both.citations), "citations,", [(c.chunk_id.rsplit("#", 1)[1], c.quote[:36]) for c in both.citations])
     for bad, why in (({**good, "citations": [{"source": 0, "quote": "x"}]}, "source 0, [Source N] is 1-based"),
                      ({**good, "confidence": "certain"}, "confidence outside high|medium|low"),
                      ({**good, "citations": [{"source": 1, "quote": "w " * 120}]}, "a quote over the draft's limit")):
@@ -82,7 +84,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_12', step_01_six_drafts_one_resolution_two_refusals),
+        ('source_13', step_01_six_drafts_two_resolutions_two_refusals),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

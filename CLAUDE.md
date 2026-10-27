@@ -5,7 +5,7 @@ Guidance for Claude working in this repository.
 ## What this repo is
 
 The private authoring repository of the Agents Workshop, the v5 edition of Netsetos' GenAI on GCP course: Basics and
-Modules 0-12, 95 lessons (the Cohort 2 structure), one main page per lesson, every lesson verified against the DocuMind
+Modules 0-12, 96 lessons (the Cohort 2 structure), one main page per lesson, every lesson verified against the DocuMind
 kit in `deploy/`. Audience: Indian production engineers shipping AI on Google Cloud. The pages go to Wix (netsetos.com).
 The kit is published to the public `netsetos/agents_workshop_learner`, and learners clone it to `~/deploy_module_rag`.
 

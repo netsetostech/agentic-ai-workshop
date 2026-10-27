@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_5.3_MCP_Deploy_WIX.html`, reviewed at blob `84a7e098461d32a587731e9d8ffc358d0dd77573`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_5.3_MCP_Deploy_WIX.html`, reviewed at blob `b31eaecfb0c4d3b1fcb106f6f3bdfa471a08a5dc`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 5.2 ran the kit's MCP server on your machine. This lesson puts it behind Cloud Run and checks who gets through. Three doors stand in front of a tenant's documents. Cloud Run lets in only the accounts bound as invokers. The server accepts only a token minted for its own address, with an email in it. The roster decides which tenant's documents that email may read. Behind the doors, the server fetches from rag-api as its own account, which every golden roster lists. You read the door as the kit writes it down, deploy it with the kit's own target, and run the module's gate. Then you call once at each door, and read the two logs that show who asked and who was served.
 

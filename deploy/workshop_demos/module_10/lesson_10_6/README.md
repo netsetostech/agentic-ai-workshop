@@ -76,7 +76,7 @@ documind-agent, as commands/lesson-8.4.sh deploys it:
   documind-agent-sa may call documind-mcp: True
   its project roles: aiplatform.user, logging.logWriter, cloudtrace.agent
   the rosters it is on: acme
-  agent.py imports: __future__, google, logging, os, starlette, urllib, uvicorn
+  agent.py imports: __future__, chain, google, logging, os, pins, starlette, urllib, uvicorn
   the image copies: services/agent/requirements.txt, services/agent/
 ```
 
@@ -181,6 +181,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_10.6_A2A_Peer_WIX.html`. All 19 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `6f13d04435a34279510124166f441b32d6337022`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_10.6_A2A_Peer_WIX.html`. All 19 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `198a39c4324f3bc579cba2d462e705ee3292516e`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

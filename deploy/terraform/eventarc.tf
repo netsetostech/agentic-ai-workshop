@@ -79,6 +79,12 @@ resource "google_pubsub_subscription" "ingest_push" {
   }
   ack_deadline_seconds = 600
   depends_on           = [google_service_account_iam_member.pubsub_mints_ingest_token]
+  # Never expires (13 October 2026). Left to its default, Pub/Sub deletes a subscription after 31 days without
+  # subscriber activity, and a lane with no upload for a month would lose this one in silence: the next upload
+  # would publish to a topic nobody reads. An empty ttl is "never", as gchat.tf sets on its own push subscription.
+  expiration_policy {
+    ttl = ""
+  }
 }
 
 resource "google_pubsub_subscription_iam_member" "dlq_subscriber" {
@@ -91,4 +97,8 @@ resource "google_pubsub_subscription_iam_member" "dlq_subscriber" {
 resource "google_pubsub_subscription" "ingest_dlq_sub" {
   name  = "ingest-dlq-sub"
   topic = google_pubsub_topic.ingest_dlq.name
+  # Never expires (13 October 2026), as ingest_push: a quiet lane's dead letters must still have a reader to land on.
+  expiration_policy {
+    ttl = ""
+  }
 }

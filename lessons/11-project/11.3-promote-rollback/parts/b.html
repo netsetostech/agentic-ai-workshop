@@ -1,0 +1,99 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code> and <code>API</code> from the setup block, and acme pinned to the kit's own index with the setup section's <code>make tenant-backend</code> line. On the lane and in this checkout, lesson 11.2's state: its candidate tagged <code>candidate</code> with no traffic, <code>.candidate-revision</code> naming it, and its green record in <code>evals/reports/gate.json</code>, made within the last 24 hours (if it is older, run <code>make gate</code> again first). This lesson moves traffic four times and breaks your API on purpose for a few minutes, between step 6's forced promote and its rollback: run it on your own lane, with nobody else using it. The two gates ask every golden row, about ten minutes each; the repair's costs about Rs %%RS_GATE%%, the mistyped one's nothing in model tokens.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The console</span><h3>The traffic table, the template and the UI, as the console shows them</h3><p>Where to watch each traffic move, where the template shows itself, and what the UI does on a revision that cannot answer.</p></div></div>
+
+<h4>Definition</h4>
+<p>The console shows the two halves of a service that this lesson pulls apart. The Revisions tab is the traffic table: every revision <code>documind-api</code> has made, each with its share of traffic and any tag. The template has no table of its own. It is what the service would deploy next, and the console's form for a new revision opens filled in with it. The UI is the deployed <code>documind-ui</code>, which asks <code>documind-api</code> as you, through IAP.</p>
+
+<h4>Do it: the traffic table</h4>
+<p>Open Cloud Run in the console, then <code>documind-api</code>, then its Revisions tab, and keep it open beside the shell through step 6. Before step 6, the revision lesson 11.2 judged sits at 0% under the tag <code>candidate</code>. Reload after each command: <code>make promote-gated</code> puts it at 100%; <code>make candidate</code> adds a revision at 0% and moves the tag to it; <code>make promote</code> moves the 100% to that revision; <code>make rollback</code> moves it back. No revision disappears at any point, which is why the rollback can be one call.</p>
+
+<h4>Do it: the template, after the rollback</h4>
+<p>After step 6's rollback, open <em>Edit and deploy new revision</em> on <code>documind-api</code> and look at the container's variables, changing nothing. <code>GENERATOR_MODEL</code> reads <code>%%TYPO%%</code>, although the revision serving 100% runs <code>%%MODEL%%</code>: the form shows the template, not what serves. Then cancel. Deploying from the form as it stands would make one more revision from the template, typo and all, and with the form's defaults send it the traffic.</p>
+
+<h4>Look: the UI on the mistyped revision</h4>
+<p>If you want to see what a user would see, ask the UI one question in the minute between step 6's forced promote and its rollback, then go straight on. The UI's chat streams from <code>/v1/stream</code>, which sends the sources it retrieved before the model's first word, so the sources may appear before the answer fails. The UI then shows one of its stream errors, <em>The answer stream failed</em> or <em>The stream ended without a completed answer</em>, depending on how the broken stream ends. Nothing on this page records it, and nothing depends on it.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The console can show you both halves, but only one at a time, and nothing on it says that they disagree. The Revisions tab looks healthy after the rollback; the form looks like a routine edit. <code>make incident</code> puts the two side by side, and step 6 reads them a third way, from Cloud Run's own API.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit</span><h3>make promote, make rollback and make candidate, and why a mistyped model is a 500</h3><p>The three recipes that move traffic and make revisions, line by line; then the lines of the API that turn a mistyped name into a 500 and still name it on /version.</p></div></div>
+
+<h4>Definition</h4>
+<p>None of this lesson's traffic moves needs new code. <code>make candidate</code>, <code>make promote</code> and <code>make rollback</code> are recipes in the kit's Makefile, unchanged by this lesson, and lesson 11.2's <code>make promote-gated</code> runs <code>make promote</code> as its second line. What makes them a release procedure is the order you run them in, and the two files between them: <code>.candidate-revision</code>, which <code>make candidate</code> writes and <code>make promote</code> reads, and <code>.previous-revision</code>, which <code>make promote</code> writes and <code>make rollback</code> reads.</p>
+
+<h4>The code: a candidate</h4>
+<p><code>make candidate</code> is one <code>gcloud run services update</code> with <code>--no-traffic --tag candidate</code>: a new revision made from the template with the settings it names, taking no traffic and reachable at a URL of its own. Its recipe names %%N_SETTINGS%% settings, and each one it passes takes the Makefile's default unless you set it on the command line (two pass only when <code>RETRIEVAL_BACKEND</code> is set, and <code>GENERATOR_LOCATION</code> is removed when it is not), so on a lane serving the defaults <code>GENERATOR_MODEL=%%TYPO%%</code> changes exactly one thing. Its last two lines record the revision's name for <code>make promote</code> and print the tag URL. The comment above it is the F43 warning: variables merge across revisions.</p>
+@@mk_candidate@@
+
+<h4>The code: a promote and a rollback</h4>
+<p><code>make promote</code> reads the traffic table once and refuses if the candidate tag has moved to a revision the file does not name. Then it writes the revision serving the most traffic into <code>.previous-revision</code>, moves 100% to the candidate by name, and asks <code>/version</code> on the service's URL as <code>documind-ui-sa</code>, so the last thing it prints is what now answers. <code>make rollback</code> is one line: 100% to the name in <code>.previous-revision</code>. Neither recipe reads a gate record, and neither touches the template.</p>
+@@mk_promote@@
+
+<h4>The code: why the mistyped model is a 500, and why /version still names it</h4>
+<p>The API sends every answer through <code>_call_or_fallback()</code>. It catches one error only: a 429 from a routed tier, the model the <code>ROUTING</code> setting picked when that tier's quota runs out, which it answers with the default model instead. Any other error is raised again. With <code>GENERATOR_MODEL=%%TYPO%%</code> the model is the default, Vertex AI answers that it has no such model, and the error rises out of <code>/v1/query</code> as a 500, with no fallback. That is the behaviour you want: a fallback would hide the typo behind a working answer, and the gate would have passed it.</p>
+@@gen_fallback@@
+<p><code>/version</code> answers from the settings, not from the model, so it names the typo and never calls Vertex AI. That is what lets the gate, the smokes and <code>make incident</code> say which model each revision was told to use, even when that model does not exist.</p>
+@@main_version@@
+
+<h4>The code: smoke-all, and why it is red on most lanes</h4>
+<p><code>make smoke-all</code> runs eight smokes in one loop, each with the API's URL and the lane's identity exported, and decides by each smoke's own exit status, which it writes to a file inside the pipeline because <code>/bin/sh</code> has no <code>pipefail</code>. The loop runs eight, the gateway's and the SLM's among them (its comment said seven until 13 October 2026). On a lane without Module 9's <code>documind-gateway</code> and <code>documind-slm</code>, those two fail whatever the API does, so <code>make smoke-all</code> cannot be this lesson's proof.</p>
+@@mk_smoke_all@@
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The kit</span><h3>make smoke-deployed and make incident, line by line</h3><p>The two targets this lesson adds, the smokes they choose, the three checks and the repair line; then the kit's own tests, and the controlled failure as release.py prints it.</p></div></div>
+
+<h4>Definition</h4>
+<p>Both targets are in <code>mk/release.mk</code>, under lesson 11.2's two, and each is a subcommand of <code>commands/release.py</code>, standard library only, which runs the same without make. Neither writes to Google Cloud. <code>smoke-deployed</code> reads which Cloud Run services exist, runs <code>make smoke-all</code>'s own smokes for the ones that do, and appends a line to the smoke log. <code>incident</code> reads the service, its revisions, the gate record, each revision's gate report and the smoke log, prints the timeline, and checks the gated state.</p>
+
+<h4>The code: the two targets</h4>
+@@mk_release@@
+
+<h4>Which smokes run</h4>
+<p><code>SMOKES</code> is <code>make smoke-all</code>'s list in its order, each smoke with the Cloud Run services its recipe calls; <code>smoke-deployed</code> stops if the two lists ever differ. <code>choose_smokes()</code> keeps a smoke only when every service it needs is deployed, with <code>documind-slm</code> looked up in <code>SLM_REGION</code> and every other service in <code>REGION</code>.</p>
+@@rel_smokes@@
+%%SMOKES_TABLE%%
+<p>The answers column is read from the smoke scripts, and <code>build.py</code> checks them on every build: the member's question in four of them, smoke-chat's four brains, and smoke-reindex's two questions. It is what one run asks of a healthy revision; step 9 prices it.</p>
+
+<h4>A smoke run, recorded</h4>
+<p>Before the smokes, <code>cmd_smoke_deployed()</code> reads the traffic table and asks <code>GET /version</code> on the service's own URL as <code>documind-ui-sa</code>. If <code>/version</code> cannot be read, the smokes still run, and the log says why. Without <code>documind-api</code> in <code>REGION</code> there is nothing to smoke, and it stops with exit 2.</p>
+@@rel_sd_a@@
+<p>Then each chosen smoke runs as <code>make smoke-all</code> runs it: through make, with the same exports, its output filtered by the same pattern, and its own exit status recorded. Afterwards it reads the traffic table again: if the traffic moved during the run, the results may come from two revisions, and the log line says so. The line goes to <code>evals/reports/smoke-deployed.jsonl</code>, beside the gate's reports and ignored by git.</p>
+@@rel_sd_b@@
+
+<h4>What judged a revision</h4>
+<p><code>judged()</code> answers from your checkout's records only: the gate record when it names the revision, otherwise the revision's own report beside it, which <code>make gate</code> wrote as <code>gate-</code> and the revision's name. The record holds one revision at a time, so after the repair's gate it names the repair, and the mistyped revision's red verdict is read from its own report. A revision no gate in this checkout judged, such as one <code>make up</code> released, has no verdict at all.</p>
+@@rel_judged@@
+
+<h4>What differs from what serves, and the line that repairs it</h4>
+<p><code>drift()</code> compares the template with the revision serving: the image, then every variable, a secret by the reference it names. <code>repair_steps()</code> turns the differences into make lines. The image and <code>GIT_SHA</code> go back with <code>make release-candidate</code> and the serving tag. A setting <code>make candidate</code> passes goes back with <code>make candidate</code>, which names every setting the serving revision runs at other than the Makefile's default, because it passes them all and one left out would return to its default. Anything else goes back on the template by hand, with no traffic. Then <code>make gate</code> and <code>make promote-gated</code>, always.</p>
+@@rel_drift@@
+
+<h4>The timeline, and the three checks</h4>
+<p><code>cmd_incident()</code> reads the service once, for its traffic and its <code>spec.template</code>, lists the revisions, and loads the gate record, the smoke log and the two files. The template keeps the tag a deploy gave its image, <code>api:COMMIT</code>; a revision holds only the digest Cloud Run resolved that tag to when it made the revision, <code>api@sha256:</code> and 64 hex digits. A tag never equals a digest, so <code>drift()</code> is handed the template's image as the revision the template made last (<code>status.latestCreatedRevisionName</code>) holds it. The timeline is every revision made in the window with its image (its digest, cut to 12 hex digits), <code>GENERATOR_MODEL</code> and verdict, the gate record's finish, and every smoke run, with a traffic move inferred wherever two runs in a row saw different revisions serving. The events are sorted by time, not by the order they were read in.</p>
+@@rel_inc_a@@
+<p>The second half prints the state now and checks the gated state. A red revision serving gets the rollback as its repair: <code>make rollback</code> when <code>.previous-revision</code> names another revision, or a traffic move by hand to a revision the gate judged green when it does not. Otherwise <code>repair_steps()</code> builds the line. When the template holds exactly the recorded candidate, and the gate has not judged that candidate red, it says so first: the candidate may be the change you mean to release, and the line it prints then is the gate and the gated promote.</p>
+@@rel_inc_b@@
+
+<h4>Do it: the kit's own tests</h4>
+<p><code>commands/tests/test_release_repair.py</code> runs this lesson against lesson 11.2's stand-in <code>gcloud</code>, extended with the template, <code>gcloud run services update</code>, the service and revision lists, and a stand-in <code>make</code> for the smokes. Where a POSIX <code>sh</code> is installed, as in Cloud Shell, %%N_RECIPE_TESTS%% of its tests run the Makefile's own recipes: the whole controlled failure from <code>make promote-gated</code> back to the gated state, including that a <code>make release-candidate</code> after the rollback inherits the typo, and <code>make smoke-deployed</code> itself, with its one HTTP request caught by a local proxy. It calls nothing in Google Cloud and costs nothing; it starts a process for every stand-in call, so give it a few minutes.</p>
+%%CELL_TESTS%%
+%%OUT_TESTS%%
+
+<h4>Read it: the controlled failure on the stand-in lane</h4>
+<p>The same stand-in, driven by this page's build through the recipes, as the stepper in step 1 shows it. The mistyped revision is <code>%%BAD%%</code>, lesson 11.2's candidate <code>%%GOOD%%</code> and the repair <code>%%FIX%%</code>. All three were made from the image <code>api:COMMIT</code>, so all three hold the one digest that tag named; the revision <code>make up</code> released, <code>%%OLD%%</code>, holds <code>api:PREVIOUS</code>'s. First the gate on the mistyped revision, red:</p>
+%%OUT_S_GATE%%
+<p>Then <code>make promote-gated</code>, refused from the record, and plain <code>make promote</code>, which moves the traffic anyway:</p>
+%%OUT_S_FORCED%%
+<p>The smokes on the mistyped revision, and <code>make incident</code>, which names the rollback:</p>
+%%OUT_S_RED%%
+<p>After <code>make rollback</code> the smokes are green, and <code>make incident</code> names the two checks still failing, and the repair:</p>
+%%OUT_S_AFTER%%
+<p>And after the repair, gated and promoted, the proof:</p>
+%%OUT_S_PROOF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every line above came from the kit, run on this page's build: the recipes' own echo lines and <code>release.py</code>'s, nothing paraphrased. Three things to notice. <code>make promote-gated</code> refused from the record alone, and <code>make promote</code> never looked at it. The rollback fixed the smokes and not the incident: the template kept <code>%%TYPO%%</code>, and <code>.candidate-revision</code> kept naming the red revision. And the repair line came from <code>make incident</code> itself, computed from what serves, so on a lane whose serving revision runs other settings it names those too.</p></div>

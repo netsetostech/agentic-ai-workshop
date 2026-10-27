@@ -13,10 +13,9 @@ _template = f"projects/{PROJECT}/locations/{LOCATION}/templates/{TEMPLATE}"
 
 
 def _blocked(result) -> bool:
-    """MATCH_FOUND on any filter means the content is not safe to use."""
-    return any(
-        r.match_state == modelarmor_v1.FilterMatchState.MATCH_FOUND
-        for r in result.sanitization_result.filter_results.values())
+    """MATCH_FOUND on any filter means the content is not safe to use. The result says so in filter_match_state;
+    a filter_results value is a oneof wrapper around one filter's result and has no match_state of its own."""
+    return result.sanitization_result.filter_match_state == modelarmor_v1.FilterMatchState.MATCH_FOUND
 
 
 def check_prompt(text: str) -> tuple[bool, str]:

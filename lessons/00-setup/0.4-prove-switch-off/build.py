@@ -7,7 +7,8 @@ default tenant, tenant-smoke, which no roster lists, so the API answers 403 "not
 repairs it. Then /health, /ready and /version by hand; the progress kept between sessions (the Terraform state in the
 state bucket, infrastructure.py's saved inputs, session-restart.sh's rag-resume.env); make off and zero instances,
 read from Cloud Monitoring after the idle window; what still bills with zero instances; a restored session; make down,
-whose terraform destroy is refused while managed.tf's data stores carry prevent_destroy, and project deletion.
+whose terraform destroy removes the six hourly lines and stops on the buckets that hold objects and the data stores that hold documents,
+and project deletion.
 
 Offline, at build time: smoke.py run with no URL prints its own checklist (exit 2) and lane.py roster --dry-run prints the
 roster plan; both are run here, on the kit, with no network. The standing cost is lessons/00-setup/standing_cost.py's, the
@@ -114,7 +115,7 @@ EXCERPTS = {
     "alarm_tf": ("terraform/alerts.tf - instance_count, the gauge the zero read uses", block("terraform/alerts.tf", "# Cost control (10 September 2026): a GPU service left warm.", n=5)),
     "mk_floor": ("Makefile - the floor make up deploys with", block("Makefile", "# the UI's floor: 1 on a session day, 0 after", n=2)),
     "vector_tf": ("terraform/vector.tf - the deployed index: one replica, billed while it serves", block("terraform/vector.tf", "# An index and an endpoint are two things", end="# These two outputs are the whole contract")),
-    "vector_shard": ("terraform/vector.tf - the machine follows the shard size the API chose", block("terraform/vector.tf", "  # Use the ACTUAL shard size returned by the index", n=9)),
+    "vector_shard": ("terraform/vector.tf - the machine follows the index's shard size", block("terraform/vector.tf", "  # Use the ACTUAL shard size returned by the index", n=9)),
     "spanner_tf": ("terraform/spanner.tf - Enterprise, 100 processing units, by the hour", block("terraform/spanner.tf", "# WHAT THIS COSTS.", n=14)),
     "cloudsql_tf": ("terraform/cloudsql.tf - the kit's own price for a db-f1-micro", block("terraform/cloudsql.tf", "# WHAT THIS COSTS.", n=4)),
     "gke_tf": ("terraform/gke.tf - the cluster is regional, and its one lab node", block("terraform/gke.tf", 'resource "google_container_cluster" "autopilot"', n=3)
@@ -125,7 +126,7 @@ EXCERPTS = {
     "sr_check": ("commands/session-restart.sh - rag_check_resumed_api(): the three GETs", block(SR, "rag_check_resumed_api() {", n=9)),
     "mk_down": ("Makefile - make down: the services first, then terraform destroy, then the list", block("Makefile", "# destroy needs the SAME variables plan/apply need", end="# ---------- Teardown")),
     "mk_down_services": ("Makefile - down-services: what terraform destroy does not own", block("Makefile", "# The eight services the deploy scripts create with gcloud run deploy", end="# SLM_REGION is deliberately")),
-    "managed_tf": ("terraform/managed.tf - the guard on the two Vertex AI Search data stores", block("terraform/managed.tf", "  # A parser/identity change or disabling managed_search", n=6)),
+    "managed_tf": ("terraform/managed.tf - the two Vertex AI Search data stores: no guard against the destroy", block("terraform/managed.tf", "  # No prevent_destroy (8 October 2026).", n=7)),
     "mk_managed": ("Makefile - the switch that declares them, and the variable destroy passes", block("Makefile", "MANAGED_SEARCH  ?= true", n=1) + "\n...\n" + block("Makefile", "                -var managed_search=$(MANAGED_SEARCH) \\", n=1)),
 }
 E = {k: v[1] for k, v in EXCERPTS.items()}
@@ -143,7 +144,7 @@ assert E["sr_verify"].rstrip().endswith('git -C "$RAG_SOURCE_REPO" cat-file -e "
 assert E["mk_off"].rstrip().endswith('echo "$$s: min-instances $$f"; done')
 assert E["mk_down"].rstrip().endswith('echo ">>   gcloud projects delete $(PROJECT)"; exit $$rc')
 assert E["mk_down_services"].rstrip().endswith("@rm -f .candidate-revision .previous-revision")
-assert E["managed_tf"].rstrip().endswith("  lifecycle {\n    prevent_destroy = true\n  }")
+assert E["managed_tf"].rstrip().endswith("that destroys them. Do not work around the plan check with state rm.")
 assert E["sr_check"].rstrip().endswith("printf 'PASS: API health, readiness and version requests succeeded.\\n'\n}")
 fill = filler(EXCERPTS, window)
 
@@ -222,10 +223,14 @@ assert "chmod 600 \"$temporary\"" in src[SR] and "nonsecret" in src[SR]
 assert '"$snapshot:deploy/terraform/backend.tf"' in (KIT / "commands/git-source.sh").read_text(encoding="utf-8")   # see RUN_LIST: a learner clone has no deploy/
 assert 'for endpoint in health ready version; do' in E["sr_check"]
 
-# teardown: what make down removes, what it cannot, and why terraform destroy stops
+# teardown: what make down removes, what it cannot, and where terraform destroy stops
 DOWN = MK[MK.index("\ndown: guard-project"):MK.index("# ---------- Teardown")]
 assert "terraform destroy -input=false -auto-approve $(TF_VARS)" in DOWN and "-target" not in DOWN and "state rm" not in DOWN
-assert "data store" not in DOWN.lower() and "vertex ai search" not in DOWN.lower()      # the closing list never names the protected stores
+assert "vertex ai search data stores documind-<tenant> once they hold documents" in DOWN.lower()   # 20 October 2026: a destroy after make ingest-corpus refused both ("Active documents exists for schema")
+# nothing in the Terraform refuses the destroy (8 October 2026: managed.tf's data stores carried prevent_destroy until then)
+assert not [p.name for p in sorted((KIT / "terraform").glob("*.tf")) if re.search(r"^\s*prevent_destroy\s*=", p.read_text(encoding="utf-8"), re.M)]
+# a failed bucket holds back only what it depends on, and storage.tf's buckets name none of the six hourly lines
+assert not re.search(r"google_(vertex_ai|spanner|sql|container|vpc_access)\w*\.", TF["storage.tf"])
 assert re.search(r"^MANAGED_SEARCH  \?= true$", src["Makefile"], re.M) and "-var managed_search=$(MANAGED_SEARCH)" in MK
 assert "TF_VARS = -var project_id=$(PROJECT) -var region=$(REGION) $(TF_EXTRA_VARS)" in src["Makefile"]
 assert 'managed_tenants = var.managed_search ? toset(var.tenants) : toset([])' in TF["managed.tf"]
@@ -233,8 +238,9 @@ assert 'default     = ["acme", "zeta"]' in TF["managed.tf"]
 assert 'delete_protection_state         = "DELETE_PROTECTION_ENABLED"' in TF["firestore.tf"]
 assert TF["storage.tf"].count("force_destroy               = false") == 2
 DOWN_LIST = [m.group(1) for m in re.finditer(r'echo ">>   ([^"]+)"', DOWN)]
-assert len(DOWN_LIST) == 6 and DOWN_LIST[-1] == "gcloud projects delete $(PROJECT)", DOWN_LIST
-assert "protected managed search stores (`prevent_destroy = true`)" in src["README.md"]
+assert len(DOWN_LIST) == 9 and DOWN_LIST[-1] == "gcloud projects delete $(PROJECT)", DOWN_LIST
+assert "buckets that hold objects: uploads, datasets, audit (force_destroy = false, storage.tf)" in DOWN_LIST[1]
+assert not re.search(r"force_destroy\s*=\s*true", TF["storage.tf"])          # step 12: no bucket is emptied by the destroy
 DOWN_SVCS = re.search(r"^DOWN_SERVICES     = ([\w -]+)$", src["Makefile"], re.M).group(1).split()
 assert len(DOWN_SVCS) == 8 and DOWN_SVCS[-1] == "documind-gchat"
 
@@ -271,18 +277,19 @@ LINES = [k for k, *_ in sc.ITEMS]
 assert LINES == ["index", "spanner", "sql", "gkefee", "gkenode", "conn"], LINES
 assert (sc.VS_REPLICAS, sc.SP_EDITION, sc.SP_PU, len(sc.SQL), sc.GKE_NODES, sc.CONN_MIN) == (1, "ENTERPRISE", 100, 2, 1, 2)
 assert "including an existing index whose API-selected size was MEDIUM" in flatc(TF["vector.tf"])
+assert sc.NEW_SHARD == "SHARD_SIZE_SMALL"                            # step 10: a new lane's index is created SMALL
 assert "A deployed index bills while serving" in flatc(TF["vector.tf"]) and "it bills by the hour while it exists" in flatc(TF["spanner.tf"])
 # Cloud SQL's comment gives the kit's rough monthly price; step 10 says so, and the table prices the tier from the list
 assert re.search(r"db-f1-micro, zonal, 10 GB, no backups: roughly \$\d+-\d+ \(Rs [\d,]+-[\d,]+\) a month", flatc(TF["cloudsql.tf"]))
-# the page notes that two of the excerpts promise make down removes them, and that the destroy never starts (step 12)
+# the page notes that two of the excerpts promise make down removes them, as its destroy does (step 12)
 assert "Either way, `make down` removes it." in flatc(TF["spanner.tf"]) and "`make down` destroys it" in flatc(TF["cloudsql.tf"])
 
 # Which lane state still bills which line, read from the kit. make off floors four services and runs gke-down, which
 # deletes the vLLM manifest's Deployment and Service from the cluster (kubectl delete -f) and nothing else: the cluster
 # and its lab pool (a fixed node_count, no autoscaling) stay, so the fee and the node bill on, as gke-down's message and
-# the README say. make down runs down-services and managed-stores-down, then terraform destroy, which managed.tf's
-# prevent_destroy refuses whole while MANAGED_SEARCH is true, its default (asserted under teardown above): all six bill
-# on. Only deleting the project stops them.
+# the README say. make down runs down-services and managed-stores-down, then terraform destroy, which nothing refuses
+# and which deletes all six; it stops only on the buckets that hold objects, and no bucket depends on any of the six,
+# so none is held back (both asserted under teardown above). Deleting the project stops the rest.
 GKE_DOWN = recipe("gke-down")
 assert "kubectl delete -f - --ignore-not-found" in GKE_DOWN and "gke/vllm-deployment.yaml" in GKE_DOWN
 assert not re.search(r"clusters (delete|resize)|node-pools|terraform", OFF + GKE_DOWN)
@@ -362,9 +369,9 @@ STATES = {
                              gkenode="still bills: make off's gke-down removes the vLLM workload, not the node"),
             "corpora": ("kept", "kept, billed by size"), "data": ("kept", "kept, billed by size")},
     "down": {"label": "Down", "cloud_run": ("zero", "deleted by down-services, with the candidate tag and the context caches."),
-             "hourly": hourly("bill", "still bills: terraform destroy is refused while the two data stores carry prevent_destroy"),
+             "hourly": hourly("zero", "stops: destroyed by make down's terraform destroy"),
              "corpora": ("zero", "deleted by managed-stores-down"),
-             "data": ("kept", "kept: Firestore's delete protection, buckets that hold objects, the protected data stores, the views")},
+             "data": ("kept", "kept: Firestore's delete protection, buckets that hold objects, the views, and the two data stores once they hold documents")},
     "gone": {"label": "Deleted", "cloud_run": ("zero", "gone with the project."),
              "hourly": hourly("zero", "stops: shutting a project down stops all its billing"),
              "corpora": ("zero", "gone with the project"),
@@ -390,9 +397,9 @@ def panel_rs(state: str, shard: str, days: int = 1) -> int:
     return sc.r0(day * days)
 
 
-# every state's figure is 0.1's: up, after make off and after a refused make down, all six lines bill on; deleted, none
+# up and after make off, all six lines bill on, 0.1's figure; after make down and deleted, none does
 for shard in sc.SHARDS:
-    assert [panel_rs(st, shard) for st in STATES] == [sc.PER_DAY[shard]] * 3 + [0], shard
+    assert [panel_rs(st, shard) for st in STATES] == [sc.PER_DAY[shard]] * 2 + [0, 0], shard
 WEEK_MEDIUM = sc.r0(sc.HOURLY["medium"] * sc.DAY_H * WEEK_DAYS * USD_INR)
 assert panel_rs("off", "medium", WEEK_DAYS) == WEEK_MEDIUM            # step 10's five days are what the panel opens on
 JS = """<script>
@@ -525,7 +532,7 @@ CELLS = {
                  '  --format="table(name.basename(),machineType,minInstances,maxInstances)"'),
     "resume": ('cd ~/deploy_module_rag && source commands/session-restart.sh && rag_resume\n'
                'echo "PROJECT=$PROJECT REGION=$REGION API_URL=$API_URL"'),
-    "down": 'make down PROJECT="$PROJECT" REGION="$REGION"',
+    "down": 'make down PROJECT="$PROJECT" REGION="$REGION"; echo "exit $?"',   # the recipe exits with the destroy's status
 }
 CELL_LABELS = {
     "ui": "run in the operator shell (prints your UI's address)",
@@ -587,6 +594,7 @@ STATS = {
     "BUDGET": f"{BUDGET:,}", "BUDGET_DAYS": f"{BUDGET / (sc.HOURLY['medium'] * sc.DAY_H * USD_INR):.1f}", "USD_INR": str(USD_INR),
     "PRICE_DATE": PRICE_DATE, "COST_TABLE": COST_TABLE, "SP_PU": str(sc.SP_PU),
     "NEXT_MODULE": html.escape(NEXT["name"].split(" - ")[0]), "NEXT_TITLE": html.escape(NEXT["lessons"]["1.1"]["name"]),
+    "NEXT05_TITLE": html.escape(MANIFEST["modules"]["00"]["lessons"]["0.5"]["name"]),   # the manifest's next lesson
     **{f"URL_{k.upper()}": v for k, v in PAGES.items()},
 }
 # "the biggest line by far": with the MEDIUM index vector.tf's comment records, the index outweighs the other five together
@@ -603,4 +611,4 @@ body = "".join([subst(fill(PART_A)), setup, subst(fill(pb.part(LESSON, "b"))), s
 finish(LESSON, title, EXTRA_CSS, body, JS)
 print(f"kit: smoke.py with no URL (exit 2) and lane.py roster --dry-run, run offline | the standing cost (standing_cost.py, Mumbai "
       f"list prices of {PRICE_DATE}) Rs {inr(sc.PER_DAY['medium'])} a day with a MEDIUM index, Rs {inr(sc.PER_DAY['small'])} with "
-      f"SMALL: up, off and after a refused make down alike")
+      f"SMALL: up and off alike, nothing by the hour after make down")

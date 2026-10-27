@@ -125,8 +125,8 @@ Operation: bash — run in the operator shell, in $DEMO_ROOT (a Python cell; a h
 Expected shape, not a promised result:
 
 ```text
-NP-03, English     chars   234  estimate  58  counted  1xx  ratio x.xx  (near one)
-a clause in Hindi  chars    72  estimate   18  counted   xx  ratio x.xx  (well above one)
+NP-03, English     chars   234  estimate  58  counted   5x  ratio x.xx  (near one)
+a clause in Hindi  chars    72  estimate   18  counted   xx  ratio x.xx  (near one on gemini-3.6-flash)
 one Act page       chars  2000  estimate  500  counted  4xx  ratio x.xx  (near one)
 twenty Act pages under the estimate     : packed 15, dropped 5, context 7633 tokens by that counter
 twenty Act pages under the model's count: packed 1x, dropped x, context 7xxx tokens by that counter
@@ -145,9 +145,9 @@ Operation: bash — run in the operator shell, in $DEMO_ROOT (a Python cell; one
 Expected shape, not a promised result:
 
 ```text
-the answer: tokens_in 1xxx | cached_tokens 0 | tokens_out 4xx | cost_usd 0.00xxxx | citations 3 | model gemini-3.6-flash
-cost.price(): $0.00xxxx = Rs 0.xxxx at 85.0 | in 1xxx out 4xx cached 0
-the estimate for the same packed set: fixed 168 + context 8xx = 1xxx | the model counted 1xxx | ratio 0.9x
+the answer: tokens_in 1xxx | cached_tokens 0 | tokens_out 1xx | cost_usd None | citations 1 | model gemini-3.6-flash
+cost.price(): $0.00xxxx = Rs 0.xxxx at 85.0 | in 1xxx out 1xx cached 0
+the estimate for the same packed set: fixed 168 + context 7xx = 8xx | with the answer's schema 2xx: 1xxx | the model counted 1xxx | ratio 1.0x
 ```
 
 ### demo_06_a_dated_document_on_the_lane_the_header_s_date_the_rule_in_the_prompt_the_citati.py
@@ -227,6 +227,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_3.4_Context_Budget_WIX.html`. All 35 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `451850344630a66cad10a9fdc60c7712b39b2c4f`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_3.4_Context_Budget_WIX.html`. All 35 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `3a10feec360e9abe6110428ee8b4bc956a4b1ba5`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

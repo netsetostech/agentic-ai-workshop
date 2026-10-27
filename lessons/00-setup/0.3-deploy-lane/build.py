@@ -361,11 +361,13 @@ for f, rt, rn, b in RESOURCES:
         BUCKETS[rn] = {"name": expr_after(b, "name").strip('"').replace("${var.project_id}", "PROJECT"),
                        "location": expr_after(b, "location"), "body": b, "file": f}
 BUCKET_GRANTS = {a: [] for a in SA_INFO}
-for f, rt, rn, b in RESOURCES:
-    if rt == "google_storage_bucket_iam_member":
-        bucket = re.search(r"google_storage_bucket\.(\w+)\.name", expr_after(b, "bucket")).group(1)
-        who = sa_ref(expr_after(b, "member"))
-        BUCKET_GRANTS[who].append((BUCKETS[bucket]["name"], expr_after(b, "role").strip('"')))
+for f, rt, rn, n, keys, gate in census(BASE_VARS):             # counted as the lane's defaults make them: the search
+    if rt != "google_storage_bucket_iam_member" or n == 0:     # mirror's bucket and its grant exist only with managed_search
+        continue
+    b = res(rt, rn)[1]
+    bucket = re.search(r"google_storage_bucket\.(\w+)(?:\[\d+\])?\.name", expr_after(b, "bucket")).group(1)
+    who = sa_ref(expr_after(b, "member"))
+    BUCKET_GRANTS[who].append((BUCKETS[bucket]["name"], expr_after(b, "role").strip('"')))
 
 # secrets: the six holders (secrets.tf), the checkpoint DSN (cloudsql.tf), and who may read which
 SECRET_NAMES = BASE_VARS["secret_names"]
@@ -508,7 +510,9 @@ assert VEC_REPLICAS == int(re.search(r"max_replica_count\s*=\s*(\d+)", VEC_DEPLO
 SHARD_MACHINE = OrderedDict(re.findall(r"(SHARD_SIZE_\w+)\s*=\s*\"([\w-]+)\"", LOCALS["vector_machine_by_shard"]))
 VEC_INDEX = res("google_vertex_ai_index", "documind")[1]
 VEC_DIMS = int(re.search(r"dimensions\s*=\s*(\d+)", VEC_INDEX).group(1))
-assert "shard_size" not in VEC_INDEX                        # the page says the service chooses: true while vector.tf names none
+# the page says a new index is created SMALL and an existing one keeps its size: vector.tf names SMALL and ignores it after
+assert re.findall(r'shard_size\s*=\s*"(SHARD_SIZE_\w+)"', VEC_INDEX) == ["SHARD_SIZE_SMALL"], VEC_INDEX
+assert "ignore_changes = [metadata[0].config[0].shard_size]" in VEC_INDEX
 GKE_POOL = res("google_container_node_pool", "lab")[1]
 GKE_MACHINE = re.search(r'machine_type\s*=\s*"([^"]+)"', GKE_POOL).group(1)
 GKE_DISK = int(re.search(r"disk_size_gb\s*=\s*(\d+)", GKE_POOL).group(1))
@@ -559,11 +563,14 @@ PREPARE_EXPECTED = "\n".join([
     "CI trust: YOUR-GITHUB-USER/YOUR-REPO (ID NUMBER) / refs/heads/main"])
 assert 'print(f"PASS: saved confirmed inputs to {self.inputs}")' in INFRA
 assert "print(f\"CI trust: {confirmed['github_repository']} (ID {confirmed['github_repository_id']}) / {confirmed['deploy_ref']}\")" in INFRA
+# the state bucket preflight checks when none is exported: the project's own, the Makefile's default too (step 3)
+TFSTATE_DEFAULT = re.search(r'^TFSTATE_BUCKET="\$\{TFSTATE_BUCKET:-([^"]+)\}"$', PREFLIGHT, re.M).group(1)
+assert TFSTATE_DEFAULT == "${PROJECT}-tfstate" and make_default("TFSTATE_BUCKET") == "$(PROJECT)-tfstate", TFSTATE_DEFAULT
 ok_lines = []
 for m in re.finditer(r'ok "([^"]+)"', PREFLIGHT):
     t = m.group(1)
     t = (t.replace("$tool", "{tool}").replace("$tfv", "VERSION").replace("$acct", ME).replace("$PROJECT", PROJ)
-          .replace("$TFSTATE_BUCKET", PROJ + "-tfstate"))
+          .replace("$TFSTATE_BUCKET", TFSTATE_DEFAULT.replace("${PROJECT}", PROJ)))
     if "{tool}" in t:
         ok_lines += ["  ok    " + t.format(tool=x) for x in re.search(r"for tool in ([a-z ]+); do", PREFLIGHT).group(1).split()]
     else:
@@ -863,12 +870,13 @@ N_SWITCHES = len(SWITCHES)
 UP_WHAT = {
     "drift": "plans again after the apply and prints whether anything is still to change; it never fails the run",
     "secrets": "adds a random first version to the empty cookie-secret, which the UI's deploy mounts",
+    "build-access": "gives the account Cloud Build runs as, the project's default compute account, the three roles a build needs (step 7's box), and the same read and push on the bucket and repository a source deploy builds through in Module 9's two regions; then lets the pipeline's account (lesson 11.1) write its build's source to the build bucket and act as the build's account, unless that account holds Editor or Owner; each only if it is missing",
     "build": f"builds the {word(N_SERVICES)} images with Cloud Build, one after another, tagged with the kit's commit",
     "deploy-services": f"runs the DEPLOY block of each of the {word(len(SCRIPTS))} scripts: every service as its own account, its callers bound, IAP on the UI; then make operators",
     "wait-index": "waits until no Firestore composite index is still CREATING",
     "roster": f"writes {N_ROSTER} memberships and three data-region policies (below)",
     "managed-stores": "puts RAG Engine in serverless mode, creates a corpus each for " + " and ".join(MANAGED_TENANTS) + ", and pins acme to RAG Engine and zeta to Vertex AI Search",
-    "bq-views": "creates the tenant_daily view over the log sink's table",
+    "bq-views-when-ready": "creates the tenant_daily view over the log sink's table, or, on a new lane whose API has answered nothing yet, says to run make bq-views after make smoke",
     "vector-status": "prints the Vector Search index (0 datapoints on a new lane) and its deployed index",
 }
 assert list(UP_WHAT) == UP_TARGETS, UP_TARGETS
@@ -884,7 +892,7 @@ def link(k: str, text: str = "page") -> str:
 
 
 COST_CELLS = {   # the module's items: what the kit declares, the unit prices, Rs an hour
-    "index": (f"{word(VEC_REPLICAS)} replica{'s' if VEC_REPLICAS > 1 else ''} (min = max = {VEC_REPLICAS}); the machine follows the index's shard size, which {code('terraform/vector.tf')} leaves to the service",
+    "index": (f"{word(VEC_REPLICAS)} replica{'s' if VEC_REPLICAS > 1 else ''} (min = max = {VEC_REPLICAS}); the machine follows the index's shard size, which {code('terraform/vector.tf')} sets to SMALL for a new index",
               f"per node hour, Vertex AI pricing ({link('vs')})",
               "<br>".join(f"{s.upper()}: {code(m)} at {usd(sc.PRICES['vs:' + m])}, Rs {rs(inr(sc.INDEX_USD[s]))}" for s, m in sc.SHARDS.items())),
     "spanner": (f"{SPANNER_EDITION.title()}, {SPANNER_PU} processing units = {SPANNER_PU / 1000:g} node, {code(SPANNER_CONFIG)} ({code('terraform/spanner.tf')})",
@@ -994,7 +1002,7 @@ RM_CHIPS = "".join(f'<span class="rm-st{" on" if k in EXPLORER[DEFAULT]["touch"]
 EXCERPTS = {
     "mk_region": ("the kit's Makefile - where the services run, and where the data rests", block("Makefile", "# REGION is where the SERVICES run", n=8)),
     "mk_apis": ("the kit's Makefile - the apis target", block("Makefile", "# The APIs a fresh project needs, from 12.1's ENABLE_APIS block", n=4)),
-    "apis_two_calls": ("commands/lesson-12.1.sh - the ENABLE_APIS block's own note", block("commands/lesson-12.1.sh", "# Two calls, not one:", n=6)),
+    "apis_two_calls": ("commands/lesson-12.1.sh - the ENABLE_APIS block's own note", block("commands/lesson-12.1.sh", "# Three calls, not one:", n=6)),
     "mk_preflight": ("the kit's Makefile - the preflight target", block("Makefile", "# Read-only: is everything `make up` needs in place?", n=4)),
     "infra_trust": ("commands/infrastructure.py - validate_trust(): the three values a new lane's CI trust needs", block("commands/infrastructure.py", "def validate_trust(value):")),
     "infra_prepare": ("commands/infrastructure.py - prepare(): read the project, save the confirmed inputs", block("commands/infrastructure.py", "    def prepare(self):", n=9)),
@@ -1043,7 +1051,7 @@ EXCERPTS = {
 }
 assert EXCERPTS["infra_inspect"][1].rstrip().endswith('"remove state to bypass this check.")'), EXCERPTS["infra_inspect"][1][-80:]
 assert EXCERPTS["infra_plan"][1].rstrip().endswith("""print("Review the displayed changes, then run this command with 'apply' instead of 'plan'.")""")
-assert EXCERPTS["mk_up"][1].rstrip().endswith("bq-views vector-status")
+assert EXCERPTS["mk_up"][1].rstrip().endswith("bq-views-when-ready vector-status")
 assert EXCERPTS["ui_iap"][1].rstrip().endswith("done")
 assert EXCERPTS["chat_gate"][1].rstrip().endswith('st.caption(f"Tenant: **{tenant_id}**")'), EXCERPTS["chat_gate"][1][-60:]
 assert EXCERPTS["sa_graph"][1].count("<-") == 6
@@ -1062,7 +1070,7 @@ if m and int(m.group(1)) != N_RESOURCES:
 T = {
     "N_SA": str(N_SA), "N_SA_WORD": word(N_SA), "N_SA_ALL": str(N_SA_ALL), "N_SERVICES": str(N_SERVICES), "N_SERVICES_WORD": word(N_SERVICES),
     "N_BUCKETS": str(len(BUCKETS)), "N_BUCKETS_WORD": word(len(BUCKETS)), "N_FS_INDEXES": str(N_FS_INDEXES), "N_FS_VECTOR": str(N_FS_VECTOR),
-    "N_TTL": str(N_TTL), "N_TTL_WORD": word(N_TTL), "N_RESOURCES": str(N_RESOURCES), "N_APIS": str(len(APIS)), "N_APIS_CHECKED": str(len(CHECKED)),
+    "N_TTL": str(N_TTL), "N_TTL_WORD": word(N_TTL), "N_RESOURCES": str(N_RESOURCES), "N_APIS": str(len(APIS)), "N_API_CALLS": WORDS[ENABLE.count("gcloud services enable")], "N_APIS_CHECKED": str(len(CHECKED)),
     "N_SWITCHES": str(N_SWITCHES), "N_SWITCHES_WORD": word(N_SWITCHES), "N_ACTAS": str(N_ACTAS), "N_ACTAS_WORD": word(N_ACTAS),
     "N_ROSTER": str(N_ROSTER), "N_SQL_WORD": word(N_SQL), "N_SECRETS": str(N_SECRETS), "N_METRICS": str(N_METRICS), "N_ALERTS": str(N_ALERTS),
     "N_SCRIPTS_WORD": word(len(SCRIPTS)), "N_UP": str(len(UP_TARGETS)), "N_UP_WORD": word(len(UP_TARGETS)),
@@ -1095,7 +1103,7 @@ T = {
     "REC_PLAN_TYPES": output("output - the saved plan, counted by type (the author's run)", REC["plan_by_type"]),
     "REC_UP": output("output - the last lines of make up from a blank project, and how long it took (the author's run)", REC["make_up_tail"]),
     "REC_SERVICES": output("output - the services, and the account each runs as (the author's run)", REC["run_services"]),
-    "REC_SHARD": output("output - the shard size the service chose, and the machine it deployed (the author's run)", REC["vector_shard"]),
+    "REC_SHARD": output("output - the index's shard size, and the machine it deployed (the author's run)", REC["vector_shard"]),
     "REC_UI_CURL": output("output - the UI without a sign-in (the author's run)", REC["ui_unauthenticated"]),
     "REC_IAP": output("output - who may pass IAP on documind-ui (the author's run)", REC["iap_policy"]),
     "REC_UI_VIEW": output("output - what each kind of visitor saw in the browser (the author's notes)", REC["ui_signed_in"]),

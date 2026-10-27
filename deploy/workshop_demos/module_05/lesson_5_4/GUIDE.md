@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_5.4_LangGraph_WIX.html`, reviewed at blob `0f0a7699c5f7e6eb5b1785fcdc570c29b0198022`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_5.4_LangGraph_WIX.html`, reviewed at blob `1121e2c5893fb67f511df04c6ed9e2d261309687`. Learners read that page on the course site; this guide keeps its prose.
 
 The LangChain brain hands its loop to a framework. The LangGraph brain draws it: an agent node that calls the model, a route that reads what the model asked for, a tools node, a refuse node, and a checkpointer that keeps each conversation. You list the kit's own graph and force the refuse node with a scripted model. The model on your lane is never offered a blocked tool, so it cannot reach that node any other way. Then you use the graph on your lane: a thread that remembers, a new thread that does not, and a request to delete that meets no tool at all.
 
@@ -126,7 +126,7 @@ With `brain` set to `langgraph`, `/v1/chat` builds the thread id from the roster
 
 #### Do it
 
-The follow-up in the same session knew that "it" was gratuity. The graph started the turn from the saved thread, so the model read the first question and answer before the second question. The same words in a new session had no thread behind them, and the model could only ask what "it" meant. The request to delete called no tool: the model has no delete tool to call, so the refuse node was never involved, and `refusals` is empty. The model refused in words, as the system prompt asks. Each turn's `tool_calls` names its own calls only: the second turn ran on a thread that already held a retrieval, and lists one, and the last lists none. This is the other half of step 4. On your lane the refuse node is a net under a model that has not been offered the rope.
+The follow-up in the same session knew that "it" was gratuity. The graph started the turn from the saved thread, so the model read the first question and answer before the second question. The same words in a new session had no thread behind them. The stand-in asks what "it" meant; a live model usually guesses from the rest of the question and searches instead, often several times, because the Code and a fixed-term employee are enough to find gratuity. Either way it read no earlier turn: what told the first session's model that "it" was gratuity was the thread. The request to delete called no tool: the model has no delete tool to call, so the refuse node was never involved, and `refusals` is empty. The model refused in words, as the system prompt asks. Each turn's `tool_calls` names its own calls only: the second turn ran on a thread that already held a retrieval, and lists only the searches it made, and the last lists none. This is the other half of step 4. On your lane the refuse node is a net under a model that has not been offered the rope.
 
 ### What the checkpointer keeps
 

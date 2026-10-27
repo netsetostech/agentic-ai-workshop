@@ -1,0 +1,177 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 3 &middot; The reviewer</span><h3>The reviewer: a linter first, then Gemini on your lane</h3><p>The rubric, the request and the score; a linter in the reviewer's seat at Rs 0; then the model, three times over.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>commands/review_diff.py</code> makes one model call a diff. The request holds the diff, the spec it was written to and the definitions the code uses, as the kit holds them, each fenced as data rather than instructions, because a coding agent's patch is text a model wrote. The answer is held to a schema: a list of findings, each one rule of a %%N_RUBRIC%%-rule rubric, a line in the new file and one sentence saying why. A rule outside the rubric cannot be given. <code>make review-eval</code> runs the reviewer on seven diffs, each from the task's start: the kit's own function, where every finding is a false alarm, and the six seeds. The reviewer never sees a seed's name, label or why, only its diff.</p>
+<p>A finding is scored by its rule alone. Per diff, the score counts the runs that found the seeded rule, how many of those pointed within %%NEAR%% lines of the seeded line, and the false alarms. Then it counts the catch: the seeded defects found in each run. There is one seeded instance of each rule, so each figure is a rate per rule, not a recall.</p>
+
+<h4>The code</h4>
+@@rubric@@
+@@review_prompt@@
+@@score@@
+
+<h4>Do it: the linter, offline</h4>
+<p>Offline, a linter takes the reviewer's seat: a few regular expressions over the diff's added lines, and a check that added code which writes notes names <code>NO_HOLIDAYS</code>. It shows how the score is kept, at Rs 0. The first cell scores it on the seven diffs, and the second runs it on the diff of your hand iteration from step 3.</p>
+@@lint@@
+%%CELL_LINT_EVAL%%
+%%OUT_LINT_EVAL%%
+%%CELL_LINT_HAND%%
+%%OUT_LINT_HAND%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The linter found %%LINT_CAUGHT%% of the 6. It has no pattern for a count that starts a day early, so it missed start_day_counted. It raised %%LINT_FALSE%% false alarms a run, one on every diff, the kit's own function included: it reads the citation of s.17(3) as the wrong section. A reviewer who does not know the kit's convention makes the same mistake. The desk cites s.17(3) on purpose, because the appropriate Government may set another time limit. Your hand iteration's diff drew the same false alarm.</p></div>
+
+<h4>Do it: Gemini, on your lane</h4>
+<p>With <code>PROJECT</code>, <code>make review-eval</code> reviews the seven diffs with gemini-3.6-flash on location <code>global</code>, thinking low. It runs as you: a review reads a diff and calls no tool, so it uses your own sign-in, unlike the loop's agent. <code>REPEAT=3</code> reviews each diff three times, because a model's review differs from run to run. That is 21 calls, about %%EVAL_IN%% of input (each request is %%REQ_MIN%% to %%REQ_MAX%% tokens by the kit's four-characters-a-token count), plus output and thinking, which the kit does not cap. <code>REPEAT=1</code> costs a third. <code>SAVE</code> keeps every finding with the model and the date, and <code>make review-eval FROM=</code> with that file rescores it at Rs 0.</p>
+%%CELL_LIVE_EVAL%%
+%%REC_REVIEW_EVAL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the table one row at a time. The found column counts, out of the reviews of that diff, those that named the seeded rule: a rate on one planted instance. The false alarms column counts what it flagged that is not the planted defect, and on the kit's own function every finding is one. The panel at Level 0 shows the author's run beside the linter's, diff by diff. Neither is the oracle: the oracle runs the code, and a reviewer reads it. The page reports each one's numbers and names no winner. Your own diff can be reviewed the same way: <code>make review-diff PROJECT="$PROJECT" DIFF="$(dirname "$WS")/by-hand.patch"</code> is one call, about %%ONE_IN%% of input.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 3 &middot; The live loop</span><h3>The live loop: Gemini CLI in a container, on a model-only key</h3><p>The image, the two containers, the refusals, the author's run, and how the key stays out of make and out of every log.</p></div></div>
+
+<h4>Definition</h4>
+<p>Live, each iteration is one <code>docker run</code> of the ralph image: Gemini CLI at the kit's pin (<code>GEMINI_CLI_VERSION</code> in <code>mk/coding.mk</code>), Python 3.12, a user of its own, and no gcloud, credential or kit file. The workspace is mounted at <code>/work</code>. The prompt and Gemini CLI's system settings are mounted read-only from the kit, outside the workspace, so an iteration cannot rewrite the next one's prompt. The command is <code>iteration.sh</code>: Gemini CLI headless with <code>--yolo</code>, which approves every tool call without asking. That is safe only because the container, not a person, is the boundary: no capabilities, a read-only root, memory and process limits, and no credential in its environment but the model key. The oracle runs from the same image in a second container, with no network at all and everything mounted read-only. Gemini CLI's flags, its settings keys and its stats' field names are the kit's reading for the pinned version, and the batch-1 probe confirms them before the live run.</p>
+
+<h4>The code</h4>
+@@dockerfile@@
+@@iteration@@
+@@settings@@
+@@agent_line@@
+@@env_file@@
+@@call@@
+@@key_problem@@
+@@oracle_box@@
+
+<h4>Do it: the two containers, printed</h4>
+<p><code>DRY_RUN=1</code> prints the two <code>docker run</code> lines an iteration would run, and starts nothing: no Docker, image or key is needed.</p>
+%%CELL_DRY%%
+%%OUT_DRY%%
+
+<h4>Do it: the egress proxy, printed</h4>
+<p>By default the agent's container can reach whatever the machine it runs on can reach. <code>RALPH_EGRESS=proxy</code> holds it to the model endpoint. Each iteration gets an internal network of its own, which has no route out, and a third container from the same image: <code>commands/ralph/egress.py</code>, an allowlisting forward proxy, on that network and on Docker's default bridge. The agent's container joins the internal network alone, with <code>HTTPS_PROXY</code> naming the proxy. The proxy opens a tunnel to <code>%%EGRESS_HOST%%</code> and refuses every other host, port and plain request without dialling it. A tool that ignores the proxy has no route at all, because the internal network has none. The network and the proxy are made before each iteration and removed after it, and the proxy's log, a line a request, is kept in the run's <code>iterations/</code>. The agent's line is the one above with two flags added, <code>--network</code> and <code>HTTPS_PROXY</code>.</p>
+%%CELL_DRY_EGRESS%%
+%%OUT_DRY_EGRESS%%
+<p>The kit's tests run the proxy on your machine's loopback, with a stand-in in place of the model endpoint, and the loop against a stub Docker. A live Docker is the author's check. <code>make ralph-probe RALPH_EGRESS=proxy</code> needs no key and makes no model call. From inside the agent's container it tries example.com and 169.254.169.254, the metadata server's address, directly, then example.com and the model endpoint through the proxy. It also prints whether example.com's name resolved there: whether a name lookup leaves the internal network is Docker's to decide, not the proxy's.</p>
+%%CELL_ISOLATION%%
+%%REC_ISOLATION%%
+
+<h4>Do it: the live loop on your lane</h4>
+<p>Without the author's cap and key, the live loop does not start. It has no default spend, and it runs only on a model-only key, never on your gcloud login or Application Default Credentials.</p>
+%%CELL_REFUSED%%
+%%OUT_REFUSED%%
+
+<div class="box box-teal"><div class="box-title">How the key stays out of make and out of the logs</div>
+<ul>
+<li><strong>Typed, not written.</strong> <code>read -rs</code> reads the key from the keyboard without echoing it, and because it is never part of a command line, it never enters your shell's history.</li>
+<li><strong>Exported, never a make variable.</strong> <code>make ralph RALPH_API_KEY=...</code> would put the key on a command line, where <code>ps</code> shows it and history keeps it. <code>mk/coding.mk</code> never names it, and the kit's tests hold that.</li>
+<li><strong>One file, for one iteration.</strong> <code>commands/ralph.py</code> reads the key from its environment and writes it, as <code>GOOGLE_API_KEY</code>, into one file created fresh with mode 0600 beside the workspace. Docker reads that file with <code>--env-file</code>, never <code>-e</code> on a command line. The file is deleted when the iteration ends, however it ends, and once more when the loop stops.</li>
+<li><strong>Names, never values.</strong> The loop prints the env file's names, as the dry run shows ("values never printed"), and the kit's tests assert that the key appears in no line the loop prints and no file it writes.</li>
+<li><strong>Model-only, and deleted.</strong> Inside the container the agent holds the key. That is why it can call the model and nothing else, and why the author deletes it after the run.</li>
+</ul></div>
+
+<h4>The author's run</h4>
+<p>The author ran the loop in Cloud Shell, which has Docker, with the image built in the same session (Cloud Shell's Docker storage does not outlive it). The cap came from a one-iteration dry run in batch 1. If the probe finds the key needs a project, <code>RALPH_PROJECT</code> adds <code>GOOGLE_CLOUD_PROJECT</code> and <code>GOOGLE_CLOUD_LOCATION=global</code> to the agent's environment.</p>
+%%CELL_AUTHOR%%
+%%REC_RALPH_LOOP%%
+<p>Then the reviewer, on the loop's own work:</p>
+%%CELL_AUTHOR_REVIEW%%
+%%REC_REVIEW_DIFF%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the live run as you read the offline ones: for each iteration the item, the verdict, the lines, the tokens and the rupees; then the stop and its reason, what it spent at list price, and, after a pass, the other oracle's verdict on the same code. A live model writes versions of its own, so its iterations are not the script's. The reviewer read ralph.patch, the loop's work from the task's start. Its findings are a reading of that diff; the oracle's verdict in the loop is the test of it.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 4 &middot; Direct reads</span><h3>Direct reads, and the human step</h3><p>The run's record, read straight from its files, then a patch applied, tested and taken back out by you.</p></div></div>
+
+<h4>Definition</h4>
+<p>Everything the loop knew is in files: the commits, <code>fix_plan.md</code>, <code>GEMINI.md</code>, <code>summary.json</code> and ralph.patch. The first cell reads the strong offline run from step 5. The second prints <code>summary.json</code>'s rows. The author's capture is the same two cells, with <code>RUN</code> set to the live run.</p>
+
+<h4>Do it: the record</h4>
+%%CELL_READS%%
+%%OUT_READS%%
+%%CELL_SUMMARY%%
+%%OUT_SUMMARY%%
+%%REC_RALPH_READS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The state lives in files, not in a context window: three commits after the task's own, three plan items ticked, one line learned, and the loop's work as one diff of the function. <code>summary.json</code> is the loop's own record: for each iteration the verdict, the lines, the tokens and the rupees, and at the end the other oracle's verdict on the final code.</p></div>
+
+<h4>Do it: the human step</h4>
+<p>The loop's last word is kit.patch: its function against the kit's own. Applying it is yours to decide. You apply it in your clone, run the fast test, put the file back, and ask the strong oracle about the same patch. The cell does this with the weak run's kit.patch from step 5.</p>
+%%CELL_HUMAN%%
+%%OUT_HUMAN%%
+%%REC_HUMAN_STEP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The fast test passed the hard-coded date, because in your clone <code>python shared/desk_calc.py --selftest</code> is the weak oracle. <code>make ralph-check PATCH=</code> ran the strong oracle on the same patch and failed it. So the human step is the fast test and the strong oracle together. The kit's docstring pairs the fast test with the kit's own tests instead, and they would catch it too: <code>commands/tests/test_ralph.py</code> holds the kit's function to the oracle's count on every day of 2026. Either way the decision stays with you: the loop never applies anything. <code>git apply -R</code> took the patch back out, and <code>git status --short</code> printed nothing. If a run's kit.patch is empty, the loop wrote the kit's own function byte for byte, and <code>git apply</code> refuses an empty patch, because there is nothing to apply.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own code and comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>A fresh agent, every iteration.</strong> Each iteration's state is in files and commits, which a person can read, not in a context window that grows until the model loses track of it.</li>
+<li><strong>An oracle outside the agent's reach.</strong> The checks never enter the workspace. The oracle splices the agent's function into the kit's own file, so a weakened selftest or a test of the agent's own never reaches the verdict, and the loop undoes the first anyway.</li>
+<li><strong>Counts, never answers.</strong> <code>oracle.md</code> carries the feedback line, never the detail: no acceptance check's expected value, and nothing of the candidate's own text. The selftest's FAIL lines are there too, because the agent's copy of the file prints them anyway.</li>
+<li><strong>One answer key.</strong> The seeds are one-line substitutions on the kit's own function, and a seed whose line has changed stops the run with its name, so the key cannot drift from the code.</li>
+<li><strong>A repository beside the workspace.</strong> The agent can neither see nor write <code>git/</code>, so a hook it writes never runs when the loop commits. The repository has no remote, and your global and system git config are ignored.</li>
+<li><strong>Two credentials for two jobs.</strong> The reviewer reads a diff and calls no tool, so it runs as you. The loop's agent runs tools unattended, so it gets a key that can call the model and nothing else, which the author creates for a run and deletes after it.</li>
+<li><strong>The same questions, wherever an agent acts.</strong> What may it change, what check decides it worked, who approves it, and how is it undone? Here the answers are one function, the oracle, you, and <code>git apply -R</code>. Lesson 10.11 designs an agent that acts on the running lane rather than on code, where the same four questions need answers of their own.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The workspace, the hand iteration, the oracle, the Change it</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>The loop offline, any task, oracle or cap</td><td data-label="Costs">the script's tokens, priced only to work the cap (%%STRONG_RS%% for the strong run)</td><td data-label="On your lane">free: nothing is billed</td></tr>
+<tr><td>The linter, on the seven diffs or on yours</td><td data-label="Costs">no model</td><td data-label="On your lane">free</td></tr>
+<tr><td><code>make review-eval</code> on your lane</td><td data-label="Costs">seven calls a repeat, about %%EVAL_IN1%% of input each repeat, plus output and thinking</td><td data-label="On your lane">%%EVAL_LO%% to %%EVAL_HI%% for REPEAT=3, if a call writes %%ASSUME_LO%% to %%ASSUME_HI%% tokens of output and thinking (an assumption: the author's run measures it)</td></tr>
+<tr><td><code>make review-diff</code> on your lane</td><td data-label="Costs">one call</td><td data-label="On your lane">about %%ONE_IN%% of input, plus its output</td></tr>
+<tr><td>The live loop</td><td data-label="Costs">the author's: the cap set from a dry run, by the Meter's rule</td><td data-label="On your lane">not run on your lane</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is read from the kit's code, and this page's build runs the offline ones, so this box changes when they do.</p>
+<ul>
+<li><strong>The egress proxy is a switch, off unless you set it.</strong> Off, the agent's container can reach the network. Gemini CLI's web tools are excluded in its read-only system settings, and an iteration whose output names the kit's public copy is undone, but a fetch that the agent never prints is not caught. On (<code>RALPH_EGRESS=proxy</code>, step 8), the container reaches <code>%%EGRESS_HOST%%</code> alone. The proxy holds the host, not the requests: what goes through a tunnel is TLS, and the key inside the container could call the model outside Gemini CLI's stats, which the rupee cap reads.</li>
+<li><strong>The rupee cap is a soft cap.</strong> The first iteration always runs, and an iteration under way always finishes. One that costs more than the dearest so far can take the total past the cap. A live iteration cut at %%ITER_TIMEOUT%% seconds, or one whose agent printed no stats, stops the loop with its cost uncounted: read it in your lane's billing.</li>
+<li><strong>A new file is kept.</strong> An agent's new file is listed in the run, not undone. It never enters ralph.patch, which carries <code>shared/desk_calc.py</code> alone.</li>
+<li><strong>Offline, the oracle's guards are Python's.</strong> <code>make ralph-check</code> runs a change's code on your machine with the network and new processes refused inside Python. That is not a sandbox, as the kit itself prints, so judge only a change you have read.</li>
+<li><strong>The live facts wait for the probe.</strong> Gemini CLI's flags, its settings keys, its stats' field names, its sign-in and whether it sends its calls through the egress proxy, the image build, and the commands that create the key are confirmed by the author's batch-1 probe, not by the kit's tests.</li>
+<li><strong>A rate, not a recall.</strong> Each defect class has one planted instance, so the reviewer's numbers are rates per rule over its runs, and the linter flags s.17(3) on every diff.</li>
+</ul></div>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Fifteen checks, each one step above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The workspace holds the task, and nothing that judges it</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>no oracle checks and no seeds in it</code>; the function ends in <code>raise NotImplementedError</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The fast test passes a hard-coded date</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>every rule says what its corpus line says, and the figures hold</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The strong oracle does not</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>weak oracle (desk_calc's own selftest): PASS</code>, then <code>strong oracle: FAIL</code></td></tr>
+<tr><td>4</td><td data-label="Claim">Every verdict is the one its label says</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>the strong oracle fails 6 of 6 seeded defects; the weak one passes 2: placeholder, date_contract</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Without its sweep, the strong oracle passes the placeholder</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>placeholder    PASS, 10 checks</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The loop stops on the oracle</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>stopped: the strong oracle passed after %%STRONG_N%% iterations</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The weak oracle lets a wrong function through</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>stopped: the weak oracle passed after 1 iteration</code>, then <code>the strong oracle on the same code: FAIL</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The loop stops on a cap</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>would pass the cap of Rs %%CAP%%</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The loop never writes in the kit</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>is inside the kit: the loop never writes there</code></td></tr>
+<tr><td>10</td><td data-label="Claim">Paper-to-code, under the same oracle</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>stopped: the strong oracle passed after %%ST_N%% iterations</code></td></tr>
+<tr><td>11</td><td data-label="Claim">The linter's catch count</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>catch count: %%LINT_CAUGHT%%.0 of 6 seeded defects a run (each run: %%LINT_CAUGHT%%); false alarms a run: %%LINT_FALSE%%</code></td></tr>
+<tr><td>12</td><td data-label="Claim">Gemini's catch count on your lane</td><td data-label="The check">step 7</td><td data-label="Pass looks like">a <code>catch count:</code> line and each run's false alarms: yours</td></tr>
+<tr><td>13</td><td data-label="Claim">The live loop refuses without a cap, or without the author's key</td><td data-label="The check">step 8</td><td data-label="Pass looks like"><code>the live loop has no default spend</code>; <code>RALPH_API_KEY is not set</code></td></tr>
+<tr><td>14</td><td data-label="Claim">The egress proxy holds the agent's container to the model endpoint</td><td data-label="The check">step 8</td><td data-label="Pass looks like"><code>--network ralph-&lt;run&gt;-01-net --env HTTPS_PROXY=http://egress:3128</code> on the agent's line, and <code>--allow %%EGRESS_HOST%%</code> alone on the proxy's</td></tr>
+<tr><td>15</td><td data-label="Claim">The human step runs the strong oracle and leaves your clone as it was</td><td data-label="The check">step 9</td><td data-label="Pass looks like"><code>strong oracle: FAIL</code> on the weak run's kit.patch; no line from <code>git status --short</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing on your lane is configured. The offline runs wrote run directories under <code>/tmp</code>, and the last cell below removes them. Your only spend was the reviewer's calls on gemini-3.6-flash, seven for each repeat, billed to your lane as any model call you make. The human step left your clone as it was. The live loop is the author's: its model-only key was created for the run and deleted after it, so no credential of the loop's exists on any lane. Lesson 10.11 designs an agent that acts on the running lane itself.</p>
+%%CELL_CLEANUP%%
+</div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 10 Agent patterns &middot; Lesson 10.10 Coding agents: a Ralph loop, an AI code reviewer and paper-to-code &middot; v5.0</p><p>Next: Lesson 10.11 System design: incident auto-remediation.</p></div>

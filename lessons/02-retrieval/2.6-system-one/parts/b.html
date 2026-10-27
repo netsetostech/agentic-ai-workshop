@@ -1,0 +1,89 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; The deployed UI</span><h3>A refusal in the UI, and what it paid for</h3><p>The golden set's first refusal row asked as yourself in the browser, its truth read from the golden file, and the same question through both routes from the shell.</p></div></div>
+
+<p>rf-01 is the golden set's first refusal row: acme, asking for a sabbatical policy that no acme document holds. Its note in the golden file says how such a row is made. It asked about parental leave until the real Maternity Benefit Acts joined acme's corpus and made twenty-six weeks a defensible answer, so a refusal row has to ask for something the corpus really does not hold. On your lane the question still finds a pool, because a dense retriever returns the nearest neighbours of any question: passages near it in meaning that do not answer it. The reranker orders them, the generator reads them, and rule 3 makes it refuse. The refusal is right, and it is the expensive kind. The browser shows what a person sees; the shell shows the envelope behind it.</p>
+
+<h4>Do it: ask it in the UI</h4>
+<ol>
+<li><strong>Ask.</strong> Open <code>https://documind-ui-NUMBER.asia-south1.run.app</code> and sign in as yourself; the roster maps you to acme. On the Chat page, with the Brain set to <code>direct</code> if the sidebar offers a choice, ask: <em>What is ACME's sabbatical policy?</em></li>
+<li><strong>Read the reply.</strong> The words are the model's own, and they say that the documents do not cover a sabbatical. Below the reply, <strong>Sources</strong> lists the passages the model read, five unless the budget dropped one. The stream sends the packed passages as citations before its first token, so even a refusal arrives with sources it did not use.</li>
+<li><strong>Read the sidebar.</strong> Under <strong>Cost this session</strong>, the USD figure shows the last turn's cost and the INR figure has grown with it. The page computes both from the tokens the stream reported, at flash's rates: the refusal was billed like an answer.</li>
+</ol>
+
+<h4>Do it: the golden row, and the same question from the shell</h4>
+<p>First the row's truth, from the file every eval reads:</p>
+%%CELL_GOLDEN%%
+%%OUT_GOLDEN%%
+<p>Then the question as <code>documind-ui-sa</code>, through <code>/v1/query</code>, which generates, and <code>/v1/passages</code>, which stops at the reranker:</p>
+%%CELL_UI%%
+%%OUT_UI%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The generator refused: <code>answerable</code> False and no citations, after retrieve, rerank and a generate stage that took most of the request's time, with a full call's tokens. The answer's own <code>cost_usd</code> is null. On the default vertex backend <code>/v1/query</code> carries no price in its body; the usage row prices the call with cost.py, the UI priced it from the tokens, and the cell priced it with <code>shared/prices.py</code>. <code>/v1/passages</code> handed back the passages for the same question with model <code>none</code> and cost 0.0, and its <code>answerable</code> True means only that passages exist: the route stops at the reranker and decides nothing, which is the slot a decision would fill. The <code>pool</code> figure is the candidates the reranker saw; five of them went on.</p>
+<p>One more thing is visible in the usage rows. Your browser question's row says <code>answerable</code> true: a <code>/v1/stream</code> row reads only whether the pool was empty, so the model's refusal on the UI path never reaches the unanswerable alert. The shell's <code>/v1/query</code> row says false.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit's code</span><h3>The kit's code: two refusals in the handler, and the evidence rule</h3><p>The handler's branch, the empty pool's refusal, the generator's rule 3, the route that stops before the model, and the rule the Rs 0 lane gates on, worked by hand for three rows.</p></div></div>
+
+<h4>Definition</h4>
+<p>The handler's own branch is where the two refusals sit. After retrieval, <code>/v1/query</code> checks three cases in order: an answer-cache hit, which skips the reranker and the model; an empty pool, which <code>empty_pool_answer()</code> refuses in the contract's shape with zero tokens; and everything else, which is reranked and then generated. Slot 6 of the diagram is the line between <code>rerank()</code> and <code>generate()</code>: a decision there would let a refusal be written without the generator, at whatever the decider charges. Rule 3 of <code>SYSTEM</code> is the generator's refusal. <code>/v1/passages</code> is the handler up to the reranker, which is why <code>decide.py</code> takes its pools there: every arm decides on the passages the reranker kept, and no model runs to fetch them.</p>
+<p>The rule is older than this lesson. <code>shared/documind_tools.py</code>'s Rs 0 lane gates every retrieval with it. <code>_lexical_rank()</code> scores the tenant's chunks with BM25 and returns the idf of the question's content words; a word found in more than half of the tenant's chunks is dropped, because a match on it says nothing. The pool must then carry at least <code>EVIDENCE_FLOOR</code> of the remaining information, counting the top passages together (the "set" mode), or the lane returns nothing. <code>decide.py</code>'s rule arm applies the same arithmetic to any pool, your lane's included: <code>evidence_share()</code> over the pool's text, then <code>rule_arm()</code> against the floor. The cell works it by hand for three rows and prints each word's weight.</p>
+
+<h4>The code</h4>
+@@handler@@
+@@empty_pool@@
+@@system_rule@@
+@@passages_doc@@
+@@lexical@@
+@@rule_arm@@
+
+<h4>Do it: the rule's arithmetic on three rows</h4>
+%%CELL_EXPLAIN%%
+%%OUT_EXPLAIN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>rf-01's heaviest word, <em>sabbatical</em>, is in no chunk of acme's, so it carries the most weight in the question, and the pool holds only <em>policy</em>: a share of %%SH_RF01%%, under the floor. The rule refuses before any model is asked, as the generator refused after reading. rf-02 is the warning. All three of its content words are in the pool, the share is %%SH_RF02%%, and the rule answers a question the corpus cannot answer: <em>casual</em> is there only as the CGST Act's casual taxable person and <em>leave</em> as the handbook's earned leave, and the handbook grants no casual leave. The rule measures whether the question's words are present, never whether they answer it. lk-01 carries all five of its words and is answered, rightly. A floor can move a row like rf-01 across the line; no floor can move rf-02, which is why a decision model is worth measuring at all.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Rs 0</span><h3>The decision eval for Rs 0, a higher floor, and Jev's switch</h3><p>The whole eval with the lane taken away, the same run at 0.70, and every mode of Jev's switch called by hand, none of it leaving the machine.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>decide.py --local</code> is the whole eval with the lane taken away. The pool comes from the kit's corpus on the Rs 0 lane, the way <code>tools/check_local_lane.py</code> runs it: <code>documind_tools.retrieve(passages=True)</code> on the local profile over the chunks the local corpus would seed, top %%TOPK%%. That lane's own gate is the evidence rule at <code>--floor</code>, so on it an empty pool is the rule's refusal, and <code>decide.py</code> answers what the lane served. The generator needs a lane and says so; Jev is off and says that too. <code>decide_row()</code> is where the arms meet: a pool that failed is an error for every arm, an empty pool is refused in code and asks no model, and Jev is always called through <code>system_one.decide()</code>, which decides for itself whether to do anything. <code>summarise()</code> turns the rows into the confusion matrix and the three rates, with errors and skips counted apart.</p>
+
+<h4>The code</h4>
+@@decide_row@@
+@@summarise@@
+
+<h4>Do it: all %%N_ROWS%% rows, Rs 0</h4>
+%%CELL_LOCAL%%
+%%OUT_LOCAL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>At %%FLOOR2%% the rule answered every answerable row, %%L5_AR%%, and refused %%L5_TN%% of the %%N_UN%% it should have: refusal recall %%L5_RR%%, under the gate's %%GATE%% with the whole interval. All %%L5_TN%% refusals were empty pools at the lane's gate, which is why the report counts them as decided by code. The %%L5_FA%% false answers (%%L5_FA_IDS%%) are rows whose top passages carry at least half of the question's information, %%N_AT1_UN%% of them all of it, rf-02's casual leave among them. The Brier score of %%BRIER_RULE%% grades the share as if it were a probability, which it is not; the bins say the same more plainly, with %%BIN_TOP_N%% rows in the top bin and %%BIN_TOP_UN%% of them not answerable. Every rate is the rule's alone: the other two arms said why they did not decide, and decided nothing.</p></div>
+
+<h4>Change it: a higher floor</h4>
+<p>Raise the floor and the rule buys refusals with answers. The same run at 0.70:</p>
+%%CELL_FLOOR%%
+%%OUT_FLOOR%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Refusal recall rose to %%L7_RR%% and the answer rate fell to %%L7_AR%%: %%L7_FN%% answerable rows are now refused (%%L7_LOST_IDS%%), most of them joins, whose answer is spread across passages that each carry only part of the question's words. Accuracy went from %%L5_ACC%% to %%L7_ACC%%. The bench in step 1 shows the rest of the trade: from %%BEST_FLOOR%% upwards nothing more is refused, because the %%N_AT1_UN%% unanswerable rows at a share of 1.00 carry every word they ask with, and the rule's best on this lane is %%BEST_RR%%.</p></div>
+
+<h4>Jev's switch, called by hand</h4>
+<p><code>shared/system_one.py</code> is the only door to Jev, and <code>decide()</code> its only entry point. It never raises: every outcome is a result with a verdict of answer, refuse, skipped or error, and only the first two are decisions. The mode is read at call time, and off returns at once. An empty pool is refused in code, as rag-api refuses it, before any mode could ask Jev. Recorded mode reads the recorded file and nothing else. Live mode checks the tenant's <code>data_region</code> first, failing closed to <code>in</code>, then builds the payload from the question and the passages' text with identifiers masked, and only then reaches the adapter seam: <code>_headers()</code>, <code>_request()</code> and <code>_parse()</code>, which PR 2.6-C fills once TypeSafe documents its API. Until then <code>_request()</code> raises before any key is read or any socket opens, and <code>decide()</code> turns that into an error row, which no rate counts as a refusal.</p>
+@@modes@@
+@@decide_fn@@
+@@live_fn@@
+@@seam@@
+@@payload_fn@@
+
+<p>Run the Rs 0 eval with <code>JEV_MODE=recorded</code> on zeta's %%N_ZETA%% rows, then call <code>decide()</code> in each mode, with the data regions <code>make roster</code> writes standing in for the Firestore read:</p>
+%%CELL_ZETA_REC%%
+%%OUT_ZETA_REC%%
+%%CELL_SWITCH%%
+%%OUT_SWITCH%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Recorded mode named the file it looked for and why it is absent, and skipped every row that had a pool: a skip, never a refusal, so Jev's line reads not available. The bracket on that line counts the one row Jev was never asked about: %%ZETA_EMPTY%%, whose pool the Rs 0 lane's gate emptied, refused in code as it is for every arm. The four calls walked the switch. Off sent nothing. Recorded found no file. Live for globex stopped at the policy, because globex's <code>data_region</code> is <code>in</code> and Jev's region is undocumented. Live for acme passed the policy, masked the invoice's PAN, had the question and one passage ready, and stopped at the seam with <code>%%NOT_CONFIGURED%%</code>: an error, and nothing left the machine.</p>
+<p>The last lines show what the mask does not cover. The invoice's GSTIN fails its own check character, so the finder does not take it for a GSTIN, and the contact number and the email address are not among the four identifiers the kit masks. A live call would have carried all three. That is one reason the question of which tenants may be sent to Jev is still open (step 7).</p></div>
