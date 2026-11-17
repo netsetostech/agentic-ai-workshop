@@ -2,7 +2,8 @@
 
 The numbers and texts on the page come from the kit at build time: the contract's limits from
 shared/documind_schemas.py, the generator's settings and rates from config.py and cost.py, the empty pool's constant
-from main.py, the resolver bench's two packed chunks from the kit's chunker, and the offline cell of step 3, which is
+from main.py, the resolver bench's two packed chunks from the kit's chunker and its marks' pattern from the kit's MARKER,
+the bench's resolve() checked in node against the kit's on the bench's drafts, and the offline cell of step 3, which is
 executed here so its expected output is the kit's own.
 """
 import ast
@@ -58,8 +59,10 @@ EXCERPTS = {
                     block(SCH, "class DraftCitation(BaseModel):", end="def resolve(")),
     "citation_class": ("shared/documind_schemas.py - Citation and RAGAnswer: what a caller receives, and the contract",
                        block(SCH, "class Citation(BaseModel):", end="class DraftCitation(")),
-    "resolve_fn": ("shared/documind_schemas.py - resolve(): the draft's numbers against the packed list",
+    "resolve_fn": ("shared/documind_schemas.py - resolve(): the draft's numbers and the answer's marks against the packed list, one citation a chunk",
                    block(SCH, "    cits: List[Citation] = []", end="    return RAGAnswer(") + "\n" + block(SCH, "    return RAGAnswer(", n=2)),
+    "cited_numbers": ("shared/documind_schemas.py - MARKER and cited_numbers(): the [N], [N, M] and [Source N] marks resolve() reads in the answer",
+                      block(SCH, "MARKER = re.compile(", n=1) + "\n\n\n" + block(SCH, "def cited_numbers(answer: str)")),
     "empty_pool": ("services/rag-api/main.py - EMPTY_POOL_ANSWER: the refusal the API writes itself",
                    block(API, "EMPTY_POOL_ANSWER = (", n=3)),
     "generate_fn": ("services/rag-api/generator.py - generate(): the pack, the prompt, the call, the resolution against the packed list, the envelope",
@@ -92,6 +95,8 @@ EXCERPTS = {
 }
 assert "class ModelDraft" in EXCERPTS["draft_class"][1] and "class RAGAnswer" in EXCERPTS["citation_class"][1]
 assert EXCERPTS["resolve_fn"][1].rstrip().endswith("confidence=draft.confidence, answerable=draft.answerable)"), EXCERPTS["resolve_fn"][1][-90:]
+assert "if chunk_id in seen:" in EXCERPTS["resolve_fn"][1] and 'cite(n, "")' in EXCERPTS["resolve_fn"][1], EXCERPTS["resolve_fn"][1]
+assert EXCERPTS["cited_numbers"][1].rstrip().endswith("return numbers"), EXCERPTS["cited_numbers"][1][-90:]
 assert EXCERPTS["empty_pool"][1].rstrip().endswith('"expect is ingested and current, or ask with the words it uses.")')
 assert EXCERPTS["unparsed"][1].rstrip().endswith('raise HTTPException(502, f"generation produced no parseable answer ({reason})")'), EXCERPTS["unparsed"][1][-120:]
 assert EXCERPTS["retry_guard"][1].rstrip().endswith('"thoughts": getattr(r.usage_metadata, "thoughts_token_count", None)}))')
@@ -119,6 +124,7 @@ EMPTY_POOL = next(ast.literal_eval(n.value) for n in main_tree.body if isinstanc
 sys.path[:0] = [str(KIT), str(KIT / "services" / "rag-api")]
 from context_budget import TokenBudget, estimate_tokens  # noqa: E402
 from shared import documind_corpus as dc  # noqa: E402
+from shared.documind_schemas import MARKER, ModelDraft, resolve  # noqa: E402
 
 gen_tree = ast.parse((KIT / GEN).read_text(encoding="utf-8"))
 K = {n.targets[0].id: ast.literal_eval(n.value) for n in gen_tree.body
@@ -134,6 +140,7 @@ run = subprocess.run([sys.executable, "-"], input=cell_src, cwd=str(KIT), captur
 assert run.returncode == 0, run.stderr[-800:]
 OFFLINE_OUT = run.stdout.strip("\n")
 assert "2 of 3 citations kept" in OFFLINE_OUT and OFFLINE_OUT.count("refused (") == 3 and "the empty pool's" in OFFLINE_OUT, OFFLINE_OUT[-400:]
+assert "only in the prose: 2 citations" in OFFLINE_OUT, OFFLINE_OUT
 
 # the resolver bench's two packed chunks, from the kit's chunker
 handbook = dc.chunk_document({"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://uploads/acme/hr_policy_2026.md",
@@ -144,6 +151,15 @@ words = lambda t, n: " ".join(t.split()[:n])
 GOOD = {"answer": "A confirmed employee in grade E3 serves the notice period in NP-03 [1]; probation is different [2].",
         "citations": [{"source": 1, "quote": words(packed[0]["text"], 12)}, {"source": 2, "quote": words(packed[1]["text"], 10)}],
         "confidence": "high", "answerable": True}
+# the two cases of 21 October: a chunk listed twice, and a source marked in the prose ([1, 2]) with one entry
+CASES = {"twice": {**GOOD, "citations": [GOOD["citations"][0], {"source": 1, "quote": " ".join(packed[0]["text"].split()[12:22])}, GOOD["citations"][1]]},
+         "prose": {**GOOD, "answer": "A confirmed employee in grade E3 serves the notice period in NP-03; probation is different [1, 2].",
+                   "citations": GOOD["citations"][:1]}}
+BENCH = {"good": GOOD, "range": {**GOOD, "citations": GOOD["citations"] + [{"source": 7, "quote": "a source that was never packed"}]}, **CASES,
+         "refusal": {"answer": "The context does not contain the answer.", "citations": [], "confidence": "low", "answerable": False}}
+KIT_RESOLVED = {k: [[c.chunk_id, c.quote] for c in resolve(ModelDraft.model_validate(d), PACKED).citations] for k, d in BENCH.items()}
+assert KIT_RESOLVED["twice"] == KIT_RESOLVED["good"] and len(KIT_RESOLVED["range"]) == 2, KIT_RESOLVED      # the repeat skipped, its first quote kept
+assert KIT_RESOLVED["prose"][1] == [PACKED[1]["chunk_id"], PACKED[1]["text"][:QUOTE_CIT]], KIT_RESOLVED["prose"]  # [2] with no entry: the chunk's own text
 
 STATS = {
     "GEN_MODEL": GEN_MODEL, "PROMPT_VERSION": PROMPT_VERSION, "ANSWER": f"{ANSWER:,}", "ANSWER_RAW": str(ANSWER),
@@ -160,6 +176,28 @@ def subst(text: str) -> str:
 
 
 # ------------------------------------------------------------------ the bench's script: the schema's rules, _draft()'s repair, resolve() and price() in JavaScript
+DATA = json.dumps({"packed": PACKED, "good": GOOD, "cases": CASES, "marker": MARKER.pattern, "quoteDraft": QUOTE_DRAFT, "quoteCit": QUOTE_CIT,
+                   "confidence": CONFIDENCE, "emptyPool": EMPTY_POOL, "model": GEN_MODEL, "rateIn": RATE_IN, "rateOut": RATE_OUT, "usdInr": float(USD_INR)},
+                  ensure_ascii=False, separators=(",", ":"))
+RESOLVE_JS = """  function norm(s){ return String(s).split(/\\s+/).join(' ').toLowerCase(); }
+  function cited(answer){                                                              /* cited_numbers(): the kit's MARKER, each number once, first use first */
+    var nums = [], re = new RegExp(D.marker, 'g'), m;
+    while ((m = re.exec(answer || '')) !== null) m[1].match(/\\d+/g).forEach(function(x){ var k = parseInt(x, 10); if (nums.indexOf(k) < 0) nums.push(k); });
+    return nums;
+  }
+  function resolve(draft){                                                             /* resolve(): one citation a chunk, the answer's marks cited too, out of range dropped */
+    var cits = [], seen = {}, r = {dropped: 0, twice: 0, added: 0};
+    function cite(n, quote, mark){ var c = D.packed[n - 1];
+      if (seen.hasOwnProperty(c.chunk_id)) { if (!mark) r.twice++; return; }
+      seen[c.chunk_id] = true; if (mark) r.added++;
+      cits.push({chunk_id: c.chunk_id, source_uri: c.source_uri, page: c.page, quote: (quote || c.text).slice(0, D.quoteCit), score: 0.0, kind: c.kind, mark: mark, grounded: norm(c.text).indexOf(norm(quote || '')) >= 0}); }
+    draft.citations.forEach(function(d){ if (1 <= d.source && d.source <= D.packed.length) cite(d.source, d.quote, 0); else r.dropped++; });
+    cited(draft.answer).forEach(function(n){ if (1 <= n && n <= D.packed.length) cite(n, '', n); });
+    r.answer = {answer: draft.answer, citations: cits, confidence: draft.confidence, answerable: draft.answerable};
+    return r;
+  }
+"""
+
 JS = """<script>
 (function(){
   'use strict';
@@ -191,14 +229,7 @@ JS = """<script>
     (o.citations || []).forEach(function(c){ if (c && typeof c.quote === 'string' && c.quote.length > D.quoteDraft) { c.quote = c.quote.slice(0, D.quoteDraft - 3).replace(/\\s+$/, '') + '...'; done = true; } });
     return done;
   }
-  function resolve(draft){                                                             /* resolve(): against the packed list, out of range dropped */
-    var cits = [];
-    draft.citations.forEach(function(d){ if (!(1 <= d.source && d.source <= D.packed.length)) return; var c = D.packed[d.source - 1];
-      cits.push({chunk_id: c.chunk_id, source_uri: c.source_uri, page: c.page, quote: (d.quote || c.text).slice(0, D.quoteCit), score: 0.0, kind: c.kind, grounded: norm(c.text).indexOf(norm(d.quote || '')) >= 0}); });
-    return {answer: draft.answer, citations: cits, confidence: draft.confidence, answerable: draft.answerable};
-  }
-  function norm(s){ return String(s).split(/\\s+/).join(' ').toLowerCase(); }
-  function price(tin, tout){ var usd = (tin * D.rateIn + tout * D.rateOut) / 1e6; return '$' + usd.toFixed(6) + ' = Rs ' + (usd * D.usdInr).toFixed(4) + ' at ' + D.usdInr; }
+__RESOLVE__  function price(tin, tout){ var usd = (tin * D.rateIn + tout * D.rateOut) / 1e6; return '$' + usd.toFixed(6) + ' = Rs ' + (usd * D.usdInr).toFixed(4) + ' at ' + D.usdInr; }
   function render(){
     var steps = [], text = ta.value.trim(), obj = null;
     if (text === '') { out.innerHTML = step('the empty pool', 'no draft, because no model was called: the handler writes the refusal itself. <pre>' + esc(JSON.stringify({answer: D.emptyPool, citations: [], confidence: 'low', answerable: false}, null, 1)) + '</pre>envelope: <code>backend none</code>, <code>tokens_in 0</code>, <code>tokens_out 0</code>, <code>cost_usd 0.0</code>, rerank and generate clocks 0; never stored in the answer cache; <code>unanswerable_flag 1</code> on the row', 'flag'); return; }
@@ -211,8 +242,13 @@ JS = """<script>
       obj = copy;
       steps.push(step('1 · _draft()', 'one violation the generator repairs rather than fails: a quote over ' + D.quoteDraft + ' characters is trimmed to the contract and the draft validated again; logged as <code>generation_repaired</code> with <ul>' + p.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>', 'flag'));
     } else steps.push(step('1 · _draft()', 'the draft validates as <code>ModelDraft</code>: ' + obj.citations.length + ' citation' + (obj.citations.length === 1 ? '' : 's') + ', confidence <code>' + esc(obj.confidence) + '</code>, answerable <code>' + obj.answerable + '</code>'));
-    var ans = resolve(obj), dropped = obj.citations.length - ans.citations.length;
-    steps.push(step('2 · resolve()', (ans.citations.length + ' of ' + obj.citations.length + ' citations resolved against the ' + D.packed.length + ' packed chunks' + (dropped ? '; ' + dropped + ' dropped: a number outside the packed list is not a citation' : '')) + (ans.citations.length ? '<ul>' + ans.citations.map(function(c, i){ return '<li>[' + (i + 1) + '] <code>' + esc(c.chunk_id) + '</code> page ' + c.page + ', score ' + c.score.toFixed(1) + ' (no ranker offline), kind ' + esc(c.kind) + ' · quote in the chunk: <code>' + c.grounded + '</code></li>'; }).join('') + '</ul>' : ''), dropped ? 'flag' : ''));
+    var r = resolve(obj), ans = r.answer, marks = cited(obj.answer), n = obj.citations.length, why = [];
+    var outside = marks.filter(function(k){ return !(1 <= k && k <= D.packed.length); }).length;
+    if (r.dropped) why.push(r.dropped + ' dropped: a number outside the packed list is not a citation');
+    if (outside) why.push(outside + ' mark' + (outside === 1 ? '' : 's') + ' outside it ignored the same way');
+    if (r.twice) why.push(r.twice + ' skipped: a chunk already cited keeps its first quote');
+    if (r.added) why.push(r.added + ' added: a source the answer marks with no entry, quoted with the chunk\\'s own text');
+    steps.push(step('2 · resolve()', ans.citations.length + ' citation' + (ans.citations.length === 1 ? '' : 's') + ' from ' + n + ' draft entr' + (n === 1 ? 'y' : 'ies') + ' and the answer\\'s marks ' + (marks.length ? marks.map(function(k){ return '[' + k + ']'; }).join(' ') : '(none)') + ', against the ' + D.packed.length + ' packed chunks' + (why.length ? '; ' + why.join('; ') : '') + (ans.citations.length ? '<ul>' + ans.citations.map(function(c, i){ return '<li>[' + (i + 1) + '] <code>' + esc(c.chunk_id) + '</code> page ' + c.page + ', score ' + c.score.toFixed(1) + ' (no ranker offline), kind ' + esc(c.kind) + (c.mark ? ' · added for the answer\\'s [' + c.mark + ']: the quote is the chunk\\'s own text' : ' · quote in the chunk: <code>' + c.grounded + '</code>') + '</li>'; }).join('') + '</ul>' : ''), why.length ? 'flag' : ''));
     var contract = {answer: ans.answer, citations: ans.citations.map(function(c){ var o = {}; ['chunk_id', 'source_uri', 'page', 'quote', 'score', 'kind'].forEach(function(k){ o[k] = c[k]; }); return o; }), confidence: ans.confidence, answerable: ans.answerable};
     steps.push(step('3 · RAGAnswer' + (ans.answerable ? '' : ', a refusal'), (ans.answerable ? 'the contract every module passes along' : 'the model\\'s refusal in the contract\\'s shape: <code>answerable false</code>, no citations, low confidence; a model call was made and billed, and the row carries <code>unanswerable_flag 1</code>') + '<pre>' + esc(JSON.stringify(contract, null, 1)) + '</pre>'));
     var tin = parseInt(tokIn.value, 10) || 0, tout = parseInt(tokOut.value, 10) || 0;
@@ -222,6 +258,7 @@ JS = """<script>
   function withCase(name){
     var g = JSON.parse(JSON.stringify(D.good));
     if (name === 'good') {}
+    else if (D.cases[name]) g = JSON.parse(JSON.stringify(D.cases[name]));
     else if (name === 'range') g.citations.push({source: 7, quote: 'a source that was never packed'});
     else if (name === 'long') g.citations[0].quote = D.packed[0].text.split(/\\s+/).slice(0, 60).join(' ');
     else if (name === 'invalid') g.confidence = 'certain';
@@ -235,9 +272,14 @@ JS = """<script>
   withCase('good');
 })();
 </script>
-""".replace("__DATA__", json.dumps({"packed": PACKED, "good": GOOD, "quoteDraft": QUOTE_DRAFT, "quoteCit": QUOTE_CIT, "confidence": CONFIDENCE,
-                                     "emptyPool": EMPTY_POOL, "model": GEN_MODEL, "rateIn": RATE_IN, "rateOut": RATE_OUT, "usdInr": float(USD_INR)},
-                                    ensure_ascii=False, separators=(",", ":")))
+""".replace("__RESOLVE__", RESOLVE_JS).replace("__DATA__", DATA)
+
+# the bench's resolve() against the kit's, on the bench's drafts: the same chunk ids and quotes, in the same order
+node = subprocess.run(["node"], input=f"var D = {DATA};\n{RESOLVE_JS}\nvar B = {json.dumps(BENCH, ensure_ascii=False)};\n"
+                      "var o = {}; Object.keys(B).forEach(function(k){ o[k] = resolve(B[k]).answer.citations.map(function(c){ return [c.chunk_id, c.quote]; }); });\n"
+                      "console.log(JSON.stringify(o));", capture_output=True, text=True, encoding="utf-8")
+assert node.returncode == 0, node.stderr[-800:]
+assert json.loads(node.stdout) == KIT_RESOLVED, (json.loads(node.stdout), KIT_RESOLVED)
 
 body = "".join([
     subst(fill(pb.part(LESSON, "a"))),

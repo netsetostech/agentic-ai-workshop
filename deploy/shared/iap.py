@@ -56,6 +56,15 @@ from functools import lru_cache
 IAP_CERTS = "https://www.gstatic.com/iap/verify/public_key"
 IAP_ISSUER = "https://cloud.google.com/iap"
 ASSERTION_HEADER = "x-goog-iap-jwt-assertion"
+# Cloud Run drops a caller-supplied x-goog-iap-jwt-assertion before the container (16 October 2026: a forged one
+# reached neither documind-api nor documind-chat), so a surface forwards the person's assertion under this name
+# too. Only the name differs: verify() checks it exactly as it checks IAP's own header.
+FORWARD_HEADER = "x-documind-assertion"
+
+
+def assertion_of(headers):
+    """IAP's own header first (the service is behind IAP), then the one a surface forwarded."""
+    return headers.get(ASSERTION_HEADER) or headers.get(FORWARD_HEADER)
 
 
 class IapError(Exception):
@@ -108,7 +117,7 @@ def email_from(headers) -> str:
     Accepts anything with .get() - FastAPI's request.headers and Streamlit's
     st.context.headers both qualify, which is why this signature and not a framework type.
     """
-    return verify(headers.get(ASSERTION_HEADER))["email"]
+    return verify(assertion_of(headers))["email"]
 
 
 def parse_allowlist(raw: str | None) -> frozenset[str]:
@@ -175,7 +184,7 @@ def identity(headers, *, bearer_audience: str | None = None) -> dict:
     was allowed to call. With no assertion and a bearer audience configured, the token's own
     identity is the caller. With neither, refuse - there is nobody to be.
     """
-    assertion = headers.get(ASSERTION_HEADER)
+    assertion = assertion_of(headers)
     if assertion:
         claims = verify(assertion)
         return {"email": claims["email"], "via": "iap", "aud": claims["aud"]}

@@ -391,18 +391,20 @@ CHUNK_ID, QUESTION = "acme:code_on_wages_2019#p9-1", "Is withholding an employee
 CH = next(c for c in CHUNKS if c["chunk_id"] == CHUNK_ID)
 assert CH not in mt.sample(CHUNKS, 300) and mt.exclude_golden([{**CH, "question": QUESTION}], GOLDEN)[0], "the served question must be neither trained nor tested"
 assert "the withholding of increment or promotion, including the stoppage of an increment" in re.sub(r"\s+", " ", CH["text"])
-SERVE_PY = """import ast, os, re, sys, types as pytypes
+SERVE_PY = """import ast, json, logging, os, re, sys, types as pytypes
 sys.path[:0] = [".", "evals", "services/rag-api"]
 from google import genai
 from google.genai import errors, types
+from pydantic import ValidationError
 import make_trainset as mt
 from context_budget import source_header
-from shared.documind_schemas import ModelDraft
+from shared.documind_schemas import DraftCitation, ModelDraft
 P, EP = os.environ["PROJECT"], os.environ["ENDPOINT"]
-fn = next(n for n in ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read()).body
-          if isinstance(n, ast.FunctionDef) and n.name == "_endpoint_location")
-ns = {"re": re, "settings": pytypes.SimpleNamespace(generator_location=os.environ.get("GENERATOR_LOCATION", ""), region=os.environ["REGION"])}
-exec(compile(ast.Module([fn], []), "generator.py", "exec"), ns)       # lifted: generator.py builds its clients when imported
+fns = [n for n in ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read()).body
+       if isinstance(n, ast.FunctionDef) and n.name in ("_endpoint_location", "_quote_limit", "_problems", "_draft")]
+ns = {"re": re, "json": json, "log": logging.getLogger("generator"), "ValidationError": ValidationError, "DraftCitation": DraftCitation,
+      "ModelDraft": ModelDraft, "settings": pytypes.SimpleNamespace(generator_location=os.environ.get("GENERATOR_LOCATION", ""), region=os.environ["REGION"])}
+exec(compile(ast.Module(fns, []), "generator.py", "exec"), ns)       # lifted: generator.py builds its clients when imported
 where = ns["_endpoint_location"](EP)
 print(f"the endpoint's path says {EP.split('/locations/', 1)[1].split('/', 1)[0]}; the generator would call it at {where}")
 c = next(c for c in mt.load_chunks("acme") if c["chunk_id"] == "acme:code_on_wages_2019#p9-1")       # not a training row's chunk
@@ -414,12 +416,16 @@ tree = ast.parse(open("services/rag-api/cost.py", encoding="utf-8").read())
 usd_in, usd_out = next(ast.literal_eval(n.value) for n in tree.body
                        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "FALLBACK")["gemini-3.1-flash-lite"]
 for loc in dict.fromkeys(("us-central1", "global", where)):
+    client = genai.Client(enterprise=True, project=P, location=loc)      # held in a name: a client closes once nothing holds it
     try:
-        r = genai.Client(enterprise=True, project=P, location=loc).models.generate_content(model=EP, contents=prompt, config=cfg)
+        r = client.models.generate_content(model=EP, contents=prompt, config=cfg)
     except errors.APIError as e:
         print(f"  {loc:12} {e.code} {e.status}")
         continue
-    d, u = ModelDraft.model_validate_json(r.text), r.usage_metadata
+    d, u = ns["_draft"](r), r.usage_metadata      # read as the generator reads it: a quote over 200 characters is cut, and logged
+    if d is None:
+        print(f"  {loc:12} answered, and the generator reads no draft from it: {r.text[:200]}")
+        continue
     out = (u.candidates_token_count or 0) + (u.thoughts_token_count or 0)
     marks = re.findall(r"\\[(\\d+(?:\\s*,\\s*\\d+)*)\\]", d.answer)
     rs = (u.prompt_token_count * usd_in + out * usd_out) / 1e6 * 85

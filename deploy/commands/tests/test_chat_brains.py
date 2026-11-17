@@ -91,6 +91,16 @@ class SummaryIsPerTurn(unittest.TestCase):
         with self.assertRaises(ValueError):
             summary_fn()(self.thread(), "turn9")
 
+    def test_an_agent_turn_counts_in_the_sidebar_cost(self):
+        """The agent branch returns before the stream's tally, so it adds the turn's cost_inr and redraws the sidebar
+        itself: under an agent brain the sidebar stayed at Rs 0.00 (22 October 2026)."""
+        branch = next(n for n in ast.walk(ast.parse(UI_SRC)) if isinstance(n, ast.If)
+                      and ast.get_source_segment(UI_SRC, n.test) == 'brain != "direct"')
+        src = ast.get_source_segment(UI_SRC, branch)
+        self.assertIn('ss.last_turn_cost = lim["cost_inr"] / USD_INR', src)
+        self.assertIn("ss.session_cost_usd = ss.get(\"session_cost_usd\", 0) + ss.last_turn_cost", src)
+        self.assertLess(src.index("show_cost(cost_slot)"), src.rindex("return"))     # before the branch's last return
+
     def test_the_ui_draws_an_agent_answer_with_pills_and_escapes_it(self):
         """_as_source() maps the chat service's citations to citations.py's shape, and the answer is escaped
         before render_with_citations(), which draws with unsafe_allow_html."""
@@ -110,24 +120,30 @@ class SummaryIsPerTurn(unittest.TestCase):
         st = types.SimpleNamespace(markdown=lambda text, **kw: drawn.append((text, kw)), expander=lambda *a: Expander(),
                                    caption=lambda *a, **k: None, image=lambda *a, **k: None, video=lambda *a, **k: None,
                                    link_button=lambda *a, **k: None)
-        ns = {"re": __import__("re"), "st": st, "signed_url": lambda uri, page=None: "https://signed.invalid/x"}
+        ns = {"re": __import__("re"), "st": st, "signed_url": lambda uri, page=None: "https://signed.invalid/x",
+              "escape": html.escape}
         exec(defs(CITES_SRC, "_CITE", "_mmss", "_label", "render_with_citations"), ns)
         exec(defs(UI_SRC, "_as_source"), ns)
         reply = [{"n": 1, "chunk_id": "acme:gratuity#4", "source_uri": "gs://b/acme/gratuity.pdf", "page": 3,
                   "quote": 'not less than "five" years', "score": 0.9},
                  {"n": 2, "chunk_id": "acme:gratuity#9", "source_uri": "gs://b/acme/fig.pdf", "page": 7, "quote": "a figure",
                   "score": 0.8, "kind": "figure", "media_url": "gs://b/acme/fig.png"}]
+        reply.append({"n": 3, "chunk_id": "acme:hr#0", "source_uri": "gs://b/acme/hr.md", "page": 1, "score": 0.7,
+                      "quote": "# ACME Employee Handbook 2026\n\nSynthetic <b>document</b>."})
         cited = [ns["_as_source"](c) for c in reply]
         self.assertEqual(cited[0], {"text": 'not less than "five" years', "source_uri": "gs://b/acme/gratuity.pdf",
                                     "page_start": 3, "kind": "text", "media_url": None, "start": None, "end": None})
         self.assertEqual((cited[1]["kind"], cited[1]["media_url"]), ("figure", "gs://b/acme/fig.png"))
-        ns["render_with_citations"](html.escape("Five years [1], see [2]. <img src=x onerror=alert(1)>", quote=False), cited)
+        ns["render_with_citations"](html.escape("Five years [1], see [2] and [3]. <img src=x onerror=alert(1)>", quote=False), cited)
         text, kw = drawn[0]
         self.assertTrue(kw.get("unsafe_allow_html"))
         self.assertIn("&lt;img src=x onerror=alert(1)&gt;", text)
         self.assertNotIn("<img", text)
         self.assertIn('title="not less than &quot;five&quot; years..."', text)       # pill 1 is the first citation
         self.assertIn(">[Fig 2, p.7]</span>", text)                                    # pill 2 is the figure
+        # pill 3's passage opens with a heading and a blank line: one escaped line, or the span breaks out of Markdown
+        self.assertIn('title="# ACME Employee Handbook 2026 Synthetic &lt;b&gt;document&lt;/b&gt;...."', text)
+        self.assertNotIn("\n", text)
 
 
 @unittest.skipUnless(FRAMEWORKS or REQUIRE, "needs the chat image's pins: pip install -r services/chat/requirements.txt")

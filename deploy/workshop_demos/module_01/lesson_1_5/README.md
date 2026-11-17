@@ -236,14 +236,14 @@ At lesson end: This dead letter deserves the second choice: the object was never
 
 This dead letter deserves the second choice: the object was never meant to be indexed. Acknowledge the message to remove it from the queue, and delete the empty object from the bucket, because an object with no ledger row is exactly what the nightly walk of lesson 1.8 looks for, and it would rewrite the object onto itself and send the same poison round again every night. Both commands change your lane; both act only on the drill's own artefacts.
 
-Operation: bash — run in the operator shell (removes the dead letter and the empty object; nothing else).
+Operation: bash — run in the operator shell (removes the drill's dead letter and the empty object; nothing else).
 
 IDE adaptation: Use a unique saved empty-object name and generation; inspect/acknowledge only its exact dead letter and delete only its owned object. Time-window retry logs alone cannot identify that object.
 
 Expected shape, not a promised result:
 
 ```text
-acme/poison-1758542871.pdf
+Acked the messages with the following ackIds: [...]
 Removing gs://documind-ai-YOUR-ID-uploads/acme/poison-1758542871.pdf...
 ```
 
@@ -265,6 +265,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.5_Upload_Events_WIX.html`. All 40 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `b5b29878d6f78d5862acedd06fe8cace4972e7ab`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.5_Upload_Events_WIX.html`. All 42 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `c13c10b9db2e1fdf0b526e9a1ea8969bdb645a7e`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

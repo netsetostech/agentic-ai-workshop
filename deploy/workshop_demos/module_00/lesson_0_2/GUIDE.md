@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_0.2_Local_Environment_WIX.html`, reviewed at blob `8085442943c65c12c22f9b8bcad6a06e9f4e71bc`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_0.2_Local_Environment_WIX.html`, reviewed at blob `594d2c7c68d214d7e4283d448fdeef74fd783ae4`. Learners read that page on the course site; this guide keeps its prose.
 
 Every later lesson starts from the same place: a terminal on your machine, the kit cloned into ~/deploy_module_rag, and its Python in ~/rag-shell-venv. This lesson builds that place and then uses it. You will read the master diagram of DocuMind's two workflows, run the chat service on your laptop with a local model and no cloud at all, and ask it the notice-period question: the answer comes back with citations, for Rs 0. Then you will run the kit's offline gate, watch it pass, loosen one row of the golden set the way a hurried engineer would, read the failure it prints, and repair it.
 
@@ -112,7 +112,7 @@ The local half of each builder: `ChatOllama` with `gemma3:4b` at temperature 0, 
 
 #### What make chat-local runs
 
-Two commands. The first seeds the store: `python -m shared.local_corpus acme` writes every chunk of acme's corpus into the Chroma directory, and Chroma replaces a chunk that has the same id, so running it again is harmless. The second starts the chat service under uvicorn on `127.0.0.1:8081`, from `services/chat`, with the kit's root on `PYTHONPATH` so that `shared/` imports.
+Two commands. The first seeds the store: `python -m shared.local_corpus acme` writes every chunk of acme's corpus into the Chroma directory, and Chroma replaces a chunk that has the same id, so running it again is harmless. The second starts the chat service under uvicorn on `127.0.0.1:8081`, from `services/chat`, with the kit's root on `PYTHONPATH` so that `shared/` imports. The recipe seeds from the kit's root and serves from `services/chat`, and the store's default path, `./documind_chroma`, is relative, so left to the default the two commands would open two different directories: the service would find an empty store and answer `local corpus is empty`. Setting one absolute path as `DOCUMIND_CHROMA_DIR` on both lines gives both commands the same directory: `$(CURDIR)` is the directory make runs in, the kit's root.
 
 The seed uses the notebooks' loader, `shared/documind_corpus.py`. It reads each document's text (a Markdown file as it is, a PDF through the text mirror `evals/fetch_real.py` extracted beside it), cuts it by the kit's two rules, one chunk per `##` section or 2,000-character windows within a page, and names each piece the way the notebooks' Firestore seed names it: `acme:hr_policy_2026#NP-03`. The deployed worker, which Module 1 opens, cuts by the same rules but names a piece by its version, `acme:#`, and reads a PDF with Document AI instead of the mirror, so its pieces of a PDF can differ; lesson 1.2 compares the two. For acme the seed writes 1,628 chunks from 17 documents: the 12 real documents with a text layer, and 5 synthetic ones. The scanned POSH Act has no text a laptop can read; only the lane's OCR reads it.
 
@@ -122,7 +122,7 @@ The lane gets a venv of its own, `~/rag-local-venv`. Its packages are the chat s
 
 #### Start the lane
 
-Start it in the second terminal, so the first stays free for questions. One line in this block matters more than it looks. The recipe seeds from the kit's root and serves from `services/chat`, and the store's default path, `./documind_chroma`, is relative, so the two commands would open two different directories: the service would find an empty store and answer `local corpus is empty`. Exporting one absolute path as `DOCUMIND_CHROMA_DIR` gives both commands the same directory.
+Start it in the second terminal, so the first stays free for questions.
 
 The first line is the seed's: `seeded 1628 chunks for tenant 'acme' into the local store`. The build of this page ran the same module on the kit, with Chroma stood in, and it printed the same line. uvicorn's lines follow it: the service is up, listening on your machine only.
 

@@ -10,7 +10,7 @@ The number after `demo_` is the visible HTML section number, not the demo count 
 |---|---|---|
 | setup | [setup/prepare.py](setup/prepare.py) | Before you run anything: set up the shell |
 | 3 | [demo_03_the_question_s_vector_direct_candidates_and_api_citations.py](demo_03_the_question_s_vector_direct_candidates_and_api_citations.py) | The question's vector: direct candidates and API citations |
-| 4 | [demo_04_authorized_the_tenant_comes_from_identity_and_one_index_serves_three.py](demo_04_authorized_the_tenant_comes_from_identity_and_one_index_serves_three.py) | Authorized: the tenant comes from identity, and one index serves three |
+| 4 | [demo_04_authorized_the_tenant_comes_from_identity_and_one_index_holds_three.py](demo_04_authorized_the_tenant_comes_from_identity_and_one_index_holds_three.py) | Authorized: the tenant comes from identity, and one index holds three |
 | 5 | [demo_05_filters_two_keys_a_400_for_everything_else.py](demo_05_filters_two_keys_a_400_for_everything_else.py) | Filters: two keys, a 400 for everything else |
 | 6 | [demo_06_the_restricts_the_per_request_backend_and_the_stages_block.py](demo_06_the_restricts_the_per_request_backend_and_the_stages_block.py) | The restricts, the per-request backend, and the stages block |
 | 7 | [demo_07_current_is_the_ledger_s_filter_never_the_caller_s.py](demo_07_current_is_the_ledger_s_filter_never_the_caller_s.py) | Current is the ledger's filter, never the caller's |
@@ -84,11 +84,11 @@ vector_chunks: greater than 0
 PASS: the direct search worked and Vector Search contributed to the API pool.
 ```
 
-### demo_04_authorized_the_tenant_comes_from_identity_and_one_index_serves_three.py
+### demo_04_authorized_the_tenant_comes_from_identity_and_one_index_holds_three.py
 
 The UI's service account, which your tok() impersonates, sits on all three rosters. The first two calls send it the same question against acme and zeta; the third sends the outsider's token; the fourth sends the UI's token with a header that claims to be someone else. Each line shows the HTTP status. A request turned away for a reason that passes, a model quota hit, a Cloud Run scale-up or a dropped connection, is asked once more after five seconds; anything else prints the reason the service gave instead of a traceback.
 
-**`step_01_one_identity_two_tenants_one_outsider(session)` — Authorized: the tenant comes from identity, and one index serves three / Do it: one identity, two tenants, one outsider**
+**`step_01_one_identity_two_tenants_one_outsider(session)` — Authorized: the tenant comes from identity, and one index holds three / Do it: one identity, two tenants, one outsider**
 
 The UI's service account, which your tok() impersonates, sits on all three rosters. The first two calls send it the same question against acme and zeta; the third sends the outsider's token; the fourth sends the UI's token with a header that claims to be someone else. Each line shows the HTTP status. A request turned away for a reason that passes, a model quota hit, a Cloud Run scale-up or a dropped connection, is asked once more after five seconds; anything else prints the reason the service gave instead of a traceback.
 
@@ -186,6 +186,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.1_Query_Filters_WIX.html`. All 29 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `eec99fabc474ce0ab221815772043a8d9d45a33f`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.1_Query_Filters_WIX.html`. All 29 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `6b560a3bcea4a2983aed9a84ab4fe1a800c3faf7`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

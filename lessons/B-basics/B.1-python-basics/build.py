@@ -180,7 +180,7 @@ assert 'req.add_header("Authorization", f"Bearer {token}")' in RUN_EVAL
 EVAL_TIMEOUT = re.search(r'req = urllib\.request\.Request\(f"\{api_url\.rstrip\(\'/\'\)\}/v1/query".*?urlopen\(req, timeout=(\d+)\)', RUN_EVAL, re.S).group(1)
 assert 'for key, kind in (("answer", str), ("citations", list), ("answerable", bool)):' in RUN_EVAL
 assert 'if body.get("confidence") not in ("high", "medium", "low"):' in RUN_EVAL
-assert "time.sleep(2)" in RUN_EVAL and "if status == 200 or 400 <= status < 500:" in RUN_EVAL
+assert "time.sleep(RETRY_AFTER_429_S if status == 429 else 2)" in RUN_EVAL and "if status == 200 or (400 <= status < 500 and status != 429):" in RUN_EVAL
 assert "12 September 2026 - the gate learned to fail" in RUN_EVAL
 LK_BODY = json.dumps({"query": LK["question"], "tenant_id": LK["tenant"], "top_k": 6})
 RAG_DF = (KIT / "services/rag-api/Dockerfile").read_text(encoding="utf-8")
@@ -240,7 +240,7 @@ EXCERPTS = {
     "chat_pass": ("services/chat/desk.py - a second task beside the turn, awaited before the request ends",
                   block("services/chat/desk.py", "async def _quietly(aw) -> None:", n=5) + "\n# ...\n"
                   + block("services/chat/desk.py", "    async def _pass(self, scope, receive, send, body: bytes, question: str, tenant: str | None):", n=8)),
-    "eval_ask": ("evals/run_eval.py - ask(): one retry, and only for a 5xx or no answer",
+    "eval_ask": ("evals/run_eval.py - ask(): one retry, for a 5xx, no answer or a 429",
                  block("evals/run_eval.py", "def ask(api_url: str, question: str, tenant: str, email: str, token: str | None, retries: int = 1):")),
     "validate_body": ("evals/run_eval.py - validate_body(): a 200 is checked before it counts",
                       block("evals/run_eval.py", "def validate_body(body) -> str | None:")),

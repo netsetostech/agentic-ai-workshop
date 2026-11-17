@@ -1,0 +1,66 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; The deployed UI</span><h3>The Chat page: the answer to a join, and the thinking it billed</h3><p>jn-03 asked the way a person asks it, and the one usage row that says what the answer cost.</p></div></div>
+
+<h4>Definition</h4>
+<p>The Chat page's direct brain posts the question to <code>/v1/stream</code> with <code>top_k</code> %%UI_TOP_K%%. The stream retrieves and reranks as <code>/v1/query</code> does, then answers through <code>generate_stream()</code>: the same model, the same <code>SYSTEM</code> and the same thinking level, %%KIT_LEVEL%%, but no response schema, so the answer streams as plain text. What the page draws is the answer and its sources. The thinking is not in the stream, because the request names a level and asks for nothing back. It is in the bill. The stream's usage row carries <code>tokens_out</code>, which <code>generator._usage()</code> makes by adding the thought tokens to the visible ones, and the row's <code>cost_usd</code> prices all of it at the output rate.</p>
+
+<h4>Do it: jn-03 in the Chat page, then its row</h4>
+<p>In the Chat page, signed in as yourself, ask exactly: <strong>%%JN03_Q%%</strong> Read the answer: the eval gate would want %%JN03_FIGS%% in it. Then read the API's log for the last ten minutes.</p>
+%%CELL_UI%%
+%%OUT_UI%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The page showed an answer and its sources, and nothing of how the model got there. The row says what that cost: <code>tokens_out</code> is the answer you read plus the thinking you did not, both at the output rate of USD %%P_OUT%% a million tokens on <code>%%GEN_MODEL%%</code>, %%RATIO%% times the input rate. The row cannot say which part was which. The bench in step 6 can, because it keeps the two counts apart.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit's code</span><h3>Chain of thought in the kit: the level, the schema, the zero-shot prompt and the bench</h3><p>Where the generator sets its thinking, why prompted working can only land in the answer, and how the prompt bench changes either without touching generator.py.</p></div></div>
+
+<h4>Definition: the generator's thinking</h4>
+<p><code>_call()</code> sends one <code>generate_content</code> with the structured-answer config. Two of its settings are the cap and the thinking: <code>max_output_tokens</code>, %%MAX_ANSWER%% unless the retry asks for three times that, and <code>thinking_level</code> %%KIT_LEVEL%%. The comment between them says why there is no temperature, and why the kit names a level rather than a budget of zero. <code>_usage()</code> then bills each attempt: the thought tokens join the visible ones in <code>tokens_out</code>, the figure every usage row and the month's budget counter read. Lesson 3.5 reads the rest of the call.</p>
+@@gen_thinking@@
+@@gen_usage@@
+
+<h4>Definition: the answer's shape has no field for working</h4>
+<p><code>ModelDraft</code> is what the model is asked to return: an answer, its citations, a confidence, and whether it could answer at all. When google-genai turns the class into the request's schema, it lists the fields in their declared order, as <code>property_ordering</code> %%DRAFT_ORDER_CODE%%, so the reply's first field is the answer itself. (Checked when this page was built, with google-genai %%GENAI_VERSION%%; rag-api pins %%GENAI_PIN%%.) A model that thinks has done its working by then, in thought tokens. A model asked to show its working has one place to write it: inside <code>answer</code>.</p>
+@@draft@@
+
+<h4>Definition: the generator's prompt is zero-shot</h4>
+<p><code>SYSTEM</code> is five numbered rules and no example. <code>generate()</code> starts every prompt with it, adds <code>DATED_RULE</code> as a sixth rule only when a packed passage carries an effective date, then appends the packed context and the question. Nothing in it shows a solved question, and nothing asks for the working: what the model works out before it answers is left to the thinking level.</p>
+@@system@@
+
+<h4>Definition: the prompt bench</h4>
+<p><code>evals/prompt_bench.py</code> asks the kit's own <code>generate()</code> the same question at each level you name, from one fixed pool. Each row's pool is read once from your lane's <code>/v1/passages</code> before any answer is asked; step 5 reads one. Each answer goes through a recorder that stands in for <code>generator._client</code>. It sends the request as <code>_call()</code> built it, with the level being benched in place of %%KIT_LEVEL%%, and keeps the config as sent and the usage, the thought tokens apart from the visible ones. The kit arm at %%KIT_LEVEL%% is therefore the API's own request. A rule added with <code>--add-rule</code> changes <code>generator.SYSTEM</code> in memory for the edit arm's answers only, and the kit's text goes back after, so generator.py is never written. Every answer is judged by the eval gate's own <code>row_verdict()</code>, and every quote is checked against the row's pool. <code>make bench</code> mints the API's token as <code>documind-ui-sa</code> and runs the script; without make, set <code>DOCUMIND_ID_TOKEN</code> and <code>GOOGLE_CLOUD_PROJECT</code> yourself.</p>
+@@pb_levels@@
+@@pb_usage@@
+@@pb_recorder@@
+@@pb_edit@@
+@@pb_bench@@
+@@mk_bench@@
+
+<h4>Do it, offline: the edit arm's prompt, before you pay for it</h4>
+<p>Step 7 adds one rule. This cell builds the edit arm's <code>SYSTEM</code> with the bench's own <code>edit_system()</code>, from generator.py's text read as data, since importing generator.py builds a Gemini client for your lane. Then it hashes both prompts as the bench's header does, <code>SYSTEM</code> followed by <code>DATED_RULE</code>, the text lesson 3.6 binds to a version, and looks each hash up in the kit's registry of prompt versions. No model is called.</p>
+%%CELL_EDIT%%
+%%OUT_EDIT%%
+
+<h4>Do it, offline: the bench's and the swap's own tests</h4>
+<p>The two test files run the bench on a scripted model and a stand-in lane, and the router's example swap on its scripted classifier. They check the level and the temperature sent, the rule edited in memory with generator.py untouched, the gate's verdict on every answer, the rupees, and the swap put back whatever happens. The pipe keeps the summary lines.</p>
+%%CELL_TESTS%%
+%%OUT_TESTS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the two places a chain of thought can live in DocuMind. The thinking is one setting in <code>_call()</code>, billed through <code>_usage()</code> and never returned. The working has no field of its own, so a rule that asks for it puts it in the answer. The edit arm's prompt is the kit's five rules and one more. Its hash, %%EDIT_SHA_SHORT%%..., is a text no version names yet; the kit's, %%KIT_SHA_SHORT%%..., is the one <code>services/rag-api/prompt_versions.json</code> registers as <code>%%PROMPT_LABEL%%</code>.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; REST</span><h3>The pool the bench holds fixed: /v1/passages for jn-03</h3><p>The retrieval half of /v1/query and nothing after it: the passages a join's answer is written from, with no model call.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>POST /v1/passages</code> runs the same door, roster, retrieval and rerank as <code>/v1/query</code>, then returns the pool itself, each passage with its full text, and writes a usage row with no tokens and no cost. The bench reads each row's pool here once, with the body <code>run_eval.ask()</code> sends, <code>top_k</code> %%TOP_K%%, and every arm, level and run answers from that pool. A difference between two of its answers is then the prompt's or the model's, never retrieval's. A row whose pool comes back empty is not benched: <code>/v1/query</code> would refuse it with no model call.</p>
+
+<h4>Do it: jn-03's pool, and where its two facts sit</h4>
+<p>The curl saves the route's reply. The Python cell lists the passages and checks them with run_eval's own rules: which passage holds each figure the gate wants (<code>contains()</code>), and whether each anchor the row names is in the pool (<code>anchors_found()</code>, the rule <code>DOCUMIND_EVAL_PASSAGES=1</code> uses).</p>
+%%CELL_POOL%%
+%%OUT_POOL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the evidence before any model saw it. When both clauses are in the pool, as LV-07 and NP-03 should be for jn-03, a wrong answer is a failure to join them, and that is what thinking can help with. When an anchor is missing, no level of thinking can supply its figure, and the fix is retrieval's, lessons 2.1 to 2.5. The bench reads this pool once and holds it fixed for the %%N_LEVELS_WORD%% levels of step 6 and both arms of step 7.</p></div>

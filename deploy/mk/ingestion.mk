@@ -25,6 +25,14 @@ tenant-backend: guard-project
 	@test -n "$(TENANT)" || (echo "TENANT=<id> is required"; exit 2); \
 	GOOGLE_CLOUD_PROJECT=$(PROJECT) $(PY) -m shared.tenancy backend $(TENANT) $(RETRIEVAL_BACKEND)
 
+# The managed mirror's repair (22 October 2026): every current text version a tenant's store lacks, uploaded through
+# services/ingest/managed.py's Mirror as the worker would, the tenant's data_region and the audit event included. A
+# failed upload never fails an ingest and nothing else puts it back: one 429 left acme's RAG Engine corpus without its
+# handbook while acme was pinned to it. Run after make managed-status says drift; a picture stays missing, never
+# mirrored. TENANT_ONLY=acme repairs one tenant.
+managed-sync: guard-project
+	cd services/ingest && GOOGLE_CLOUD_PROJECT=$(PROJECT) RAG_LOCATION=$(RAG_LOCATION) AUDIT_BUCKET=$(PROJECT)-audit 	  $(PY) managed.py --project $(PROJECT) --sync --mode $(if $(filter off,$(MANAGED_MIRROR)),both,$(MANAGED_MIRROR)) $(if $(TENANT_ONLY),--tenant $(TENANT_ONLY),)
+
 # `make up` returns with the index created and EMPTY - correct, vector.tf names no batch input and
 # the worker fills it - so this is the line to run after make ingest-corpus, and the line to run
 # before claiming a Vector Search demonstration. vectorsCount is the index's own number; a streamed

@@ -32,6 +32,7 @@ After upgrading from a previous layout, run the lesson's finish file first, then
 
 ## Finish and restore
 
+- [cleanup/demo_06_trace_it_name_the_cause_put_it_back.py](cleanup/demo_06_trace_it_name_the_cause_put_it_back.py) — At lesson end: Do it: put version 1 back
 - [setup/restore_settings.py](setup/restore_settings.py) — At lesson end: DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. make up pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like acme:acme_497809ff...#rag-532341da71fe, a page of null even for a PDF, and stages.retrieval_backend: rag_engine. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors. The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.
 - [setup/finish.py](setup/finish.py) — Run the listed cleanup sections in order, even after a failure; retain evidence and restore saved settings.
 
@@ -138,7 +139,7 @@ From 1 October 2026, a confirmed employee at grade E3 or above serves a notice p
 
 ### demo_06_trace_it_name_the_cause_put_it_back.py
 
-Do it: the trace Do it: the versions view and the two probes Do it: put version 1 back
+Do it: the trace Do it: the versions view and the two probes
 
 **`step_01_the_trace(session)` — Trace it, name the cause, put it back / Do it: the trace**
 
@@ -167,6 +168,8 @@ Do it: the versions view and the two probes
 
 Operation: bash — run in the operator shell, in $DEMO_ROOT (the versions view and the two probes; reads only).
 
+IDE adaptation: Run with the page's shell semantics: the page's expected output shows a command in this cell failing (a refusal, a red check, an oracle's FAIL), which is the cell's answer. Every line runs, a put-back line included, and the step ends green; compare the output with the expected window.
+
 Expected shape, not a promised result:
 
 ```text
@@ -187,11 +190,17 @@ This verifies attachment and configuration; ingestion and query checks are separ
 STOP: HR source ledger does not match the selected local HR file; review the source version.
 ```
 
-**`step_03_put_version_1_back(session)` — Trace it, name the cause, put it back / Do it: put version 1 back**
+### cleanup/demo_06_trace_it_name_the_cause_put_it_back.py
+
+At lesson end: Do it: put version 1 back
+
+**`step_01_put_version_1_back(session)` — Trace it, name the cause, put it back / Do it: put version 1 back**
 
 Do it: put version 1 back
 
 Operation: bash — run in the operator shell, in the kit (version 1 back, the question again, the probe again).
+
+IDE adaptation: Put version 1 back only when it is not already current: this is the lesson's cleanup now, run after a failure too, and re-uploading the current bytes is a duplicate that make reindex would wait five minutes for.
 
 Expected shape, not a promised result:
 
@@ -226,6 +235,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_11.4_Debug_Wrong_Answer_WIX.html`. All 21 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `7449ad397b6297eacbbdc4e2f9efd8e24b0f6a5d`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_11.4_Debug_Wrong_Answer_WIX.html`. All 21 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `db37cce668e8bbbb0c8fab353b899ca540d5e0b2`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

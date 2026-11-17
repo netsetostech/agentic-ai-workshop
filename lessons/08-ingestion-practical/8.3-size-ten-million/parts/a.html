@@ -1,0 +1,79 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 8 &middot; Ingestion practical &middot; Lesson 8.3</div>
+<h1>Size RAG for ten million documents: <span>the kit's own constants and its own corpus, scaled until something breaks</span></h1>
+<p>Your lane holds the kit's %%N_DOCS%% text documents. This lesson asks what the same kit would need for %%N%%: how many vectors, how many gibibytes of index, how many embedding requests, how many rupees and how many days. Every answer is arithmetic on three kinds of number: the kit's constants, the kit's corpus as the kit's own chunker counts it, and the prices and limits Google publishes. None of them is a guess, and every number on this page is computed from those three when the page is built.</p>
+<p>The arithmetic is the easy half. The useful half is the four places where the kit, exactly as it is today, stops working long before ten million: two that grow faster than the corpus, and two that stay fixed while the corpus grows past them. You will read each one in the kit's code, and see what would change it.</p>
+<div class="hero-chips"><div class="hero-chip">%%CHUNK_CHARS%%-character chunks</div><div class="hero-chip">%%EMBED_BATCH%% texts a request</div><div class="hero-chip">%%DIMS%% numbers a vector</div><div class="hero-chip">%%PER_DOC%% chunks a document</div><div class="hero-chip">%%T_CHUNKS_B%% billion vectors</div><div class="hero-chip">%%T_GIB%% GiB of index</div><div class="hero-chip">%%IN_FLIGHT%% documents in flight</div><div class="hero-chip">a %%WALK_S%%-second walk</div><div class="hero-chip">%%REPLICAS%% replica</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What sizing a RAG system means</a></li>
+<li><a href="#s2">The words: chunk, request, vector, shard, replica, compaction, in flight, fingerprint, walk</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The UI: your corpus, counted by the lane</a></li>
+<li><a href="#s4">The kit's numbers: the chunk, the request, the vector, the shard, the row</a></li>
+<li><a href="#s5">Measure the corpus with the kit's own chunker</a></li>
+<li><a href="#s6">REST: the index's own size</a></li>
+<li><a href="#s7">Direct reads: Firestore's counts and the worker's seconds</a></li>
+<li><a href="#s8">Ten million: what breaks first, and what it costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how one document becomes chunks, requests, vectors and rows, how those multiply to ten million, and which four limits in the kit break first. Then you will measure your own lane, its counts, its index and its seconds per document, and put your numbers into the same arithmetic.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What sizing a RAG system means</h3><p>One average document turned into numbers, multiplied, and set beside every price and limit it meets.</p></div></div>
+
+<p><strong>Sizing</strong> a RAG system means turning one average document into the numbers each part of the system sees, then multiplying by the number of documents. In DocuMind a document becomes <em>chunks</em>, pieces of up to %%CHUNK_CHARS%% characters. Each chunk travels to the embedding model inside a <em>request</em>, comes back as a <em>vector</em> of %%DIMS%% numbers, goes into the Vector Search index, and is written to Firestore as a row. Count those for an average document, multiply by %%N%%, and put each total beside the price or the limit that applies to it. That is the whole method.</p>
+
+<p>Three kinds of number go into it, and this page keeps them apart. <strong>The kit's constants</strong> set the rules: %%CHUNK_CHARS%%-character chunks with %%OVERLAP%% characters of overlap, at most %%EMBED_BATCH%% texts and about %%EMBED_TOKENS%% tokens in one embedding request, %%DIMS%% numbers a vector, %%IN_FLIGHT%% documents worked on at once, a nightly walk with %%WALK_S%% seconds to finish, one replica. <strong>The corpus</strong> sets the averages: the kit's %%N_DOCS%% text documents, chunked by the kit's own code, make %%N_CHUNKS%% chunks, %%PER_DOC%% a document. <strong>Google's prices and limits</strong>, which the kit does not hold, turn totals into rupees and machines: how much one shard of an index holds, what a serving node costs an hour, what 1,000 characters cost to embed. Those were read on %%PRICE_DATE%%, and step 8 links each one, because they change.</p>
+
+<p>Most of what grows, grows in a straight line. Ten times the documents is ten times the vectors, the gibibytes and the rupees, and a straight line is easy to read once you have one point on it. Sizing is really the search for what does not grow that way. Two things in the kit grow faster than the corpus, because every new document makes them re-read the documents before it. Two others stay the same size while the corpus grows past them: a fixed number of documents in flight, and a fixed number of replicas. Step 8 reads all four in the kit's code.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127835;</div><div>
+<p><strong>A wedding caterer in Jaipur, planning for ten thousand guests from a tasting for twenty-seven.</strong> The recipe card says what one plate holds: two rotis, a katori of dal, a spoon of pickle. The tasting shows what twenty-seven guests actually ate, second helpings included. The mandi's rate list, dated that morning, turns kilos into rupees. Multiply, and the flour, the dal and the bill all grow in a straight line. Then the caterer looks at the kitchen. It has thirty burners, however many guests come. The head cook insists on recounting every plate already served before sending out the next one. One night-watchman must walk past every table before dawn. And there is one serving counter.</p>
+<p>The recipe card is the kit's constants, the tasting is the kit's corpus counted by its own chunker, and the dated rate list is Google's price page. The thirty burners are the worker's %%IN_FLIGHT%% documents in flight. The head cook's recount is the corpus fingerprint, which reads every indexed document of a tenant on every ingest. The night-watchman is the nightly walk and its %%WALK_S%% seconds, and the serving counter is the index's one replica. At twenty-seven guests none of these matters. At ten thousand, each is the first thing to fail.</p></div></div>
+
+<h4>The calculator: ten million, from the kit's numbers</h4>
+<p>The calculator is this page's arithmetic, running in your browser. Pick how many documents, what they look like (the kit's own documents of that kind supply the averages), how many tenants they belong to, and the shard size. Each row is one line of the bill or one limit, and a row turns orange where the kit, as it is, breaks. Prices are Google's list prices for Mumbai (asia-south1), where your lane runs, except the embedding model's, which the kit calls in %%EMBED_LOCATION%%. They were read on %%PRICE_DATE%%, at Rs %%USD_INR%% to the dollar.</p>
+
+<div class="diagram" id="sz">
+<div class="dg-title">Ten million documents, from the kit's own numbers</div>
+<div class="sz-in">
+<label>Documents: <span id="sz-n-v">%%N%%</span><input type="range" id="sz-n" min="0" max="%%N_STOPS%%" step="1" value="%%START%%" aria-label="Documents"></label>
+<label>What they look like<select id="sz-shape">%%OPT_SHAPE%%</select></label>
+<label>Tenants they belong to<select id="sz-tenants">%%OPT_TENANTS%%</select></label>
+<label>Vector Search shard size<select id="sz-shard">%%OPT_SHARD%%</select></label>
+</div>
+<p class="sz-sum" id="sz-sum" aria-live="polite"></p>
+<div id="sz-rows"></div>
+<p class="dg-cap">Not on the calculator: what a question costs to answer, Document AI's and DLP's own prices, the storage Firestore's point-in-time recovery adds, and the sparse half and the filters every vector carries, which Google says take shard space too. So every figure is a floor. The four kinds are averages of the kit's own documents: %%SH_STAT_DOCS%% Acts and Codes, %%SH_HAND_DOCS%% handbooks and policies, %%SH_SHORT_DOCS%% short contracts, invoices, reports and transcripts, or all %%N_DOCS%% as the corpus mixes them.</p>
+</div>
+
+<p>Read the default first: %%N%% documents shaped like the kit's corpus, all in one tenant, on MEDIUM shards. The straight lines are big but ordinary. %%T_CHUNKS%% vectors make %%T_GIB%% GiB of index, which takes %%T_SH_M%% MEDIUM shards and costs %%T_SERVE_M%% a month to serve; embedding the corpus once costs %%T_EMBED%%. Two rows are orange, and they are the lesson. The fingerprint row says the load would read Firestore %%T_FP_READS%% times, which is %%T_FP%%, more than everything else on the page together. The ingest row says that at %%IN_FLIGHT%% documents at a time, Document AI alone would take %%T_DOCAI_DAYS%% days. Now move the tenants to 1,000: the fingerprint's reads fall about a thousandfold, because they grow with the square of each tenant's size, not with the corpus. Then move the documents down until both orange rows turn blue: that is roughly the size the kit, as it is, was built for.</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: chunk, request, vector, shard, replica, compaction, in flight, fingerprint, walk</h3><p>Twelve terms, each with its value on your lane and at ten million documents of the corpus's mix.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th><th>At ten million</th></tr></thead>
+<tbody>
+<tr><td><strong>Chunk</strong></td><td data-label="Meaning">A piece of a document the kit embeds, stores and retrieves: up to %%CHUNK_CHARS%% characters, overlapping the next by %%OVERLAP%%, cut at a sentence when one is near. A section under a <code>## </code> heading is one chunk unless it is longer than that.</td><td data-label="On your lane">%%N_CHUNKS%% from the %%N_DOCS%% text documents, by the kit's chunker (step 5)</td><td data-label="At ten million">%%T_CHUNKS%%</td></tr>
+<tr><td><strong>Embedding request</strong></td><td data-label="Meaning">One call to <code>%%EMBED_MODEL%%</code> carrying many chunks. The kit sends at most %%EMBED_BATCH%% texts and about %%EMBED_TOKENS%% tokens; the model refuses more than %%MODEL_TEXTS%% texts or %%MODEL_TOKENS%% tokens.</td><td data-label="On your lane">%%N_REQ%%, %%REQ_DOC%% a document</td><td data-label="At ten million">%%T_REQ%%</td></tr>
+<tr><td><strong>Vector</strong></td><td data-label="Meaning">What the model returns for one chunk: %%DIMS%% numbers. The index stores each number in 4 bytes, so a vector is %%VEC_BYTES%% bytes.</td><td data-label="On your lane">one per current chunk, text and media</td><td data-label="At ten million">%%T_CHUNKS%%</td></tr>
+<tr><td><strong>Data size</strong></td><td data-label="Meaning">Google's measure of an index: vectors times dimensions times 4 bytes. It decides the shards, the serving bill and the build and update charges.</td><td data-label="On your lane">%%L_MIB%% MiB for the text chunks (step 6 computes yours)</td><td data-label="At ten million">%%T_GIB%% GiB</td></tr>
+<tr><td><strong>Shard, shard size</strong></td><td data-label="Meaning">A slice of the index served by one node. SMALL holds %%GIB_S%% GiB on an %%M_S%%, MEDIUM %%GIB_M%% GiB on an %%M_M%%, LARGE %%GIB_L%% GiB on an %%M_L%%.</td><td data-label="On your lane">one shard; %%LANE_SHARD%% (step 6 reads it)</td><td data-label="At ten million">%%T_SH_S%% SMALL, %%T_SH_M%% MEDIUM or %%T_SH_L%% LARGE</td></tr>
+<tr><td><strong>Replica</strong></td><td data-label="Meaning">One more copy of every shard on its own node. Replicas carry more queries a second and keep the index up while a node restarts.</td><td data-label="On your lane">%%REPLICAS%%, as the minimum and the maximum</td><td data-label="At ten million">still %%REPLICAS%%</td></tr>
+<tr><td><strong>Streaming update, compaction</strong></td><td data-label="Meaning">The kit's index takes each new vector as it comes (STREAM_UPDATE), billed per GiB streamed in. Every so often Google rebuilds the index to fold the streamed vectors in, billed as a full rebuild.</td><td data-label="On your lane">Rs %%L_STREAM%% to stream the text chunks in; Rs %%L_COMPACT%% a compaction</td><td data-label="At ten million">%%T_STREAM%% to stream in; %%T_COMPACT%% a compaction</td></tr>
+<tr><td><strong>In flight</strong></td><td data-label="Meaning">Documents being worked on at the same moment. The worker takes one document per instance and runs at most %%IN_FLIGHT%% instances.</td><td data-label="On your lane">%%IN_FLIGHT%%</td><td data-label="At ten million">still %%IN_FLIGHT%%</td></tr>
+<tr><td><strong>Corpus fingerprint</strong></td><td data-label="Meaning">A hash of a tenant's indexed documents, so the answer cache knows when the corpus changed. Every ingest recomputes it by reading every indexed document row of the tenant.</td><td data-label="On your lane">a few dozen reads per ingest</td><td data-label="At ten million">%%T_FP_READS%% reads for one tenant's load</td></tr>
+<tr><td><strong>Nightly walk</strong></td><td data-label="Meaning">The reconcile job: it lists every object in the bucket and every ledger row, compares them, and repairs the difference. One task, %%WALK_S%% seconds, off unless you turn it on.</td><td data-label="On your lane">off by default</td><td data-label="At ten million">%%T_WALK_ITEMS%% objects and rows a night</td></tr>
+<tr><td><strong>Firestore floor</strong></td><td data-label="Meaning">The bytes Firestore bills for a chunk's row and its %%FS_IDX_W%% vector-index entries, by Google's published size rules. A floor, because some indexes are not counted.</td><td data-label="On your lane">%%CHUNK_B%% bytes a chunk on average</td><td data-label="At ten million">%%T_FS_GIB%% GiB</td></tr>
+<tr><td><strong>Calibration</strong></td><td data-label="Meaning">Replacing a number the page cannot know with one your lane measured: here, the seconds one document takes in the worker.</td><td data-label="On your lane">your ingest's request latencies (step 7)</td><td data-label="At ten million">%%T_INGEST_DAYS%% days for every second a document takes</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two pairs in this table are easy to confuse, and the lesson keeps them apart. A <em>chunk</em> is text and a <em>vector</em> is numbers: the bill for embedding counts characters, the bill for the index counts vectors. And a <em>shard</em> is a slice of the data while a <em>replica</em> is a copy of all of it: more data means more shards, more questions a second means more replicas, and the kit fixes the second at one.</p>

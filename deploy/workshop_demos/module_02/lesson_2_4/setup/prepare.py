@@ -54,9 +54,9 @@ def step_02_which_store_answers_acme_pin_it_to_the_kit(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: endpoint: projects/documind-ai-YOUR-ID/locations/asia-south1/indexEndpoints/9876543210987654321  deployed: documind_chunks_v1
-    backend: vector  mode: dense (default)  current_only: off (default)  top_k_retrieve: 20 (default)
+    backend: vector  mode: dense (default)  current_only: off  top_k_retrieve: 20 (default)
     acme: retrieval_backend=vector
-    zeta: retrieval_backend=default (the deployment RETRIEVAL_BACKEND)
+    zeta: retrieval_backend=vertex_search
     acme: data_region=any
     """
     session.service_environment('documind-api', ['VECTOR_INDEX_ENDPOINT', 'VECTOR_DEPLOYED_INDEX_ID', 'RETRIEVAL_BACKEND', 'RETRIEVAL_MODE', 'RETRIEVAL_CURRENT_ONLY', 'TOP_K_RETRIEVE'])

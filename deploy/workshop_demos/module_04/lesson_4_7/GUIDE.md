@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_4.7_Access_Tests_WIX.html`, reviewed at blob `af7968ba7b37b06283c139e316adcd2049e9156c`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_4.7_Access_Tests_WIX.html`, reviewed at blob `5f76286d02fc0558964b62f82d2c5ba29a1318c7`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 4.6 traced how a request becomes an identity and a tenant. This lesson tests it. You send four requests side by side and get the door's refusal, a 401, a 403 and an answer. You ask every isolation row twice: as the outsider, who must be refused each time, and as a member, whose answers must never carry another tenant's marker. Then you pin a tenant that must keep its text in India to a store outside India, and read the usage row that shows the policy won.
 

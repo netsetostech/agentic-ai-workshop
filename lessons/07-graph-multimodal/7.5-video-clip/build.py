@@ -120,6 +120,8 @@ for pin in ("Pillow==12.3.0", "google-cloud-texttospeech==2.37.0", "imageio-ffmp
 assert "texttospeech.googleapis.com" in src["commands/lesson-12.1.sh"] and "\napis: guard-project" in MK
 assert 'resource "google_storage_bucket_iam_member" "ui_uploads"' in src["terraform/storage.tf"]      # documind-ui-sa reads the uploads bucket: its signed link opens
 assert '"mm-03"' in src["evals/required.json"] and '"media_kind_rate": 0.80' in src[RUN_EVAL]
+assert 'if kind and s.get("status") == "indexed":' in src[RUN_EVAL] and 'if any(n.startswith(doc) for doc in row.get("must_retrieve", []) for n in media.get(want, ())):' in src[RUN_EVAL] \
+    and '"media_absent": want}' in src[RUN_EVAL]           # mm-03 asks for its segment once the ledger lists the video as indexed
 assert "SIGNED_URL_EXPIRY = datetime.timedelta(minutes=15)" in src[CITES]
 assert 'IMAGE_MODEL = "gemini-3.1-flash-image"' in src[MEDIA] and "IMAGE_USD = 0.039" in src[MEDIA]
 assert "DEMO_MODE=${DEMO_MODE-1}" in (KIT / "commands/lesson-12.2.sh").read_text(encoding="utf-8")   # a prompt drawn before costs nothing after the first run
@@ -129,7 +131,10 @@ assert 'c.get("kind") == "segment"' not in src[SMOKE]
 # 2. nothing checks the second: the ground truth build_media.py writes is read by nothing (writer, skip rules and prose only)
 MENTIONS = sorted(str(p.relative_to(KIT)).replace("\\", "/") for p in pb.kit_runtime_files("*") if p.is_file() and p.suffix in (".py", ".sh", ".mk", "")
                   and "segments.json" in p.read_text(encoding="utf-8", errors="ignore"))
-assert MENTIONS == [".gitignore", "evals/build_media.py", "evals/demo_corpus_gate.py", "evals/upload.sh", "services/ingest/reconcile.py"], MENTIONS
+assert MENTIONS == [".gitignore", "commands/capstone_check.py", "evals/build_media.py", "evals/demo_corpus_gate.py",
+                    "evals/upload.sh", "services/ingest/reconcile.py"], MENTIONS
+assert 'if not path.is_file() or name.endswith(".segments.json"):' in (KIT / "commands/capstone_check.py").read_text(
+    encoding="utf-8")                                     # the capstone check skips it, as a document it is not
 assert 'open(out[:-4] + ".segments.json", "w"' in src["evals/build_media.py"] and "SKIP_SUFFIXES = (\".segments.json\",)" in src[REC]
 # 3. the worker keeps Gemini's times as given: no check of order, of the 60 seconds or of the video's length
 assert "class Segment(BaseModel):\n    start: float\n    end: float\n    summary: str" in src[WORKER]
@@ -290,7 +295,8 @@ print("3. the pills for the three sources:", *[ns["_label"](i, s) for i, s in en
 print("4. the usage row's modality:", ns["modality_of"]([x.kind for x in answer.citations]),
       "| the same answer from the table and the figure:", ns["modality_of"](["text", "figure"]))
 for cited in (3, 1):                                          # run_eval's rule for a media row: mm-03 asks for a segment
-    one = ModelDraft(answer=draft.answer, confidence="high", answerable=True, citations=[{"source": cited, "quote": "5.2 per cent"}])
+    one = ModelDraft(answer=draft.answer.replace("[3]", f"[{cited}]"), confidence="high", answerable=True,   # the prose's marker, the cited source
+                     citations=[{"source": cited, "quote": "5.2 per cent"}])
     kinds = sorted({x.kind for x in resolve(one, packed).citations})
     print(f"5. mm-03, citing [Source {cited}]: kinds {kinds} -> {'counts' if 'segment' in kinds else 'cited no segment'}")"""
 CELLS = {"rules": heredoc(RULES_PY)}

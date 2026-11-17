@@ -77,11 +77,11 @@ version: gemini-3.6-flash | documind-rag@v3 | vertex
 
 ### demo_03_the_contract_offline_drafts_that_pass_drafts_that_fail_and_the_resolver_on_the_k.py
 
-Do it: six drafts, one resolution, two refusals
+Do it: six drafts, two resolutions, two refusals
 
-**`step_01_six_drafts_one_resolution_two_refusals(session)` — The contract offline: drafts that pass, drafts that fail, and the resolver on the kit's chunks / Do it: six drafts, one resolution, two refusals**
+**`step_01_six_drafts_two_resolutions_two_refusals(session)` — The contract offline: drafts that pass, drafts that fail, and the resolver on the kit's chunks / Do it: six drafts, two resolutions, two refusals**
 
-Do it: six drafts, one resolution, two refusals
+Do it: six drafts, two resolutions, two refusals
 
 Operation: bash — run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: nothing leaves the machine).
 
@@ -92,6 +92,7 @@ resolved: 2 of 3 citations kept: source 7 was out of range and dropped, not rais
    acme:hr_policy_2026#NP-03      page 1 score 0.0 kind text quote 'NP-03 — Notice period A confirmed employee a'
    acme:hr_policy_2026#PB-02      page 1 score 0.0 kind text quote 'PB-02 — Probation New joiners serve six mont'
 RAGAnswer: {"answer": "A confirmed employee in grade E3 serves the notice period in NP-03 [1]; probation is different [2].", "citations": [{" ...
+source 1 listed twice, [2] only in the prose: 2 citations, [('NP-03', 'NP-03 — Notice period A confirmed em'), ('PB-02', 'PB-02 — Probation\nNew joiners serve ')]
 refused (source 0, [Source N] is 1-based): citations.0.source: Input should be greater than or equal to 1
 refused (confidence outside high|medium|low): confidence: Input should be 'high', 'medium' or 'low'
 refused (a quote over the draft's limit): citations.0.quote: String should have at most 200 characters
@@ -112,12 +113,10 @@ Operation: bash — run in the operator shell, in $DEMO_ROOT (a Python cell; one
 Expected shape, not a promised result:
 
 ```text
-the contract: {"answer": "A confirmed employee in grade E3 must serve a notice period of ... [1]...", "citations": "3 citations", "confidence": "high", "answerable": true}
-the envelope: {'model': 'gemini-3.6-flash', 'backend': 'vertex', 'tokens_in': 1xxx, 'tokens_out': 4xx, 'cached_tokens': 0, 'cost_usd': 0.00xxxx, 'latency_ms': 2xxx, 'cache_hit': 'none'}
-[N] marks in the answer: ['1', '2', '3'] | citations returned: 3
+the contract: {"answer": "A confirmed employee at grade E3 or above is required to serve a notice period of 60 days....", "citations": "1 citations", "confidence": "high", "answerable": true}
+the envelope: {'model': 'gemini-3.6-flash', 'backend': 'vertex', 'tokens_in': 6xx, 'tokens_out': xx, 'cached_tokens': 0, 'cost_usd': None, 'latency_ms': xxxx, 'cache_hit': 'none'}
+[N] marks in the answer: [] | citations returned: 1
    [1] #  1 hr_policy_2026.md        page None score 0.9xxx kind text | row found True | quote in the row True | 1x words
-   [2] #  4 hr_policy_2026.md        page None score 0.8xxx kind text | row found True | quote in the row True | 1x words
-   [3] #  2 hr_policy_2026.md        page None score 0.6xxx kind text | row found True | quote in the row True | 1x words
 ```
 
 ### demo_05_three_refusals_the_model_s_twice_the_api_s_once_and_how_their_envelopes_differ.py
@@ -133,8 +132,8 @@ Operation: bash — run in the operator shell (three questions, two of them mode
 Expected shape, not a promised result:
 
 ```text
-answerable False | confidence low | citations 0 | backend vertex | tokens 1xxx + 1xx | cost_usd 0.00xxxx | pool 20 | The provided context does not contain information about Globex's not
-answerable False | confidence low | citations 0 | backend vertex | tokens 1xxx + 1xx | cost_usd 0.00xxxx | pool 20 | The context covers FY2025 and FY2026; it does not state the revenue f
+answerable False | confidence low | citations 0 | backend vertex | tokens xxxx + xx | cost_usd None | pool 20 | The provided context does not contain information about Globex's not
+answerable False | confidence low | citations 0 | backend vertex | tokens xxxx + xx | cost_usd None | pool 20 | The context covers FY2025 and FY2026; it does not state the revenue f
 answerable False | confidence low | citations 0 | backend none | tokens 0 + 0 | cost_usd 0.0 | pool 0 | The corpus holds nothing near this question: no passage of this tena
 acme	False	none	0	0.0
 acme	False	vertex	1xxx	0.00xxxx
@@ -216,6 +215,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_3.5_Structured_Answers_WIX.html`. All 37 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `be4ba0adff0eefafe272eebc8c9d04137e150d3b`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_3.5_Structured_Answers_WIX.html`. All 38 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `0594f4587f9232a4105c35a5f352547bdd3cc1b3`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

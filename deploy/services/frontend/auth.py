@@ -19,13 +19,19 @@ def current_user():
         token = h.get("x-goog-iap-jwt-assertion")
         if not token:
             return {"is_logged_in": False}
+        # st.context.headers are the headers of the request that opened this tab's connection, and IAP signs that
+        # assertion for ten minutes. Verified on every rerun, because the API verifies the same assertion on every
+        # call (chat.py forwards it): a tab that kept the email past ten minutes answered every question with a 401
+        # (21 October 2026). An expired one says reload, which is how a tab gets a fresh one, not "Contact admin".
         try:
             claims = _verify_iap_jwt(token, IAP_AUDIENCE)
-            return {"email": claims["email"], "sub": claims["sub"],
-                    "is_logged_in": True}
+        except jwt.ExpiredSignatureError:
+            st.error("This tab's sign-in has expired: reload the page to sign in again.")
+            return {"is_logged_in": False, "expired": True}
         except Exception as e:
             st.error(f"IAP JWT verification failed: {e}")
             return {"is_logged_in": False}
+        return {"email": claims["email"], "sub": claims["sub"], "is_logged_in": True}
     if st.user.is_logged_in:
         return {"email": st.user.email, "sub": st.user.sub,
                 "name": getattr(st.user, "name", ""), "is_logged_in": True}
@@ -37,7 +43,7 @@ def login_gate():
         st.title("🔐 DocuMind - Sign in required")
         if os.getenv("AUTH_MODE") != "iap":
             st.button("Log in with Google", on_click=st.login)
-        else:
+        elif not u.get("expired"):
             st.error("IAP authentication missing. Contact admin.")
         st.stop()
     return u

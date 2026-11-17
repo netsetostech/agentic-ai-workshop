@@ -9,6 +9,7 @@ of a bare [3], which is the M09 gate sentence made visible.
 """
 import os, re
 import datetime
+from html import escape
 import google.auth
 import google.auth.credentials
 import google.auth.transport.requests
@@ -73,8 +74,10 @@ def render_with_citations(answer, sources):
         spans = []
         for n in nums:
             src = sources[n - 1] if 0 < n <= len(sources) else None
-            tip = (src["text"][:120] + "...") if src else "unknown source"
-            tip = tip.replace('"', '&quot;')
+            # One line, escaped: a passage that opens "# ACME Employee Handbook 2026" and a blank line broke the span
+            # out of Markdown's inline HTML, and its style text filled the page as a heading (21 October 2026).
+            tip = (" ".join(src["text"][:120].split()) + "...") if src else "unknown source"
+            tip = escape(tip, quote=True)
             spans.append(
                 f'<span title="{tip}" style="background:#ccfbf1;color:#065f46;'
                 f'border-radius:6px;padding:1px 7px;margin:0 2px;font-size:12px;'

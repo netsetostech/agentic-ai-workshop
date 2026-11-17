@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_4.2_Live_Judge_WIX.html`, reviewed at blob `a3b436e773ca4580adf995f55ba1ad0be7561a39`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_4.2_Live_Judge_WIX.html`, reviewed at blob `b9f33f7e16b7f44cd5dd37f48cac48545966665c`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 4.1 made the golden set sound. This lesson runs the three instruments that use it, and keeps them apart on purpose. The offline gate checks the set on every push, with no credentials. The live gate sends every row to the deployed API, as a roster member and again as an outsider, and blocks a release on 9 thresholds and 15 required rows. The judge has Gemini read the lane's answers with the context they cite, and it never blocks anything. You will read CI's verdict on the kit you run, run the live gate and take its report apart, and run the judge beside it.
 
@@ -112,6 +112,8 @@ The target that mints two tokens, the loop that sends every row, the rates, the 
 
 #### Do it: the live gate, with a report
 
+Until lesson 7.5 builds the town hall's video, the gate prints an `[info]` line for mm-03 and judges it on its words: there is no segment to cite yet. Once your ledger lists `townhall_2026_q1.mp4` as indexed, mm-03 asks for its segment again. The board below asks every media row for its kind, as the gate does after 7.5.
+
 Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point.
 
 Last, what the run cost. The API priced every answer on its usage row; `make usage` groups the last hour of those rows. Run it straight after the gate, before step 5 asks the lane again.
@@ -140,7 +142,7 @@ The self-test proved the judge's assembly offline: the full chunk text replaces 
 
 Four ways the two can meet, and the gate's misses read against the judge's answers.
 
-`judge.py` prints its summary and writes no per-row ratings, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
+`judge.py` prints its summary, and writes per-row ratings only when `--save-rows` names a file, which the run above does not, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
 
 The stub's two misses read differently. jn-06 answered with one of its two figures, and everything it said was in its context, so a groundedness judge can call it grounded. lk-27 refused, and a refusal is always grounded. Neither is the judge failing; both are rows the gate caught and a groundedness rating cannot. The reverse happens too: an answer can carry the gate's figure and a sentence its context never said. That row passes the gate, and only a low by-shape rating, or your reading, finds it. The two collections are separate runs, so a row can differ between them; that difference is itself worth reading.
 

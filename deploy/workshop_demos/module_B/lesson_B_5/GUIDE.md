@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_B.5_Decoder_Models_WIX.html`, reviewed at blob `456244a622c02be64d37a8550d556e129277b6ae`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_B.5_Decoder_Models_WIX.html`, reviewed at blob `4e158840272cef0e6d365f2359970974eb2c8656`. Learners read that page on the course site; this guide keeps its prose.
 
 Every answer DocuMind gives is written one token at a time: the model scores every candidate for the next token, one is picked, and the loop runs again. This page opens that loop. You will build it in numpy on a tiny vocabulary, watch greedy decoding repeat itself while sampling varies, see temperature, top-k and top-p reshape the odds, and read why the kit sends Gemini none of the three. Then you will send Gemini one question five times with the kit's own settings, count the distinct answers, and price its thinking at two levels in rupees.
 
@@ -122,7 +122,7 @@ You have not cloned the kit yet (that is lesson 0.2), so this step reads it here
 
 #### The code
 
-Read the comment in `_call()`. Its first half is the knobs: the model ignores all three, so passing one would only make the code look as if it controlled something. Its second half is the thinking: the kit asks for a level, not a budget of zero, because Gemini 3 thinking cannot be switched off. The streamed answer, further down the same file, asks for the same LOW.
+Read the comment in `_call()`. Its first half is the knobs: the model ignores all three, so passing one would only make the code look as if it controlled something. Its second half is the thinking: the kit asks for a level, Gemini 3's own setting, and LOW gives an answer a little thinking. The router's classifier sends the older budget of zero instead, which asks for the least. The streamed answer, further down the same file, asks for the same LOW.
 
 - gemini-3.6-flash, the kit's model. Its model page says it does not support custom values for temperature, top-k and top-p: a custom value is ignored, not refused. Frequency and presence penalties are stricter: a custom value there throws an error. The model's developer's guide says to control output determinism with the thinking level or a structured JSON schema instead.
 

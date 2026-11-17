@@ -241,7 +241,11 @@ class Infrastructure:
     def saved_inputs(self):
         saved = read_json(self.inputs) if self.inputs.exists() else {}
         if saved.get("project_id") not in (None, self.args.project):
-            raise Stop("Saved inputs belong to a different project. Select the correct deployment directory/backend.")
+            # A second lane from the same clone (a new blank project) meets the last lane's file here.
+            raise Stop(f"Saved inputs belong to a different project: {self.inputs} names {saved['project_id']}, not "
+                       f"{self.args.project}. If that lane is finished (make down) and you are starting a new project, "
+                       f"move the file aside (mv {self.inputs} {self.inputs}.{saved['project_id']}) and run prepare again; "
+                       f"otherwise run with PROJECT={saved['project_id']}.")
         if saved.get("region") not in (None, self.args.region):
             raise Stop("Saved region differs. Region moves require a separate reviewed migration.")
         return saved

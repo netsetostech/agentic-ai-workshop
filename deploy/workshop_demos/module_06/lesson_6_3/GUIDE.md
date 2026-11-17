@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_6.3_Cache_Freshness_WIX.html`, reviewed at blob `42a67f4e01b8e91ddac46f96e60590b66df457d6`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_6.3_Cache_Freshness_WIX.html`, reviewed at blob `167e07d4c13a49cc781f0cc1d94fa46731f34b7f`. Learners read that page on the course site; this guide keeps its prose.
 
 A cache is right only while the thing it copied has not changed. This lesson changes things on purpose and watches both caches react. You ask the E3 notice-period question under three scopes, then release revision 2 of acme's handbook, which makes the answer 90 days instead of 60. The answer cache misses, the context cache goes stale, and `make cache` brings the second one back. Finally you put version 1 back and watch the old answer return, because the corpus it was given under has returned.
 

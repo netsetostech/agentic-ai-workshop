@@ -1,0 +1,76 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 4 &middot; Evals and safety &middot; Lesson 4.3</div>
+<h1>Place evals in the pipeline: <span>CI, the candidate gate and live traffic</span></h1>
+<p>Lesson 4.2 ran three instruments, one at a time. This lesson puts each where it runs. The offline gate runs in CI on every push, and both release paths of the delivery workflow need it to pass first. The live gate runs on a candidate, a revision of the API that takes no traffic, and holds the release on %%N_THRESHOLDS%% thresholds and %%N_REQ%% required rows. After the release nothing gates: each answer leaves a usage row, and two alert policies read rates from the rows. You will break a golden row and watch the offline check refuse it, gate a candidate and remove it, find the gate's own rows in the live log, and read one refusal the alert can never count.</p>
+<div class="hero-chips"><div class="hero-chip">CI: no model, no credential</div><div class="hero-chip">eval-gate: every release needs it</div><div class="hero-chip">a candidate with no traffic</div><div class="hero-chip">%%N_THRESHOLDS%% thresholds, %%N_REQ%% required rows</div><div class="hero-chip">usage rows: no question, no answer</div><div class="hero-chip">alerts: %%UNANS_T%% for %%UNANS_MIN%% min, %%LAT_S%% s for %%LAT_MIN%% min</div><div class="hero-chip">the stream's row says answerable</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three places to run an eval, and what each one can see</a></li>
+<li><a href="#s2">The words: placement, dry run, offline gate, eval-gate, needs, candidate, candidate gate, required row, usage row, revision_name, eval identity, metric, policy</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">CI: the offline gate on every push, and the job every release needs first</a></li>
+<li><a href="#s4">The candidate gate: a revision with no traffic, judged before any user meets it</a></li>
+<li><a href="#s5">Live traffic: the usage rows, and the gate's rows among them</a></li>
+<li><a href="#s6">The stream's row: answerable, unless the pool was empty</a></li>
+<li><a href="#s7">The alert's own inputs: two log metrics, two policies, and the windows they saw</a></li>
+<li><a href="#s8">The judge's place, the gaps the placements leave, and what each costs</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn where each eval runs, what it can see from there, and what it cannot: CI judges the golden set, the candidate gate judges answers before anyone gets them, and live traffic leaves rates without text. Then you will prove it on your lane: a row broken and refused offline, a candidate gated and untagged, the gate's own rows found among the live rows, and a refusal whose row says answerable.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three places to run an eval, and what each one can see</h3><p>The same golden set in CI, on a candidate and among live traffic, and the failures each place catches first.</p></div></div>
+
+<p><strong>Where an eval runs decides what it can catch.</strong> The kit runs one golden set in three places, and they are not interchangeable. In CI, on every push, the offline gate reads the %%N_ROWS%% rows and the corpus beside them. It needs no credential and never calls the model, so all it can judge is the set itself. Before a release, the candidate gate sends every row to a revision of the API that takes no traffic, reads every reply, and holds the release on %%N_THRESHOLDS%% thresholds and %%N_REQ%% required rows. After the release, nothing gates. Every answer leaves one usage row, and two alert policies read rates from the rows. They can open an incident, but they cannot stop anything.</p>
+
+<p><strong>Each place sees more traffic and less of each answer.</strong> CI reads no answer at all. The candidate gate reads %%N_ROWS%% answers word for word, but only answers to the set's own questions, and only through <code>/v1/query</code>. Live traffic is every question anyone asks, but its row keeps counts, clocks and flags, never the question or the answer. So the later a failure is first caught, the more people met it first. Some failures are caught nowhere, and the matrix below names them.</p>
+
+<p><strong>The judge sits beside the pipeline, not in it.</strong> Lesson 4.2's judge can read any deployment's answers, a candidate's included. No step of either workflow runs it, and its exit code does not depend on its scores. It explains what the gate found, and it never decides.</p>
+
+<div class="analogy"><div class="analogy-icon">&#127981;</div><div>
+<p><strong>A factory that makes pressure cookers.</strong> Incoming-material inspection checks the steel and the test gauges before a single cooker is made: is each gauge calibrated, can each specification be met at all? It never tests a cooker. Before a batch ships, the pre-shipment test takes the batch off the line and pressure-tests every unit against the specification, and one failure holds the whole batch. After the cookers are sold, the warranty desk hears from every city, but only as counts: so many returns from Pune this week. It never sees the cooker that leaked quietly and was never returned. CI is the incoming inspection, the candidate gate is the pre-shipment test, and the usage rows and alerts are the warranty desk.</p></div></div>
+
+<h4>The placement matrix: %%N_SCEN%% failures, four placements, and where each is caught first</h4>
+<p>Each row is a failure, and each column is a place an eval runs. Pick a row to read what each placement would do, in the kit's own words: the offline gate's FAIL line, the live gate's exit code and closing sentence, the row an answer leaves and the policy that reads it, and what the judge reads.</p>
+
+<div class="diagram pm" id="pm">
+<div class="dg-title">Placement matrix - run_eval.py, main.py's usage rows, alerts.tf and judge.py, against %%N_SCEN%% failures</div>
+<div class="pm-head" aria-hidden="true"><span>The failure</span><span>CI</span><span>Cand.</span><span>Live</span><span>Judge</span></div>
+<div id="pm-rows"></div>
+<div class="pm-detail" id="pm-detail" aria-live="polite"></div>
+<p class="dg-cap">Computed when this page was built, from the kit you clone. The CI column ran <code>run_eval.py</code>'s offline half on the golden set with the failure planted, with every function that sends a request replaced by one that fails if called, so an offline check that reached for the model would have broken the build. The candidate column ran <code>live()</code> against a stub API that fails the way the row says. The live column evaluated <code>main.py</code>'s own two expressions, the stream's verdict and the row's flag, against the two policies' numbers, parsed from <code>alerts.tf</code>. The judge column is what <code>judge.py</code> asks for and what it returns.</p>
+</div>
+
+<p>Of the %%N_SCEN%% failures, CI stops %%N_FIRST_CI%% and the candidate gate stops %%N_FIRST_CAND%%. Live traffic is the first to see %%N_FIRST_LIVE%%. The judge alone can point at %%N_FIRST_JUDGE%%, and %%N_FIRST_NONE%% is caught by nothing in the kit: refusals in the stream, which is what the UI uses. Steps 3 to 7 run one placement each on your lane.</p>
+
+<div class="box box-amber"><div class="box-title">What the matrix is not</div>
+<p>It calls no API and runs no model. The stub's replies fail one way each, and a real failure is rarely that clean. The live column says whether a policy can see the failure at all, not how much traffic it takes to stay above %%UNANS_T%% for %%UNANS_MIN%% minutes: that depends on how many good answers the same tenant gets in the same windows.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: placement, dry run, offline gate, eval-gate, needs, candidate, candidate gate, required row, usage row, revision_name, eval identity, metric, policy</h3><p>Thirteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Placement</strong></td><td data-label="Meaning">Where an eval runs. It decides what the eval can read, what it costs and what it can stop.</td><td data-label="On your lane">CI, the candidate gate, live traffic</td></tr>
+<tr><td><strong>The dry run</strong></td><td data-label="Meaning"><code>documind-dryrun.yml</code>: on every push and pull request of the learner repository, with no Google credential. Its last step is the offline gate.</td><td data-label="On your lane">GitHub Actions on the learner repository; lesson 4.2 read its verdict on your commit</td></tr>
+<tr><td><strong>The offline gate</strong></td><td data-label="Meaning"><code>run_eval.py</code> with no arguments: falsifiable, anchors and coverage, over the committed files. It never calls the model.</td><td data-label="On your lane"><code>make eval</code>, exit 0 or 1</td></tr>
+<tr><td><strong>eval-gate</strong></td><td data-label="Meaning">The first job of <code>documind-cd.yml</code>: the same offline line, with no credential.</td><td data-label="On your lane">started by hand in the learner repository</td></tr>
+<tr><td><strong>needs</strong></td><td data-label="Meaning">A job starts only when every job it names has succeeded.</td><td data-label="On your lane"><code>release-candidate</code> and <code>release-clouddeploy</code> need <code>eval-gate</code>; <code>promote</code> needs <code>release-candidate</code></td></tr>
+<tr><td><strong>Candidate</strong></td><td data-label="Meaning">A revision of <code>documind-api</code> that takes no traffic, at its own tag URL. The workflow makes it from a new image (<code>make release-candidate</code>), the lane from the latest revision's image (<code>make candidate</code>). Both record its name in <code>.candidate-revision</code>.</td><td data-label="On your lane"><code>https://candidate---documind-api-NUMBER...</code></td></tr>
+<tr><td><strong>The candidate gate</strong></td><td data-label="Meaning"><code>make eval-live API=</code> the tag URL: every row as the member, every isolation row as the outsider, then exit 0, 1 or 2.</td><td data-label="On your lane">%%N_THRESHOLDS%% thresholds, %%N_REQ%% required rows</td></tr>
+<tr><td><strong>Required row</strong></td><td data-label="Meaning">An id in <code>required.json</code>. Offline it must exist; live it must pass, whatever the rates say.</td><td data-label="On your lane">%%N_REQ_ISO%% isolation, %%N_REQ_MEDIA%% media, %%N_REQ_VERSION%% version</td></tr>
+<tr><td><strong>Usage row</strong></td><td data-label="Meaning">The one structured log line rag-api writes per answer: tenant, caller, tokens, rupees, clocks and flags. No question, no answer.</td><td data-label="On your lane">%%N_ROW_FIELDS%% fields, event <code>query</code> or <code>stream</code></td></tr>
+<tr><td><strong>revision_name</strong></td><td data-label="Meaning">A label Cloud Run puts on every log entry: the revision that wrote it. The row itself does not carry it.</td><td data-label="On your lane">the candidate's rows carry the candidate's name</td></tr>
+<tr><td><strong>The eval identity</strong></td><td data-label="Meaning"><code>documind-ui-sa</code>, the account that <code>make eval-live</code>, <code>make judge</code>, <code>make smoke</code> and the setup's <code>tok</code> impersonate. A person in the UI is recorded as that person instead.</td><td data-label="On your lane"><code>documind-ui-sa@documind-ai-YOUR-ID.iam.gserviceaccount.com</code></td></tr>
+<tr><td><strong>Log-based metric</strong></td><td data-label="Meaning">A counter Cloud Monitoring keeps from the log lines that match a filter, with labels taken from the lines.</td><td data-label="On your lane"><code>documind/unanswerable</code> and <code>documind/queries</code>, per tenant</td></tr>
+<tr><td><strong>Alert policy</strong></td><td data-label="Meaning">A condition over metrics that opens an incident when it holds long enough. It notifies; it does not block.</td><td data-label="On your lane">unanswerable above %%UNANS_T%% for %%UNANS_MIN%% minutes; p95 above %%LAT_S%% s for %%LAT_MIN%% minutes</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: a <em>gate</em> blocks and an <em>alert</em> notifies. A gate runs before anyone is affected, and its exit code can stop the change. An alert runs on traffic people are already sending, and all it can do is tell someone.</p>

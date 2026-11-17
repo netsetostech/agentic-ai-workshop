@@ -3,7 +3,7 @@
 Every delivery writes a request log entry (Cloud Run's, with the status the worker answered and how long it took) and, from the worker, a JSON line with the verdict. The first read below lists the last few POSTs the subscription made to the worker; the second lists the worker's own verdicts for the same window. Your note from lesson 1.4 should be there twice: once as the duplicate the unchanged bytes produced, once as the indexed version.
 
 Run order inside this file:
-1. Read the two records your 1.4 upload left (source window 16)
+1. Read the two records your 1.4 upload left (source window 17)
 
 Prerequisites: demo_03_the_plumbing_read_the_notification_the_topic_and_the_subscription_off_your_lane.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -61,7 +61,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_16', step_01_read_the_two_records_your_1_4_upload_left),
+        ('source_17', step_01_read_the_two_records_your_1_4_upload_left),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

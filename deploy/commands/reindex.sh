@@ -8,6 +8,11 @@ set -uo pipefail
 : "${PROJECT:?set PROJECT=<project id>}"
 TENANT="${TENANT:-acme}"; PY="${PY:-python}"
 [ -n "${FILE:-}" ] || { echo "FILE=<path> is required (TENANT=$TENANT, NAME=<object name, default the basename>)"; exit 2; }
+# Run without make, NAME may be the shell's own: WSL's Ubuntu exports NAME as the machine's name. An object named
+# after the machine is never what a reindex means, so that NAME is ignored and the basename used.
+if [ -n "${NAME:-}" ] && { [ "$NAME" = "$(hostname 2>/dev/null)" ] || [ "$NAME" = "${HOSTNAME:-}" ]; }; then
+  echo ">> ignoring NAME=$NAME: it is this machine's name (the shell sets it), not an object name"; NAME=
+fi
 OBJ="${NAME:-$(basename "$FILE")}"
 "$PY" evals/run_eval.py --source "$OBJ" >/dev/null || { echo ">> the golden set is not sound: a reindex is a release, and the rows move with the document in the same commit - python evals/run_eval.py"; exit 1; }
 SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)

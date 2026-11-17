@@ -3,6 +3,8 @@
 The numbers on the page come from the kit at build time: the reranker's settings from config.py, the record cap from
 retriever.py, the chunk budget from generator.py's fixed prompt through context_budget.py, the average acme chunk from
 the kit's chunker, and the usage selftest's rows and output from evals/usage_rows.py (the reader starts on those rows).
+Step 1's two lanes and the two encoder rows of step 2 name the kit's bi-encoder and cross-encoder from indexer.py,
+retriever.py, config.py, vector.tf and main.py, asserted as lesson B.4's build asserts them.
 """
 import ast
 import html
@@ -109,6 +111,36 @@ ANSWER = int(grab(r"max_answer_tokens: int = (\d+)", cfg))
 RECORDS = int(grab(r"chunks = chunks\[:(\d+)\]", ret))
 QUESTION = "What is the notice period for a confirmed E3?"
 
+# ------------------------------------------------------------------ step 1's two lanes: the bi-encoder builds the pool, the cross-encoder orders it
+# Lesson B.4's build asserts the same facts; these are its asserts, adapted. The values go into the lanes and step 2's
+# two rows, and every code name the lanes print is asserted verbatim in the kit.
+IDX, VTF = "services/ingest/indexer.py", "terraform/vector.tf"
+idx, vtf = ((KIT / p).read_text(encoding="utf-8") for p in (IDX, VTF))
+EMBED_MODEL = grab(r'EMBEDDING_MODEL = os\.environ\.get\("EMBEDDING_MODEL", "([^"]+)"\)', idx)
+assert EMBED_MODEL == grab(r'embed_model: str = Field\("([^"]+)", alias="EMBEDDING_MODEL"\)', cfg) == "text-embedding-005"
+DOC_TASK = grab(r'EMBEDDING_TASK_TYPE = "([A-Z_]+)"', idx)
+DIMS = int(grab(r"EMBEDDING_DIMENSIONS = (\d+)", idx))
+QUERY_FN = block(RET, "def embed_query(", end="def _firestore_fallback(")
+QUERY_TASK = grab(r'task_type="([A-Z_]+)", output_dimensionality=\d+', QUERY_FN)
+assert int(grab(r'task_type="[A-Z_]+", output_dimensionality=(\d+)', QUERY_FN)) == DIMS == int(grab(r"dimensions\s*=\s*(\d+)", vtf)) == 768
+assert "_genai_client().models.embed_content(" in QUERY_FN and "model=settings.embed_model" in QUERY_FN
+assert (DOC_TASK, QUERY_TASK) == ("RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY")
+DISTANCE = grab(r'distance_measure_type\s*=\s*"([A-Z_]+)"', vtf)
+RANK_LOC = grab(r'ranking_config_path\(\s*project=settings\.project_id, location="([^"]+)"', ret)
+assert (TOPK, RECORDS, MODEL, RANK_LOC, DISTANCE) == (20, 200, "semantic-ranker-fast-004", "global", "DOT_PRODUCT_DISTANCE")
+assert (grab(r'retrieval_backend: str = Field\("([a-z_]+)"', cfg), grab(r'retrieval_mode: str = "([a-z]+)"', cfg)) == ("vector", "dense")
+POOL_CALL = "num_neighbors=settings.top_k_retrieve"                     # the pool is the index's nearest TOP_K_RETRIEVE
+RANK_RECORD = 'RankingRecord(id=str(i), content=c["text"])'             # the ranker gets each candidate's text, not its vector
+assert "resp = _index_endpoint().find_neighbors(" in ret and f"queries=[vec], {POOL_CALL}," in ret
+assert f"records = [discoveryengine.{RANK_RECORD}" in ret
+assert "top_n=k, query=query, records=records)," in ret and 'chunks[int(r.id)]["rerank_score"] = r.score' in ret
+assert "qvec = embed_query(req.query)" in block(API, '    with stage(stages, "retrieve"):', n=2)
+assert block(API, '        with stage(stages, "rerank"):', n=2).rstrip().endswith("chunks = rerank(req.query, chunks, req.top_k, tenant_id=req.tenant_id)")
+# the pointer to B.4's toys and prices: its steps 4, 5 and 8 are still the bi-encoder, the cross-encoder and the costs
+B4 = pb.part("B.4", "b") + pb.part("B.4", "c")
+for n, h3 in ((4, "A bi-encoder: "), (5, "A cross-encoder: "), (8, "Where each encoder sits, and what each costs")):
+    assert re.search(rf'<div class="step" id="s{n}"><div class="step-n">{n}</div>.*?<h3>{re.escape(h3)}', B4), (n, h3)
+
 sys.path[:0] = [str(KIT), str(KIT / "services" / "rag-api")]
 from context_budget import TokenBudget, estimate_tokens  # noqa: E402
 from shared import documind_corpus as dc  # noqa: E402
@@ -153,6 +185,8 @@ STATS = {
     "BUDGET_TOTAL": f"{TOTAL:,}", "FIXED_TOKENS": str(budget.system), "CHUNK_BUDGET": f"{budget.chunks:,}", "ANSWER_TOKENS": f"{ANSWER:,}",
     "HB_MEAN": str(HB_MEAN), "WIN_TOKENS": str(WIN), "FIT_WIN": str(FIT_WIN), "DROP_WIN": str(DROP_WIN), "WIN_CONTEXT": str(WIN_CONTEXT),
     "RS_REQ": f"{85 / 1000:.3f}", "SELFTEST": html.escape(SELFTEST),
+    "EMBED_MODEL": EMBED_MODEL, "DOC_TASK": DOC_TASK, "QUERY_TASK": QUERY_TASK, "DIMS": str(DIMS), "DISTANCE": DISTANCE,
+    "RANK_LOC": RANK_LOC, "POOL_CALL": POOL_CALL, "RANK_RECORD": html.escape(RANK_RECORD, quote=False),
 }
 
 
@@ -266,4 +300,5 @@ body = "".join([
 ])
 finish(LESSON, title, EXTRA_CSS, body, JS)
 print(f"kit: model {MODEL} | timeout {TIMEOUT} s | pool {TOPK} | records {RECORDS} | budget {TOTAL} - {budget.system} fixed = {budget.chunks} for chunks"
-      f" | acme mirrors {N} chunks, handbook section {HB_MEAN} tokens, page window {WIN}: {FIT_WIN} of {TOPK} full pages fit | selftest rows {len(ROWS)}")
+      f" | acme mirrors {N} chunks, handbook section {HB_MEAN} tokens, page window {WIN}: {FIT_WIN} of {TOPK} full pages fit | selftest rows {len(ROWS)}"
+      f" | lanes: {EMBED_MODEL} {DOC_TASK} / {QUERY_TASK} {DIMS} by {DISTANCE}, then {MODEL} on {RANK_LOC}")

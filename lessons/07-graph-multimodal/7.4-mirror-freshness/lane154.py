@@ -558,22 +558,6 @@ def _visible(tenant: str) -> dict:
     return {dk: e for dk, e in _stores()["vs"].get(tenant, {}).items() if e.get("left", 0) == 0}
 
 
-def _segments(query: str, text: str, pdf: bool, t: Tfidf, k: int) -> list:
-    out, page = [], 1
-    for block_ in re.split(r"\n\s*\n", text):
-        para = " ".join(block_.replace("\f", " ").split())
-        if para:
-            out.append((para, page))
-        page += block_.count("\f")
-    scored = sorted(((t.sim(query, p), -i, p, pg) for i, (p, pg) in enumerate(out)), reverse=True)
-    segs = []
-    for s, _, p, pg in scored[:k]:
-        if s <= 0:
-            break
-        segs.append({"content": p, **({"pageNumber": str(pg)} if pdf else {})})
-    return segs
-
-
 class _SearchClient:
     def search(self, request):
         t = _store_of(request.serving_config)
@@ -583,15 +567,12 @@ class _SearchClient:
         texts = {dk: _text_of(t, e, dk) for dk, e in docs.items()}
         tf = Tfidf([p for x in texts.values() for p in re.split(r"\n\s*\n", x)])
         ranked = sorted(((tf.sim(request.query, x), dk) for dk, x in texts.items()), key=lambda x: (-x[0], x[1]))
-        k = request.content_search_spec.extractive_content_spec.max_extractive_segment_count
         out = []
         for s, dk in ranked[:request.page_size]:
             if s < 0.03:
                 break
-            pdf = BASE["texts"].get(t, {}).get(dk, {}).get("pdf", False)
             out.append(SimpleNamespace(document=_Document(id=dk, name=f"{request.serving_config}/documents/{dk}",
-                                                          struct_data={"source_uri": docs[dk]["source_uri"]},
-                                                          derived_struct_data={"extractive_segments": _segments(request.query, texts[dk], pdf, tf, k)})))
+                                                          struct_data={"source_uri": docs[dk]["source_uri"]})))
         return out
 
 

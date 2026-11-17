@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 3.9 System design: a fact-checking system built from DocuMind's parts - the stations a claim passes, the price at three scales, and the designs the kit's own numbers reject | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+.fx-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 16px;margin-bottom:10px;align-items:end;}
+.fx-l{font-size:var(--small-size);color:var(--navy);display:flex;flex-direction:column;gap:4px;min-width:0;}
+.fx-l select{font:inherit;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);min-height:44px;max-width:100%;}
+.fd-path{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;font-size:12.5px;}
+.fd-st{margin:0;background:var(--card);border:1px solid var(--border);border-left:4px solid var(--teal);border-radius:10px;padding:8px 12px;line-height:1.5;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.fd-st b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1px;text-transform:uppercase;}
+.fd-st .fd-f{display:block;font-family:var(--mono);font-size:var(--kicker-size);color:var(--cyan);margin-bottom:2px;}
+.fd-st .fd-c{display:block;font-family:var(--mono);font-size:var(--kicker-size);color:var(--teal-dark);margin-top:4px;}
+.fd-st.skip{border-left-style:dashed;border-left-color:#cbd5e1;background:var(--bg);color:#64748b;}
+.fd-st.held{border-left-color:#f59e0b;background:#fffbeb;}
+.fd-st.stop{border-left-color:#0891b2;background:#ecfeff;}
+.fd-st.side{border-left-style:dotted;}
+.fx-out{font-size:var(--small-size);color:var(--navy);font-weight:700;margin:10px 0 0;}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.9</div>
+<h1>System design: a fact-checking system built from DocuMind's parts, <span>where a verdict stands on a clause its passage really holds, priced at three scales, with three rejected designs and the numbers that rejected them</span></h1>
+<p>Module 3 built the parts one lesson at a time: the budget that packs the evidence, the contract that makes the model cite or refuse, the stream and its fallbacks, and the journey from an upload to a cited answer. This page puts them to a use none of those lessons had. A fact desk takes a claim and returns one of two things: a verdict that stands on a clause from the tenant's own documents, quoted and cited, or a refusal. It is a design page, written in the shape of the capstone rubric that lesson 11.8 publishes, so its sections are the rubric's five dimensions and each one shows what a 3 looks like. Every number on it is computed from the kit or read from a dated price page, and the sections on the first four dimensions each end in a script you can run for Rs 0.</p>
+<div class="hero-chips"><div class="hero-chip">/v1/passages: no generation call</div><div class="hero-chip">ModelDraft: answerable, with quotes</div><div class="hero-chip">quote_holds(): Rs 0</div><div class="hero-chip">the judge advises, the gate decides</div><div class="hero-chip">Rs at 1k, 10k and 100k claims</div><div class="hero-chip">800 in flight, 1 replica, 600 a minute</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a fact desk is, and how a design is scored</a></li>
+<li><a href="#s2">The words: claim, door, passages, draft, quote check, judge, verdict, refusal, threshold, floor, ceiling, vacuous</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Architecture: the path a claim takes, station by station</a></li>
+<li><a href="#s4">Architecture: three designs rejected, and the number that would change each</a></li>
+<li><a href="#s5">Failure modes: four the kit reproduces, and which ones the alerts see</a></li>
+<li><a href="#s6">Cost: a claim, a month and a floor, at 1k, 10k and 100k claims</a></li>
+<li><a href="#s7">Cost at 10&times;: the limits the kit declares, and the one it does not</a></li>
+<li><a href="#s8">Evals: what blocks, what advises, and what cannot fail</a></li>
+<li><a href="#s9">Next month: the top item comes from the rows</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a system design is scored, on the capstone rubric's five dimensions, and what moves each answer from a 2 to a 3, by designing a fact desk from the kit's own parts. Then you will back every answer with a script: quotes held against their passages, the thresholds of three rejected designs, the alerts the kit declares, the cost at 1k, 10k and 100k claims a month, the limits that bind at ten times the load, and the eval rows that cannot fail.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a fact desk is, and how a design is scored</h3><p>A claim goes in; a verdict on a quoted clause, or a refusal, comes out. The stations are the kit's, and the score is the rubric's.</p></div></div>
+
+<p><strong>A fact desk answers one kind of question.</strong> Someone has a sentence they want to publish or act on: a claim. The desk returns one of two things. A verdict that stands on a clause from the tenant's own documents, quoted and cited, so that a reader can open the page and find the words. Or a refusal that says the documents do not settle it. There is nothing in between, because a verdict without a clause is an opinion, and opinions are what the desk exists to catch. DocuMind already has every station such a desk needs. <code>/v1/passages</code> retrieves for a claim without a generation call and returns each passage's full text. The generator's contract makes the model say whether the passages answer, and cite each one it relies on with a quote. Rule 5 of its prompt says a quote is the clause that answers, at most 25 words. The judge reads answers against their passages and explains them. What the request path lacks is a station that holds each quote against the passage it cites: <code>resolve()</code> copies the model's quote as it came. The kit's training-set builder already has that check, <code>quote_holds()</code>, at Rs 0, and the design borrows it.</p>
+
+<p><strong>A design is scored the way the capstone is.</strong> The capstone rubric, which lesson 11.8 publishes, has eight components that must exist in the learner's fork, each checked PASS or FAIL by <code>make capstone-check</code>, and five dimensions the defence scores 0 to 3, 15 points in all, with 9 to pass and no dimension at 0. Three of the components are this page's proof: the architecture, naming at least three rejected options and why (component 5); the cost model at 1k, 10k and 100k queries a month, in rupees at 85 to the dollar and dated (component 6); and four failure modes, each proved by a script (component 7). The sections below follow the dimensions in order. Each one starts where a 2 ends and shows what makes it a 3.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Dimension</th><th>A 2 looks like</th><th>A 3 adds</th><th>On this page</th></tr></thead>
+<tbody>
+<tr><td><strong>Architecture</strong></td><td data-label="A 2 looks like">The request path drawn, and the main choices defended with reasons specific to this workload.</td><td data-label="A 3 adds">What was rejected, and the threshold that would change the decision: a number, not a feeling.</td><td data-label="On this page">Steps 3 and 4</td></tr>
+<tr><td><strong>Failure modes</strong></td><td data-label="A 2 looks like">Four failure modes with real symptoms, each reproduced by a script.</td><td data-label="A 3 adds">Which ones the monitoring catches, which it misses, and what was done about the misses.</td><td data-label="On this page">Step 5</td></tr>
+<tr><td><strong>Cost at 10&times;</strong></td><td data-label="A 2 looks like">Cost per answer in rupees, split by model, retrieval and hosting, dual-priced and dated.</td><td data-label="A 3 adds">What breaks first at ten times the load, named as a specific limit rather than "we would scale it".</td><td data-label="On this page">Steps 6 and 7</td></tr>
+<tr><td><strong>Evals</strong></td><td data-label="A 2 looks like">Thresholds with reasons, and a red run to point at.</td><td data-label="A 3 adds">Which assertions are vacuous, enforced upstream so they cannot fail, and what replaced them.</td><td data-label="On this page">Step 8</td></tr>
+<tr><td><strong>What you would do next month</strong></td><td data-label="A 2 looks like">A prioritised list with a reason for the order.</td><td data-label="A 3 adds">A top item learned from operating the system: an observation, not a plan made before it ran.</td><td data-label="On this page">Step 9</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="analogy"><div class="analogy-icon">&#128270;</div><div>
+<p><strong>The newsroom's fact desk.</strong> A reporter files a story with a claim in it. The desk does not ask what the checker thinks; it asks what the paper's own files say. A clerk at the door sends some calls straight to an editor, the ones the paper's rules say a person must take. A researcher pulls the clippings and has no opinion yet. The checker writes the verdict with the exact sentence and the clipping it came from. The copy chief lays the quoted sentence over the clipping, word for word, before anything is printed, which costs nothing but a minute. Once a week the standards editor reads a sample of past checks and writes notes; the notes improve the desk and never unprint a page. Some calls the desk never makes: it does not phone a stranger for a quote its files cannot source, it does not reread the whole archive for every claim, and it does not let the standards editor alone decide what runs. And when the files are silent, the desk says so.</p></div></div>
+
+<h4>The board: five fates of a claim, six stations</h4>
+<p>Pick what happens to a claim and follow it through the stations. Each station is a part of the kit, named with its file; each says what it does to this claim, what it costs at most, and what it leaves behind. The judge stands beside the path rather than on it: the verdict never waits for it.</p>
+
+<div class="diagram fd" id="board">
+<div class="dg-title">The fact desk's board - the door, the passages, the generator, the quote check, the judge and the verdict</div>
+<div class="fx-controls"><label class="fx-l">What happens to the claim<select id="fd-case"><option value="stands" selected>Supported: an E3 serves 60 days' notice</option><option value="silent">Silent: ACME's sabbatical policy</option><option value="empty">Empty pool: a filter nothing matches</option><option value="misquote">Misquoted: revision 2's figure</option><option value="door">Handed over: one of the door's five classes</option></select></label></div>
+<ol class="fd-path" id="fd-path"><li class="fd-st run" data-st="door"><b>1 &middot; The door</b><span class="fd-f">services/rag-api/desk_door.py</span><span class="fd-t">None of the law's five classes: the body goes through as it was sent.</span><span class="fd-c">Rs 0</span></li><li class="fd-st run" data-st="passages"><b>2 &middot; The passages</b><span class="fd-f">POST /v1/passages, main.py</span><span class="fd-t">One embedding of the claim, up to 20 candidates from the index, the Ranking API's top 5, each with its full text. Its row says event passages and cost 0.</span><span class="fd-c">Rs 0.09 at most</span></li><li class="fd-st run" data-st="generator"><b>3 &middot; The generator</b><span class="fd-f">generator.py, ModelDraft</span><span class="fd-t">answerable true, and [1] cites NP-03 with the sentence the answer rests on.</span><span class="fd-c">Rs 2.33 at the ceiling</span></li><li class="fd-st run" data-st="quote"><b>4 &middot; The quote check</b><span class="fd-f">quote_holds(), evals/make_trainset.py</span><span class="fd-t">"A confirmed employee at grade E3 or above serves a notice period of 60 days." is in NP-03, in 15 words: it holds.</span><span class="fd-c">Rs 0</span></li><li class="fd-st side" data-st="judge"><b>5 &middot; The judge, beside the path</b><span class="fd-f">evals/judge.py</span><span class="fd-t">One standing verdict in twenty is read later, for groundedness and fulfilment. A low score sends the verdict to a person; it never changes it.</span><span class="fd-c">Rs 0.47 when it reads one</span></li><li class="fd-st run" data-st="verdict"><b>6 &middot; The verdict</b><span class="fd-f">the fact desk's own row</span><span class="fd-t">Stands: the answer, NP-03's sentence, and hr_policy_2026.md, the source it cites.</span><span class="fd-c">the row: stands</span></li></ol>
+<p class="fx-out" id="fd-out" aria-live="polite">Stands, with its clause: Rs 2.42 at the ceiling, and the check on its quote cost nothing.</p>
+<p class="dg-cap">The door is <code>desk_door.py</code>, the passages are rag-api's own route, the generator is <code>generator.py</code>'s prompt with <code>ModelDraft</code>, the quote check is <code>quote_holds()</code> and the judge is <code>evals/judge.py</code>. The costs are ceilings, computed from the kit's rates and Google's list prices of 8 October 2026 (step 6). The quote verdicts are <code>quote_holds()</code>'s own, run on the handbook's NP-03 when this page was built (step 3).</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the board is not</div>
+<p>It is the design's rules, not a run. The fact desk itself, the service that calls these stations in this order and writes one row per verdict, is the design: the kit has every station and not the desk. The costs are the most a claim can bill at the kit's token ceiling, not what any claim did; step 6 puts the measured average beside them.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: claim, door, passages, draft, quote check, judge, verdict, refusal, threshold, floor, ceiling, vacuous</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Claim</strong></td><td data-label="Meaning">The sentence to check, sent as the request's <code>query</code>: at most 4,000 characters, for one tenant, which the caller must be on the roster of.</td><td data-label="On your lane">Any sentence about acme's, zeta's or globex's documents.</td></tr>
+<tr><td><strong>The door</strong></td><td data-label="Meaning"><code>desk_door.py</code>: the Desk's hard gate in front of <code>/v1/query</code>, <code>/v1/stream</code> and <code>/v1/passages</code>. A claim in one of the law's five classes (<code>posh</code>, <code>grievance</code>, <code>privacy_request</code>, <code>exit_dues</code>, <code>human_requested</code>) gets a fixed reply at cost 0, and nothing is retrieved.</td><td data-label="On your lane">On: a tenant's <code>desk_gate</code> unset reads as <code>rules</code>.</td></tr>
+<tr><td><strong>Passages</strong></td><td data-label="Meaning"><code>POST /v1/passages</code>: the roster, the filters, the backend the tenant may use, the version rule and the rerank, then each passage's full text. No generation call and no answer cache; the row says <code>event: passages</code> and cost 0. An empty pool is <code>passages: []</code> and <code>answerable: false</code>.</td><td data-label="On your lane">Up to 20 candidates reranked, the top 5 returned by default.</td></tr>
+<tr><td><strong>Draft</strong></td><td data-label="Meaning"><code>ModelDraft</code>: the answer, the citations by <code>[Source N]</code> with a quote of at most 200 characters each, the confidence, and <code>answerable</code>. <code>resolve()</code> maps each number onto the passages the model saw.</td><td data-label="On your lane"><code>gemini-3.6-flash</code> at thinking LOW, with a reserve of 2,048 tokens.</td></tr>
+<tr><td><strong>Quote check</strong></td><td data-label="Meaning"><code>quote_holds(quote, passage)</code>: the quote is not empty, has at most 25 words, and is found in the passage with line breaks read as spaces. Pure Python.</td><td data-label="On your lane">Rs 0; step 3 runs it on six quotes.</td></tr>
+<tr><td><strong>Judge</strong></td><td data-label="Meaning"><code>evals/judge.py</code>: Vertex AI Evaluation reads an answer with the passages it cites, for groundedness and for fulfilment. It explains; <code>run_eval.py</code> decides.</td><td data-label="On your lane"><code>make judge</code>, run in us-central1.</td></tr>
+<tr><td><strong>Verdict</strong></td><td data-label="Meaning">The desk's outcome, one row per claim: <em>stands</em>, with its clause; <em>not in our files</em>; <em>held for a person</em>, when a quote fails; <em>handed to a person</em>, by the door.</td><td data-label="On your lane">The design's row; the kit writes no verdict row of its own (step 5).</td></tr>
+<tr><td><strong>Refusal</strong></td><td data-label="Meaning"><code>answerable: false</code>, from one of two places: an empty pool, with no generation call, or the model reading passages that do not answer (rule 3), which is billed.</td><td data-label="On your lane">Both are <em>not in our files</em>.</td></tr>
+<tr><td><strong>Threshold</strong></td><td data-label="Meaning">The number that would change a design decision. It makes the decision falsifiable: someone can check the number.</td><td data-label="On your lane">Step 4, one for each rejected design.</td></tr>
+<tr><td><strong>Floor</strong></td><td data-label="Meaning">What the lane bills by the hour with no claim at all: the index, the graph instance, two Cloud SQL instances, the cluster and the connector (lessons 0.1 and 0.4).</td><td data-label="On your lane">Rs 32,157 a month on a SMALL index, Rs 81,100 on MEDIUM.</td></tr>
+<tr><td><strong>Ceiling</strong></td><td data-label="Meaning">A limit the kit declares in a file: a request budget, an instance count, a replica count, a quota.</td><td data-label="On your lane">Step 7: 800 claims in flight, 1 replica, 600 a minute once switched on.</td></tr>
+<tr><td><strong>Vacuous assertion</strong></td><td data-label="Meaning">A check that something upstream already enforces, so it cannot fail. It reads as coverage and covers nothing.</td><td data-label="On your lane">Step 8: 11 isolation rows of the golden set.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words carry the design. A refusal is a correct verdict, not a failure: the files are silent and the desk says so. And a held verdict is not a refusal: the model said the files answer, and the check that costs nothing could not find its words in them. A person reads every held verdict; nobody needs to read a refusal twice.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a one-line entry in the kit's <code>mk/ingestion.mk</code> or <code>mk/lifecycle.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson is about the kit's own rows, so point acme at them for the duration and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
+
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Dimension 1 &middot; Architecture</span><h3>Architecture: the path a claim takes, station by station</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/demo_03_architecture_the_path_a_claim_takes_station_by_station.py" target="_blank" rel="noopener"><code>demo_03_architecture_the_path_a_claim_takes_station_by_station.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Six stations, each the kit's own; why each one is there rather than its alternative; and the one check the request path lacks, run offline.</p></div></div>
+
+<h4>Definition</h4>
+<p>The design is one small service, the fact desk, and every station it calls is already in the kit. A claim arrives for one tenant, and the desk calls rag-api's <code>/v1/passages</code> with its own identity. That identity needs what the MCP server's account has today: <code>roles/run.invoker</code> on documind-api, which the loop in <code>commands/lesson-12.2.sh</code> grants, and a place on each tenant's roster, which <code>make roster</code> writes. A 2 draws this path; it also says why each station is there rather than the obvious alternative, with reasons that belong to this workload:</p>
+<ul>
+<li><strong>The door, rather than rules of the desk's own.</strong> The law's five classes are decided once, in front of every route into rag-api that takes a question. A desk with its own list would drift from the Desk's. A hit on <code>/v1/passages</code> comes back as <code>passages: []</code> with the law's reply in <code>answer</code>, so the desk can tell a claim handed to a person from an empty pool.</li>
+<li><strong><code>/v1/passages</code>, rather than <code>/v1/query</code>.</strong> One retrieval, used twice: the generator reads the passages, and the quote check reads them again, in full. A <code>Citation</code> carries a quote of at most 500 characters; a passage carries its whole chunk, which is what a quote has to be found in. An empty pool refuses before any generation is paid for. And retrieval keeps every rule rag-api keeps: the roster, the filters, the backend the tenant's data_region allows, the version rule, the rerank. The kit built this route for exactly this caller, one that writes its own answer.</li>
+<li><strong>The generator's contract, rather than free text.</strong> <code>answerable</code> is a field the model fills, not a reading of its prose; each citation is a number resolved against the passages the model saw; each carries the words it relied on. The desk keeps <code>SYSTEM</code> as it is, so its answers are the lane's answers.</li>
+<li><strong>The quote check, rather than trusting the quote.</strong> <code>resolve()</code> copies the model's quote as it came, and rule 5 is a request in the prompt that nothing on the request path enforces. <code>quote_holds()</code> is the kit's own rule, written for the tuning set: the helpdesk style of <code>make_trainset.py</code> drops every teacher pair whose quote does not hold in its chunk. It costs nothing, so it runs on every claim.</li>
+<li><strong>A sampled judge, beside the path, rather than none or a judge on it.</strong> The computed checks cannot see an answer that says more than its passage; the judge can, and explains. It reads one standing verdict in twenty, after the fact, because each claim it reads is two autorater calls, and it never decides, because a model's score is not a verdict (lesson 4.2). It sends the cited passages to Vertex AI Evaluation in us-central1, so the design samples only tenants whose data_region is <code>any</code>: the caution the kit itself takes before a Google Chat door may carry an <code>in</code> tenant's quotes (step 4).</li>
+<li><strong>A verdict row of the desk's own.</strong> One row per claim in <code>usage_row()</code>'s shape, with the verdict and any quote that failed beside it. No row the kit writes carries a verdict, and step 5 shows what that costs the alerts.</li>
+</ul>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/desk_door.py - the door in front of the three routes that take a question; shared/desk_rules.py - its classes</span><span class="ro">read only</span></div><pre tabindex="0">PATHS = {<span class="st">&quot;/v1/query&quot;</span>: <span class="st">&quot;query&quot;</span>, <span class="st">&quot;/v1/stream&quot;</span>: <span class="st">&quot;stream&quot;</span>, <span class="st">&quot;/v1/passages&quot;</span>: <span class="st">&quot;passages&quot;</span>}
+...
+        <span class="kw">if</span> surface == <span class="st">&quot;passages&quot;</span>:
+            <span class="kw">return</span> <span class="kw">await</span> _json(send, <span class="nu">200</span>, {<span class="st">&quot;passages&quot;</span>: [], <span class="st">&quot;answer&quot;</span>: text, <span class="st">&quot;answerable&quot;</span>: <span class="kw">False</span>, <span class="st">&quot;usage&quot;</span>: usage})
+...
+CLASSES = (<span class="st">&quot;posh&quot;</span>, <span class="st">&quot;grievance&quot;</span>, <span class="st">&quot;privacy_request&quot;</span>, <span class="st">&quot;exit_dues&quot;</span>, <span class="st">&quot;human_requested&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - /v1/passages: retrieval and rerank, then each passage&#x27;s full text, and no generation call</span><span class="ro">read only</span></div><pre tabindex="0">@app.post(<span class="st">&quot;/v1/passages&quot;</span>)
+<span class="kw">def</span> <span class="fn">passages</span>(req: QueryRequest, user=Depends(verify_iap)):
+    <span class="st">&quot;&quot;&quot;The retrieval half of /v1/query and nothing after it (workshop lesson 10.4): the same door, identity,
+    membership, filters, prompt screen, backend, current-version rule and rerank, then this turn&#x27;s passages with
+    each chunk&#x27;s full text - no model call, no answer cache, no retry. An agent that writes its own answer reads
+    these instead of paying for rag-api&#x27;s and throwing it away; a Citation&#x27;s quote is one clause (at most 25 words,
+    generator.py) and 500 characters (the schema), so the full text is a field of its own. The row is
+    {&quot;event&quot;: &quot;passages&quot;} with no tokens and no cost; an empty pool is passages [] and answerable False.&quot;&quot;&quot;</span>
+    enforce_membership(user[<span class="st">&quot;email&quot;</span>], req.tenant_id)
+    check_filters(req.filters)                            <span class="cm"># a 400 before any work, as on the other two routes</span>
+    t0 = time.time()
+    _, _, rbackend = choose_for(req)
+    guard = screen_prompt(req.query, req.tenant_id)
+    stages: dict = {}
+    rbackend, stages[<span class="st">&quot;policy_fallback&quot;</span>] = retrieval_backend_for(req.tenant_id, rbackend)
+    stages[<span class="st">&quot;retrieval_backend&quot;</span>] = rbackend
+    <span class="kw">with</span> stage(stages, <span class="st">&quot;retrieve&quot;</span>):
+        chunks = retrieve(req.query, req.tenant_id, req.top_k, req.filters, backend=rbackend)
+    stages[<span class="st">&quot;pool&quot;</span>] = len(chunks)
+    stages[<span class="st">&quot;graph_chunks&quot;</span>] = sum(<span class="nu">1</span> <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;found_by&quot;</span>) == <span class="st">&quot;graph&quot;</span>)
+    stages[<span class="st">&quot;managed_chunks&quot;</span>] = sum(<span class="nu">1</span> <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;found_by&quot;</span>) <span class="kw">in</span> MANAGED_BACKENDS)
+    stages[<span class="st">&quot;vector_chunks&quot;</span>] = sum(<span class="nu">1</span> <span class="kw">for</span> c <span class="kw">in</span> chunks <span class="kw">if</span> c.get(<span class="st">&quot;found_by&quot;</span>) == <span class="st">&quot;vector&quot;</span>)
+    stages[<span class="st">&quot;rerank_ms&quot;</span>] = stages[<span class="st">&quot;generate_ms&quot;</span>] = <span class="nu">0</span>
+    <span class="kw">if</span> chunks:
+        <span class="kw">with</span> stage(stages, <span class="st">&quot;rerank&quot;</span>):
+            chunks = rerank(req.query, chunks, req.top_k, tenant_id=req.tenant_id)
+        <span class="kw">if</span> rerank_fell_back(chunks):
+            stages[<span class="st">&quot;rerank_fallback&quot;</span>] = <span class="nu">1</span>
+    out = [{<span class="st">&quot;n&quot;</span>: i, <span class="st">&quot;chunk_id&quot;</span>: c.get(<span class="st">&quot;id&quot;</span>), <span class="st">&quot;source_uri&quot;</span>: c.get(<span class="st">&quot;source_uri&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>, <span class="st">&quot;page&quot;</span>: c.get(<span class="st">&quot;page_start&quot;</span>),
+            <span class="st">&quot;doc_type&quot;</span>: c.get(<span class="st">&quot;doc_type&quot;</span>), <span class="st">&quot;kind&quot;</span>: c.get(<span class="st">&quot;kind&quot;</span>, <span class="st">&quot;text&quot;</span>), <span class="st">&quot;section&quot;</span>: c.get(<span class="st">&quot;section&quot;</span>), <span class="st">&quot;text&quot;</span>: c.get(<span class="st">&quot;text&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>}
+           <span class="kw">for</span> i, c <span class="kw">in</span> enumerate(chunks, <span class="nu">1</span>)]
+    latency = int((time.time() - t0) * <span class="nu">1000</span>)
+    row = usage_row(req, user, <span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">0</span>, latency, bool(out), <span class="kw">None</span>, <span class="st">&quot;passages&quot;</span>, modality=modality_of(p[<span class="st">&quot;kind&quot;</span>] <span class="kw">for</span> p <span class="kw">in</span> out),
+                    model=<span class="st">&quot;none&quot;</span>, backend=<span class="st">&quot;none&quot;</span>, cost_usd=<span class="nu">0.0</span>, guard=guard, stages=stages, retrieval_backend=rbackend)
+    log.info(json.dumps(row))
+    usage = {<span class="st">&quot;tokens_in&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;tokens_out&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;cached_tokens&quot;</span>: <span class="nu">0</span>, <span class="st">&quot;cost_usd&quot;</span>: <span class="nu">0.0</span>, <span class="st">&quot;model&quot;</span>: <span class="st">&quot;none&quot;</span>, <span class="st">&quot;backend&quot;</span>: <span class="st">&quot;none&quot;</span>,
+             <span class="st">&quot;latency_ms&quot;</span>: latency, <span class="st">&quot;stages&quot;</span>: stages}
+    <span class="kw">return</span> {<span class="st">&quot;passages&quot;</span>: out, <span class="st">&quot;answerable&quot;</span>: bool(out), <span class="st">&quot;usage&quot;</span>: usage}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_tools.py - retrieve(passages=True): the kit&#x27;s door for a caller that writes its own answer</span><span class="ro">read only</span></div><pre tabindex="0">        passages: <span class="kw">True</span> <span class="kw">for</span> the passages themselves instead of an answer (workshop lesson
+            <span class="nu">10.4</span>): rag-api<span class="st">&#x27;s /v1/passages, the same retrieval with no model call, each
+            chunk&#x27;</span>s full text where a citation carries one short quote. For an agent that
+            writes its own answer.
+...
+PASSAGE_KEYS = (<span class="st">&quot;n&quot;</span>, <span class="st">&quot;chunk_id&quot;</span>, <span class="st">&quot;source_uri&quot;</span>, <span class="st">&quot;page&quot;</span>, <span class="st">&quot;doc_type&quot;</span>, <span class="st">&quot;kind&quot;</span>, <span class="st">&quot;section&quot;</span>, <span class="st">&quot;text&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - SYSTEM: answer only from the numbered context, cite, refuse, quote the clause</span><span class="ro">read only</span></div><pre tabindex="0">SYSTEM = <span class="st">&quot;&quot;&quot;You are DocuMind, a retrieval-grounded assistant.
+Rules:
+1. Answer ONLY from the numbered context below. Never invent sources.
+2. Cite using [N] where N is the chunk number. Multiple chunks: [1,2].
+3. If the context does not contain the answer, set answerable=false and say so.
+4. Keep answers under 300 words unless asked for more.
+5. A quote is the clause that answers - at most twenty-five words, never a whole section.
+&quot;&quot;&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_schemas.py - DraftCitation and ModelDraft: what the model is asked for</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">class</span> DraftCitation(BaseModel):
+    <span class="st">&quot;&quot;&quot;What the model cites: the [Source N] number it saw, and the words it is relying on.&quot;&quot;&quot;</span>
+
+    source: int = Field(ge=<span class="nu">1</span>, description=<span class="st">&quot;1-based [Source N] in the context&quot;</span>)
+    quote: str = Field(max_length=<span class="nu">200</span>, description=<span class="st">&quot;Exact words from that source&quot;</span>)
+
+
+<span class="kw">class</span> ModelDraft(BaseModel):
+    <span class="st">&quot;&quot;&quot;What the model is asked for. Use this as response_schema; resolve() turns it into a
+    RAGAnswer. Asking the model for chunk ids or scores directly invites it to invent them.&quot;&quot;&quot;</span>
+
+    answer: str
+    citations: List[DraftCitation]
+    confidence: Literal[<span class="st">&quot;high&quot;</span>, <span class="st">&quot;medium&quot;</span>, <span class="st">&quot;low&quot;</span>]
+    answerable: bool</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_schemas.py - resolve(): the citation takes the draft&#x27;s quote as it came</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">cite</span>(n: int, quote: str) -&gt; <span class="kw">None</span>:
+        c = packed[n - <span class="nu">1</span>]
+        chunk_id = str(c.get(<span class="st">&quot;chunk_id&quot;</span>) <span class="kw">or</span> c.get(<span class="st">&quot;id&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>)
+        <span class="kw">if</span> chunk_id <span class="kw">in</span> seen:
+            <span class="kw">return</span>
+        seen.add(chunk_id)
+        cits.append(Citation(
+            chunk_id=chunk_id,
+            source_uri=c.get(<span class="st">&quot;source_uri&quot;</span>, <span class="st">&quot;&quot;</span>),
+            page=c.get(<span class="st">&quot;page_start&quot;</span>) <span class="kw">or</span> c.get(<span class="st">&quot;page&quot;</span>),
+            quote=(quote <span class="kw">or</span> c.get(<span class="st">&quot;text&quot;</span>, <span class="st">&quot;&quot;</span>))[:<span class="nu">500</span>],
+...
+    <span class="kw">for</span> d <span class="kw">in</span> draft.citations:
+        <span class="kw">if</span> <span class="nu">1</span> &lt;= d.source &lt;= len(packed):
+            cite(d.source, d.quote)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - _draft(): an over-long quote is trimmed, and the trim ends in three dots</span><span class="ro">read only</span></div><pre tabindex="0">    limit = _quote_limit()
+    <span class="kw">for</span> c <span class="kw">in</span> obj.get(<span class="st">&quot;citations&quot;</span>) <span class="kw">or</span> []:
+        <span class="kw">if</span> isinstance(c, dict) <span class="kw">and</span> isinstance(c.get(<span class="st">&quot;quote&quot;</span>), str) <span class="kw">and</span> len(c[<span class="st">&quot;quote&quot;</span>]) &gt; limit:
+            c[<span class="st">&quot;quote&quot;</span>] = c[<span class="st">&quot;quote&quot;</span>][: limit - <span class="nu">3</span>].rstrip() + <span class="st">&quot;...&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/make_trainset.py - quote_holds(): the check the design borrows, already the kit&#x27;s own</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">_flat</span>(s: str) -&gt; str:
+    <span class="kw">return</span> re.sub(r<span class="st">&quot;\s+&quot;</span>, <span class="st">&quot; &quot;</span>, s).strip()
+
+
+<span class="kw">def</span> <span class="fn">quote_holds</span>(quote: str, passage: str) -&gt; bool:
+    <span class="st">&quot;&quot;&quot;SYSTEM&#x27;s rule 5 and a real clause: in the passage, line breaks as spaces, and twenty-five words at most.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> bool(quote.strip()) <span class="kw">and</span> len(quote.split()) &lt;= <span class="nu">25</span> <span class="kw">and</span> _flat(quote) <span class="kw">in</span> _flat(passage)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/judge.py - the other judge, as its docstring opens and as its last line ends</span><span class="ro">read only</span></div><pre tabindex="0">run_eval.py <span class="kw">is</span> the gate: nine thresholds <span class="kw">and</span> fifteen required rows, no model <span class="kw">in</span> the loop, green <span class="kw">or</span> red. This <span class="kw">is</span> the OTHER judge -
+...
+    print(<span class="st">&quot;\n  the gate (run_eval.py) still decides; this judge explains. Where they disagree, read the row.&quot;</span>)</pre></div>
+
+
+<h4>Do it: the quote check on the handbook, offline</h4>
+<p>The cell cuts the handbook with the kit's chunker, takes NP-03, the notice-period clause, and holds six quotes against it with <code>quote_holds()</code>: the sentence as written, a sentence that crosses a line break, the same sentence with revision 2's figure, a paraphrase, the whole clause, and the whole clause as <code>_draft()</code> trims an over-long quote. Each line prints both halves of the rule and the kit's verdict.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: it reads the kit's files and calls nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path[:0] = [".", "evals"]
+from shared import documind_corpus as dc
+from make_trainset import quote_holds          # the kit's rule: in the passage, line breaks as spaces, 25 words at most
+doc = {"slug": "hr_policy_2026", "doc_type": "policy", "source_uri": "gs://uploads/acme/hr_policy_2026.md",
+       "text": open("evals/corpus/acme/hr_policy_2026.md", encoding="utf-8").read()}
+passage = next(c for c in dc.chunk_document(doc, "acme") if c["locator"] == "NP-03")["text"]
+flat = lambda s: " ".join(s.split())
+clause = flat(passage.split("\n", 1)[1])                                     # NP-03 under its heading, on one line
+quotes = {"the sentence as written": "A confirmed employee at grade E3 or above serves a notice period of 60 days.",
+          "across a line break": "Notice runs from the date the resignation is acknowledged in writing.",
+          "revision 2's figure": "A confirmed employee at grade E3 or above serves a notice period of 90 days.",
+          "a paraphrase": "Confirmed E3 employees must give 60 days of notice.",
+          "the whole clause": clause,
+          "the clause as _draft() trims it": clause[:197].rstrip() + "..."}
+print(f"NP-03: {len(clause)} characters, {len(clause.split())} words under its heading")
+for label, q in quotes.items():
+    print(f"{label:31} {len(q.split()):2} words | in the passage {str(flat(q) in flat(passage)):5} | "
+          f"25 words at most {str(len(q.split()) &lt;= 25):5} | quote_holds {quote_holds(q, passage)}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own output, produced when this page was built; yours should match it line for line)</span><span class="ro">read only</span></div><pre tabindex="0">NP-03: 212 characters, 38 words under its heading
+the sentence as written         15 words | in the passage True  | 25 words at most True  | quote_holds True
+across a line break             11 words | in the passage True  | 25 words at most True  | quote_holds True
+revision 2's figure             15 words | in the passage False | 25 words at most True  | quote_holds False
+a paraphrase                     9 words | in the passage False | 25 words at most True  | quote_holds False
+the whole clause                38 words | in the passage True  | 25 words at most False | quote_holds False
+the clause as _draft() trims it 36 words | in the passage False | 25 words at most False | quote_holds False</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two quotes held and four did not, each of the four for its own reason, and <code>resolve()</code> would have passed all six. Revision 2's figure is the dangerous one: a fluent sentence, one number off, that a reader would believe; it fails because the passage the model read says 60. The paraphrase is true and still fails, which is the design's choice: a verdict stands on the passage's words, not on the model's. The whole clause is in the passage and fails rule 5's 25 words. The trimmed one fails twice, and the second reason matters: the three dots <code>_draft()</code> puts on an over-long quote are in no passage, so an answer the generator had to repair is held for a person by construction.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Dimension 1 &middot; Architecture</span><h3>Architecture: three designs rejected, and the number that would change each</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/demo_04_architecture_three_designs_rejected_and_the_number_that_would_change_each.py" target="_blank" rel="noopener"><code>demo_04_architecture_three_designs_rejected_and_the_number_that_would_change_each.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A judge-only verifier, a cached long context, an agent with web search: each rejected with the kit's own numbers, each with the threshold that would bring it back.</p></div></div>
+
+<h4>Definition</h4>
+<p>A list of what was built is a description; a list of what was not built, and why, is a decision record. The rubric asks for at least three rejected options, and its 3 asks for more than a reason: the threshold at which the decision flips, stated so that someone could check it. Here are the three designs a fact desk is most often built as, each rejected on a number the kit holds.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Rejected design</th><th>Why not, from the kit</th><th>What would change the decision</th></tr></thead>
+<tbody>
+<tr><td><strong>A judge-only verifier</strong>: the model answers, a judge scores the answer, and the score is the verdict</td><td data-label="Why not, from the kit">A judge is a model reading a template. The kit's first two judged runs scored the lane 0.25 grounded for reasons that were all about the judge's inputs (<code>judge.py</code>, lesson 4.2). Every claim would be two autorater calls: Rs 0.47 a claim at the ceiling, Rs 46,512 a month at 100k claims, where reading one claim in twenty costs Rs 2,326. And the half of the check that is deterministic, the quote, is free.</td><td data-label="What would change the decision">The judge agreeing with people as well as a second person does, on the rows lesson 4.5 has people label. Until it does, it advises.</td></tr>
+<tr><td><strong>Long context with an explicit cache</strong>: the tenant's whole corpus cached, and every claim read against all of it</td><td data-label="Why not, from the kit">Every claim reads the whole corpus at a tenth of the input rate, and the cache bills storage by the hour, $1.00 per million tokens an hour at Google's list price. Even against the retrieval path at its ceiling, its most expensive case, a cached corpus is cheaper only below 14,588 tokens at 1k claims a month, 57,567 at 10k and 81,612 at 100k. acme's corpus is 485,430 tokens and zeta's 287,517. No cache can be made below 4,096 tokens (lesson 6.2), and a cache belongs to one model and one corpus fingerprint: every reindex leaves it stale until <code>make cache</code> packs it again.</td><td data-label="What would change the decision">A tenant whose whole corpus sits under the bound at its own volume, with the bound computed from its measured tokens a claim (step 6) instead of the ceiling. globex's 43,184 tokens cross it at about 4,957 claims a month against the ceiling; its measured average decides whether they cross at all.</td></tr>
+<tr><td><strong>An agent with web search</strong>: the model searches the web and checks the claim against what it finds</td><td data-label="Why not, from the kit">The verdict would cite pages the tenant never published, which the eval's citation check fails by construction: every citation must name the tenant's own, current documents. The claim's words would leave for a search service the tenancy model does not cover, and globex's data_region is <code>in</code>: its text stays on the kit's own rows. The kit has no web-search tool, and where a door of its own would carry an <code>in</code> tenant's answers and quotes off its rows, into the company's Google Chat, the kit refuses until the company has agreed.</td><td data-label="What would change the decision">A tenant whose data_region is <code>any</code> (acme and zeta on the demo lane), whose agreement is on record as the Google Chat door requires, and whose claims are about public facts rather than its own documents. That is a different product, a research desk, and not this one.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>evals/judge.py - enrich_context(): why the judge reads the cited passages in full</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">enrich_context</span>(rows: list[dict], project: str, fetch=<span class="kw">None</span>) -&gt; int:
+    <span class="st">&quot;&quot;&quot;The judge reads the context the answer CITED, in full. The API returns a citation&#x27;s quote (the clause,
+    at most twenty-five words), and a groundedness judge given only quotes marks every answer that says more
+    than its quote as unsupported: the first live run scored the lane 0.25 grounded on 64 rows for exactly that
+    (F39, 10 September). The cited chunks&#x27; text is the context; the quotes stay as the fallback.&quot;&quot;&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/cache_manager.py - the floor under an explicit cache; services/rag-api/cost.py - the rate a cached token is read at</span><span class="ro">read only</span></div><pre tabindex="0">MIN_CACHE_TOKENS = <span class="nu">4_096</span>          <span class="cm"># Gemini 3 family minimum for explicit caches</span>
+DEFAULT_TTL_S = int(os.environ.get(<span class="st">&quot;CACHE_TTL_S&quot;</span>, <span class="st">&quot;3600&quot;</span>))
+...
+    billable_in = max(tokens_in - cached_tokens, <span class="nu">0</span>)
+    usd = (billable_in * usd_in
+           + cached_tokens * usd_in * <span class="nu">0.10</span>      <span class="cm"># cached input: 90% off</span>
+           + tokens_out * usd_out) / <span class="nu">1_000_000</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/tenancy.py - where a tenant&#x27;s text may be held: in or any, and absent means in</span><span class="ro">read only</span></div><pre tabindex="0">DATA_REGIONS = (<span class="st">&quot;in&quot;</span>, <span class="st">&quot;any&quot;</span>)                  <span class="cm"># in: never leaves India; any: a managed store may hold a copy</span>
+INDIA_REGION_PREFIXES = (<span class="st">&quot;asia-south&quot;</span>,)       <span class="cm"># asia-south1 Mumbai, asia-south2 Delhi</span>
+
+
+<span class="kw">def</span> <span class="fn">policy_of</span>(doc: dict | <span class="kw">None</span>) -&gt; str:
+    <span class="st">&quot;&quot;&quot;The data_region a tenant_settings document declares - `in` unless it says `any`. The one normalisation both
+    readers use: a missing field, an unknown value or no document at all is `in`, never a guess.&quot;&quot;&quot;</span>
+    region = str((doc <span class="kw">or</span> {}).get(<span class="st">&quot;data_region&quot;</span>) <span class="kw">or</span> <span class="st">&quot;in&quot;</span>).strip().lower()
+    <span class="kw">return</span> region <span class="kw">if</span> region <span class="kw">in</span> DATA_REGIONS <span class="kw">else</span> <span class="st">&quot;in&quot;</span>
+...
+<span class="kw">def</span> <span class="fn">permits</span>(policy: str, region: str | <span class="kw">None</span>) -&gt; bool:
+    <span class="st">&quot;&quot;&quot;May a store in `region` hold text under this policy? `any` permits every store; `in` permits a store inside
+    India only - none of the managed stores is there today (us-central1, global), and the rule is data, not code.&quot;&quot;&quot;</span>
+    <span class="kw">if</span> policy == <span class="st">&quot;any&quot;</span>:
+        <span class="kw">return</span> <span class="kw">True</span>
+    <span class="kw">return</span> str(region <span class="kw">or</span> <span class="st">&quot;&quot;</span>).strip().lower().startswith(INDIA_REGION_PREFIXES)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/lane.py - the demo&#x27;s policies, which make roster writes</span><span class="ro">read only</span></div><pre tabindex="0">    demo<span class="st">&#x27;s data-region policies (13 September 2026, evening): acme and zeta may be mirrored into the managed stores
+    and read from them; globex&#x27;</span>s text never leaves the kit&#x27;s own rows.<span class="st">&quot;&quot;</span><span class="st">&quot;
+...
+    policies = [(&quot;</span>acme<span class="st">&quot;, &quot;</span>any<span class="st">&quot;), (&quot;</span>zeta<span class="st">&quot;, &quot;</span>any<span class="st">&quot;), (&quot;</span>globex<span class="st">&quot;, &quot;</span><span class="kw">in</span>&quot;)]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/desk_ops.py - the kit&#x27;s own answer when a door would put an in tenant&#x27;s text in another service</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">if</span> tenancy.policy_of(_settings(db, tenant)) == <span class="st">&quot;in&quot;</span> <span class="kw">and</span> <span class="kw">not</span> confirm_residency:
+        <span class="kw">return</span> (f<span class="st">&quot;desk_gchat stays off: {tenant}&#x27;s data_region is in, and the Google Chat door puts the Desk&#x27;s answers &quot;</span>
+                f<span class="st">&quot;and their quotes in the company&#x27;s Google Chat, under its Workspace settings - add &quot;</span>
+                f<span class="st">&quot;CONFIRM_RESIDENCY=1 once the company has agreed to that&quot;</span>)</pre></div>
+
+
+<h4>Do it: the three thresholds, from the kit's files</h4>
+<p>The cell rebuilds a claim's budget with the kit's own function, reads the cache's floor and its read rate from the kit, measures each tenant's corpus with the kit's estimate, reads the policies <code>make roster</code> writes, and prices the judge on every claim. Four prices come from Google's pages, dated in the cell: the cache's storage, the embedding, the ranking query and the judge's default autorater.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: it reads the kit's files and calls nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import ast, re, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path[:0] = [".", "evals", "services/rag-api"]
+from shared.prices import PRICES, USD_INR
+from context_budget import TokenBudget, estimate_tokens
+from run_eval import load_corpus
+src = lambda p: open(p, encoding="utf-8").read()
+cfg = src("services/rag-api/config.py")
+K = {n.targets[0].id: ast.literal_eval(n.value) for n in ast.parse(src("services/rag-api/generator.py")).body
+     if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ("SYSTEM", "DATED_RULE")}
+CLAIM = "A confirmed employee at grade E3 or above serves a notice period of 60 days."
+b = TokenBudget.fit(int(re.search(r"max_context_tokens: int = (\d+)", cfg).group(1)), f"{K['SYSTEM']}{K['DATED_RULE']}\n\nContext:\n\n\nQuestion: {CLAIM}",
+                    estimate_tokens, answer=int(re.search(r"max_answer_tokens: int = (\d+)", cfg).group(1)))
+r_in = PRICES["gemini-3.6-flash"][0] / 1e6
+cached = float(re.search(r"cached_tokens \* usd_in \* ([\d.]+)", src("services/rag-api/cost.py")).group(1))
+floor = int(re.search(r"MIN_CACHE_TOKENS = ([\d_]+)", src("services/rag-api/cache_manager.py")).group(1).replace("_", ""))
+# Google's prices the kit does not hold, read on 8 October 2026 - verify: cache storage, embeddings, ranking, the judge
+STORE, EMBED, RANK, J_IN, J_OUT = 0.000001, 4000 / 1000 * 0.000025, 1.00 / 1000, 0.15, 0.60
+replaced = b.chunks * r_in + EMBED + RANK         # what a cache replaces per claim: the chunks at the ceiling, the embedding, the ranking
+print(f"a cache would replace ${replaced:.5f} a claim: {b.chunks:,} chunk tokens at the ceiling, one embedding, one ranking query")
+for q in (1_000, 10_000, 100_000):
+    print(f"{q:&gt;7,} claims a month: a cached corpus is cheaper below {replaced / (cached * r_in + STORE * 730 / q):&gt;6,.0f} tokens;"
+          f" no cache exists below {floor:,}")
+for t, docs in load_corpus().items():
+    n = sum(estimate_tokens(text) for text in docs.values())
+    print(f"{t:7} {n:&gt;7,} tokens: Rs {n * STORE * 730 * USD_INR:&gt;6,.0f} a month to keep it cached, Rs {n * cached * r_in * USD_INR:.2f} a claim to read it")
+for t, region in ast.literal_eval(re.search(r"policies = (\[.*?\])", src("commands/lane.py")).group(1)):
+    print(f"{t:7} data_region {region:3}: " + ("its text stays on the kit's own rows: a web search is refused" if region == "in"
+                                               else "a web search only once the tenant has agreed to it"))
+judge = 2 * ((b.input_total + b.answer) * J_IN + b.answer * J_OUT) / 1e6     # two metrics, the default autorater, at the ceiling
+print(f"a judge on every claim: Rs {judge * USD_INR:.2f} a claim, Rs {judge * USD_INR * 100_000:,.0f} a month at 100k; one in twenty, Rs {judge * USD_INR * 5_000:,.0f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own output, produced when this page was built; yours should match it line for line)</span><span class="ro">read only</span></div><pre tabindex="0">a cache would replace $0.01284 a claim: 7,825 chunk tokens at the ceiling, one embedding, one ranking query
+  1,000 claims a month: a cached corpus is cheaper below 14,588 tokens; no cache exists below 4,096
+ 10,000 claims a month: a cached corpus is cheaper below 57,567 tokens; no cache exists below 4,096
+100,000 claims a month: a cached corpus is cheaper below 81,612 tokens; no cache exists below 4,096
+acme    485,430 tokens: Rs 30,121 a month to keep it cached, Rs 6.19 a claim to read it
+globex   43,184 tokens: Rs  2,680 a month to keep it cached, Rs 0.55 a claim to read it
+zeta    287,517 tokens: Rs 17,840 a month to keep it cached, Rs 3.67 a claim to read it
+acme    data_region any: a web search only once the tenant has agreed to it
+zeta    data_region any: a web search only once the tenant has agreed to it
+globex  data_region in : its text stays on the kit's own rows: a web search is refused
+a judge on every claim: Rs 0.47 a claim, Rs 46,512 a month at 100k; one in twenty, Rs 2,326</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The cache lost on the two large corpora at every scale, by a margin no likely price change closes: acme's corpus is 5.9 times the bound at 100k claims, Rs 30,121 a month just to keep cached, and Rs 6.19 a claim to read. globex is the honest exception, small enough to cross at a few thousand claims a month if the retrieval path really sent its ceiling every time, which is why the line is a threshold and not a verdict. The floor bites the other way: the pack <code>make cache</code> builds for globex, its synthetic documents, is 239 tokens by the estimate, so the 4,096-token floor alone rules out a cache of that pack. The policy lines are the kit's own data, and the judge line is the price of making the adviser the decider. Each rejection is now a sentence someone can check.</p></div>
+
+<div class="box box-teal"><div class="box-title">A 3 sounds like this</div>
+<p>"We retrieve instead of caching each tenant's corpus, because a cached corpus costs more per claim above 81,612 tokens at 100k claims a month, and acme's is 485,430. globex is under that line; if its measured tokens a claim put its corpus under the bound at its own volume, we would cache globex and keep retrieving for the others."</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Dimension 2 &middot; Failure modes</span><h3>Failure modes: four the kit reproduces, and which ones the alerts see</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/demo_05_failure_modes_four_the_kit_reproduces_and_which_ones_the_alerts_see.py" target="_blank" rel="noopener"><code>demo_05_failure_modes_four_the_kit_reproduces_and_which_ones_the_alerts_see.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Each failure has a lesson that forces it; the alerts catch one of the four, partly, and the desk's own row is what would catch the rest.</p></div></div>
+
+<h4>Definition</h4>
+<p>A 2 documents four failure modes with real symptoms, each reproduced by a script. Every one below has a lesson that forces it, two of them on a candidate revision that takes no traffic. The 3 is the column after the symptom: what <code>terraform/alerts.tf</code> would catch, what it would not, and what the design does about the second group.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Failure</th><th>Reproduced by</th><th>The symptom</th><th>What alerts.tf catches</th><th>What the design does</th></tr></thead>
+<tbody>
+<tr><td><strong>The ranker silent</strong>: a degraded order</td><td data-label="Reproduced by">Lesson 3.7, step 6: <code>RERANK_TIMEOUT_S=0.001</code> on a candidate</td><td data-label="The symptom">Passages in retrieval order; <code>rerank_fallback 1</code> in the stages and on the row; one <code>rerank_fallback</code> line in the log</td><td data-label="What alerts.tf catches">Nothing: no policy reads it. The row counts it and the BigQuery view sums it</td><td data-label="What the design does">A log-based metric over the passages rows' <code>rerank_fallback</code>, alerted as a share, in the shape of the unanswerable rate</td></tr>
+<tr><td><strong>The index unreachable</strong>: the Firestore rung</td><td data-label="Reproduced by">Lesson 2.4, step 5: a candidate whose deployed index name is wrong</td><td data-label="The symptom"><code>vector_search_fallback</code> in the log; <code>vector_chunks 0</code> under <code>retrieval_backend vector</code>; passages from Firestore's own index, under the same predicates</td><td data-label="What alerts.tf catches">Only latency, and only if the rung is slow: p95 above 3 s for 5 minutes. <code>make smoke</code> refuses it, but a smoke is a script someone has to run</td><td data-label="What the design does">The smoke on a schedule, and the same metric shape over <code>vector_chunks 0</code></td></tr>
+<tr><td><strong>Refusals</strong>: the files are silent</td><td data-label="Reproduced by">Lesson 3.5, step 5: globex's missing policy, acme's FY2024, a filter nothing matches</td><td data-label="The symptom"><code>answerable: false</code> and <code>unanswerable_flag 1</code></td><td data-label="What alerts.tf catches">The unanswerable rate, above 20 percent for 30 minutes for a tenant, on query and stream rows. It never sees the desk's: a passages row is in neither its numerator nor its denominator, and a stream row says answerable unless the pool was empty</td><td data-label="What the design does">The verdict row carries the outcome, and a pair of metrics over it gives the desk its own refusal rate, built the way <code>alerts.tf</code> builds the unanswerable one</td></tr>
+<tr><td><strong>A quote the passage does not hold</strong></td><td data-label="Reproduced by">Lesson 3.6: a quote the cited passage does not contain, flagged by run_eval's quote-support measure; offline, step 3 above</td><td data-label="The symptom">A verdict that reads true and rests on words the passage does not hold</td><td data-label="What alerts.tf catches">Nothing. The live eval prints quote support as information, not a threshold, and measures it against the tenant's whole corpus</td><td data-label="What the design does">The check runs on every claim at Rs 0 and holds the verdict; the held share is a metric like the others</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>So the monitoring catches one of the four, and that one only in part.</strong> The rest are counted on rows nobody alerts on, or not counted at all, which is what the design's verdict row and its metrics are for. Two facts behind the table matter beyond this desk. First, <code>terraform/quota.tf</code> names five alerts as intents, and only two are declared, both in <code>alerts.tf</code>: <code>guardrail_blocks</code>, <code>cache_hit_low</code> and <code>burn_rate</code> are declared by nothing. Second, no policy counts documind-api's own errors. A reply the generator cannot parse is a 502, never a refusal (lesson 3.5): each one leaves a <code>generation_unparsed</code> line and no usage row, and no policy reads either. <code>burn_rate</code>, one of the three undeclared alerts, is the one that would have seen a run of them.</p>
+
+<p><strong>A rate needs claims to be a rate.</strong> The unanswerable rate is judged over windows of 30 minutes. At 1k claims a month one such window holds 0.7 claims on average, at 10k it holds 6.8, and at 100k about 68. A desk at the bottom of the range alerts on counts over a day; one at the top can alert on a share over half an hour.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>terraform/alerts.tf - what the unanswerable rate counts, and what it does not</span><span class="ro">read only</span></div><pre tabindex="0">resource <span class="st">&quot;google_logging_metric&quot;</span> <span class="st">&quot;queries&quot;</span> {
+  name    = <span class="st">&quot;documind/queries&quot;</span>
+  project = var.project_id
+  filter  = &lt;&lt;EOT
+    resource.type=<span class="st">&quot;cloud_run_revision&quot;</span>
+    resource.labels.service_name=<span class="st">&quot;documind-api&quot;</span>
+    (jsonPayload.event=<span class="st">&quot;query&quot;</span> OR jsonPayload.event=<span class="st">&quot;stream&quot;</span>)
+  EOT</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/main.py - the stream&#x27;s verdict: answerable unless the pool was empty</span><span class="ro">read only</span></div><pre tabindex="0">        <span class="cm"># The row&#x27;s verdict: a refusal for the empty pool; otherwise the stream still says answerable (6.3 of the</span>
+        <span class="cm"># plan gives the stream a real verdict) - the empty pool no longer hides in that.</span>
+        answerable, confidence = (<span class="kw">False</span>, <span class="st">&quot;low&quot;</span>) <span class="kw">if</span> empty <span class="kw">else</span> (<span class="kw">True</span>, hit.confidence <span class="kw">if</span> hit <span class="kw">else</span> <span class="st">&quot;medium&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/alerts.tf - the latency policy: the only alert on documind-api&#x27;s requests themselves</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># Latency: documind-api&#x27;s p95 over 3 s for 5 minutes. Every request to the service counts, not /v1/query alone, and</span>
+<span class="cm"># the figure is the mean of the series&#x27; p95s (REDUCE_MEAN), not the p95 of all requests: a quiet, fast revision pulls</span>
+<span class="cm"># it down.</span>
+resource <span class="st">&quot;google_monitoring_alert_policy&quot;</span> <span class="st">&quot;api_latency&quot;</span> {
+  display_name = <span class="st">&quot;API p95 latency &gt; 3s&quot;</span>
+  combiner     = <span class="st">&quot;OR&quot;</span>
+  conditions {
+    display_name = <span class="st">&quot;p95 &gt; 3s for 5 minutes&quot;</span>
+    condition_threshold {
+      filter     = <span class="st">&quot;resource.type=\&quot;cloud_run_revision\&quot; AND resource.labels.service_name=\&quot;documind-api\&quot; AND metric.type=\&quot;run.googleapis.com/request_latencies\&quot;&quot;</span>
+      comparison = <span class="st">&quot;COMPARISON_GT&quot;</span>
+      threshold_value = <span class="nu">3000</span>
+      duration   = <span class="st">&quot;300s&quot;</span>
+      aggregations {
+        alignment_period     = <span class="st">&quot;60s&quot;</span>
+        per_series_aligner   = <span class="st">&quot;ALIGN_PERCENTILE_95&quot;</span>
+        cross_series_reducer = <span class="st">&quot;REDUCE_MEAN&quot;</span>
+      }
+    }
+  }</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/quota.tf - five alerts named, two declared</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># The alerts that say something is wrong with the SYSTEM, not with a request.</span>
+<span class="cm"># Each one names a failure this course has already met. A list of intents, not resources: alerts.tf declares</span>
+<span class="cm"># unanswerable_rate and dlq_depth (24 September 2026); the other three are declared by nothing yet.</span>
+locals {
+  documind_alerts = {
+    <span class="cm"># 12.3: a tenant whose questions the corpus cannot answer</span>
+    unanswerable_rate = <span class="st">&quot;documind/unanswerable_rate &gt; 0.20 for 30m&quot;</span>
+    <span class="cm"># 12.5: a poison message reached the dead-letter topic (alerts.tf, google_monitoring_alert_policy.dlq_depth)</span>
+    dlq_depth = <span class="st">&quot;pubsub subscription ingest-dlq-sub num_undelivered &gt; 0&quot;</span>
+    <span class="cm"># 12.6: the guard is blocking a lot, which is either an attack or a bug</span>
+    guardrail_blocks = <span class="st">&quot;documind/guardrail_block_rate &gt; 0.05 for 15m&quot;</span>
+    <span class="cm"># 12.6: the semantic cache stopped paying for itself</span>
+    cache_hit_low = <span class="st">&quot;documind/cache_hit_rate &lt; 0.30 for 1h&quot;</span>
+    <span class="cm"># SRE: error budget burning faster than the month can absorb</span>
+    burn_rate = <span class="st">&quot;slo burn_rate &gt; 14.4 for 1h&quot;</span>
+  }
+}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/run_eval.py - today&#x27;s quote support: the tenant&#x27;s whole corpus, reported and not judged</span><span class="ro">read only</span></div><pre tabindex="0">        quote = re.sub(r<span class="st">&quot;\s+&quot;</span>, <span class="st">&quot; &quot;</span>, c.get(<span class="st">&quot;quote&quot;</span>, <span class="st">&quot;&quot;</span>)).strip().lower()
+        <span class="kw">if</span> quote <span class="kw">and</span> quote <span class="kw">not</span> <span class="kw">in</span> corpus_text:
+            supported = <span class="kw">False</span>
+...
+    <span class="kw">if</span> quote_rows:
+        print(f<span class="st">&quot;  [info] {&#x27;quote_support_rate&#x27;:21} {quote_ok / quote_rows:6.1%}  (quoted words found in the tenant&#x27;s corpus text; &quot;</span>
+              f<span class="st">&quot;not a threshold - a Doc AI extraction and a pypdf mirror hyphenate differently)&quot;</span>)</pre></div>
+
+
+<h4>Do it: the alerts the kit declares, against the ones it names</h4>
+<p>The cell reads every Terraform file in the kit, lists the alert policies each declares, holds <code>quota.tf</code>'s named alerts against them, and prints what the unanswerable rate's denominator counts.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: it reads the kit's files and calls nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re, warnings
+from pathlib import Path
+warnings.filterwarnings("ignore", category=UserWarning)
+tf = {p.name: p.read_text(encoding="utf-8") for p in sorted(Path("terraform").glob("*.tf"))}
+declared = {n: f for f, t in tf.items() for n in re.findall(r'resource "google_monitoring_alert_policy" "(\w+)"', t)}
+for f in sorted(set(declared.values())):
+    print(f"{f} declares {', '.join(n for n, g in declared.items() if g == f)}")
+named = re.findall(r"^\s+(\w+) = \"", tf["quota.tf"].split("documind_alerts = {", 1)[1].split("\n  }", 1)[0], re.M)
+for n in named:
+    print(f"quota.tf names {n:17} {'declared in ' + declared[n] if n in declared else 'declared by nothing'}")
+counted = re.search(r'"google_logging_metric" "queries" \{.*?filter\s+= &lt;&lt;EOT(.*?)EOT', tf["alerts.tf"], re.S).group(1)
+print("the unanswerable rate counts:", " ".join(counted.split()))
+print("rows it never counts:", ", ".join(e for e in ("query", "stream", "passages", "desk_gate") if f'event="{e}"' not in counted))
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own output, produced when this page was built; yours should match it line for line)</span><span class="ro">read only</span></div><pre tabindex="0">alerts.tf declares api_latency, unanswerable_rate, gpu_left_warm, ingest_failed, reconcile_drift, reconcile_failed, dlq_depth, ingest_backlog
+desk_alerts.tf declares desk_fallback_share, desk_l2_share, desk_clarify_oos_trend, case_overdue, doc_type_pin_miss, desk_delegation_refused, desk_gate_error_share, desk_check_tenants_unread
+quota.tf names unanswerable_rate declared in alerts.tf
+quota.tf names dlq_depth         declared in alerts.tf
+quota.tf names guardrail_blocks  declared by nothing
+quota.tf names cache_hit_low     declared by nothing
+quota.tf names burn_rate         declared by nothing
+the unanswerable rate counts: resource.type="cloud_run_revision" resource.labels.service_name="documind-api" (jsonPayload.event="query" OR jsonPayload.event="stream")
+rows it never counts: passages, desk_gate</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The kit declares its alerts in two files, and the list in <code>quota.tf</code> is older than both: two of its five names became policies, and three are still only names. The denominator line is the whole of failure mode 3 in one filter: the rate counts <code>query</code> and <code>stream</code> rows, so a desk built on <code>/v1/passages</code> refuses invisibly, and every claim the door hands to a person is just as invisible. A 3 on this dimension is that sentence, with the metric that closes the gap beside it.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Dimension 3 &middot; Cost</span><h3>Cost: a claim, a month and a floor, at 1k, 10k and 100k claims</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/demo_06_cost_a_claim_a_month_and_a_floor_at_1k_10k_and_100k_claims.py" target="_blank" rel="noopener"><code>demo_06_cost_a_claim_a_month_and_a_floor_at_1k_10k_and_100k_claims.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Model, retrieval, judge and floor, in rupees and dollars and dated; the ceiling no claim exceeds, and your lane's own average beside it.</p></div></div>
+
+<h4>Definition</h4>
+<p>A claim bills four things. <strong>The model</strong>: the generator's tokens at <code>shared/prices.py</code>'s rates for <code>gemini-3.6-flash</code>, $1.50 in and $7.50 out per million. The tokens come from the kit's own budget. <code>TokenBudget.fit()</code> splits <code>max_context_tokens</code>, 8,000 tokens by the kit's estimate, into 175 of fixed prompt for this page's claim and 7,825 for the passages, so no prompt is packed past 8,000; <code>max_answer_tokens</code> caps the answer and its thinking at 2,048. That makes 8,000 in and 2,048 out the ceiling of one attempt, Rs 2.33 a claim; the model's own count differs from the estimate by a little (lesson 3.4). A first attempt that runs out of room is tried once more with three times the room and both are billed; the log says <code>generation_truncated</code>, and a lane whose reserve is right has none. <strong>Retrieval</strong>: one embedding of the claim, <code>text-embedding-005</code> at $0.000025 per 1,000 characters, at most Rs 0.0085 for the longest claim the route accepts; and one Ranking API query for the pool of 20, at $1.00 per 1,000 queries of up to 100 documents, Rs 0.085. Together, Rs 0.09. <strong>The judge</strong>: two autorater calls on each claim it reads, at Gemini 2.0 Flash's $0.15 in and $0.60 out per million, which is how Gen AI Evals bills its default autorater: Rs 0.47 a claim read, at the ceiling, counting each metric's verdict as long as the answer, which is an assumption and not a measurement. The quote check costs nothing. <strong>The floor</strong>: what the lane bills by the hour with no claim at all, which lessons 0.1 and 0.4 price at Mumbai's list prices: Rs 32,157 a month on a SMALL index, Rs 81,100 on MEDIUM. Of that, the index and the connector that documind-api's deploy names come to Rs 8,240 on SMALL and Rs 57,183 on MEDIUM; the desk uses none of the rest.</p>
+
+<h4>The month, at the ceiling, with the judge reading one claim in twenty</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Claims a month</th><th>Model</th><th>Retrieval</th><th>Judge</th><th>Floor</th><th>Total</th><th>Per claim</th></tr></thead>
+<tbody>
+<tr><td>1k (1,000), SMALL</td><td data-label="Model">Rs 2,326</td><td data-label="Retrieval">Rs 94</td><td data-label="Judge">Rs 23</td><td data-label="Floor">Rs 32,157</td><td data-label="Total"><strong>Rs 34,600</strong> ($407)</td><td data-label="Per claim">Rs 34.60</td></tr>
+<tr><td>1k (1,000), MEDIUM</td><td data-label="Model">Rs 2,326</td><td data-label="Retrieval">Rs 94</td><td data-label="Judge">Rs 23</td><td data-label="Floor">Rs 81,100</td><td data-label="Total"><strong>Rs 83,543</strong> ($983)</td><td data-label="Per claim">Rs 83.54</td></tr>
+<tr><td>10k (10,000), SMALL</td><td data-label="Model">Rs 23,256</td><td data-label="Retrieval">Rs 935</td><td data-label="Judge">Rs 233</td><td data-label="Floor">Rs 32,157</td><td data-label="Total"><strong>Rs 56,581</strong> ($666)</td><td data-label="Per claim">Rs 5.66</td></tr>
+<tr><td>10k (10,000), MEDIUM</td><td data-label="Model">Rs 23,256</td><td data-label="Retrieval">Rs 935</td><td data-label="Judge">Rs 233</td><td data-label="Floor">Rs 81,100</td><td data-label="Total"><strong>Rs 1,05,524</strong> ($1,241)</td><td data-label="Per claim">Rs 10.55</td></tr>
+<tr><td>100k (100,000), SMALL</td><td data-label="Model">Rs 2,32,560</td><td data-label="Retrieval">Rs 9,350</td><td data-label="Judge">Rs 2,326</td><td data-label="Floor">Rs 32,157</td><td data-label="Total"><strong>Rs 2,76,393</strong> ($3,252)</td><td data-label="Per claim">Rs 2.76</td></tr>
+<tr><td>100k (100,000), MEDIUM</td><td data-label="Model">Rs 2,32,560</td><td data-label="Retrieval">Rs 9,350</td><td data-label="Judge">Rs 2,326</td><td data-label="Floor">Rs 81,100</td><td data-label="Total"><strong>Rs 3,25,336</strong> ($3,827)</td><td data-label="Per claim">Rs 3.25</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>Dated 8 October 2026.</strong> The model's rates are the kit's, which are Google's standard rate. Google bills <code>gemini-3.6-flash</code> at an introductory $0.75 in and $3.75 out until 31 December 2026, so until then the model column is twice what is billed; the kit and this page use the standard rate, so nothing here changes on 1 January. The embedding, ranking and judge prices are Google's list prices read on 8 October 2026, and the floor is Mumbai's list prices read on 7 October 2026. Rupees at 85 to the dollar. Not priced here: Cloud Run's request time, Firestore's reads (about 20 a claim, to fill the pool) and Cloud Logging.</p>
+
+<p>Read the table the way the rubric does. At 1k claims a month the floor is 93 percent of a SMALL lane's bill, and the cost per claim, Rs 34.60, is mostly the lane standing still. At 100k it is 12 percent, and the model's column, Rs 2,32,560, is most of the Rs 2,76,393. The claims cost more than the floor above 13,166 claims a month on SMALL, 33,206 on MEDIUM. Below that line, the cheapest thing a desk can do about its bill is share a lane; above it, the next rupee is in the model's column, and the measured tokens decide how many there are.</p>
+
+<h4>The calculator: change the assumptions, not the arithmetic</h4>
+<div class="diagram fc" id="calc">
+<div class="dg-title">The cost model - the kit's rates and token ceiling, its floor, and three dated prices</div>
+<div class="fx-controls">
+<label class="fx-l">Tokens a claim<select id="fc-tok"><option value="ceiling" selected>ceiling: 8,000 in, 2,048 out</option><option value="measured" disabled>measured: awaiting the run</option></select></label>
+<label class="fx-l">The index's shard<select id="fc-shard"><option value="small" selected>SMALL: e2-standard-2</option><option value="medium">MEDIUM: e2-standard-16</option></select></label>
+<label class="fx-l">The floor<select id="fc-floor"><option value="lane" selected>the whole lane</option><option value="api">the index and the connector</option></select></label>
+<label class="fx-l">The judge reads<select id="fc-judge"><option value="0">no claims</option><option value="0.01">one in a hundred</option><option value="0.05" selected>one in twenty</option><option value="0.25">one in four</option><option value="1">every claim</option></select></label>
+</div>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Claims a month</th><th>Model</th><th>Retrieval</th><th>Judge</th><th>Floor</th><th>Total</th><th>Per claim</th></tr></thead>
+<tbody id="fc-body">
+<tr><td>1k (1,000)</td><td data-label="Model">Rs 2,326</td><td data-label="Retrieval">Rs 94</td><td data-label="Judge">Rs 23</td><td data-label="Floor">Rs 32,157</td><td data-label="Total"><strong>Rs 34,600</strong> ($407)</td><td data-label="Per claim">Rs 34.60</td></tr>
+<tr><td>10k (10,000)</td><td data-label="Model">Rs 23,256</td><td data-label="Retrieval">Rs 935</td><td data-label="Judge">Rs 233</td><td data-label="Floor">Rs 32,157</td><td data-label="Total"><strong>Rs 56,581</strong> ($666)</td><td data-label="Per claim">Rs 5.66</td></tr>
+<tr><td>100k (100,000)</td><td data-label="Model">Rs 2,32,560</td><td data-label="Retrieval">Rs 9,350</td><td data-label="Judge">Rs 2,326</td><td data-label="Floor">Rs 32,157</td><td data-label="Total"><strong>Rs 2,76,393</strong> ($3,252)</td><td data-label="Per claim">Rs 2.76</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p class="fx-out" id="fc-note" aria-live="polite">The claims cost more than this floor above 13,166 claims a month, at these settings: Rs 2.44 a claim before the floor.</p>
+<p class="dg-cap">The arithmetic is the cell's below, line for line, in JavaScript: each part rounded to whole rupees and the total their sum. The rates are <code>shared/prices.py</code>'s, the floors are the ones lessons 0.1 and 0.4 state, and the ceiling is <code>TokenBudget.fit()</code>'s. The measured option appears once the author's run below is recorded.</p>
+</div>
+
+<p>The author's measured average goes here once the run below is recorded; until then the ceiling stands alone, and the ceiling is the number a cost model may not exceed.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/config.py - the input total and the output reserve</span><span class="ro">read only</span></div><pre tabindex="0">    max_context_tokens: int = <span class="nu">8000</span>
+    <span class="cm"># 2048, not 1024: a statute answer with its quotes - and the thinking drawn from the same</span>
+    <span class="cm"># budget on the 3.x family - outran 1024 on fourteen rows of the second live eval, and each</span>
+    <span class="cm"># cut-off JSON was scored as a refusal. generator.py retries once with three times this.</span>
+    max_answer_tokens: int = <span class="nu">2048</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - _budget(): the fixed prompt counted, the chunks get the rest of max_context_tokens</span><span class="ro">read only</span></div><pre tabindex="0">    fixed = f<span class="st">&quot;{SYSTEM}{DATED_RULE}\n\nContext:\n\n\nQuestion: {query}&quot;</span>      <span class="cm"># the prompt below, with nothing packed</span>
+    <span class="kw">return</span> TokenBudget.fit(settings.max_context_tokens, fixed, count_fn, answer=settings.max_answer_tokens)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/prices.py - the kit&#x27;s rates and its rupee rate</span><span class="ro">read only</span></div><pre tabindex="0">USD_INR = <span class="nu">85</span>            <span class="cm"># the course-wide rate, as in cost.py and shared/documind_tools.py</span>
+...
+PRICES = {<span class="st">&quot;gemini-3.6-flash&quot;</span>: (<span class="nu">1.50</span>, <span class="nu">7.50</span>),
+          <span class="st">&quot;gemini-3.1-flash-lite&quot;</span>: (<span class="nu">0.25</span>, <span class="nu">1.50</span>),
+          <span class="st">&quot;gemini-3.1-pro-preview&quot;</span>: (<span class="nu">2.00</span>, <span class="nu">12.00</span>),</pre></div>
+
+
+<h4>Do it: the cost model as a script</h4>
+<p>This is the table as a script you can keep: component 6's <code>COST-MODEL.md</code> starts from its output. It reads the rates and the rupee rate from the kit, rebuilds a claim's budget with the kit's own function, and carries the three prices the kit does not hold, the embedding, the ranking query and the judge's autorater, as constants with their date.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: it reads the kit's files and calls nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import ast, re, sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path[:0] = [".", "services/rag-api"]
+from shared.prices import PRICES, USD_INR                      # the kit's rates and its rupee rate
+from context_budget import TokenBudget, estimate_tokens
+src = lambda p: open(p, encoding="utf-8").read()
+cfg = src("services/rag-api/config.py")
+K = {n.targets[0].id: ast.literal_eval(n.value) for n in ast.parse(src("services/rag-api/generator.py")).body
+     if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ("SYSTEM", "DATED_RULE")}
+CLAIM = "A confirmed employee at grade E3 or above serves a notice period of 60 days."
+b = TokenBudget.fit(int(re.search(r"max_context_tokens: int = (\d+)", cfg).group(1)), f"{K['SYSTEM']}{K['DATED_RULE']}\n\nContext:\n\n\nQuestion: {CLAIM}",
+                    estimate_tokens, answer=int(re.search(r"max_answer_tokens: int = (\d+)", cfg).group(1)))
+r_in, r_out = PRICES["gemini-3.6-flash"]
+# Google's list prices the kit does not hold, read on 8 October 2026 - verify before you rely on them
+EMBED_1K, RANK_1K, J_IN, J_OUT = 0.000025, 1.00, 0.15, 0.60   # per 1,000 characters; per 1,000 queries; Gemini 2.0 Flash per 1M
+FLOOR = {"SMALL": 32157, "MEDIUM": 81100}                # the lane's standing cost a month, Rs (lessons 0.1 and 0.4)
+JUDGED = 0.05                                                     # the design's choice: the judge reads one claim in twenty
+model = (b.input_total * r_in + b.answer * r_out) / 1e6
+retrieval = 4000 / 1000 * EMBED_1K + RANK_1K / 1000                 # the longest claim QueryRequest takes; one ranking query
+judge = JUDGED * 2 * ((b.input_total + b.answer) * J_IN + b.answer * J_OUT) / 1e6
+
+
+def inr(x):                                                          # whole rupees, grouped the Indian way: 2,76,393
+    s = str(int(x + 0.5))
+    head, tail = s[:-3], s[-3:]
+    while len(head) &gt; 2:
+        head, tail = head[:-2], head[-2:] + "," + tail
+    return f"{head},{tail}" if head else tail
+
+
+print(f"a claim at the ceiling, {b.input_total:,} tokens in and {b.answer:,} out: model ${model:.5f}, retrieval ${retrieval:.5f}, judge ${judge:.6f}")
+for q in (1_000, 10_000, 100_000):
+    parts = [int(q * usd * USD_INR + 0.5) for usd in (model, retrieval, judge)]       # whole rupees, half up
+    for shard, floor in FLOOR.items():
+        total = sum(parts) + floor
+        print(f"{q:&gt;7,} claims, {shard:6}: model Rs {inr(parts[0])} + retrieval Rs {inr(parts[1])} + judge Rs {inr(parts[2])}"
+              f" + floor Rs {inr(floor)} = Rs {inr(total)} (${total / USD_INR:,.0f}), Rs {total / q:.2f} a claim")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own output, produced when this page was built; yours should match it line for line)</span><span class="ro">read only</span></div><pre tabindex="0">a claim at the ceiling, 8,000 tokens in and 2,048 out: model $0.02736, retrieval $0.00110, judge $0.000274
+  1,000 claims, SMALL : model Rs 2,326 + retrieval Rs 94 + judge Rs 23 + floor Rs 32,157 = Rs 34,600 ($407), Rs 34.60 a claim
+  1,000 claims, MEDIUM: model Rs 2,326 + retrieval Rs 94 + judge Rs 23 + floor Rs 81,100 = Rs 83,543 ($983), Rs 83.54 a claim
+ 10,000 claims, SMALL : model Rs 23,256 + retrieval Rs 935 + judge Rs 233 + floor Rs 32,157 = Rs 56,581 ($666), Rs 5.66 a claim
+ 10,000 claims, MEDIUM: model Rs 23,256 + retrieval Rs 935 + judge Rs 233 + floor Rs 81,100 = Rs 1,05,524 ($1,241), Rs 10.55 a claim
+100,000 claims, SMALL : model Rs 2,32,560 + retrieval Rs 9,350 + judge Rs 2,326 + floor Rs 32,157 = Rs 2,76,393 ($3,252), Rs 2.76 a claim
+100,000 claims, MEDIUM: model Rs 2,32,560 + retrieval Rs 9,350 + judge Rs 2,326 + floor Rs 81,100 = Rs 3,25,336 ($3,827), Rs 3.25 a claim</pre></div>
+
+
+<h4>Do it: your lane's tokens a claim, from the rows</h4>
+<p>The ceiling is what no claim may exceed; the average is what claims cost. <code>make usage</code> reads the last day's usage rows, and its table by model and backend carries each model's answers and tokens; the second line divides them. Your average depends on what was asked on your lane, so it is yours, not the author's.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0: one read of the last day's usage rows)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make usage PROJECT=$PROJECT HOURS=24 | sed -n '/^by model and backend/,/^$/p' | tee /tmp/usage39.txt
+awk '$2 == "vertex" &amp;&amp; $3 &gt; 0 {printf "%s: %d answers, %.0f tokens in and %.0f out each, p95 %s ms\n", $1, $3, $4 / $3, $5 / $3, $8}' /tmp/usage39.txt</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author's lane, recorded once; your answers and averages are your own)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/usage_tokens.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The script printed the table, part by part and shard by shard, from the kit's own files and three dated prices, so the cost model is something a reviewer can rerun rather than a figure in a document. The rows gave the other half: the tokens your lane's answers really used, against the 8,000 in and 2,048 out the budget allows. Whatever the gap between them, it moves only the model column; the floor stays where it is, so the smaller the average, the higher the line where the claims overtake the floor.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Dimension 3 &middot; Cost at 10&times;</span><h3>Cost at 10&times;: the limits the kit declares, and the one it does not</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/demo_07_cost_at_10_the_limits_the_kit_declares_and_the_one_it_does_not.py" target="_blank" rel="noopener"><code>demo_07_cost_at_10_the_limits_the_kit_declares_and_the_one_it_does_not.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Ten times the bill is arithmetic. What stops being linear is a ceiling: 40 at a time on 20 instances, 1 replica, 600 a minute.</p></div></div>
+
+<h4>Definition</h4>
+<p>The commonest 2 on this dimension, the rubric says, scales the bill by ten and stops. At ten times the load something stops being linear, and the kit declares where in its files: an instance count and a concurrency in the API's deploy, a replica count on the index, a quota on Gemini calls. The arithmetic takes the 730-hour month the price pages use and asks each ceiling one question: how much busier than the average minute would the busiest minute have to be for it to bind?</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Limit</th><th>Declared in</th><th>Value</th><th>What it allows</th><th>At 1M a month, it binds when</th></tr></thead>
+<tbody>
+<tr><td>documind-api in flight</td><td data-label="Declared in"><code>commands/lesson-12.2.sh</code></td><td data-label="Value">40 at a time x 20 instances = 800; 0 kept warm; cut at 120 s</td><td data-label="What it allows">16,000 claims a minute at the 3 s SLO; 400 at the 120 s cut</td><td data-label="At 1M a month, it binds when">the busiest minute is 17.5 times the average, if claims run to the cut</td></tr>
+<tr><td>Gemini requests</td><td data-label="Declared in"><code>terraform/quota.tf</code></td><td data-label="Value">600 a minute for the project, behind <code>GEMINI_QUOTA_OVERRIDE</code> (false by default)</td><td data-label="What it allows">600 generation calls a minute, shared by every caller in the project</td><td data-label="At 1M a month, it binds when">the busiest minute is 26.3 times the average, once it is on</td></tr>
+<tr><td>Vector Search</td><td data-label="Declared in"><code>terraform/vector.tf</code></td><td data-label="Value">1 replica, min and max: no autoscaling</td><td data-label="What it allows">not declared anywhere in the kit</td><td data-label="At 1M a month, it binds when">unknown until measured: the one ceiling with no number</td></tr>
+<tr><td>A warm instance</td><td data-label="Declared in"><code>commands/lesson-12.2.sh</code></td><td data-label="Value"><code>--min-instances=0</code></td><td data-label="What it allows">nothing idle, and nothing ready</td><td data-label="At 1M a month, it binds when">the other way round: at 1k a month a claim arrives every 43.8 minutes on average</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>So what breaks first at 10&times;?</strong> Take the top scale and multiply it: a million claims a month is 22.8 a minute on average. The first ceiling the kit declares is <code>quota.tf</code>'s 600 generation calls a minute, and it is off. With <code>GEMINI_QUOTA_OVERRIDE</code> at its default the project has no cap of its own on generation calls, and a runaway spends at whatever rate Google's project quota allows. Switched on, it binds when the busiest minute is 26.3 times the average, and every Gemini caller in the project shares it: the chat service's brains, the router, the Desk's checks. The instances are much further away at the SLO, where 800 slots turn over 16,000 claims a minute at 3 s each. At the 120 s cut they turn over only 400, which is under the quota: once claims take longer than 80 s, the slots bind first, at a busiest minute 17.5 times the average. And the one replica has no number at all. One node answers every claim's search, its capacity is declared nowhere in the kit, and the honest answer at 10&times; is to measure it before the load arrives.</p>
+
+<p>The bottom of the range is not linear either. With no instance kept warm, a claim that arrives after a quiet spell waits for an instance to start, and at 1k claims a month a claim arrives every 43.8 minutes on average; at 100k, every 26 seconds. <code>--cpu-boost</code> shortens the start; only a floor of one instance, which bills by the hour, removes it.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>commands/lesson-12.2.sh - documind-api&#x27;s deploy: forty at a time, twenty instances, none kept warm</span><span class="ro">read only</span></div><pre tabindex="0">gcloud run deploy documind-api \
+  --image=${REGION:-us-central1}-docker.pkg.dev/$PROJECT/documind/api:$GIT_SHA \
+  --region=${REGION:-us-central1} --platform=managed \
+  --no-allow-unauthenticated \
+  --ingress=all \
+  --memory=1Gi --cpu=<span class="nu">2</span> --concurrency=<span class="nu">40</span> --timeout=<span class="nu">120</span> \
+  --min-instances=<span class="nu">0</span> --max-instances=<span class="nu">20</span> \
+  --cpu-boost --execution-environment=gen2 \
+  --service-account=documind-api-sa@$PROJECT.iam.gserviceaccount.com \</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/vector.tf - the deployed index: one replica, and no more</span><span class="ro">read only</span></div><pre tabindex="0">  <span class="cm"># One compatible replica. MEDIUM/LARGE cost more than SMALL. A deployed index</span>
+  <span class="cm"># bills while serving; undeploy it to stop serving charges, rather than</span>
+  <span class="cm"># assuming that setting min_replica_count=0 is a supported shutdown path.</span>
+  dedicated_resources {
+    machine_spec {
+      machine_type = local.vector_machine_by_shard[google_vertex_ai_index.documind.metadata[<span class="nu">0</span>].config[<span class="nu">0</span>].shard_size]
+    }
+    min_replica_count = <span class="nu">1</span>
+    max_replica_count = <span class="nu">1</span>
+  }
+}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>terraform/quota.tf - the ceiling under the budget, off by default</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># A consumer quota override, so a runaway cannot spend the whole month in an</span>
+<span class="cm"># afternoon. This is the ceiling BELOW the budget alert: the alert tells you</span>
+<span class="cm"># afterwards, the quota stops it happening.</span>
+resource <span class="st">&quot;google_service_usage_consumer_quota_override&quot;</span> <span class="st">&quot;gemini_rpm&quot;</span> {
+  <span class="cm"># Behind var.gemini_quota_override (variables.tf), off by default. The metric and limit names below</span>
+  <span class="cm"># are the shape the API documents, not names verified against `gcloud alpha services quota list</span>
+  <span class="cm"># --service=aiplatform.googleapis.com` on a project, and an unknown metric fails the whole apply.</span>
+  <span class="cm"># Verify the names, then GEMINI_QUOTA_OVERRIDE=true - and once they are known, this count can go.</span>
+  count          = var.gemini_quota_override ? <span class="nu">1</span> : <span class="nu">0</span>
+  provider       = google-beta
+  project        = var.project_id
+  service        = <span class="st">&quot;aiplatform.googleapis.com&quot;</span>
+  metric         = <span class="st">&quot;aiplatform.googleapis.com%2Fgenerate_content_requests&quot;</span>
+  limit          = <span class="st">&quot;%2Fmin%2Fproject&quot;</span>
+  override_value = <span class="st">&quot;600&quot;</span>
+  force          = true
+}</pre></div>
+
+
+<h4>Do it: the ceilings from the kit's files, then your lane's</h4>
+<p>The first cell reads the four ceilings from the kit's files and does the arithmetic for 1k, 10k, 100k and a million claims a month. The second block reads the same values from your lane: the API's scale and concurrency, the deployed index's machine and replicas, and whether quota.tf's override is in your Terraform state.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (a Python cell; Rs 0: it reads the kit's files and calls nothing)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import re, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+src = lambda p: open(p, encoding="utf-8").read()
+api, vec, quota, mk, alerts = (src(p) for p in ("commands/lesson-12.2.sh", "terraform/vector.tf", "terraform/quota.tf", "Makefile", "terraform/alerts.tf"))
+flag = lambda name: int(re.search(rf"--{name}=(\d+)", api).group(1))
+conc, most, least, timeout = flag("concurrency"), flag("max-instances"), flag("min-instances"), flag("timeout")
+replicas = re.findall(r"(min|max)_replica_count = (\d+)", vec)
+rpm = int(re.search(r'override_value = "(\d+)"', quota).group(1))
+switch = re.search(r"^GEMINI_QUOTA_OVERRIDE \?= (\w+)", mk, re.M).group(1)
+slo = int(re.search(r'"api_latency" \{.*?threshold_value = (\d+)', alerts, re.S).group(1)) / 1000
+slots = conc * most
+print(f"documind-api: {conc} at a time x {most} instances = {slots} claims in flight; {least} kept warm; cut at {timeout} s")
+print(f"Vector Search: {' and '.join(f'{k} {v}' for k, v in replicas)} replica: one node answers every claim's search")
+print(f"quota.tf: {rpm} generate_content requests a minute for the whole project; GEMINI_QUOTA_OVERRIDE ?= {switch}")
+print(f"{slots} slots turn over {slots * 60 / slo:,.0f} claims a minute at the {slo:g} s SLO and {slots * 60 / timeout:,.0f} at the {timeout} s cut;"
+      f" they bind before the quota once a claim takes {slots * 60 / rpm:g} s")
+for q in (1_000, 10_000, 100_000, 1_000_000):
+    avg = q / (730 * 60)                                              # claims a minute; 730 hours, the price pages' month
+    print(f"{q:&gt;9,} a month: {avg:6.3f} a minute, one every {60 / avg:7,.1f} s | the quota binds at a busiest minute"
+          f" {rpm / avg:&gt;8,.1f} x the average; the slots, at {timeout} s a claim, at {slots * 60 / timeout / avg:&gt;8,.1f} x")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own output, produced when this page was built; yours should match it line for line)</span><span class="ro">read only</span></div><pre tabindex="0">documind-api: 40 at a time x 20 instances = 800 claims in flight; 0 kept warm; cut at 120 s
+Vector Search: min 1 and max 1 replica: one node answers every claim's search
+quota.tf: 600 generate_content requests a minute for the whole project; GEMINI_QUOTA_OVERRIDE ?= false
+800 slots turn over 16,000 claims a minute at the 3 s SLO and 400 at the 120 s cut; they bind before the quota once a claim takes 80 s
+    1,000 a month:  0.023 a minute, one every 2,628.0 s | the quota binds at a busiest minute 26,280.0 x the average; the slots, at 120 s a claim, at 17,520.0 x
+   10,000 a month:  0.228 a minute, one every   262.8 s | the quota binds at a busiest minute  2,628.0 x the average; the slots, at 120 s a claim, at  1,752.0 x
+  100,000 a month:  2.283 a minute, one every    26.3 s | the quota binds at a busiest minute    262.8 x the average; the slots, at 120 s a claim, at    175.2 x
+1,000,000 a month: 22.831 a minute, one every     2.6 s | the quota binds at a busiest minute     26.3 x the average; the slots, at 120 s a claim, at     17.5 x</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (Rs 0: reads only, nothing changed)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud run services describe documind-api --region "$REGION" --project "$PROJECT" \
+  --format='yaml(spec.template.spec.timeoutSeconds,spec.template.spec.containerConcurrency,spec.template.metadata.annotations)' \
+  | grep -E 'maxScale|containerConcurrency|timeoutSeconds'
+EP=$(terraform -chdir=terraform output -raw vector_index_endpoint)
+gcloud ai index-endpoints describe "$(basename "$EP")" --region="$REGION" --project="$PROJECT" \
+  --format='value(deployedIndexes[0].dedicatedResources.machineSpec.machineType,deployedIndexes[0].dedicatedResources.minReplicaCount,deployedIndexes[0].dedicatedResources.maxReplicaCount)'
+terraform -chdir=terraform state list | grep -c gemini_rpm</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the machine is e2-standard-2 on a SMALL shard, e2-standard-16 on MEDIUM; the last line counts quota.tf's override in your state)</span><span class="ro">read only</span></div><pre tabindex="0">        autoscaling.knative.dev/maxScale: '20'
+      containerConcurrency: 40
+      timeoutSeconds: 120
+e2-standard-2	1	1
+0</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The files and the lane agreed: 20 instances, 40 at a time, a 120 s cut, 1 replica, and no override in the state, so on your lane today nothing of the kit's own caps generation calls. The arithmetic turned each ceiling into a busiest-minute factor, which is the number a 3 names. A desk that expects bursts, a newsroom on an election night for instance, now knows the factor it has to stay under, and which ceiling it meets first if its claims slow down.</p></div>
+
+<div class="box box-teal"><div class="box-title">A 3 sounds like this</div>
+<p>"At ten times our top volume the first limit is the project's Gemini quota of 600 a minute, which we have switched on: it binds when our busiest minute reaches 26.3 times our average, and the chat service shares it. If claims slow past 80 seconds, the 800 slots bind first. The index's one replica is unmeasured, so we load-test it before we promise the volume."</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Dimension 4 &middot; Evals</span><h3>Evals: what blocks, what advises, and what cannot fail</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_03/lesson_3_9/demo_08_evals_what_blocks_what_advises_and_what_cannot_fail.py" target="_blank" rel="noopener"><code>demo_08_evals_what_blocks_what_advises_and_what_cannot_fail.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Computed checks block, the judge advises, and 11 rows assert what the retriever already guarantees.</p></div></div>
+
+<h4>Definition</h4>
+<p>The kit's gate is <code>evals/run_eval.py</code>: 9 thresholds and 15 required rows over 65 golden rows (47 answerable), scored by code, green or red. The judge reads the same answers and explains them; its docstring calls it the other judge, and its last line says the gate decides. The fact desk keeps that split and adds one check to the blocking side. The quote check runs on every claim before a verdict is written, and as a threshold in the desk's own eval, because the passage it checks against is the very text the model read. The kit's live eval measures quote support against the tenant's whole corpus and reports it as information only, because a Doc AI extraction and a pypdf mirror hyphenate differently; the desk has no second copy to disagree with.</p>
+
+<p>Then the rubric's hardest point: which assertions cannot fail. Of the 65 golden rows, 12 carry <code>must_not_contain</code>, and 11 of those are isolation rows. They are vacuous: the retriever filters by tenant before the generator reads anything, so another tenant's figure can appear only if the model invents it, which <code>check_isolation()</code> calls a hallucination lottery. What replaced them is <code>isolation_403_rate</code> at 1.00, asked by <code>documind-outsider-sa</code>, an account on no tenant's roster. The one version row is not vacuous: its figure lives only in a revision under <code>evals/demo</code>, and a version the ledger failed to retire can say it. For the desk, one more check would be vacuous: asserting that a quote is at most 200 characters, which <code>ModelDraft</code> and <code>_draft()</code> enforce before any eval could see it. The 25-word rule is not vacuous, because only the prompt asks for it, so <code>quote_holds()</code> keeps it. Lesson 4.1, next, builds the rows an eval like this is made of.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>evals/run_eval.py - what a green run has to clear</span><span class="ro">read only</span></div><pre tabindex="0">THRESHOLDS = {
+    <span class="st">&quot;request_success_rate&quot;</span>: <span class="nu">1.00</span>,  <span class="cm"># every row sent came back 200 with a well-formed body: an error is not a refusal</span>
+    <span class="st">&quot;answerable_rate&quot;</span>: <span class="nu">0.80</span>,       <span class="cm"># of rows the corpus CAN answer, how many did</span>
+    <span class="st">&quot;citation_rate&quot;</span>: <span class="nu">0.95</span>,         <span class="cm"># of answered rows, how many carried a citation</span>
+    <span class="st">&quot;citation_valid_rate&quot;</span>: <span class="nu">1.00</span>,   <span class="cm"># of cited rows, how many cited ONLY the tenant&#x27;s own, current documents</span>
+    <span class="st">&quot;must_contain_rate&quot;</span>: <span class="nu">0.85</span>,     <span class="cm"># of answered rows, how many held the expected figure (on its own boundary)</span>
+    <span class="st">&quot;correct_rate&quot;</span>: <span class="nu">0.68</span>,          <span class="cm"># answered AND right AND validly cited, over ALL answerable rows: 0.80 x 0.85, end to end</span>
+    <span class="st">&quot;refusal_rate&quot;</span>: <span class="nu">0.90</span>,          <span class="cm"># of rows the corpus CANNOT answer, how many were refused</span>
+    <span class="st">&quot;media_kind_rate&quot;</span>: <span class="nu">0.80</span>,       <span class="cm"># of rows asking for a figure or segment citation, how many got one (judged when any is in scope)</span>
+    <span class="st">&quot;isolation_403_rate&quot;</span>: <span class="nu">1.00</span>,    <span class="cm"># not 0.99. One leak is the whole product.</span>
+}
+MIN_ROWS = {<span class="st">&quot;isolation&quot;</span>: <span class="nu">5</span>, <span class="st">&quot;refusal&quot;</span>: <span class="nu">5</span>, <span class="st">&quot;lookup&quot;</span>: <span class="nu">10</span>, <span class="st">&quot;join&quot;</span>: <span class="nu">5</span>, <span class="st">&quot;version&quot;</span>: <span class="nu">1</span>}</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>evals/run_eval.py - check_isolation(): why must_not_contain is not the isolation gate</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">check_isolation</span>(api_url, golden, token, outsider_token=<span class="kw">None</span>) -&gt; tuple[float, list[str]]:
+    <span class="st">&quot;&quot;&quot;The isolation gate, and it is NOT must_not_contain.
+
+    retriever.py filters by tenant BEFORE anything reaches the generator - Vector
+    Search restricts on tenant_id, and the Firestore fallback carries the same
+    equality predicate. So no chunk from another tenant is ever in the context, and
+    must_not_contain can only fail if the model invents another tenant&#x27;s exact figure
+    out of nothing. That is a hallucination lottery, and a gate that fires by chance
+    is not a gate.
+
+    The leg that can actually leak is the other one: identity -&gt; tenant. That is
+    enforce_membership() in auth.py, a Firestore lookup, and lookups can be loosened.
+    So the gate asks as somebody who is NOT on the roster and requires a 403.
+    &quot;&quot;&quot;</span></pre></div>
+
+
+<h4>Do it: the gate offline, and the rows that cannot fail</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in $DEMO_ROOT (the offline gate, then a Python cell; Rs 0: no credential, no call)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python evals/run_eval.py
+python - &lt;&lt;'PY'
+import sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path[:0] = ["evals"]
+from run_eval import THRESHOLDS, load_golden, load_required
+golden, required = load_golden(), set(load_required())
+print(f"what blocks a release: {len(THRESHOLDS)} thresholds and {len(required)} required rows over {len(golden)} rows, scored by code")
+never = [r for r in golden if r.get("must_not_contain")]
+print(f"must_not_contain on {len(never)} rows: " + ", ".join(f"{sum(r['shape'] == s for r in never)} {s}" for s in sorted({r['shape'] for r in never})))
+for r in never:
+    if r["shape"] != "isolation":
+        print(f"  {r['id']} ({r['shape']}): {r['must_not_contain']} lives only in a revision under evals/demo; a version the ledger failed to retire can say it, so it can fail")
+iso = [r for r in never if r["shape"] == "isolation"]
+print(f"  the {len(iso)} isolation rows: the retriever filters by tenant before the generator reads, so they fail only on an invented figure")
+print(f"  what replaced them: isolation_403_rate at {THRESHOLDS['isolation_403_rate']:.2f}, asked by an account on no tenant's roster")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the kit's own output, produced when this page was built; yours should match it line for line)</span><span class="ro">read only</span></div><pre tabindex="0">== eval gate: OFFLINE (no credentials, no cost) ==
+  65 golden rows over 3 tenants, 27 documents
+
+  [PASS] falsifiable
+  [PASS] anchors
+  [PASS] coverage
+
+  The golden set is sound. It can go red, and it still contains the rows that would.
+what blocks a release: 9 thresholds and 15 required rows over 65 rows, scored by code
+must_not_contain on 12 rows: 11 isolation, 1 version
+  vr-01 (version): ['90 days'] lives only in a revision under evals/demo; a version the ledger failed to retire can say it, so it can fail
+  the 11 isolation rows: the retriever filters by tenant before the generator reads, so they fail only on an invented figure
+  what replaced them: isolation_403_rate at 1.00, asked by an account on no tenant's roster</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The offline gate judged the golden set itself and passed: every row can fail, which is a different claim from every row being worth having. The second cell sorted the <code>must_not_contain</code> rows by whether anything upstream stops them failing: the isolation rows by the retriever's tenant filter, the version row by nothing but the ledger. That sorting, and the gate that replaced the vacuous rows, is the 3 on this dimension, and it is the same sorting a desk's own rows will need.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Dimension 5 &middot; Next month</span><h3>Next month: the top item comes from the rows</h3><p>A 3 is an observation from operating, not a plan from before; the kit's own history shows what one looks like.</p></div></div>
+
+<h4>Definition</h4>
+<p>The fifth dimension cannot be designed in advance, and that is its point: a 3 is a top item nobody planned, found by running the thing. A design page can show only the shape. The kit's comments are a record of exactly this kind of item, each one reordering work because a live run showed something no plan had:</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>What a live run showed</th><th>Where the kit records it</th><th>What it moved to the top</th></tr></thead>
+<tbody>
+<tr><td>The first two judged runs scored the lane 0.25 grounded: the judge read only the quotes, then a template that ignored the context column</td><td data-label="Where the kit records it"><code>evals/judge.py</code>, F39 and F40</td><td data-label="What it moved to the top">The judge's inputs before its scores: the cited passages in full, and the context inside the prompt it reads</td></tr>
+<tr><td>Fourteen rows of a live eval ran out of a 1,024-token reserve, and each cut-off reply was scored as a refusal</td><td data-label="Where the kit records it"><code>services/rag-api/config.py</code></td><td data-label="What it moved to the top">A reserve of 2,048, and one retry with three times the room, both billed</td></tr>
+<tr><td>A routing change ran on the old revision for an hour, because a candidate had pinned the traffic</td><td data-label="Where the kit records it"><code>Makefile</code>, F44</td><td data-label="What it moved to the top">Traffic moved to a revision by its name, never to "the latest"</td></tr>
+<tr><td>A 200 whose body was empty had counted as a refusal</td><td data-label="Where the kit records it"><code>evals/run_eval.py</code></td><td data-label="What it moved to the top">Every body validated, and <code>request_success_rate</code> at 1.00</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>For the fact desk, a month of verdict rows answers the questions that could reorder its work: the share held for a person, by tenant, which separates a prompt problem from a corpus problem; the share not in our files, which separates a corpus missing documents from claims about things the tenant never wrote down; the judge's low scores on standing verdicts, which find passages that support less than they are quoted for; and the cost of a claim against the ceiling. A 3 names the one that surprised you, and says what it pushed down the list.</p>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eleven checks, each one block above, each with what passing looks like.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The path is drawn from the kit's own files</td><td data-label="The check">step 3</td><td data-label="Pass looks like">six stations, each with its file; the desk itself marked as the design</td></tr>
+<tr><td>2</td><td data-label="Claim">A quote is held against the passage it cites</td><td data-label="The check">step 3's cell</td><td data-label="Pass looks like">two quotes hold, four fail, each failure with its reason</td></tr>
+<tr><td>3</td><td data-label="Claim">Three designs rejected, each with a threshold</td><td data-label="The check">step 4's cell</td><td data-label="Pass looks like">the cache's bound at 1k, 10k and 100k; a policy line per tenant; the judge's price on every claim</td></tr>
+<tr><td>4</td><td data-label="Claim">Four failure modes, each forced by a lesson's script</td><td data-label="The check">step 5</td><td data-label="Pass looks like">lessons 3.7, 2.4, 3.5 and 3.6, and what <code>alerts.tf</code> catches for each</td></tr>
+<tr><td>5</td><td data-label="Claim">Which alerts exist and which are only named</td><td data-label="The check">step 5's cell</td><td data-label="Pass looks like"><code>guardrail_blocks</code>, <code>cache_hit_low</code> and <code>burn_rate</code> declared by nothing; the rate's denominator without <code>passages</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The cost at 1k, 10k and 100k, dual-priced and dated</td><td data-label="The check">step 6's first cell</td><td data-label="Pass looks like">six lines equal to the table, rupees and dollars, the date in the cell</td></tr>
+<tr><td>7</td><td data-label="Claim">Your lane's tokens a claim sit under the ceiling</td><td data-label="The check">step 6's second cell</td><td data-label="Pass looks like">an average below 8,000 in and 2,048 out</td></tr>
+<tr><td>8</td><td data-label="Claim">What breaks first at 10&times; is a limit with a number</td><td data-label="The check">step 7's first cell</td><td data-label="Pass looks like">the quota at 26.3 times the average minute; the slots past 80 s; the replica unmeasured</td></tr>
+<tr><td>9</td><td data-label="Claim">The deployed limits match the kit's files</td><td data-label="The check">step 7's second block</td><td data-label="Pass looks like">20, 40 and 120; 1 replica; 0 overrides in the state</td></tr>
+<tr><td>10</td><td data-label="Claim">The vacuous assertions are named, with what replaced them</td><td data-label="The check">step 8's cells</td><td data-label="Pass looks like">11 isolation rows; <code>isolation_403_rate</code>; the version row not vacuous</td></tr>
+<tr><td>11</td><td data-label="Claim">Next month's top item comes from operating</td><td data-label="The check">step 9</td><td data-label="Pass looks like">one observation you did not plan, and what it moved</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing. Every cell on this page read the kit's files or your lane's settings and rows: the offline cells call nothing, and the reads in steps 6 and 7 write nothing. The fact desk is still a design; building it would add a service with its own account, which needs <code>roles/run.invoker</code> on documind-api and a place on each tenant's roster, and its own verdict row. Lesson 4.1 opens Module 4 with the rows an eval is made of, which is where a desk like this one would start proving itself.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 3 Generation &middot; Lesson 3.9 System design: a fact-checking system built from DocuMind's parts &middot; v5.0</p><p>Next: Lesson 4.1 Build a useful evaluation dataset.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var B = {"stations":["door","passages","generator","quote","judge","verdict"],"cases":{"stands":{"st":{"door":["run","None of the law's five classes: the body goes through as it was sent.","Rs 0"],"passages":["run","One embedding of the claim, up to 20 candidates from the index, the Ranking API's top 5, each with its full text. Its row says event passages and cost 0.","Rs 0.09 at most"],"generator":["run","answerable true, and [1] cites NP-03 with the sentence the answer rests on.","Rs 2.33 at the ceiling"],"quote":["run","\"A confirmed employee at grade E3 or above serves a notice period of 60 days.\" is in NP-03, in 15 words: it holds.","Rs 0"],"judge":["side","One standing verdict in twenty is read later, for groundedness and fulfilment. A low score sends the verdict to a person; it never changes it.","Rs 0.47 when it reads one"],"verdict":["run","Stands: the answer, NP-03's sentence, and hr_policy_2026.md, the source it cites.","the row: stands"]},"out":"Stands, with its clause: Rs 2.42 at the ceiling, and the check on its quote cost nothing."},"silent":{"st":{"door":["run","None of the law's five classes: the body goes through as it was sent.","Rs 0"],"passages":["run","One embedding of the claim, up to 20 candidates from the index, the Ranking API's top 5, each with its full text. Its row says event passages and cost 0. The nearest passages come back, and no document of acme's mentions a sabbatical.","Rs 0.09 at most"],"generator":["run","Rule 3: the passages do not contain it, so answerable is false and there is no citation.","Rs 2.33 at the ceiling"],"quote":["skip","No citation, so nothing to check.","Rs 0"],"judge":["skip","Not sampled: a refusal has no passage to be grounded in.","Rs 0"],"verdict":["run","Not in our files: the model read them and declined. Golden row rf-01 asks exactly this.","the row: refused"]},"out":"Not in our files, said by the model after reading the passages: Rs 2.42 at the ceiling."},"empty":{"st":{"door":["run","None of the law's five classes: the body goes through as it was sent.","Rs 0"],"passages":["held","The filter matches no row: passages [] and answerable false. An empty pool skips the ranker.","Rs 0.0085, the embedding"],"generator":["skip","Not called: there is nothing to read.","Rs 0"],"quote":["skip","Nothing to check.","Rs 0"],"judge":["skip","Not sampled.","Rs 0"],"verdict":["run","Not in our files, without a generation call.","the row: refused"]},"out":"Not in our files, for Rs 0.0085: the embedding was the whole bill."},"misquote":{"st":{"door":["run","None of the law's five classes: the body goes through as it was sent.","Rs 0"],"passages":["run","One embedding of the claim, up to 20 candidates from the index, the Ranking API's top 5, each with its full text. Its row says event passages and cost 0.","Rs 0.09 at most"],"generator":["run","answerable true, but the quote carries revision 2's figure, 90 days, which the current NP-03 does not say.","Rs 2.33 at the ceiling"],"quote":["held","\"A confirmed employee at grade E3 or above serves a notice period of 90 days.\" is not in NP-03: it does not hold.","Rs 0"],"judge":["skip","Not needed: a person reads every held verdict.","Rs 0"],"verdict":["held","Held for a person, with the quote that failed and the passage it was held against.","the row: held"]},"out":"Held for a person: the model was paid (Rs 2.42 at the ceiling), and the free check stopped the verdict."},"door":{"st":{"door":["stop","A hit: the door answers with the law's fixed reply, model none, backend desk_gate, and logs event desk_gate.","Rs 0"],"passages":["skip","Never reached: nothing is retrieved.","Rs 0"],"generator":["skip","Never reached.","Rs 0"],"quote":["skip","Nothing to check.","Rs 0"],"judge":["skip","Not sampled.","Rs 0"],"verdict":["stop","Handed to a person: the desk shows the door's reply as it came.","the row: handed over"]},"out":"Handed to a person by the door, for Rs 0: the claim never reached retrieval or a model."}}}, C = {"rIn":1.5,"rOut":7.5,"inr":85,"ret":0.0011,"jIn":0.15,"jOut":0.6,"metrics":2,"scales":[1000,10000,100000],"labels":{"1000":"1k (1,000)","10000":"10k (10,000)","100000":"100k (100,000)"},"heads":["Claims a month","Model","Retrieval","Judge","Floor","Total","Per claim"],"floor":{"lane":{"small":32157,"medium":81100},"api":{"small":8240,"medium":57183}},"tokens":{"ceiling":[8000,2048]}};
+  function $(id){ return document.getElementById(id); }
+  function inr(x){ var s = String(Math.round(x)), head = s.slice(0, -3), tail = s.slice(-3);
+    while (head.length > 2) { tail = head.slice(-2) + ',' + tail; head = head.slice(0, -2); }
+    return head ? head + ',' + tail : tail; }
+  var sel = $('fd-case'), path = $('fd-path'), out = $('fd-out');
+  if (sel && path && out) {
+    var draw = function(){
+      var c = B.cases[sel.value]; if (!c) return;
+      B.stations.forEach(function(k){
+        var li = path.querySelector('[data-st="' + k + '"]'); if (!li) return;
+        var s = c.st[k];
+        li.className = 'fd-st ' + s[0];
+        li.querySelector('.fd-t').textContent = s[1];
+        li.querySelector('.fd-c').textContent = s[2];
+      });
+      out.textContent = c.out;
+    };
+    sel.addEventListener('change', draw);
+    draw();
+  }
+  var tok = $('fc-tok'), shard = $('fc-shard'), floorSel = $('fc-floor'), judgeSel = $('fc-judge'), body = $('fc-body'), note = $('fc-note');
+  if (tok && shard && floorSel && judgeSel && body && note) {
+    var calc = function(){
+      var t = C.tokens[tok.value] || C.tokens.ceiling, fl = C.floor[floorSel.value][shard.value], share = parseFloat(judgeSel.value);
+      var model = (t[0] * C.rIn + t[1] * C.rOut) / 1e6, judge = share * C.metrics * ((t[0] + t[1]) * C.jIn + t[1] * C.jOut) / 1e6;
+      while (body.firstChild) body.removeChild(body.firstChild);
+      C.scales.forEach(function(q){
+        var m = Math.round(q * model * C.inr), r = Math.round(q * C.ret * C.inr), j = Math.round(q * judge * C.inr), total = m + r + j + fl;
+        var cells = [C.labels[q], 'Rs ' + inr(m), 'Rs ' + inr(r), 'Rs ' + inr(j), 'Rs ' + inr(fl),
+                     'Rs ' + inr(total) + ' ($' + Math.round(total / C.inr).toLocaleString('en-US') + ')', 'Rs ' + (total / q).toFixed(2)];
+        var tr = document.createElement('tr');
+        cells.forEach(function(v, i){ var cell = document.createElement('td'); if (i) cell.setAttribute('data-label', C.heads[i]);
+          cell.textContent = v; tr.appendChild(cell); });
+        body.appendChild(tr);
+      });
+      var per = (model + C.ret + judge) * C.inr;
+      note.textContent = 'The claims cost more than this floor above ' + Math.round(fl / per).toLocaleString('en-US') + ' claims a month, at these settings: Rs ' + per.toFixed(2) + ' a claim before the floor.';
+    };
+    [tok, shard, floorSel, judgeSel].forEach(function(el){ el.addEventListener('change', calc); });
+    calc();
+  }
+})();
+</script>
+</body>
+</html>

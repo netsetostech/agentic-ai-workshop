@@ -25,6 +25,11 @@ names the code change that would turn it red:
                             and a row without the field (claimed before 12 September 2026) is not listed.
   smoke/smoke_agent.py      the live smoke asks the peer as the outsider, with a token, expects 403,
                             and skips with a line when it cannot mint one.
+  commands/check_callers.py (workshop lesson 10.7) make check-callers GRAPH=1 reads the same bindings and
+                            each service's own account as this gate does, and finds the graph acyclic.
+  chat/peer.py              (workshop lesson 10.7) the hand-off is the chat's one other URL, PEER_URL, read
+                            there alone and called as chat-sa, the edge the graph names; it forwards no
+                            person's assertion, and its gate reads the rosters of the peer's account.
   the DocuMind Desk         (workshop lesson 5.6) the five eval accounts and the Google Chat bridge's
                             account are callers of documind-chat and of nothing else, on both sides;
                             none holds a project role. Nobody may mint as the bridge's account
@@ -342,6 +347,22 @@ def main() -> int:
     ok("the six deploy scripts bind roles/run.invoker per service to exactly the callers sa.tf's graph names (loops expanded), one script per service: "
        + "; ".join(f"{s} <- {', '.join(sorted(c))}" for s, (c, _) in sorted(graph.items())))
 
+    # The kit's own reading of the same graph (workshop lesson 10.7, 13 October 2026): commands/check_callers.py --graph
+    # turns each script's bindings and each service's account into service edges and refuses a cycle. It must read what
+    # this gate reads, binding for binding, or make check-callers GRAPH=1 would show learners a graph CI never checked.
+    sys.path.insert(0, os.path.join(ROOT, "deploy", "commands"))
+    import check_callers
+    cg = check_callers.read_graph()
+    assert cg.services == list(graph), f"check_callers.py reads the services {cg.services}, sa.tf's graph names {list(graph)}"
+    assert {s: cg.script[s] for s in cg.services} == {s: script for s, (_, script) in graph.items()}
+    assert {s: cg.callers[s] for s in cg.services} == {s: callers for s, (callers, _) in bound.items()}, \
+        "check_callers.py reads the invoker bindings differently from this gate's bindings_in"
+    assert cg.runs_as == {s: f"{s}-sa" for s in SERVICES}, f"each service runs as its own account: {cg.runs_as}"
+    loop = check_callers.cycle(cg)
+    assert loop is None, f"the caller graph has a cycle: {' -> '.join(loop or [])}"
+    ok("commands/check_callers.py (workshop lesson 10.7) reads the same bindings and each service's own account, and finds the graph acyclic: "
+       + ", ".join(check_callers.order(cg)))
+
     # the graph against the code: who reads which URL
     fe = "".join(read("deploy", "services", "frontend", f) for f in ("chat.py", "documents.py", "studio.py"))
     assert 'os.environ["RAG_API_URL"]' in fe and 'os.environ.get("CHAT_URL"' in fe and "/v1/chat" in fe
@@ -350,12 +371,24 @@ def main() -> int:
     chat_dir = os.path.join(ROOT, "deploy", "services", "chat")
     chat_src = "".join(read(chat_dir, f) for f in sorted(os.listdir(chat_dir)) if f.endswith(".py"))
     assert "documind_tools" in chat_src and "MCP_URL" not in chat_src and "AGENT_URL" not in chat_src, "the chat service grew a second URL - the graph must follow"
+    # The hand-off (workshop lesson 10.7, 13 October 2026) is the chat's one other URL: PEER_URL, read in peer.py alone,
+    # called as documind-chat-sa - the edge lesson-8.4.sh binds and the graph names. It sends no person's credential
+    # (A2A carries no identity), and its gate reads the rosters of the account the peer answers as.
+    peer_src = read(chat_dir, "peer.py")
+    assert 'os.environ.get("PEER_URL"' in peer_src and chat_src.count("PEER_URL") == peer_src.count("PEER_URL") + 2, \
+        "PEER_URL is read in peer.py and tested twice in brains.py, nowhere else - a new URL means a new graph edge"
+    assert "_blocking(documind_tools._id_token, PEER_URL)" in peer_src and "ASSERTION_HEADER" not in peer_src \
+        and "x-goog-iap-jwt-assertion" not in peer_src and 'get("assertion"' not in peer_src, \
+        "the hand-off mints the chat's own token for the peer and forwards no person's assertion"
+    assert "tenancy.tenants_of, PEER_ACCOUNT" in peer_src and "if list(peer_tenants) != [tenant]:" in peer_src, \
+        "the hand-off's gate: the peer's account on exactly one roster, the asker's"
     mcp_src = read("deploy", "services", "mcp", "server.py")
     assert "documind_tools.retrieve(" in mcp_src and "MCP_URL" not in mcp_src
     agent_src = read("deploy", "services", "agent", "agent.py")
     assert 'os.environ.get("MCP_URL"' in agent_src and "RAG_API_URL" not in agent_src, "the peer learned a second URL - the graph must follow"
     for caller, callee in (("documind-ui-sa", "documind-api"), ("documind-ui-sa", "documind-chat"), ("documind-chat-sa", "documind-api"),
-                           ("documind-mcp-sa", "documind-api"), ("documind-agent-sa", "documind-mcp")):
+                           ("documind-mcp-sa", "documind-api"), ("documind-agent-sa", "documind-mcp"),
+                           ("documind-chat-sa", "documind-agent")):
         assert caller in graph[callee][0], f"the code has {caller} calling {callee}; the graph and the script do not bind it"
     assert "documind-agent-sa" not in graph["documind-api"][0], "the peer never knows the API's URL"
     assert "documind-chat-sa" not in graph["documind-mcp"][0], "the chat service has no MCP_URL"
@@ -378,6 +411,7 @@ def main() -> int:
         block = mk.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
         assert needle in block, f"Makefile {target}: {needle} - the graph's reason for a ui-sa/outsider binding"
     ok("the graph is the code's: the UI reads RAG_API_URL and CHAT_URL, chat and mcp reach the API through the ONE retrieve(), the peer reads MCP_URL and nothing else, the Google Chat bridge reads CHAT_URL and nothing else; ui-sa on mcp and the peer, and the outsider on api, chat, mcp and the bridge, are what the Makefile mints as")
+    ok("the chat's hand-off (workshop lesson 10.7) reads PEER_URL in peer.py alone and calls the peer as chat-sa, the edge lesson-8.4.sh binds; it forwards no person's assertion, and its gate reads the peer account's rosters")
 
     # the outsider: only where a verifier and a roster answer, never on the peer
     knocks = {s for s, (c, _) in graph.items() if "documind-outsider-sa" in c}

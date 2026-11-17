@@ -1,6 +1,6 @@
 """Lesson 4.2: The live half: every row, two identities, nine rates, three exit codes
 
-Do it: the live gate, with a report Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Last, what the run cost. The API priced every answer on its usage row; make usage groups the last hour of those rows. Run it straight after the gate, before step 5 asks the lane again.
+Do it: the live gate, with a report Until lesson 7.5 builds the town hall's video, the gate prints an [info] line for mm-03 and judges it on its words: there is no segment to cite yet. Once your ledger lists townhall_2026_q1.mp4 as indexed, mm-03 asks for its segment again. The board below asks every media row for its kind, as the gate does after 7.5. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point. Last, what the run cost. The API priced every answer on its usage row; make usage groups the last hour of those rows. Run it straight after the gate, before step 5 asks the lane again.
 
 Run order inside this file:
 1. Do it: the live gate, with a report (source window 18)
@@ -39,6 +39,7 @@ def step_01_the_live_gate_with_a_report(session):
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: >> https://documind-api-NUMBER.asia-south1.run.app
     == eval gate: LIVE ==
+      [info] mm-03: no segment file of townhall_2026_q1 indexed for acme yet: judged as a text lookup, the segment citation not asked (make media builds it)
       65 rows (47 answerable, 18 not) against https://documind-api-NUMBER.asia-south1.run.app
 
       [PASS] request_success_rate  100.0%  (threshold 100%; 65 rows)
@@ -46,10 +47,7 @@ def step_01_the_live_gate_with_a_report(session):
       [PASS] citation_rate         100.0%  (threshold 95%; 46 rows)
       [PASS] citation_valid_rate   100.0%  (threshold 100%; 46 rows)
       [PASS] must_contain_rate      97.8%  (threshold 85%; 46 rows)
-      [PASS] correct_rate           95.7%  (threshold 68%; 47 rows)
-      [PASS] refusal_rate          100.0%  (threshold 90%; 18 rows)
-      [PASS] media_kind_rate       100.0%  (threshold 80%; 3 rows)
-      [PASS] isolation_403_
+      [PASS] correct_rate           95.7%  (threshold 68%; 47 row
     """
     from workshop_helpers.gates import live_gate
     live_gate(session, report="evals/reports/lesson72.json")
@@ -57,7 +55,7 @@ def step_01_the_live_gate_with_a_report(session):
 def step_02_the_live_gate_with_a_report(session):
     """Run Do it: the live gate, with a report at this checkpoint.
 
-    Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point.
+    Until lesson 7.5 builds the town hall's video, the gate prints an [info] line for mm-03 and judges it on its words: there is no segment to cite yet. Once your ledger lists townhall_2026_q1.mp4 as indexed, mm-03 asks for its segment again. The board below asks every media row for its kind, as the gate does after 7.5. Now take the report apart. The cell recounts the four rates whose denominators people misread, from the report's own rows, then prints all nine with their verdicts and the rows that cost a point.
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
     Operations: bash — run in the operator shell, in the kit (reads the report; changes nothing).

@@ -51,17 +51,22 @@ for who in documind-ui-sa documind-outsider-sa \
     --member="serviceAccount:$who@$PROJECT.iam.gserviceaccount.com" --role=roles/run.invoker --quiet
 done
 
-# 3. The one-time checkpoint migration (8.5: setup() takes exclusive locks - a job, never startup).
-gcloud run jobs create documind-checkpoint-setup \
+# 3. The one-time checkpoint migration (8.5: setup() takes exclusive locks - a job, never startup). deploy creates the
+#    job or updates it to this commit's image (21 October 2026): create printed "ERROR: ... already exists" on every
+#    make up after the first, and left the job on the first build's image.
+gcloud run jobs deploy documind-checkpoint-setup \
   --image=${REGION:-us-central1}-docker.pkg.dev/$PROJECT/documind/chat:$GIT_SHA \
   --region=${REGION:-us-central1} --service-account=documind-chat-sa@$PROJECT.iam.gserviceaccount.com \
   --set-cloudsql-instances=$PROJECT:${REGION:-us-central1}:documind-checkpoint \
   --set-secrets=CHECKPOINT_DSN=documind-checkpoint-dsn:latest \
-  --command=python --args=migrate.py || echo "job exists - continuing"
+  --command=python --args=migrate.py
 gcloud run jobs execute documind-checkpoint-setup --region=${REGION:-us-central1} --wait
 
-# 4. IAP in front of the human surface, AFTER the service exists (step 4 of the runbook above). The UI's brain radio
-#    and make smoke-chat still reach it: IAP_AUDIENCE above lists both surfaces, and the bearer leg (SELF_URL) is
-#    verified by shared/iap.identity when there is no assertion.
-gcloud beta run services update documind-chat --region=${REGION:-us-central1} --iap
+# 4. NO IAP in front of the chat service (16 October 2026). Every caller is a service: the UI's Chat and Desk pages
+#    call as ui-sa, the eval accounts and make smoke-chat with their own ID tokens. IAP in front of it refused
+#    ui-sa (no IAP access role) before the code ran, so the Desk page said it could not confirm who you are, and
+#    an IAP it let through would replace the forwarded assertion with one naming ui-sa. The service stays private:
+#    --no-allow-unauthenticated, the invoker list above, the assertion verified for IAP_AUDIENCE, and the roster.
+#    --no-iap also turns off an IAP an earlier version of this script switched on.
+gcloud beta run services update documind-chat --region=${REGION:-us-central1} --no-iap
 

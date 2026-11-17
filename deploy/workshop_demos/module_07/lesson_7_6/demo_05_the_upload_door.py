@@ -37,9 +37,10 @@ def step_01_the_upload_door(session):
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: upload-url townhall.zip as application/zip: (400, "content_type must be one of ['application/pdf', 'audio/mpeg', 'image/jpeg', 'image/png', 'text/markdown', 'text/plain', 'video/mp4']")
     upload-url ../globex/townhall_2026_q1.mp4 as video/mp4: (400, 'filename must be a bare name')
-    upload-url townhall_2026_q1.mp4 as video/mp4: 200, a PUT into gs://documind-ai-YOUR-ID-uploads/acme/townhall_2026_q1.mp4, signed for 15 minutes
+    upload-url townhall_door.mp4 as video/mp4: 200, a PUT into gs://documind-ai-YOUR-ID-uploads/acme/townhall_door.mp4, signed for 15 minutes
     PUT 1,474,032 bytes straight to the bucket: HTTP 200
     the worker: {"event": "ingest_duplicate", "doc_key": "acme_2b7f0b3acad009d5e38d869a87861150807d598e862de6d72a5349bafaee97d8"}
+    removed gs://documind-ai-YOUR-ID-uploads/acme/townhall_door.mp4: a copy no ledger row names
     """
     import datetime as dt, hashlib, json, os, subprocess, time, urllib.error, urllib.parse, urllib.request
     P, API = os.environ["PROJECT"], os.environ["API"]
@@ -51,7 +52,7 @@ def step_01_the_upload_door(session):
     def door(filename, content_type):                             # POST /v1/media/upload-url, as a roster member
         """Try the upload contract with this filename and content type and print admission or refusal.
         
-        Example: door('townhall_2026_q1.mp4', 'video/mp4')
+        Example: door('townhall_door.mp4', 'video/mp4')
         """
         q = urllib.parse.urlencode({"filename": filename, "content_type": content_type, "tenant_id": "acme"})
         req = urllib.request.Request(f"{API}/v1/media/upload-url?{q}", data=b"", method="POST", headers={"Authorization": "Bearer " + tok})
@@ -63,8 +64,8 @@ def step_01_the_upload_door(session):
     
     for fn, ct in (("townhall.zip", "application/zip"), ("../globex/townhall_2026_q1.mp4", "video/mp4")):
         print(f"upload-url {fn} as {ct}: {door(fn, ct)}")
-    code, body = door("townhall_2026_q1.mp4", "video/mp4")
-    print(f"upload-url townhall_2026_q1.mp4 as video/mp4: {code}, a PUT into gs://{body['bucket']}/{body['blob']}, signed for 15 minutes")
+    code, body = door("townhall_door.mp4", "video/mp4")         # a name of its own: 7.5's object holds the video's name
+    print(f"upload-url townhall_door.mp4 as video/mp4: {code}, a PUT into gs://{body['bucket']}/{body['blob']}, signed for 15 minutes")
     data = open("evals/corpus/acme/townhall_2026_q1.mp4", "rb").read()        # lesson 7.5's video
     since = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     put = urllib.request.Request(body["url"], data=data, method="PUT", headers={"Content-Type": "video/mp4"})
@@ -79,6 +80,8 @@ def step_01_the_upload_door(session):
             break
     for e in reversed(rows):
         print("the worker:", json.dumps(e["jsonPayload"]))
+    subprocess.run(["gcloud", "storage", "rm", f"gs://{body['bucket']}/{body['blob']}"], capture_output=True, text=True, check=True)
+    print(f"removed gs://{body['bucket']}/{body['blob']}: a copy no ledger row names")
 
 def demonstrate(session):
     """Run this section in source order, saving each function's outcome.

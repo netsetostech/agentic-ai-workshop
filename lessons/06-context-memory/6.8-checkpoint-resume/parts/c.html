@@ -1,0 +1,112 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 3 &middot; Read back</span><h3>One step read back, and the thread exported</h3><p>The messages saved just before your first search ran, then your whole thread in a file.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>AT=</code> prints one checkpoint: its id and its parent's, when it was written, its metadata, any task's error, and every message saved there. <code>EXPORT=</code> writes the thread along its latest history to a file in the kit's <code>documind-thread/1</code> format: each checkpoint's step, source, brain, <code>next</code>, metadata and message ids, and every message once. Reading a checkpoint is the pinned library's own decode (langgraph-checkpoint-postgres %%PG_VER%%). Its values are its plain values, kept inline in the row, plus the blob of each channel at the version the row names; each blob goes through a serializer that revives only the types langgraph lists as safe. Each checkpoint is then read through the graph of the brain that wrote it, and that is how its <code>next</code> is known.</p>
+
+<h4>The code</h4>
+@@decode@@
+@@serde@@
+@@snapshots@@
+
+<h4>Do it</h4>
+%%CELL_AT%%
+%%OUT_AT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Step 1 holds two messages, your first question and the model's call for <code>retrieve</code>, with <code>next</code> <code>tools</code>: the moment before your first search ran. Had the process stopped there, this would be your thread's last row, and your turn would look like the kit's fixture. The export holds the same thread, which <code>make replay</code> reads in step 7. It is a file in your home directory, and the lane did not change.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 3 &middot; Replay and fork</span><h3>Your thread replayed and forked on your machine</h3><p>Your follow-up asked again, with Gemini and your lane's rag-api; a fork with another follow-up; then the same with one clause taken out of the prompt.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make replay FILE=</code> runs step 4's four steps on your export, with Gemini on location <code>global</code> and your lane's rag-api as <code>documind-ui-sa</code>. The target reads your project number to build the API's address, and sets the three variables the kit reads: the project Gemini is called in, the API's address, and the account each search is made as. A finished thread replays its last turn from its question, so the model is asked your follow-up again, with your first turn as its history. <code>FORK=</code> is the fork's question, asked from the same turn's input checkpoint. The replay and the fork each have their own <code>limits.Meter</code>, which prices their model calls and searches at list price, as the chat service does. Only the local copy is written.</p>
+
+<h4>The code</h4>
+@@mk_replay@@
+@@fork@@
+
+<h4>Do it</h4>
+%%CELL_REPLAY_LANE%%
+%%OUT_REPLAY_LANE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The copy matched your export step for step. The replay asked Gemini your follow-up again, and its comparison line says how close it came to your recorded turn. Read the steps and the sources first: whether the model searched again, and whether the search returned the same passages. A different answer in different words is the model, not the thread. The fork asked another follow-up from the same point, so its first new message is the new question, and your old follow-up is not in it. The history lists the copy, the replay and the fork, each with the step it branched from, and the last line gives what it cost. None of it reached the lane.</p></div>
+
+<h4>Change it: the prompt's rule for follow-ups</h4>
+<p>The system prompt tells the model to search for every document question, "a follow-up too". Take that clause out of your clone's <code>brains.py</code> and replay the same turn: the replay asks your follow-up again with the edited prompt and the same history. The lane's prompt does not change, since the replay runs the brain from your clone, on your machine.</p>
+%%CELL_EDIT%%
+%%OUT_EDIT%%
+%%CELL_CHANGE%%
+%%OUT_CHANGE%%
+%%CELL_RESTORE%%
+%%OUT_RESTORE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The comparison line is the result. If the replay's steps read <code>ai</code> alone, the model answered your follow-up from the first turn's passages without searching. If they still read <code>ai asks retrieve, tool, ai</code>, the clause was not what made it search. Either way you tested a prompt change against a real conversation of yours, for the price of a turn or two, and deployed nothing. The checkout put the kit's prompt back.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; Direct reads</span><h3>The table, read directly</h3><p>Your thread's rows counted on the lane, and its newest messages blob decoded by hand.</p></div></div>
+
+<h4>Definition</h4>
+<p>The cell is lesson 6.6's thread cell, extended. It connects the same way and makes its session read only first, as <code>make thread</code> does. It counts your thread's checkpoints on the lane and sets the count beside step 6's export. Then it reads which version of <code>messages</code> the newest checkpoint names, fetches that version's row from <code>checkpoint_blobs</code>, and decodes it with the pinned serializer's <code>loads_typed()</code>, strict, as <code>thread_read.py</code> builds it.</p>
+
+<h4>Do it</h4>
+%%CELL_TABLE%%
+%%OUT_TABLE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The lane holds as many checkpoints as the export does. Step 7 replayed and forked your thread twice, and every checkpoint it wrote went into a saver on your machine, so your thread on the lane has not one more row. The blob is the whole conversation at its newest version, as lesson 6.6 found every version is, and it decodes into LangChain's own message classes, which are on langgraph's safe list. A type that is not on it would come back as plain data, and no module a database row names would be imported.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own code and comments, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Every step is saved, so a turn resumes where it stopped.</strong> Resuming runs only what the last checkpoint says is due. No model call, search or rupee is spent twice, and nothing the person already saw is rewritten.</li>
+<li><strong><code>next</code> is asked, not stored.</strong> A row does not say what runs next, so <code>thread_read.py</code> rebuilds each brain's graph, with a model that is never called, and asks LangGraph. It reads each checkpoint through the graph of the brain that wrote it, since the LangChain brain's model node is <code>model</code> and the LangGraph brain's is <code>agent</code>.</li>
+<li><strong>Reading cannot write.</strong> The session is made read only before its first query, every statement is a <code>SELECT</code>, the graphs read through a saver that refuses writes, and the serializer never imports a module a blob names.</li>
+<li><strong>Replays and forks run on a copy.</strong> A customer's thread on the lane never gets a branch from someone's debugging. The copy is checked against the file step for step, so a replay starts where the lane's thread really was.</li>
+<li><strong>Every version is kept.</strong> That is what makes any step of any thread readable, as step 6 read step 1. The price is lesson 6.6's storage, which grows faster than the conversations.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+%%COST_ROWS%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>An agent turn with one search is three calls: the model asking for <code>retrieve</code>, rag-api's grounded answer to the search, and the model's own answer. The estimates price each at the course's typical answer, 2,000 tokens in and 300 out at %%MODEL%%'s list price: Rs %%CALL_RS%% a call, Rs %%TURN_RS%% a turn, about Rs %%TOTAL_RS%% for the whole lesson at most. The UI's captions and the replay's last line print what yours actually cost.</p>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.</p>
+<ul>
+<li><strong>The chat service never resumes, and never heals.</strong> Every <code>/v1/chat</code> turn is new input, and nothing in the service calls <code>invoke(None)</code>. A turn cut off on your lane keeps its open call, and the next question makes LangGraph discard the work that was due. <code>repair_thread()</code> runs only after a recursion error, and nothing heals a cut-off thread when the next question arrives.</li>
+<li><strong>Two turns at once can branch a thread.</strong> Nothing in the service stops two requests on one session from starting from the same checkpoint. <code>make thread</code> counts the checkpoints off the latest line and decodes only that line.</li>
+<li><strong>Forks exist only on your machine.</strong> The service has no route that writes a past checkpoint, so a person cannot edit an earlier question in the UI and branch the conversation there.</li>
+<li><strong>Not every conversation can be read back.</strong> The ADK brain keeps its sessions in memory on this image, as lesson 6.6 found, so they are not in these tables, and <code>make thread</code> lists a Desk thread without decoding it.</li>
+</ul></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Your UI conversation is one thread</td><td data-label="The check">step 3</td><td data-label="Pass looks like">your session at the top of <code>make thread</code>'s list, with <code>2</code> turns</td></tr>
+<tr><td>2</td><td data-label="Claim">Every step is a checkpoint with a <code>next</code></td><td data-label="The check">step 3</td><td data-label="Pass looks like">rows from <code>-1</code>, an <code>input</code> row opening each turn, the last <code>next</code> <code>-</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A cut-off turn resumes from its checkpoint</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>replay from step %%CUT_STEP%% (next tools)</code>, then <code>the replay finished the turn: 2 messages, 1 model call</code></td></tr>
+<tr><td>4</td><td data-label="Claim">Nothing before the cut runs again</td><td data-label="The check">step 4</td><td data-label="Pass looks like">the replay adds only a <code>tool</code> and an <code>ai</code> message</td></tr>
+<tr><td>5</td><td data-label="Claim">A replay matches its recorded turn</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>the replay matches the recorded turn</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A new question leaves the cut-off call open</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>answers: retrieve %%CUT_CALL_ID%%</code></td></tr>
+<tr><td>7</td><td data-label="Claim">A repair closes it first</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>answers: none</code></td></tr>
+<tr><td>8</td><td data-label="Claim">Any step reads back</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>step 1: checkpoint</code> ..., <code>next tools</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Your thread replays and forks on your machine</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>copy</code>, <code>replay</code> and <code>fork</code> rows, and <code>the lane never is</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The lane did not change</td><td data-label="The check">step 8</td><td data-label="Pass looks like">the lane's count equals the export's</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>One new thread: your step 3 conversation, under your email, written by the chat service as every turn is. Nothing else in the checkpoint tables changed: <code>make thread</code> and step 8 read in sessions that cannot write, and every replay, fork and repair ran on a copy on your machine. rag-api logged a usage row for each search that step 5's Gemini cell and step 7's replays made, as <code>documind-ui-sa</code>. On your machine, <code>~/lesson68.json</code> holds your export, <code>/tmp/lesson68-threads.txt</code> your list of threads, and <code>~/graph-venv</code> the chat image's pins and the Cloud SQL connector; <code>services/chat/brains.py</code> is back as the kit has it. Lesson 6.9 keeps each model call's context under a ceiling while the thread itself grows.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.8 Resume a paused or cut-off turn: checkpoint and resume &middot; v5.0</p><p>Next: Lesson 6.9 %%NEXT_NAME%%.</p></div>

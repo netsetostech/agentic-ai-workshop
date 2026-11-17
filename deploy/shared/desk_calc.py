@@ -30,10 +30,15 @@ never a number of its own, and clause codes and grades (LV-07, E3) are names. A 
 only when the message says it, and not in a negated phrase. Anything else is refused, so a model cannot bring a figure
 of its own or borrow one from the wrong clause.
 
+THE FIGURE CHECK (workshop lessons 10.1-10.3). unsupported() reads an answer the other way round: every figure it writes
+in digits, and every whole date, must be in what a calculator returned this turn or in a text the caller names as a
+source - the person's message, a passage the turn read. The agent bench scores provenance with it
+(evals/agent_eval.py); a note, a plan or a critic's remark is never a source.
+
 RULES is each rule's corpus line, quoted: --selftest reads every cited line under evals/corpus/ and fails when the quote
 is not there, then pins min(50, 45) = 45, a notice end date, a gratuity estimate from stated inputs whose displayed
 arithmetic multiplies out, the two working days across a weekend, the threshold of 20 and the argument check, each
-wrong source refused.
+wrong source refused, and the figure check.
 
     python shared/desk_calc.py --selftest          (from deploy/; standard library only)
 """
@@ -300,7 +305,9 @@ def gratuity_estimate(monthly_wage, years, months=0, fixed_term: bool = False, t
     wage = _dec(monthly_wage, "monthly_wage")
     if wage <= 0:
         raise CalcError("monthly_wage must be above 0")
-    y, m = _whole(years, "years"), _whole(months, "months", high=11)
+    # Sixty years of service is the longest a career holds (13 October 2026: a model once passed years=2020, the year in
+    # the Code's own title, and the estimate came to crores).
+    y, m = _whole(years, "years", high=60), _whole(months, "months", high=11)
     if not isinstance(fixed_term, bool) or not isinstance(term_expired, bool):
         raise CalcError("fixed_term and term_expired are true or false")
     notes = ["An estimate, not the amount owed: the wages are the monthly rate last drawn as given; a better term in an "
@@ -457,12 +464,17 @@ _DATE_LIKE = re.compile(
 _CLAUSE = re.compile(r"\b[A-Z]{2,4}(?:-[A-Z]{2,4})*-\d{2,3}\b")
 # A negation just before a flag's words: "not fixed-term", "isn't on a fixed term", "non-fixed-term", "has not expired".
 _NEGATED = re.compile(r"(?:\b(?:not|no|never|without|nor)|n't|\bnon)\W*(?:\w+\W+){0,2}$", re.I)
+# The year in an instrument's name (the Code on Wages, 2019; the Act of 1972) names the instrument, as a date's digits
+# name a day: no number is written there (13 October 2026: "years = 2020" was read from the Code's own title, and the
+# gratuity came to crores). The figure check below reads an answer the same way, through _PROVISION.
+_INSTRUMENT = re.compile(r"\b(?:Act|Code|Rules|Regulations|Ordinance)\b[^.;:\d]{0,60}?(?:,\s*|\bof\s+)"
+                         r"(?:1[89]|20)\d\d\b", re.I)
 
 
 def numbers_in(text: str) -> set[Decimal]:
     """Every number written in the text, as digits or words, normalised (45 == 45.0; 40,000 == 40000). The digits of
-    a date are not numbers here."""
-    text = text or ""
+    a date, and the year in an instrument's name, are not numbers here."""
+    text = _INSTRUMENT.sub(" ", text or "")
     dates = [m.span() for m in _DATE_LIKE.finditer(text)]
     out: set[Decimal] = set()
     for m in _DIGITS.finditer(text):
@@ -577,6 +589,72 @@ def check_args(name: str, args: dict, passages, message: str) -> tuple[list[str]
             else:
                 refused.append(f"{arg} is true only when the person's message says so")
     return refused, found
+
+
+# ---------------------------------------------------------------------------------------------- the figure check
+# What points rather than states: a citation mark ([1], [1, 2], [2-3]); a provision's number (s.53(1), section 17(2),
+# sub-section (3), Explanation 3, Form 16); and the year in an instrument's name (the Code on Wages, 2019; the Act of
+# 1972).
+_CITE_MARK = re.compile(r"\[\d+(?:\s*[,-]\s*\d+)*\]")
+_PROVISION = re.compile(r"\b(?:ss?|secs?|cl|paras?|arts?)\.\s*\(?\d+[A-Za-z]?\)?(?:\s*\(\w{1,5}\))*"
+                        r"|\b(?:sections?|sub-?sections?|rules?|clauses?|paragraphs?|articles?|chapters?|schedules?|"
+                        r"explanations?|forms?)\s+\(?\d+[A-Za-z]?\)?(?:\s*\(\w{1,5}\))*"
+                        r"|" + _INSTRUMENT.pattern,
+                        re.I)
+
+
+def _figures(text: str) -> list[tuple[Decimal, str]]:
+    """(the figure, as written) for each number written in digits in the text, its lakh, crore or k applied (1.5 lakh
+    is 150000). A date's digits, a clause code (LV-07), a citation mark and a provision's number are none."""
+    text = _PROVISION.sub(" ", _CITE_MARK.sub(" ", text or ""))
+    dates = [m.span() for m in _DATE_LIKE.finditer(text)]
+    out = []
+    for m in _DIGITS.finditer(text):
+        if any(a < m.end(1) and m.start(1) < b for a, b in dates):
+            continue
+        d = Decimal(m.group(1).replace(",", "") + (m.group(2) or ""))
+        if m.group(3):
+            d *= _SCALE[m.group(3).lower()]
+        out.append((d.normalize(), m.group(0).strip()))
+    return out
+
+
+def _leaves(value):
+    """Every value inside a calculation's result, at any depth."""
+    if isinstance(value, dict):
+        for v in value.values():
+            yield from _leaves(v)
+    elif isinstance(value, (list, tuple, set)):
+        for v in value:
+            yield from _leaves(v)
+    else:
+        yield value
+
+
+def unsupported(answer: str, calculations=(), *sources: str) -> list[str]:
+    """The figures in an answer that no calculator call produced (workshop lessons 10.1-10.3): each number written in
+    digits (40,000, 1,50,000, Rs 2.4 lakh, 7.67) and each whole date in `answer` that is in nothing `calculations`
+    holds - what calculate() returned this turn: the value, the arguments, the formula, the sections, the notes, all
+    written by code - and in none of `sources`, the texts a figure may be read from as they stand: the person's message,
+    a passage the turn read. A number in words is prose here ("fifteen days' wages"), and a date with no year, a clause
+    code, a citation mark and a provision's number are no figures. Empty when every figure has a source; otherwise
+    each one as the answer wrote it, a date as YYYY-MM-DD. The caller names the sources, and a note, a plan or a
+    critic's remark is never one: a figure only such a text holds was worked out by a model."""
+    numbers: set[Decimal] = set()
+    days: set[date] = set()
+    for value in _leaves(list(calculations or ())):
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, (int, float, Decimal)):
+            numbers.add(Decimal(str(value)).normalize())
+        else:
+            numbers |= numbers_in(str(value))
+            days |= dates_in(str(value))
+    for text in sources:
+        numbers |= numbers_in(text)
+        days |= dates_in(text)
+    return ([shown for figure, shown in _figures(answer) if figure not in numbers]
+            + [d.isoformat() for d in sorted(dates_in(answer) - days)])
 
 
 # ---------------------------------------------------------------------------------------------- the selftest
@@ -739,6 +817,16 @@ def selftest() -> int:
               f"negated: {negated}")
     check(not said(TERM_EXPIRED, "my fixed term has not expired") and said(TERM_EXPIRED, "my fixed term expired"),
           "the term's expiry, said and unsaid")
+
+    asked = "Rs 52,000 a month, 7 years 8 months"
+    check(unsupported("About Rs 2,40,000 [1]: Rs 52,000 / 26 x 15 x 8, under s.53(2) of the Code on Social Security, "
+                      "2020.", [g], asked) == [], "a gratuity answer: each figure the calculator's or the question's")
+    check(unsupported("About Rs 2,40,000 [1].", [], asked) == ["2,40,000"], "the same figure with no calculator call")
+    check(unsupported("Notice ends on 4 December 2026 [1].", [ne]) == []
+          and unsupported("Notice ends on 5 December 2026.", [ne]) == ["2026-12-05"], "a date: the calculator's, or not")
+    check(unsupported("LV-07 caps it at 45 days [1].", [], lv07["text"]) == [], "a figure its passage writes")
+    check(unsupported("About 2.4 lakh rupees.", [g]) == [] and unsupported("About 7.67 years.", [g]) == ["7.67"],
+          "lakh is read, and a figure worked out in the head is not the calculator's")
     print(f"{len(failures)} failed" if failures else "every rule says what its corpus line says, and the figures hold")
     return 1 if failures else 0
 

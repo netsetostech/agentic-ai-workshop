@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_3.7_Streaming_WIX.html`, reviewed at blob `9ff597141a0ff947d0c0cf9acf42158424a2f234`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_3.7_Streaming_WIX.html`, reviewed at blob `bdb5f025e89e2860ccd41b780630ffe74e263b4b`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 3.5 returned one JSON. This lesson returns the same answer as it is written. `/v1/stream` keeps one connection open and sends Server-Sent Events down it: the citations first, because the packed set is known before a single token exists, then each piece of text as the model produces it, then one `done` event with the envelope, or an `error` when the guard refuses the finished answer. The stream takes the same roads as the query and keeps the same clocks; a cache hit and an empty pool each arrive as a single token; and when something on the way fails, the retriever's index, the ranker, the classifier, the cache, the month's counter, the tracing, the answer is still served and one line in the log says what stood in. You will read a stream in curl with a clock on each event, see why its citations differ from the query's, stream the empty pool, read the guard's two doors, force a failure on a candidate that takes no traffic and watch the stream continue, and read the table of everything that degrades and what it degrades to.
 
@@ -104,7 +104,7 @@ The citation event from a packed chunk, the two cases that send one token and no
 
 #### Definition
 
-A citation event is built from the packed chunk's own fields, the same nine a `Citation` carries, so the UI renders a figure or a video segment from the stream exactly as from the query. Two streams never reach the model. An answer-cache hit, when `SEMANTIC_CACHE` is on, sends the stored answer's citations, then the stored answer as one token, then `done` with backend `cache` and cost zero; the UI cannot tell, the row can. An empty pool sends no citation, one token that is the refusal the API writes itself, and `done` with backend `none`; the row's `answerable false` feeds the alert. The cell streams the empty pool with the same filter lessons 5.x used, and then reads the rows the streams of this step and the last have written, with the columns that tell them apart.
+A citation event is built from the packed chunk's own fields, the same nine a `Citation` carries, so the UI renders a figure or a video segment from the stream exactly as from the query. Two streams never reach the model. An answer-cache hit, when `SEMANTIC_CACHE` is on, sends the stored answer's citations, then the stored answer as one token, then `done` with backend `cache` and cost zero; the UI cannot tell, the row can. An empty pool sends no citation, one token that is the refusal the API writes itself, and `done` with backend `none`; the row's `answerable false` feeds the alert. The cell streams the empty pool with the same filter lessons 2.1-2.4 used, and then reads the rows the streams of this step and the last have written, with the columns that tell them apart.
 
 #### The code
 

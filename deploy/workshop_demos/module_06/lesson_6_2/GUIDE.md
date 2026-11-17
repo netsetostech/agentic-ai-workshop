@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_6.2_Cache_Compare_WIX.html`, reviewed at blob `9863ad496e4fb405ef06d3ff2257a01666b35f6a`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_6.2_Cache_Compare_WIX.html`, reviewed at blob `f6e45963618ac1bbc22713ae43454621e0c2cc89`. Learners read that page on the course site; this guide keeps its prose.
 
 DocuMind has two caches, and they hold different things. Gemini's context cache holds part of the model's input: acme's documents, packed once and read at a tenth of the price by every question for an hour. The answer cache holds the model's output: the answer and its citations, returned without retrieval or a model call when the same question comes back. You create the first with `make cache` and read `cached_tokens` on the next usage row. You switch the second on for a candidate, ask one question twice, and read `model_backend=cache` on the second row. Along the way you find out what the first one really does to the bill.
 

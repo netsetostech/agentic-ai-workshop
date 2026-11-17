@@ -87,7 +87,7 @@ li{margin-bottom:6px;}
 /* code windows: the rounded shell and the scroller are two elements */
 .cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
 .ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
-.ch-bar span{overflow-wrap:anywhere;}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
 .cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 .cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
 .cp:active{transform:scale(.96);}
@@ -324,7 +324,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 <p class="dg-cap">Amber actions contribute to drift. Green outcomes do not. These flows cover document objects; the planner skips its configured sidecar suffixes. A queued match uses the same object name and generation, with a compatibility path for legacy claims that have no generation.</p>
 
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table"><thead><tr><th>Action</th><th>Evidence</th><th>What apply does</th><th>Drift?</th></tr></thead><tbody>
-<tr><td><strong>retire</strong></td><td data-label="Evidence">The live file is gone but its source is still indexed.</td><td data-label="Apply">Retire the indexed records, update the source ledger and tell the managed mirror.</td><td data-label="Drift">Yes</td></tr>
+<tr><td><strong>retire</strong></td><td data-label="Evidence">The live file is gone but its source is still indexed.</td><td data-label="Apply">Retire the indexed records, update the source ledger, tell the managed mirror and take the retired ids out of the Vector Search index.</td><td data-label="Drift">Yes</td></tr>
 <tr><td><strong>reingest</strong></td><td data-label="Evidence">A retired source is back in the bucket, or its bytes lack a completed or queued claim.</td><td data-label="Apply">Rewrite the object onto itself. The worker decides between reactivation and fresh ingestion.</td><td data-label="Drift">Yes</td></tr>
 <tr><td><strong>backfill</strong></td><td data-label="Evidence">The hash has an indexed or superseded claim, but the source ledger needs repair.</td><td data-label="Apply">Record the known version in the source ledger. No embedding call.</td><td data-label="Drift">Yes</td></tr>
 <tr><td><strong>touch</strong></td><td data-label="Evidence">The generation changed but the hash matches the ledger.</td><td data-label="Apply">Update the recorded generation. No content indexing.</td><td data-label="Drift">No</td></tr>
@@ -593,6 +593,18 @@ ch44_logs() {
     --format='table(timestamp,jsonPayload.event,jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded,jsonPayload.error)'
 }
 
+ch44_indexed() {
+  python - &lt;&lt;'PY'
+import json, os, sys
+from pathlib import Path
+r=json.loads(Path(os.environ["DEMO_DIR"], "source.json").read_text()) or {}
+ready=(r.get("status")=="indexed"
+       and str(r.get("generation"))==os.environ["CH44_GENERATION"]
+       and r.get("doc_key")==os.environ["DOC_KEY"])
+sys.exit(0 if ready else 1)
+PY
+}
+
 ch44_upload() {
   sha256sum -c "$DEMO_DIR/note.sha256" || return
   export CH44_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -602,16 +614,7 @@ ch44_upload() {
   [ -n "$CH44_GENERATION" ] || return 1
   for attempt in $(seq 1 30); do
     ch44_source &gt; /dev/null || return
-    if python - &lt;&lt;'PY'
-import json, os, sys
-from pathlib import Path
-r=json.loads(Path(os.environ["DEMO_DIR"], "source.json").read_text()) or {}
-ready=(r.get("status")=="indexed"
-       and str(r.get("generation"))==os.environ["CH44_GENERATION"]
-       and r.get("doc_key")==os.environ["DOC_KEY"])
-sys.exit(0 if ready else 1)
-PY
-    then cat "$DEMO_DIR/source.json"; return 0; fi
+    if ch44_indexed; then cat "$DEMO_DIR/source.json"; return 0; fi
     sleep 10
   done
   echo "STOP: this upload did not reach indexed state within five minutes."
@@ -682,6 +685,7 @@ PY</pre></div>
             mirror.retired(act[<span class="st">&quot;tenant_id&quot;</span>], gone.get(<span class="st">&quot;retired_doc_keys&quot;</span>, []), <span class="st">&quot;retired&quot;</span>)
             db.collection(<span class="st">&quot;sources&quot;</span>).document(source_id_for(act[<span class="st">&quot;tenant_id&quot;</span>], act[<span class="st">&quot;name&quot;</span>])).set(
                 {<span class="st">&quot;status&quot;</span>: <span class="st">&quot;retired&quot;</span>, <span class="st">&quot;retired_at&quot;</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)
+            remove_vectors(index_name, gone)
             touched.add(act[<span class="st">&quot;tenant_id&quot;</span>])
             print(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;reconcile_retired&quot;</span>, <span class="st">&quot;gcs_uri&quot;</span>: uri, **gone}))
         <span class="kw">elif</span> act[<span class="st">&quot;action&quot;</span>] == <span class="st">&quot;touch&quot;</span>:
@@ -929,6 +933,7 @@ resource <span class="st">&quot;google_monitoring_alert_policy&quot;</span> <spa
 <div class="cw"><div class="ch-bar"><span>mk/lifecycle.mk - reconcile, reconcile-job and backfill-current</span><span class="ro">read only</span></div><pre tabindex="0"><span class="cm"># the full reconciliation: the bucket&#x27;s current generations against sources/. Prints the plan; APPLY=1 acts.</span>
 reconcile: guard-project
 	PYTHONPATH=. MANAGED_MIRROR=$(MANAGED_MIRROR) RAG_LOCATION=$(RAG_LOCATION) AUDIT_BUCKET=$(PROJECT)-audit GOOGLE_CLOUD_PROJECT=$(PROJECT) \
+	  VECTOR_INDEX_NAME=$${VECTOR_INDEX_NAME:-$$(cd $(TF_DIR) &amp;&amp; terraform output -raw vector_index_name <span class="nu">2</span>&gt;/dev/null)} \
 	  $(PY) services/ingest/reconcile.py --project $(PROJECT) $(<span class="kw">if</span> $(TENANT_ONLY),--tenant $(TENANT_ONLY),) $(<span class="kw">if</span> $(APPLY),--apply,)
 
 <span class="cm"># once, after the ledger ships onto a lane that predates it: chunks and documents get current=true, a doc_key and</span>

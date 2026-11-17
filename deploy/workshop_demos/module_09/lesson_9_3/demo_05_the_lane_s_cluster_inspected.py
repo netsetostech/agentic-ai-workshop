@@ -86,7 +86,7 @@ def step_02_the_lane_s_cluster_inspected(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: STOP: the Standard CPU lab cannot run the L4 GPU lesson. Set gke_autopilot=true in Terraform, review cluster replacement and quota, and apply before make gke-up.
-    make: *** [Makefile:711: gke-up] Error 1
+    make: *** [Makefile:714: gke-up] Error 1
     """
     from workshop_helpers.gates import expect_guard
     expect_guard(session, ["make", "gke-up", "PROJECT=" + session.config.project],

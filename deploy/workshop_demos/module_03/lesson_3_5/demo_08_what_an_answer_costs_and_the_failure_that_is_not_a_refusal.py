@@ -3,7 +3,7 @@
 The code
 
 Run order inside this file:
-1. The code (source window 36)
+1. The code (source window 37)
 
 Prerequisites: demo_07_the_model_as_a_setting_the_global_client_a_tuned_endpoint_a_pin_and_a_router.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -66,7 +66,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_36', step_01_the_code),
+        ('source_37', step_01_the_code),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

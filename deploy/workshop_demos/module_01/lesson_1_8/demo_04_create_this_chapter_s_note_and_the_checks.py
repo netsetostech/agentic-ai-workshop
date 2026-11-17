@@ -115,6 +115,18 @@ ch44_logs() {
     --format='table(timestamp,jsonPayload.event,jsonPayload.chunks,jsonPayload.reused,jsonPayload.embedded,jsonPayload.error)'
 }
 
+ch44_indexed() {
+  python - <<'PY'
+import json, os, sys
+from pathlib import Path
+r=json.loads(Path(os.environ["DEMO_DIR"], "source.json").read_text()) or {}
+ready=(r.get("status")=="indexed"
+       and str(r.get("generation"))==os.environ["CH44_GENERATION"]
+       and r.get("doc_key")==os.environ["DOC_KEY"])
+sys.exit(0 if ready else 1)
+PY
+}
+
 ch44_upload() {
   sha256sum -c "$DEMO_DIR/note.sha256" || return
   export CH44_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -124,16 +136,7 @@ ch44_upload() {
   [ -n "$CH44_GENERATION" ] || return 1
   for attempt in $(seq 1 30); do
     ch44_source > /dev/null || return
-    if python - <<'PY'
-import json, os, sys
-from pathlib import Path
-r=json.loads(Path(os.environ["DEMO_DIR"], "source.json").read_text()) or {}
-ready=(r.get("status")=="indexed"
-       and str(r.get("generation"))==os.environ["CH44_GENERATION"]
-       and r.get("doc_key")==os.environ["DOC_KEY"])
-sys.exit(0 if ready else 1)
-PY
-    then cat "$DEMO_DIR/source.json"; return 0; fi
+    if ch44_indexed; then cat "$DEMO_DIR/source.json"; return 0; fi
     sleep 10
   done
   echo "STOP: this upload did not reach indexed state within five minutes."

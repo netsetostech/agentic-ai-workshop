@@ -243,7 +243,11 @@ def cmd_doc_types(a) -> int:
     return 0
 
 
-DESK_SWITCHES = {"desk_gate": ("off", "rules", "on")}    # shared/desk_rules.GATE_STATES
+DESK_SWITCHES = {"desk_gate": ("off", "rules", "on"),     # shared/desk_rules.GATE_STATES
+                 # agent_actions (workshop lesson 5.8): approval gives the LangGraph brain services/chat/approval.py's
+                 # approve node for this company, with the approval records and routes (services/chat/approval_routes.py);
+                 # off, what every company has until an operator writes approval, is the brain as it was.
+                 "agent_actions": ("off", "approval")}
 # Printed beside desk_gate whenever it reads on - a lane that followed the lessons before the gate had three states
 # wrote on, which then meant the rules alone and now adds the model check.
 CHECK_NOTE = ("on runs the model check (shared/desk_recall.py): one flash-lite call for each question to this company "
@@ -274,6 +278,13 @@ def switches(db, tenant: str) -> dict:
     snap = db.collection("tenant_settings").document(tenant).get()
     doc = (snap.to_dict() or {}) if snap.exists else {}
     return {"desk_gate": desk_rules.gate_state(doc)}
+
+
+def agent_actions(db, tenant: str) -> str:
+    """tenant_settings/{tenant}.agent_actions as the chat service reads it (workshop lesson 5.8): approval, else off."""
+    snap = db.collection("tenant_settings").document(tenant).get()
+    doc = (snap.to_dict() or {}) if snap.exists else {}
+    return "approval" if doc.get("agent_actions") == "approval" else "off"
 
 
 def stored_queues(db, tenant: str) -> dict:
@@ -547,6 +558,8 @@ def cmd_desk(a) -> int:
         except ValueError as e:
             print(e)
             return 2
+    if a.actions:                       # agent_actions (workshop lesson 5.8): approval or off, checked by set_switch
+        set_switch(db, a.tenant, "agent_actions", a.actions, a.by or _operator())
     if a.max_parts:                     # after the gate, so a refused --gate changes nothing
         set_max_parts(db, a.tenant, a.max_parts, a.by or _operator())
     if a.route:
@@ -561,13 +574,15 @@ def cmd_desk(a) -> int:
         set_gchat(db, a.tenant, a.gchat, a.by or _operator())
     door = gchat(db, a.tenant)
     gate = switches(db, a.tenant)
+    actions = agent_actions(db, a.tenant)
     print(json.dumps({"tenant": a.tenant, **gate, **({"model_check": CHECK_NOTE.format(tenant=a.tenant)}
                                                       if gate["desk_gate"] == "on" else {}),
                       "desk_max_parts": max_parts(db, a.tenant),
                       **routing(db, a.tenant), **({"clause_notes": sorted(notes)} if notes is not None else {}),
                       **({"desk_gchat": door} if a.gchat or door == "on" else {}),
+                      **({"agent_actions": actions} if a.actions or actions != "off" else {}),
                       **({"note": "rag-api and the chat service read it within 60 s"}
-                         if a.gate or a.route or notes is not None or a.gchat else {})}))
+                         if a.gate or a.route or notes is not None or a.gchat or a.actions else {})}))
     return 0
 
 
@@ -806,6 +821,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="desk_gchat: the Google Chat door (on needs desk_gate not off and desk_route on or single)")
     k.add_argument("--confirm-residency", action="store_true",
                    help="with --gchat on, for a tenant whose data_region is in: the answers will sit in its Google Chat")
+    k.add_argument("--actions", type=lambda s: s.strip().lower(), choices=DESK_SWITCHES["agent_actions"],
+                   help="agent_actions: approval gives the LangGraph brain the approve node for this company, with the "
+                        "approval records and routes (workshop lesson 5.8, make agent-actions); off is the default")
     k.add_argument("--by", help="who is setting it (default: DOCUMIND_OPERATOR, else the gcloud account)")
     k.set_defaults(fn=cmd_desk)
     r = sub.add_parser("roles", help="a person's roles in the tenant: list, set, revoke (make roles)")

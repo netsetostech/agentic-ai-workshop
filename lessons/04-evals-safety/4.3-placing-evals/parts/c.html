@@ -1,0 +1,93 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; REST</span><h3>The stream's row: answerable, unless the pool was empty</h3><p>Why the UI's refusals never reach the alert, read in main.py and proved on one streamed answer.</p></div></div>
+
+<h4>Definition</h4>
+<p>The two routes record their verdicts differently. <code>/v1/query</code> asks the model for a structured answer, and the row takes the model's own <code>answerable</code>. <code>/v1/stream</code> cannot: it sends tokens as the model writes them, with no response schema, so the model never returns a verdict. One line decides the stream's row instead. An empty pool, where retrieval found nothing, is a refusal the API writes itself, and its row says false. Every other stream's row says answerable true, confidence medium, whatever the model wrote. So when the model reads passages and declines, which is the right answer for rf-01, the row of that refusal says answerable and its flag is 0. The UI streams, and the alert counts flags: the UI's refusals are invisible to it unless the pool was empty. The gate and the judge cannot fill the gap, because both ask <code>/v1/query</code>. The kit's own comment names the missing piece: a real verdict for the stream.</p>
+<p>The pool matters, which is why the setup pins acme to the kit's own index. That index comes back empty only when it holds nothing for the tenant, so any question gets its nearest passages and a refusal in words. RAG Engine, where <code>make up</code> pins acme, drops every passage farther than a distance of %%RAG_DIST%%, so an off-topic question there can come back with an empty pool, and that row would say false.</p>
+
+<h4>The code</h4>
+@@stream_verdict@@
+@@query_row@@
+@@no_schema@@
+
+<h4>Do it: one refusal through the stream, and its row</h4>
+<p>The cell streams rf-01's question for acme as the eval identity, prints what the stream said, then waits for the row in Cloud Logging and prints its verdict. If you asked the same question in the UI in step 5, it prints your row too, without your email.</p>
+%%CELL_STREAM%%
+%%OUT_STREAM%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The stream declined in words, over a pool of passages that did not hold the answer, and its row said answerable true with the flag at 0. If you asked in the UI, your row said the same. The row has %%N_ROW_FIELDS%% fields and none holds the question or the answer, so nothing downstream can find the refusal later either. The same question through <code>/v1/query</code>, the way the gate asks it, writes the model's own verdict: false for a refusal, flag 1. So the gate's refusals count toward the alert and yours do not. A model that began declining questions it could answer would show in the gate, which asks <code>/v1/query</code>, and not in the alert, which sees the UI only through its stream rows.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>The alert's own inputs: two log metrics, two policies, and the windows they saw</h3><p>The filters, the deployed policies, and the five-minute windows the gate's rows fell into.</p></div></div>
+
+<h4>Definition</h4>
+<p>The unanswerable alert is two counters and a ratio. <code>documind/queries</code> counts every query and stream row of <code>documind-api</code>, and <code>documind/unanswerable</code> counts those whose flag is 1. Both take the tenant from the row as a label. The policy sums each counter per tenant in five-minute windows and opens an incident when unanswerable over queries stays above %%UNANS_T%% for %%UNANS_MIN%% minutes. The latency policy reads Cloud Run's own request latencies for <code>documind-api</code>: the 95th percentile of each series every minute, averaged, above %%LAT_S%% s for %%LAT_MIN%% minutes. Neither filter names a revision or a caller, so the candidate's answers and the eval identity's are traffic to both. If the candidate refused every row it should, its rows alone put globex at %%U_GLOBEX%% unanswerable of %%N_GLOBEX%% (%%R_GLOBEX%%), zeta at %%U_ZETA%% of %%N_ZETA%% (%%R_ZETA%%) and acme at %%U_ACME%% of %%N_ACME%% (%%R_ACME%%): over the gate's own rows, two tenants are above the line. A full run takes about ten minutes, and the policy waits for %%UNANS_MIN%%.</p>
+
+<h4>The code</h4>
+@@alert_metrics@@
+@@alert_policy@@
+@@latency_policy@@
+
+<h4>Do it: the metrics, the policies, and the windows</h4>
+<p>The cell reads each metric's filter from Cloud Logging, both policies from Cloud Monitoring, and each metric's counts per tenant over the last six hours, aligned the way the policy aligns them. Then it divides, window by window.</p>
+%%CELL_ALERT%%
+%%OUT_ALERT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The deployed filters and numbers are the file's: %%UNANS_T%% for %%UNANS_S%% s, and %%LAT_MS%% ms for %%LAT_DUR_S%% s. The windows of step 4's run show the gate's own refusals as live traffic, tenant by tenant, and step 6's refusal counted in <code>documind/queries</code> and not in <code>documind/unanswerable</code>. The notification channels are the incident's audience. <code>alerts.tf</code> sends every policy to a PagerDuty key when one is set and to the admins' addresses when <code>ADMIN_EMAILS</code> is not the placeholder. With neither, the count is 0, and an incident opens and tells nobody.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>The judge's place, the gaps the placements leave, and what each costs</h3><p>Where the judge sits, five gaps read from the kit, and the rupees of each placement.</p></div></div>
+
+<h4>The judge: beside the pipeline, never in it</h4>
+<p>No step of either workflow runs <code>judge.py</code>. Its <code>main()</code> prints the scores and returns 0 whatever they are; it returns non-zero only when it had nothing to judge or was called wrongly. It collects its answers with <code>run_eval</code>'s own <code>ask()</code>, so it reads <code>/v1/query</code> as the eval identity: the gate's route and the gate's caller. Point it at a candidate with <code>API_B</code>, as lesson 4.4 does, and it explains a release decision. It does not make one.</p>
+@@judge_end@@
+
+<h4>Five gaps the placements leave</h4>
+<ul>
+<li><strong>Refusals in the UI.</strong> The stream's row says answerable unless the pool was empty (step 6), and the gate and the judge ask <code>/v1/query</code>. A model that declines good questions in the UI is caught by no instrument in the kit.</li>
+<li><strong>A failed request.</strong> A request that fails before its answer writes no usage row, and no policy in <code>terraform/</code> reads Cloud Run's request count or a response code. The gate counts every failure, because <code>request_success_rate</code> must be 1.00; live traffic counts none.</li>
+<li><strong>The eval's rows are traffic.</strong> <code>documind/unanswerable</code> and <code>documind/queries</code> count the gate's rows and the candidate's like anyone's. The Desk's own router metric made the other choice: it drops every service account, so that the eval accounts cannot page a lane where nobody has asked anything.</li>
+<li><strong>A mean of percentiles.</strong> The latency policy averages the p95 of each series it matches and reads every request to the service, the setup block's <code>/health</code> among them. An average of percentiles is not the percentile of all requests: a quiet revision with fast answers pulls it down. Its comment says as much: every request, for %%LAT_MIN%% minutes.</li>
+<li><strong>A tenant the gate barely asks.</strong> Globex has %%A_GLOBEX%% answerable rows of %%N_ANS%%. With globex's index empty, the matrix's stub run lost those two rows and still exited 0, at an answerable_rate of %%EMPTY_AR%%. Only the unanswerable alert would see it, once people asked.</li>
+</ul>
+@@desk_metric@@
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Placement</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>CI: the dry run and <code>eval-gate</code></td><td data-label="Costs">nothing on your project: GitHub's runners, no Google credential</td><td data-label="On your lane">every push to the learner repository</td></tr>
+<tr><td>The pipeline cell, the broken row, the report cell</td><td data-label="Costs">nothing: files on your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td><code>make candidate</code>, the version check, the tag's removal</td><td data-label="Costs">nothing: a revision with no traffic serves only what is sent to its URL</td><td data-label="On your lane">free</td></tr>
+<tr><td>The candidate gate</td><td data-label="Costs">%%N_ROWS%% answers at the model's rate, and %%N_ISO%% requests refused at the roster</td><td data-label="On your lane">about Rs %%RS_GATE%% at the course's typical answer of 2,000 tokens in and 300 out (Rs %%RS_ANSWER%% each); <code>make usage</code> prints yours</td></tr>
+<tr><td>The stream refusal and your UI question</td><td data-label="Costs">two answers</td><td data-label="On your lane">about Rs %%RS_ANSWER%% each</td></tr>
+<tr><td>The log and metric reads</td><td data-label="Costs">reads, no model</td><td data-label="On your lane">Rs 0</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>The usage rows price generation only. The query embedding and the Ranking API bill on their own lines, which no row records.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">CI judges the set without the model or a credential</td><td data-label="The check">step 3, the pipeline cell</td><td data-label="Pass looks like"><code>tier-a</code> and <code>eval-gate</code>: <code>signs in to Google: no</code>, <code>runs python evals/run_eval.py</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Every release job needs the offline gate</td><td data-label="The check">step 3, the pipeline cell</td><td data-label="Pass looks like"><code>release-candidate</code> and <code>release-clouddeploy</code>: <code>needs eval-gate</code></td></tr>
+<tr><td>3</td><td data-label="Claim">A broken answer key is refused offline</td><td data-label="The check">step 3, the broken row</td><td data-label="Pass looks like"><code>[FAIL] falsifiable</code> naming %%PLANT_ROW%%, <code>exit 1</code>; the sound line after <code>git checkout</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The candidate answers as the same build</td><td data-label="The check">step 4, the version check</td><td data-label="Pass looks like">the same <code>git_sha</code> on both URLs</td></tr>
+<tr><td>5</td><td data-label="Claim">The gate judged every threshold and every required row</td><td data-label="The check">step 4, the gate and the report</td><td data-label="Pass looks like"><code>thresholds judged: %%N_THRESHOLDS%% of %%N_THRESHOLDS%%</code> and <code>required rows: %%N_REQ%% of %%N_REQ%% passed</code>, or the reason it blocked</td></tr>
+<tr><td>6</td><td data-label="Claim">The candidate's URL is gone</td><td data-label="The check">step 4, the tag's removal</td><td data-label="Pass looks like"><code>HTTP 404</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The gate's rows are among the live rows</td><td data-label="The check">step 5, the split</td><td data-label="Pass looks like">%%N_ROWS%% rows on a revision with no traffic, all from the eval identity: acme %%N_ACME%%, globex %%N_GLOBEX%%, zeta %%N_ZETA%%</td></tr>
+<tr><td>8</td><td data-label="Claim">make usage cannot separate them</td><td data-label="The check">step 5, <code>make usage</code></td><td data-label="Pass looks like">no revision or caller column in any table</td></tr>
+<tr><td>9</td><td data-label="Claim">A refusal in the stream is recorded as answerable</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>answerable True, unanswerable_flag 0</code> over a pool above 0</td></tr>
+<tr><td>10</td><td data-label="Claim">The alert reads the gate's rows as traffic</td><td data-label="The check">step 7</td><td data-label="Pass looks like">the windows of step 4's run, with globex and zeta above %%UNANS_T%% if the candidate refused as it should</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>In the cloud: one more <code>documind-api</code> revision in the service's history, with no traffic and no tag, which step 4 made and judged. The usage rows of its %%N_ROWS%% answers, of the stream refusal and of your UI question, each under the revision that served it, and the two log metrics' counts with them. On your machine: <code>evals/reports/cand43.json</code>, which git ignores. <code>.candidate-revision</code> is gone, and <code>evals/golden.jsonl</code> is the kit's own again, so the setup block's <code>git pull</code> keeps working. Put acme's pin back now, with the setup section's pin-back window. Lesson 4.4 makes the same kind of candidate with one setting changed, and measures the difference against the live revision.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 4 Evals and safety &middot; Lesson 4.3 Place evals in the pipeline: CI, the candidate gate and live traffic &middot; v5.0</p><p>Next: Lesson 4.4 Compare one controlled change against a baseline.</p></div>

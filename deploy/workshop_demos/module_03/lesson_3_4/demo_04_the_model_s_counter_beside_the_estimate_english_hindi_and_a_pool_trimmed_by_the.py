@@ -35,8 +35,8 @@ def step_01_three_texts_two_counters_one_pool_twice(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: NP-03, English     chars   234  estimate  58  counted  1xx  ratio x.xx  (near one)
-    a clause in Hindi  chars    72  estimate   18  counted   xx  ratio x.xx  (well above one)
+    Observe: NP-03, English     chars   234  estimate  58  counted   5x  ratio x.xx  (near one)
+    a clause in Hindi  chars    72  estimate   18  counted   xx  ratio x.xx  (near one on gemini-3.6-flash)
     one Act page       chars  2000  estimate  500  counted  4xx  ratio x.xx  (near one)
     twenty Act pages under the estimate     : packed 15, dropped 5, context 7633 tokens by that counter
     twenty Act pages under the model's count: packed 1x, dropped x, context 7xxx tokens by that counter

@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_11.6_Cost_Controls_WIX.html`, reviewed at blob `7d2d39676abfdd32aca8e43689880c544e1b0219`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_11.6_Cost_Controls_WIX.html`, reviewed at blob `0ceda414e1b1dc286ff3eccbfe2bbc012a76d151`. Learners read that page on the course site; this guide keeps its prose.
 
 DocuMind spends money on three clocks. Every answer costs a model call, the month adds up the whole project's bill, and every hour an instance stays up it is billed. Each clock has its own control. The router sends each question to the cheapest model that can answer it, and a breaker reads the month's spend and stops choosing Pro at 80 percent. The billing budget emails the billing admins as the month's bill passes its lines. The off switch floors the GPU services, the gateway and the UI to zero instances every night at 23:00, and `make off` does the same by hand.
 
@@ -214,7 +214,7 @@ One idle instance stayed up while the floor held it, and after `make off` the co
 
 `make gpu-cap` writes a consumer quota override on the L4 quotas in `us-central1`, capping them at one card. `--max-instances` belongs to one service. The quota belongs to the project, so a second GPU service, a GPU candidate or a typo cannot allocate a second card. Lowering a quota needs no approval; raising it again does.
 
-The L4 quota in `us-central1` now reads `effective 1`, with the default beside it and the override that set it. `make gpu-cap-off` removes the override. Keep the cap unless you run more than one GPU service on purpose.
+The L4 quota in `us-central1` now reads `effective 1`, with the default beside it and the override that set it. `make gpu-cap-off` removes the override. Keep the cap unless you run more than one GPU service on purpose. A project with no L4 quota yet (lesson 9.2's request) has nothing to cap: Google refuses the override, saying it can only be set between 0 and 0, and the read-back shows no override until the quota is granted and you run the cap again.
 
 ### Why the controls look like this, what they cost, and what the kit does not do yet
 
@@ -258,7 +258,7 @@ Here is what this lesson left on your lane:
 
 - The UI's floor went to one and back to zero.
 
-- The L4 quota in `us-central1` is capped at one card; `make gpu-cap-off` removes the override.
+- The L4 quota in `us-central1` is capped at one card; `make gpu-cap-off` removes the override. On a project with no L4 quota yet, nothing was written: the cap waits for the quota.
 
 Lesson 11.7 reproduces the agent failures production shows and no eval row does, each with a drill that restores itself.
 

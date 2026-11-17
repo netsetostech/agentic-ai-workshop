@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_1.6_Reindex_WIX.html`, reviewed at blob `a687d81609b23483c7d84b8575ae6615b57d9f0c`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_1.6_Reindex_WIX.html`, reviewed at blob `ef37aacb077a5f65a22e00add4f5966dda56c163`. Learners read that page on the course site; this guide keeps its prose.
 
 A document changes one clause and comes back under the same name. What should happen is exact: the golden questions that cite it are checked before anything is uploaded, the worker keeps the vector of every clause that did not change and embeds only the ones that did, the previous version is retired but kept, and the questions that now have a new answer turn the release gate red until their expected answers move with the document. This lesson does all of that on your lane with the handbook, measures what reuse saves for six different kinds of edit, and puts the document back for nothing.
 
@@ -164,7 +164,7 @@ The record that tells a version's story, the costs the carry-over does not touch
 
 #### The claim's four states
 
-A claim is taken in a transaction and ends in one of four states. `processing` while a worker holds it. `indexed` when it finished, with its counts. `failed` when the worker released it with the error, and a failed claim is not a claim but a record of one: the next delivery may take it again, which is what `retakes` is for. `superseded` when a newer version retired its rows; the same bytes again reactivate it, and only when the reactivation is refused (too few rows left, or the window closed) is a superseded claim retaken and the bytes indexed as a fresh version. The three-version history you read in step 6 is these states, one claim per version.
+A claim is taken in a transaction and ends in one of four states. `processing` while a worker holds it, for a lease of the ack deadline and a minute from its `claimed_at`: a worker cut off without releasing it loses it then, and a later delivery takes it back (lesson 1.5). `indexed` when it finished, with its counts. `failed` when the worker released it with the error, and a failed claim is not a claim but a record of one: the next delivery may take it again, which is what `retakes` is for. `superseded` when a newer version retired its rows; the same bytes again reactivate it, and only when the reactivation is refused (too few rows left, or the window closed) is a superseded claim retaken and the bytes indexed as a fresh version. The three-version history you read in step 6 is these states, one claim per version.
 
 #### What reuse cannot save
 

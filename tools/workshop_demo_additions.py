@@ -57,15 +57,28 @@ print_plan(evaluate_widget(kit, queued))
 def adapt_window(lesson, window, code, body):
     """Record targeted differences needed for reliable IDE execution of source steps."""
     changes = []
+    # These bodies wrap the page's shell in session.shell(repr(...)), which hides the gcloud and $API the live check
+    # looks for; classified offline, demo 03 never exported API and stopped at "run the shell setup first" (21 Oct 2026).
+    if lesson == "1.8" and window["window"] in {10, 44}:
+        window["offline_override"] = False
     if lesson == "1.8" and window["window"] == 10:
         body = 'session.state["backend_restore_required"] = True\nsession.save()\nsession.shell(' + repr(code) + ')'
         changes.append("Persist that backend cleanup is required even if baseline preparation fails.")
     if lesson == "1.8" and window["window"] == 44:
         start = code.index("ch44_restore_backend()")
-        body = ('try:\n    session.shell("ch44_source && ch44_plan clean")\nfinally:\n'
-                '    session.shell(' + repr(code[start:]) + ')\n'
-                '    session.state["backend_restore_required"] = False\n    session.save()')
-        changes.append("Restore the saved backend in finally even when the final observation fails; the failed observation remains a failure.")
+        # The page pins vector only after backend-before.txt is saved and non-empty, so a missing file means the pin
+        # never changed: nothing to restore. Without this check a demo 03 that failed early left the run unfinishable
+        # ("cat: /backend-before.txt: No such file", then start_new_session refused) - 21 October 2026.
+        body = ('import os\nfrom pathlib import Path\n'
+                'baseline = Path(os.environ.get("DEMO_DIR") or "/nonexistent", "backend-before.txt")\n'
+                'if not baseline.is_file() or not baseline.read_text().strip():\n'
+                '    print("No saved baseline: the backend was never pinned in this run, so there is nothing to restore.")\n'
+                '    session.state["backend_restore_required"] = False\n    session.save()\n'
+                'else:\n'
+                '    try:\n        session.shell("ch44_source && ch44_plan clean")\n    finally:\n'
+                '        session.shell(' + repr(code[start:]) + ')\n'
+                '        session.state["backend_restore_required"] = False\n        session.save()')
+        changes.append("Restore the saved backend in finally even when the final observation fails; the failed observation remains a failure. With no saved baseline the pin was never changed, so the restore is skipped and the run can finish.")
     if lesson == "1.8" and window["window"] == 42:
         body = ('session.shell("make retire PROJECT=$PROJECT SOURCE=acme/smoke_note_v1.md")\n'
                 'try:\n    session.shell("make smoke-reindex PROJECT=$PROJECT")\n'
@@ -112,83 +125,6 @@ def course_plan_recipes():
     lessons 0.2 to 0.4 got their pages.
     """
     return {
-      "11.1": [
-        recipe("Inspect the keyless build identity", "Read the kit's workload-identity and build definitions. Verify repository/ref conditions in the real deployment configuration before submitting a build; no service-account key is generated.", '''
-            from pathlib import Path
-            for path in (Path("terraform/ci.tf"), Path("cloudbuild.yaml")):
-                if path.exists():
-                    print("\\n", path, "\\n", path.read_text(encoding="utf-8"))
-            for path in Path("terraform").glob("*.tf"):
-                text = path.read_text(encoding="utf-8")
-                if "workload_identity" in text:
-                    print(path, "\\n", text)
-        '''),
-        recipe("Build the deployment images", "Use the actual kit build target and the current authenticated identity. Record the build output and image tags; a successful local credential check alone does not prove a deployed GitHub workload-identity run.", '''
-            import sys
-            session.command(["make", "build", "PROJECT=" + session.config.project, "REGION=" + session.config.cloud_run_region, "PY=" + sys.executable])
-        ''', live=True),
-        build_access_recipe(),
-      ],
-      "11.2": [
-        recipe("Create the recorded candidate", "Create a no-traffic API revision with the kit's candidate target. The recorded revision name, not whatever is newest later, is the release identity.", '''
-            import sys
-            session.command(["make", "candidate", "PROJECT=" + session.config.project, "REGION=" + session.config.cloud_run_region, "PY=" + sys.executable])
-            from pathlib import Path
-            print("Recorded candidate:", Path(".candidate-revision").read_text().strip())
-        ''', live=True),
-        recipe("Evaluate the exact candidate", "Resolve the candidate tag and require it to name the recorded revision before the live gate. Save a project/region/revision-bound gate record only after the evaluator exits successfully.", '''
-            import json, os, sys
-            from pathlib import Path
-            from workshop_helpers.auth import gcloud
-            from workshop_helpers.artifacts import write_json
-            expected = Path(".candidate-revision").read_text().strip()
-            service = json.loads(gcloud("run", "services", "describe", "documind-api", "--project=" + session.config.project, "--region=" + session.config.cloud_run_region, "--format=json"))
-            tagged = next(row for row in service["status"]["traffic"] if row.get("tag") == "candidate")
-            assert tagged["revisionName"] == expected, "The candidate tag moved; evaluate the intended revision."
-            report = session.attempt / "candidate_gate.json"
-            session.command(["make", "eval-live", "PROJECT=" + session.config.project, "REGION=" + session.config.cloud_run_region, "API=" + tagged["url"], "REPORT=" + str(report), "PY=" + sys.executable])
-            gate = {"project": session.config.project, "region": session.config.cloud_run_region, "revision": expected, "report": str(report), "passed": True}
-            write_json(session.config.results_dir / "release_gate.json", gate)
-            print("Gate passed for:", expected)
-        ''', live=True, expected="A successful live gate tied to the same recorded candidate revision."),
-      ],
-      "11.3": [
-        recipe("Promote the gated revision", "Require the saved gate from 11.2 to match this project, region and candidate, then use the kit's by-name promotion. The kit records the previous serving revision for rollback.", '''
-            import json, sys
-            from pathlib import Path
-            gate = json.loads((session.config.results_dir / "release_gate.json").read_text())
-            candidate = Path(".candidate-revision").read_text().strip()
-            assert gate["passed"] and gate["project"] == session.config.project and gate["region"] == session.config.cloud_run_region
-            assert gate["revision"] == candidate, "A different candidate was gated; do not promote this one."
-            session.command(["make", "promote", "PROJECT=" + session.config.project, "REGION=" + session.config.cloud_run_region, "PY=" + sys.executable])
-        ''', live=True),
-        recipe("Roll back and verify recovery", "Return traffic to the exact previous revision recorded by the kit. Measure actual elapsed time, then run smoke; a quick traffic command alone is not proof of a healthy recovered service.", '''
-            import sys, time
-            started = time.perf_counter()
-            session.command(["make", "rollback", "PROJECT=" + session.config.project, "REGION=" + session.config.cloud_run_region, "PY=" + sys.executable])
-            print("Rollback command seconds:", round(time.perf_counter() - started, 2))
-            session.command(["make", "smoke", "PROJECT=" + session.config.project, "REGION=" + session.config.cloud_run_region, "PY=" + sys.executable])
-        ''', live=True),
-      ],
-      "11.8": [
-        recipe("Run the operational gate", "Run the real smoke-all gate and preserve its output, including unavailable optional services and failures. Do not mark the capstone complete merely because earlier individual demos ran.", '''
-            import sys
-            session.command(["make", "smoke-all", "PROJECT=" + session.config.project, "REGION=" + session.config.cloud_run_region, "PY=" + sys.executable])
-        ''', live=True),
-        recipe("Write an evidence handover", "Summarize actual lesson attempts and retain the exact candidate gate, failures and evidence locations. This is an evidence index for a human capstone review, not an automatic rubric score.", '''
-            import json
-            from workshop_helpers.artifacts import write_json
-            records = []
-            for path in sorted(session.config.results_dir.glob("module_*/lesson_*/*/session.json")):
-                state = json.loads(path.read_text(encoding="utf-8"))
-                records.append({"lesson": state["lesson"], "project": state["identity"]["project"], "evidence": str(path),
-                                "completed": state["completed"], "failed_attempts": [a for a in state["attempts"] if a["status"] == "failed"],
-                                "backend_restore_required": state.get("backend_restore_required", False)})
-            write_json(session.attempt / "handover.json", records)
-            print("Evidence index:", session.attempt / "handover.json")
-            print("Review the capstone rubric against the actual artifacts; no score was invented.")
-        '''),
-      ],
     }
 
 

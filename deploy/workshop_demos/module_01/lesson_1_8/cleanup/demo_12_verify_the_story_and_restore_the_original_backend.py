@@ -37,12 +37,20 @@ def step_01_verify_the_story_and_restore_the_original(session):
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe the printed/saved evidence for this heading; a zero exit alone is not proof.
     """
-    try:
-        session.shell("ch44_source && ch44_plan clean")
-    finally:
-        session.shell('ch44_restore_backend() {\n  local previous\n  previous="$(cat "$DEMO_DIR/backend-before.txt")" || return\n  case "$previous" in\n    vector|firestore|rag_engine|vertex_search|default) ;;\n    *) echo "STOP: saved backend is missing or invalid."; return 1 ;;\n  esac\n  make tenant-backend PROJECT="$PROJECT" TENANT=acme RETRIEVAL_BACKEND="$previous"\n}\nch44_restore_backend')
+    import os
+    from pathlib import Path
+    baseline = Path(os.environ.get("DEMO_DIR") or "/nonexistent", "backend-before.txt")
+    if not baseline.is_file() or not baseline.read_text().strip():
+        print("No saved baseline: the backend was never pinned in this run, so there is nothing to restore.")
         session.state["backend_restore_required"] = False
         session.save()
+    else:
+        try:
+            session.shell("ch44_source && ch44_plan clean")
+        finally:
+            session.shell('ch44_restore_backend() {\n  local previous\n  previous="$(cat "$DEMO_DIR/backend-before.txt")" || return\n  case "$previous" in\n    vector|firestore|rag_engine|vertex_search|default) ;;\n    *) echo "STOP: saved backend is missing or invalid."; return 1 ;;\n  esac\n  make tenant-backend PROJECT="$PROJECT" TENANT=acme RETRIEVAL_BACKEND="$previous"\n}\nch44_restore_backend')
+            session.state["backend_restore_required"] = False
+            session.save()
 
 def demonstrate(session):
     """Run this section in source order, saving each function's outcome.
@@ -61,7 +69,7 @@ def main():
     Example: use Run/Debug on this file with the rag-shell-venv interpreter.
     Project settings and completed prerequisites come from the shared setup.
     """
-    with DemoSession(__file__, live=False, repeat=REPEAT) as session:
+    with DemoSession(__file__, live=True, repeat=REPEAT) as session:
         demonstrate(session)
 
 

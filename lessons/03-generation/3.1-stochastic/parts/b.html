@@ -1,0 +1,74 @@
+<div class="box box-teal"><div class="box-title">Which cells cost money</div>
+<p>Steps 4 and 5 cost nothing: step 4 is reading, and step 5 runs the bench in your shell with a scripted model and no network. Steps 3, 6, 7 and 8 ask Gemini on your lane, thirty answers in all, and each says what it costs: the input by the kit's own count of %%ROW%%'s prompt on the Rs 0 lane's pool (about %%EST6%% tokens with %%TOPK%% passages), and a ceiling with every answer at the %%CAP%%-token cap. The thinking comes out of that cap, so a typical answer costs a fraction of the ceiling, and every run prints what it spent. Step 9 reads logs, for Rs 0.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; The deployed UI</span><h3>One question, five times, in the Chat page</h3><p>Golden row %%ROW%% asked five times as yourself: what moves between the answers, what stays, and what the page sends.</p></div></div>
+
+<p>Start in the product, where a user meets variance. The Chat page streams each answer from <code>/v1/stream</code> and sends only the question: rag-api keeps no history, so five turns are five independent answers to one prompt. Before you ask, note the time in the operator shell. Step 9 reads the usage rows written since then.</p>
+%%CELL_T0%%
+%%OUT_T0%%
+
+<h4>Do it: ask it five times</h4>
+<ol>
+<li><strong>Open the Chat page.</strong> Open <code>https://documind-ui-NUMBER.asia-south1.run.app</code> and sign in as yourself; the roster maps you to acme. If the sidebar offers a Brain, choose <code>direct</code>.</li>
+<li><strong>Ask five times.</strong> Paste the question below and send it. When the answer has finished, paste it again, until you have five answers: <em>%%Q%%</em></li>
+<li><strong>Read the five answers.</strong> Compare their words, and the teal pills, which are the <code>[N]</code> numbers each answer cites. Look for 45 and 60 in each.</li>
+<li><strong>Read what stays.</strong> Open <strong>Sources</strong> under each answer: the passages the stream sent before its first token. Then the sidebar: <strong>Tokens</strong> grows by each turn's input and output, the thinking included, and <strong>Cost this session</strong> by its price.</li>
+</ol>
+<p>Five streamed answers: about Rs %%RS_UI_IN%% of input by the kit's count, at most Rs %%RS_UI_MAX%% with each at the cap.</p>
+
+<h4>What the Chat page sends</h4>
+@@chat_stream@@
+@@chat_knobs@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Each answer came from <code>generate_stream()</code>: the same rules and the same thinking level, %%KIT_LEVEL%%, as <code>/v1/query</code>, and no temperature. It differs from the gate's request in two ways you will meet again. The stream has no response schema, so it writes free text rather than the JSON the gate reads, and the page asks for %%UI_TOPK%% passages where the gate asks for %%TOPK%%. The Sources list should hold the same passages all five times, because retrieval and the reranker saw the same question; the stream cites what it packed before the model writes a word, so that list is retrieval's, not the model's. If it changed between asks, something moved the pool: a reindex, or acme's store pin. What moved is the model's: the words, sometimes the pills, and the tokens on the sidebar. The sidebar's comment says why there is no slider for any of it.</p>
+<p>The Chat page shows variance as a user meets it, but it cannot count it or judge it. The rest of this page does both.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit's code</span><h3>The kit's code: what every answer is sent, and how the bench turns one knob</h3><p>generator.py's one request and its bill, the bench's make target, its recorder and its loop, and the gate's rule that judges every answer.</p></div></div>
+
+<h4>Definition</h4>
+<p>Every <code>/v1/query</code> answer is one call of <code>_call()</code> in <code>services/rag-api/generator.py</code>. Its config has four settings and a comment about the ones it leaves out: JSON back, the <code>ModelDraft</code> schema, a cap of %%CAP%% output tokens that the thinking is drawn from, and <code>thinking_level</code> %%KIT_LEVEL%%. No temperature, top-p or top-k is sent, because %%MODEL%% ignores all three. <code>_usage()</code> bills what came back, and it adds the thought tokens to the visible ones in a single <code>tokens_out</code>: right for the bill, and the reason the API's envelope cannot tell you how much of an answer was thinking. When a reply is cut off at the cap, <code>generate()</code> asks once more with three times the room, %%CAP3%%, and bills both attempts. A higher level thinks more out of the same cap, so a cut-off is likelier at HIGH, and the bench prints a <em>retried</em> line when one happens.</p>
+
+<h4>The code: what every answer is sent</h4>
+@@call@@
+@@usage@@
+@@retry@@
+
+<p>The bench changes one thing at a time and keeps everything else as the kit has it. <code>make bench</code> mints the identity token <code>make eval-live</code> uses, as <code>documind-ui-sa</code>, sets <code>GOOGLE_CLOUD_PROJECT</code>, and runs <code>evals/prompt_bench.py</code> in your shell. The bench reads each row's pool once from <code>/v1/passages</code>, the route that stops before the model. Then it imports <code>generator.py</code> as the service imports it and answers with its <code>generate()</code>: the same packing, prompt, schema, cap and retry. The one thing it replaces is <code>generator._client</code>. The <code>Recorder</code> takes its place, so every call passes through it: it sets <code>thinking_config</code> to the level being benched and, in the edit arm only, a temperature; it passes the rest of the config on as <code>_call()</code> built it; and it keeps what was sent, the usage with the thought tokens apart from the visible ones, and the time. <code>bench()</code> runs every row, arm, level and run, interleaved run by run, and puts <code>generator.SYSTEM</code> and <code>_client</code> back however it ends. <code>call_inr()</code> prices each call at list price, the thought tokens at the output rate.</p>
+
+<h4>The code: the bench</h4>
+@@passages@@
+@@mk_bench@@
+@@recorder@@
+@@bench_loop@@
+@@call_inr@@
+
+<p>Every answer is judged by <code>row_verdict()</code>, the eval gate's judgment of one reply, lifted out of <code>live()</code> so that the bench and the gate share one rule; a test in the kit holds the two equal. A reply that is not a well-formed 200 is an error. A forbidden figure in the answer fails it. An answerable row must be answered, with citations that name the tenant's own, current documents, and with every <code>must_contain</code> figure, which <code>contains()</code> looks for on its own boundary once <code>normalise()</code> has turned number words into digits on both sides. <code>summarise()</code> then turns the answers into the table's columns: distinct answers and distinct cite sets, counted within each row across its runs, the quote checks, the tokens and the rupees.</p>
+
+<h4>The code: the judge and the count</h4>
+@@golden@@
+@@row_verdict@@
+@@figures@@
+@@summarise@@
+
+<div class="wjh"><div class="wjh-title">How to read the code</div>
+<p>Take three things into the runs. The bench's arms differ only in what the recorder sets, <code>thinking_config</code> and <code>temperature</code>: the schema, the cap, the prompt and the pool are the kit's in every arm. The thought tokens are a column of their own in the bench's table, and in the API's <code>tokens_out</code> only a part of a sum. And a pass is the gate's pass, not the bench's opinion: the same function decides it for <code>make eval-live</code>.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Rs 0</span><h3>The bench for Rs 0: its tests, and a scripted model</h3><p>The kit's own tests of the bench, then the bench itself, as make bench runs it, over a stand-in lane and a model that follows a script.</p></div></div>
+
+<h4>Definition</h4>
+<p>Before you spend a rupee, run the bench where nothing can be billed. First its tests, %%N_TESTS%% of them in <code>evals/tests/test_prompt_bench.py</code>. They answer with the kit's own <code>generate()</code> over a scripted model and stand-ins for the lane, and they check what step 4 claimed: each row's pool is read once and held fixed, the level and the temperature are sent and nothing else changes, <code>generator.py</code> is never written, every answer is judged by the gate's rule, and the rupees are list price. The one test that runs the recorder on google-genai's own types needs that library, which Module 0 installed in your venv.</p>
+%%CELL_TESTS%%
+%%OUT_TESTS%%
+
+<p>Then the bench itself. The cell below runs <code>prompt_bench.main()</code>, the function <code>make bench</code> runs, over <code>generator.py</code> imported in your shell, with two things stood in. <code>/v1/passages</code> returns the handbook's first six clauses, cut by the kit's own chunker as the kit's tests cut them, so NP-03 is <code>[Source %%NP_N%%]</code> and LV-07 is <code>[Source %%LV_N%%]</code>. The model is a script behind <code>generator._client</code>. It writes five wordings of an answer to %%ROW%% in turn, the same five at every level and temperature, and "thinks" %%TH_LOW%% tokens at LOW and %%TH_HIGH%% at HIGH, the numbers the kit's tests script. Its fifth wording has all 50 days encashed, so that you can see a failure printed. It also counts the thinking level and the temperature each call was sent with. The cell runs the bench twice: the two levels with <code>--show</code>, then a temperature of 2.0.</p>
+%%CELL_SCRIPT%%
+%%OUT_SCRIPT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the first table as you will read your lane's. The pool line says the row's %%TOPK%% passages were read once, before any answer. The kit arm's prompt sha256 is <code>%%SHA12%%...</code>, the sha256 that <code>services/rag-api/prompt_versions.json</code> registers for <code>%%PV%%</code>: the bench asks the prompt your lane answers under. Each answer line is one <code>generate()</code>: its verdict, its thought and visible tokens, and its rupees.</p>
+<p>The script writes the same five wordings at both levels, so the table's two rows agree on everything the words decide: %%S_DIST%% distinct answers, %%S_CITE%% cite sets, and %%S_PASS%% passed. Run %%S_FAIL_RUN%% failed with the gate's own line, answered without ['45', '60']: it states one of the two figures, and the rule wants both. The rows differ only in what the level decides: %%TH_LOW%% thought tokens an answer against %%TH_HIGH%%, so Rs %%S_RS_LOW%% an answer against Rs %%S_RS_HIGH%%. Those %%S_TH_DIFF%% extra thought tokens, at Rs %%INR_PER_K_OUT%% per 1,000, are Rs %%S_RS_DIFF%% more an answer, and they bought nothing, because the words did not change.</p>
+<p>The temperature run printed two arms with one sha256: the same prompt. The script's own count shows that the edit arm's five calls carried a temperature of 2.0 and the kit arm's five carried none. The script ignores the value, because a script draws nothing. Whether Gemini does is step 8's question.</p></div>

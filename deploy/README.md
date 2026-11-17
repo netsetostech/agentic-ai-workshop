@@ -271,9 +271,9 @@ revision and records its name in `deploy/.candidate-revision`, `make eval-live A
 promote the wrong one - 12 September 2026), recording the one it moved traffic off in `deploy/.previous-revision`,
 and `make rollback` moves it back to exactly that one; `documind-cd.yml`'s `path` input picks the candidate jobs
 (`release-candidate`, then `promote` behind the `production` environment's reviewers), which run exactly those
-targets with no Cloud Deploy verb, or `release-clouddeploy` (staging, the live gate, a person, a canary), `wif.tf` pins the branch through `var.deploy_ref` (`DEPLOY_REF`, default
+targets with no Cloud Deploy verb, or `release-clouddeploy` (staging, the live gate, a person, a canary), `wif.tf` pins the branch through `var.deploy_ref` (`infrastructure.py prepare --deploy-ref`, default
 `refs/heads/main`) and lets `sa-documind-cicd` mint the gate's two identities' tokens. *The smokes are one*:
-`make smoke-all` runs the seven smokes with their exports, tallies PASS/FAIL and exits non-zero when any smoke failed
+`make smoke-all` runs the eight smokes with their exports, tallies PASS/FAIL and exits non-zero when any smoke failed
 (12 September: a FAIL line satisfied the grep and the target exited 0), `smoke.py` refuses the golden
 question without a token as its fourth check, and `services/frontend/requirements.txt` no longer pins the two
 model clients nothing imports. *The rows are a tool*: `make usage HOURS=` (`evals/usage_rows.py`) groups the
@@ -281,8 +281,8 @@ usage rows in Cloud Logging by tenant, model and backend, brain and surface with
 where the time went (p95 per stage: retrieve, rerank, generate, with the pool the reranker saw) - the same
 figures `tenant_daily` holds, from the rows before the sink has copied them. *Ingestion has live cells*: `make ingest-one FILE= TENANT=` waits for the worker's
 `ingest_ok` line, `make poison` puts a zero-byte object in and waits for `ingest_poison`, `make dlq` peeks at
-`ingest-dlq-sub` without acking. `tools/check_contract.py` applies the lane rules to 12.1 to 12.8 and
-`tools/check_auth_wiring.py` pins every seam above.
+`ingest-dlq-sub` without acking. `tools/check_contract.py` applies the lane rules to 12.1 to 12.8 and the kit's tests
+under `commands/tests/` pin the seams above (`test_twin_chunker.py` holds the worker's chunker and its twin equal).
 
 The ledger (11 September 2026, night) gives the index a *current*. The worker keeps `sources/{tenant~path}` - which
 version of an object path is current, its generation, its declared date - beside the per-version claim in
@@ -343,10 +343,11 @@ The API reads the corpus as `RETRIEVAL_BACKEND=rag_engine` (P9.4): the tenant's 
 context mapped to the kit's chunk contract through its version's row, the same reranker, packing and citations,
 figures and segments still from the kit's index, and the Firestore rung with the filters when a tenant has no
 corpus or the store will not answer (`rag_engine_fallback`). `RETRIEVAL_BACKEND=vertex_search` (R4, 13 September
-2026 evening) reads 4.4's data store the same way: the tenant's store searched by text through its default serving
-config as the lesson's notebook does, each extractive segment - or the snippet, when the store serves none - a chunk
-of the contract through its version's row, the caller's `doc_type` as a filter expression on the store's structData,
-media from the kit's index, the Firestore rung on no store or an error (`vertex_search_fallback`). `RETRIEVAL_BACKEND`
+2026 evening) reads 4.4's data store: the tenant's store searched by text through its default serving config as the
+lesson's notebook does, ranking the tenant's documents, and the passages the kit's own nearest rows of the versions it
+ranked (22 October 2026: a standard-edition store refuses extractive segments and its snippets stop short), the
+caller's `doc_type` as a filter expression on the store's structData, media from the kit's index, the Firestore rung
+on no store, an error or no document ranked (`vertex_search_fallback`). `RETRIEVAL_BACKEND`
 is the deployment's default: a
 tenant's `tenant_settings.retrieval_backend` pins its store, and its `data_region` decides whether a managed store
 may serve it at all - a managed backend for an `in` tenant is the kit's own index with `policy_fallback=1` on the
@@ -361,22 +362,23 @@ from outside the API; `make candidate RETRIEVAL_BACKEND=rag_engine` judges it. T
 Run on a **disposable** project so nothing real is touched. Teardown is not total: `make down` deletes the
 Cloud Run services, the candidate tag and the context caches (`make down-services`) and then runs
 `terraform destroy`, but it cannot remove Firestore (delete protection), a bucket that holds objects
-(`force_destroy = false`), protected managed search stores (`prevent_destroy = true`), a tuned endpoint (`make tune`) or the BigQuery views (`make bq-views`) - it names
+(`force_destroy = false`), a tuned endpoint (`make tune`) or the BigQuery views (`make bq-views`) - it names
 them and `gcloud projects delete` is what removes them. With `AUDIT_LOCK=true` the audit bucket's retention
 policy is LOCKED (`storage.tf`, `is_locked = var.audit_lock`), which blocks even the project's deletion for five
 years, by design; a lab keeps the five-year term without the lock, so its project can go.
 
 ```bash
-# 0. one-time: a throwaway project + billing + the tf-state bucket
+# 0. one-time: a throwaway project + billing + the tf-state bucket, named after the project
+#    (the Makefile's TFSTATE_BUCKET default: a bucket name is global, so one fixed name serves one lane)
 gcloud projects create documind-ai-live-0901 --set-as-default
 gcloud billing projects link documind-ai-live-0901 --billing-account=XXXXXX-XXXXXX-XXXXXX
-gsutil mb -l asia-south1 -b on gs://documind-tfstate && gsutil versioning set on gs://documind-tfstate
+gsutil mb -l asia-south1 -b on gs://documind-ai-live-0901-tfstate && gsutil versioning set on gs://documind-ai-live-0901-tfstate
 
 # 1. Initialize the chosen state once, select the new CI identity, then plan.
 #    For existing resources use their original bucket, prefix and workspace.
 cd ~/deploy_module_rag                 # the kit root: your clone
 terraform -chdir=terraform init -input=false \
-  -backend-config="bucket=documind-tfstate" \
+  -backend-config="bucket=documind-ai-live-0901-tfstate" \
   -backend-config="prefix=documind/documind-ai-live-0901"
 python commands/infrastructure.py prepare --project documind-ai-live-0901 --region us-central1 \
   --github-repository netsetos/agentic-ai-weekend-gcp \
@@ -456,7 +458,7 @@ The first Tier-A run flagged these real issues in the Module 12 source. They are
 ├── extract_documind.py   # notebooks -> this tree (static, no code execution); kept, a no-op without them
 ├── validate.py           # Tier-A offline checks
 ├── Makefile              # the variables and the core: dryrun / plan / up / smoke / down; `include mk/*.mk`
-├── mk/                   # one file per lane: ingestion.mk and lifecycle.mk (Module 1), agents.mk (Modules 5 and 10) - see mk/README.md
+├── mk/                   # one file per lane: ingestion.mk and lifecycle.mk (Module 1), retrieval.mk (Module 2), agents.mk (Modules 5 and 10) - see mk/README.md
 ├── terraform/            # 11 .tf, all generated from the 12.1/12.3 notebooks:
 │   │                     #   variables.tf  project_id, region, india_region, env,
 │   │                     #                 admin_emails, residency (india | us)

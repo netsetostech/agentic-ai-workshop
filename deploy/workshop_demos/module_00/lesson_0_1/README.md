@@ -11,7 +11,7 @@ The number after `demo_` is the visible HTML section number, not the demo count 
 | setup | [setup/prepare.py](setup/prepare.py) | Before you run anything: open Cloud Shell |
 | 3 | [demo_03_the_billing_account_free_trial_or_paid.py](demo_03_the_billing_account_free_trial_or_paid.py) | The billing account: free trial or paid |
 | 4 | [demo_04_the_project_create_it_link_it_make_it_the_default.py](demo_04_the_project_create_it_link_it_make_it_the_default.py) | The project: create it, link it, make it the default |
-| 5 | [demo_05_the_apis_40_services_in_two_calls.py](demo_05_the_apis_40_services_in_two_calls.py) | The APIs: 40 services in two calls |
+| 5 | [demo_05_the_apis_41_services_in_three_calls.py](demo_05_the_apis_41_services_in_three_calls.py) | The APIs: 41 services in three calls |
 | 6 | [demo_06_the_budget_an_alert_on_the_billing_account.py](demo_06_the_budget_an_alert_on_the_billing_account.py) | The budget: an alert on the billing account |
 | 8 | [demo_08_the_standing_cost_what_bills_by_the_hour_per_day_and_per_weekend.py](demo_08_the_standing_cost_what_bills_by_the_hour_per_day_and_per_weekend.py) | The standing cost: what bills by the hour, per day and per weekend |
 | 9 | [demo_09_verify_it_yourself_the_checklist.py](demo_09_verify_it_yourself_the_checklist.py) | Verify it yourself: the checklist |
@@ -46,6 +46,8 @@ This lesson needs a Google account, a browser, and a shell where the gcloud CLI 
 
 Operation: bash — run in Cloud Shell, once per session (or in a terminal where gcloud is signed in).
 
+IDE adaptation: Print the version's first line with sed instead of head: gcloud and terraform go on writing after it, and under the demo shell's pipefail their SIGPIPE when head closed first failed the cell with exit 141, by chance (23 October 2026). The line printed is the same.
+
 Expected shape, not a promised result:
 
 ```text
@@ -78,21 +80,23 @@ Put your account ID from step 3 and your project ID in the first two lines, then
 
 Operation: bash — run in Cloud Shell, once (put your own account id and project id in the first two lines).
 
+IDE adaptation: The project id comes from settings.local.json and the billing account from your one open account (export BILLING first if you have several), instead of the page's two placeholders. A project that already exists is made the default and linked rather than created again, so the files after this one can run.
+
 Expected shape, not a promised result:
 
 ```text
 [awaiting the author's run: data/project_link.txt]
 ```
 
-### demo_05_the_apis_40_services_in_two_calls.py
+### demo_05_the_apis_41_services_in_three_calls.py
 
-An API, in Google Cloud's sense, is a product switched on for one project: Cloud Run, Firestore, Vertex AI. Until it is enabled, every call to it from that project is refused, whoever makes it, with a message that names the API. Enabling costs nothing; using is what bills. The kit needs 40 of them before Terraform can create anything, and keeps the list in one block of commands/lesson-12.1.sh, the one marked ENABLE_APIS. It is two calls rather than one because the Service Usage API takes at most 20 services per request, as the block's own comment records. make apis runs that block unchanged: You have no clone yet, so you paste the same lines. They are the block exactly, taken from the kit when this page was built: the first sets gcloud's project, which step 4 already did, and the next two enable the list. A short loop compares the project's enabled services with the kit's list and names any that is missing. Run it now, and again whenever a later lesson's command complains that an API is disabled.
+An API, in Google Cloud's sense, is a product switched on for one project: Cloud Run, Firestore, Vertex AI. Until it is enabled, every call to it from that project is refused, whoever makes it, with a message that names the API. Enabling costs nothing; using is what bills. The kit needs 41 of them before Terraform can create anything, and keeps the list in one block of commands/lesson-12.1.sh, the one marked ENABLE_APIS. It is three calls rather than one because the Service Usage API takes at most 20 services per request, as the block's own comment records. make apis runs that block unchanged: You have no clone yet, so you paste the same lines. They are the block exactly, taken from the kit when this page was built: the first sets gcloud's project, which step 4 already did, and the next three enable the list. A short loop compares the project's enabled services with the kit's list and names any that is missing. Run it now, and again whenever a later lesson's command complains that an API is disabled.
 
-**`step_01_definition(session)` — The APIs: 40 services in two calls / Definition**
+**`step_01_definition(session)` — The APIs: 41 services in three calls / Definition**
 
-An API, in Google Cloud's sense, is a product switched on for one project: Cloud Run, Firestore, Vertex AI. Until it is enabled, every call to it from that project is refused, whoever makes it, with a message that names the API. Enabling costs nothing; using is what bills. The kit needs 40 of them before Terraform can create anything, and keeps the list in one block of commands/lesson-12.1.sh, the one marked ENABLE_APIS. It is two calls rather than one because the Service Usage API takes at most 20 services per request, as the block's own comment records. make apis runs that block unchanged: You have no clone yet, so you paste the same lines. They are the block exactly, taken from the kit when this page was built: the first sets gcloud's project, which step 4 already did, and the next two enable the list.
+An API, in Google Cloud's sense, is a product switched on for one project: Cloud Run, Firestore, Vertex AI. Until it is enabled, every call to it from that project is refused, whoever makes it, with a message that names the API. Enabling costs nothing; using is what bills. The kit needs 41 of them before Terraform can create anything, and keeps the list in one block of commands/lesson-12.1.sh, the one marked ENABLE_APIS. It is three calls rather than one because the Service Usage API takes at most 20 services per request, as the block's own comment records. make apis runs that block unchanged: You have no clone yet, so you paste the same lines. They are the block exactly, taken from the kit when this page was built: the first sets gcloud's project, which step 4 already did, and the next three enable the list.
 
-Operation: bash — run in Cloud Shell, once (the kit's ENABLE_APIS block: 40 APIs in 2 calls).
+Operation: bash — run in Cloud Shell, once (the kit's ENABLE_APIS block: 41 APIs in 3 calls).
 
 Expected shape, not a promised result:
 
@@ -100,7 +104,7 @@ Expected shape, not a promised result:
 [awaiting the author's run: data/apis_enable.txt]
 ```
 
-**`step_02_count_them(session)` — The APIs: 40 services in two calls / Count them**
+**`step_02_count_them(session)` — The APIs: 41 services in three calls / Count them**
 
 A short loop compares the project's enabled services with the kit's list and names any that is missing. Run it now, and again whenever a later lesson's command complains that an API is disabled.
 
@@ -165,6 +169,6 @@ Expected shape, not a promised result:
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_0.1_Billing_Project_WIX.html`. All 32 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `e8752816c7f6df23f638d88cde838439debb5a23`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_0.1_Billing_Project_WIX.html`. All 32 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `942926b9d8fb2dfb282e1f1cbd06c74ba68c2fdf`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

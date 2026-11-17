@@ -53,7 +53,9 @@ def inspect_locators(cloud):
         require(rows, f"No current chunks for {filename}; ingest the lesson fixture first.")
         cloud.save(filename.replace(".", "_") + "_locators", rows)
         print(filename, "->", len(rows), "current chunks")
-        for cid, row in sorted(rows.items())[:5]:
+        # By chunk number (the part after '#'), so #2 comes before #10, as the README's rows 0-3 do.
+        by_number = sorted(rows.items(), key=lambda item: int(item[0].rsplit("#", 1)[1]) if item[0].rsplit("#", 1)[1].isdigit() else 10**9)
+        for cid, row in by_number[:5]:
             print(" ", cid, "locator", row.get("locator"), "page_start", row.get("page_start"), "section", row.get("section"))
         require(all(row.get("locator") for row in rows.values()), "Some chunks lack locators; inspect the ingest schema/backfill.")
         if filename.endswith(".pdf"):

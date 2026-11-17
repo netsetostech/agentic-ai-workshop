@@ -3,7 +3,7 @@
 Optional, and it costs money (the page's own box): join the CGST and IT Acts into a 270-page PDF and upload it to acme. The worker queues it for the batch lane. Where the batch job is declared it parses all 270 pages at once: about Rs 34 on the OCR processor or Rs 230 on the Layout Parser, plus embeddings. The page leaves the PDF in acme's uploads. Decide before you run it.
 
 Run order inside this file:
-1. Read the lane, Rs 0 (source window 30)
+1. Read the lane, Rs 0 (source window 31)
 
 Prerequisites: demo_06_the_batch_lane_the_250_page_decision_the_queued_claim_the_job.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -73,7 +73,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_30', step_01_read_the_lane_rs_0),
+        ('source_31', step_01_read_the_lane_rs_0),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

@@ -213,7 +213,7 @@ smoke-gchat: guard-project tf-backend
 route-eval: guard-project
 	@NUMBER=$$(gcloud projects describe "$(PROJECT)" --format='value(projectNumber)') || exit 1; \
 	case "$$NUMBER" in ''|*[!0-9]*) echo 'ERROR: gcloud did not return a project number; no request sent.' >&2; exit 1;; esac; \
-	DOCUMIND_CHAT_URL=https://documind-chat-$$NUMBER.$(REGION).run.app $(PY) evals/route_eval.py --live --project $(PROJECT) --split $(or $(SPLIT),dev) $(if $(ARM),--arm $(ARM),) $(if $(SAVE),--save "$(SAVE)",) $(if $(REPORT),--report "$(REPORT)",)
+	DOCUMIND_CHAT_URL=https://documind-chat-$$NUMBER.$(REGION).run.app $(PY) evals/route_eval.py --live --project $(PROJECT) --split $(or $(SPLIT),dev) $(if $(ARM),--arm $(ARM),) $(if $(SAVE),--save "$(SAVE)",) $(if $(REPORT),--report "$(REPORT)",) $(if $(ROUTES),--routes "$(ROUTES)",)
 
 # The Desk's day in BigQuery (terraform/sql/desk_daily.sql, lesson 10.4): per India day, tenant, desk and kind of
 # caller, the turns and their outcomes, the escalations by type with one count for every sensitive case, the method
@@ -245,3 +245,192 @@ desk-operators: guard-project
 	  gcloud iam service-accounts add-iam-policy-binding $$sa@$(PROJECT).iam.gserviceaccount.com --project=$(PROJECT) \
 	    --member="user:$$who" --role=roles/iam.serviceAccountTokenCreator --condition=None --quiet >/dev/null \
 	  && echo ">> $$who may mint tokens as $$sa"; done; done
+
+# ---------- the agent bench (workshop lessons 10.1-10.3 and 10.5): one task set, many agent patterns ----------
+# Appended below every Desk target, and so are the bench's next targets: lesson 10.4's page reads route-eval's recipe
+# by its line number in this file.
+#
+# One turn of an agent pattern, printed whole (commands/agent_turn.py): each model call with its thinking and visible
+# tokens and rupees, each tool it asked for, its arguments and what it returned, then the answer as the Desk shows it
+# and the figure check. PATTERN=loop (the Desk agent's own loop, commands/agent_patterns.py, which the patterns of
+# lessons 10.1-10.3 join), THINKING=minimal|low|medium|high (unset: the desk agent's, low), DESK=astar|handbook|statute
+# (astar by default: one retrieve over every class, every calculator), TENANT, Q (unset: the gratuity row of
+# evals/agent_tasks.jsonl) or ROW (a row's id, as chained-exit-e3), and for 10.2's plan_execute and rewoo EXEC_MODEL
+# (the act and extract calls' model; unset: the planner's). OFFLINE=1 needs no PROJECT: a scripted model and the kit's
+# own corpus, Rs 0, and takes INVENT and LAUNDER (1, or a figure: --invent and --launder, 10.1 and 10.3). Otherwise one
+# real turn on your lane: a few gemini-3.6-flash calls on global, under the chat service's 12 calls and Rs 5, and
+# rag-api's /v1/passages as documind-ui-sa. In ~/graph-venv with the chat image's pins: commands/agent-turn.sh.
+agent-turn: $(if $(OFFLINE),,guard-project)
+	@PROJECT=$(PROJECT) REGION=$(REGION) PATTERN=$(PATTERN) THINKING=$(THINKING) DESK=$(DESK) TENANT=$(TENANT) Q="$(Q)" ROW=$(ROW) EXEC_MODEL=$(EXEC_MODEL) OFFLINE=$(OFFLINE) INVENT="$(INVENT)" LAUNDER="$(LAUNDER)" PY=$(PY) bash commands/agent-turn.sh
+
+# The task set scored (evals/agent_eval.py). CHECK=1 recomputes every row's figure with shared/desk_calc.py and runs
+# the hard gate on every question; REPLAY=<file> (or several, space-separated) rescores saved runs, BEST_OF=N keeping
+# the run of each row the figure check chooses; COMPARE="A B" pairs two saved arms (Newcombe's interval and an exact
+# McNemar test, evals/paired.py). Those three are Rs 0 and need no venv. Otherwise every row through each of PATTERNS
+# (comma-separated) at each of THINKING (comma-separated; default is the desk agent's own), on DESK (astar, or row for
+# each row's own desk), RUNS times (pass@k and pass^k), SLICE (kinds, tags or ids: chained, lesson 10.2's rows),
+# SAVE=<file>, and plan_execute and rewoo at each of EXEC_MODEL (comma-separated; default is the planner's own):
+# OFFLINE=1 on the scripted model, Rs 0; on your lane each row and run is one agent turn, as make agent-turn's, and a
+# verify run up to three (lesson 10.3). PATTERNS=loop,verify, or a REPLAY of both arms' saves, also prints pass@1,
+# pass@k re-rolls and best-of-k beside verify's pass@3 with notes, each with its calls and rupees. In ~/graph-venv:
+# commands/agent-turn.sh.
+agent-eval: $(if $(or $(OFFLINE),$(CHECK),$(REPLAY),$(COMPARE)),,guard-project)
+	@$(if $(or $(CHECK),$(REPLAY),$(COMPARE)),$(PY),PROJECT=$(PROJECT) REGION=$(REGION) OFFLINE=$(OFFLINE) PY=$(PY) bash commands/agent-turn.sh) evals/agent_eval.py $(if $(CHECK),--check,$(if $(REPLAY),--replay $(foreach f,$(REPLAY),"$(f)"),$(if $(COMPARE),--compare $(COMPARE),$(if $(OFFLINE),--offline,--live)))) $(if $(PATTERNS),--patterns $(PATTERNS),) $(if $(THINKING),--thinking $(THINKING),) $(if $(DESK),--desk $(DESK),) $(if $(RUNS),--runs $(RUNS),) $(if $(SLICE),--slice $(SLICE),) $(if $(BEST_OF),--best-of $(BEST_OF),) $(if $(SAVE),--save "$(SAVE)",) $(if $(EXEC_MODEL),--exec-model $(EXEC_MODEL),)
+
+# The bench's own tests, offline and free: paired.py's arithmetic and the task set's check and scorer (stdlib), then
+# the patterns on a scripted model (commands/tests/test_agent_bench.py, lesson 10.1's test_agent_patterns.py, lesson
+# 10.2's test_agent_plans.py and lesson 10.3's test_agent_verify.py) in ~/graph-venv with the chat image's pins, as
+# CI's chat-pins step runs them.
+agent-tests:
+	$(PY) -m unittest discover -s evals/tests -p test_paired.py
+	$(PY) -m unittest discover -s evals/tests -p test_agent_eval.py
+	@OFFLINE=1 DOCUMIND_REQUIRE_LIBS=1 PY=$(PY) bash commands/agent-turn.sh -m unittest commands/tests/test_agent_bench.py -v
+	@OFFLINE=1 DOCUMIND_REQUIRE_LIBS=1 PY=$(PY) bash commands/agent-turn.sh -m unittest commands/tests/test_agent_patterns.py -v
+	@OFFLINE=1 DOCUMIND_REQUIRE_LIBS=1 PY=$(PY) bash commands/agent-turn.sh -m unittest commands/tests/test_agent_plans.py -v
+	@OFFLINE=1 DOCUMIND_REQUIRE_LIBS=1 PY=$(PY) bash commands/agent-turn.sh -m unittest commands/tests/test_agent_verify.py -v
+
+# Lesson 10.5: a desk run as an agent, beside the other arms on the same rows. ROUTES=evals/route_arms.jsonl on make
+# route-eval (its recipe passes ROUTES as --routes) scores lesson 10.5's arms set instead of the route set: five rows a
+# calculator decides, jn-03 and six lookups, all dev, every figure recomputed by evals/tests/test_route_arms.py. Run it
+# once an arm, ARM=B, C and Astar, each with its own SAVE= and REPORT=: each desk turn keeps its sections' modes,
+# refused tool calls and calculations, and its model calls, rupees and latency. On your lane every row is a router turn
+# and a desk turn, and an answer in agent mode (every Astar row) a few flash calls of its own.
+# route-compare: the arms side by side (evals/route_eval.py --compare, Rs 0). REPORTS= two or three of those reports,
+# one split and one arm each: per arm the correct and authority rates with their intervals, the desk turns' rupees,
+# model calls and p50 and p95 latency, and the turns in agent mode; then B paired against each other arm by row id,
+# through evals/paired.py and the margin registered there before any run. Indicative: dev rows only, and B's exemplar
+# index holds the rows taken from evals/routes.jsonl.
+route-compare:
+	$(PY) evals/route_eval.py --compare $(foreach f,$(REPORTS),"$(f)")
+
+# arms-combine: the arms as an ensemble (evals/combine.py, Rs 0). SAVES= the saved runs (SAVE=) of one split, one arm
+# each, on the rows of ROUTES (evals/route_arms.jsonl unless given): each answer row's members right or wrong; where a
+# member ran a calculator, a vote over the (calculator, value) pairs code returned, a tie abstaining to a person; and
+# every figure a member's answer writes that no calculation returned and no source holds (shared/desk_calc.py's
+# unsupported()). python evals/combine.py --selftest --layers 2 adds an arbiter and a mixture-of-agents aggregator, on
+# scripted members.
+arms-combine:
+	$(PY) evals/combine.py $(foreach f,$(SAVES),"$(f)") $(if $(ROUTES),--routes "$(ROUTES)",)
+
+# A person in the loop (workshop lesson 5.8), offline and free: services/chat/approval.py, which the chat service does
+# not import, on scripted models. A withdrawal waits for a second person (the requester's own approval is refused) and
+# a second process resumes it from the same SQLite checkpoint file; a rejection errors that call alone; the person who
+# asked answers a clarifying question; a case is offered with nothing written. In ~/graph-venv with the chat image's
+# pins and the local lane's SQLite checkpointer (made, or completed, here). See commands/approval-check.sh.
+approval-check:
+	@PY=$(PY) bash commands/approval-check.sh
+
+# The classifier's examples on and off (workshop lesson 3.2): evals/route_eval.py with the L1 prompt's examples swapped
+# for one run, in process - EXEMPLARS=kit (desk_routes.PROMPT_EXEMPLARS, the eight; the default), none, or a JSON file
+# of [row id, route, question] - on the same 187 dev rows, the groups of the kit's eight still left out of the score. It
+# prints the usual report, the examples used and "L1 alone": flash-lite's own route on the turns it was asked, before
+# the vote and the arbiter; REPORT=<file> writes each row's verdict and decision as JSON. On your lane (--live-l1,
+# google-genai in the shell): 126 rows reach flash-lite, the disputed ones flash, one embedding each, the 198-row index
+# embedded first; RUNS=3 asks every row three times. LOCAL=1 runs it offline on the scripted classifier, which reads no
+# example: the arms then differ in the router's cost alone, what the eight cost in prompt tokens (Rs 0, no PROJECT).
+exemplars: $(if $(LOCAL),,guard-project)
+	$(PY) evals/route_eval.py $(if $(LOCAL),--local,--live-l1 --project $(PROJECT)) --exemplars $(or $(EXEMPLARS),kit) $(if $(RUNS),--runs $(RUNS),) $(if $(REPORT),--report "$(REPORT)",)
+
+# The A2A peer's own cap (workshop lesson 10.7): ADK_MAX_LLM_CALLS=1 on the deployed documind-agent for a minute or
+# two, make smoke-agent's first task ends `failed` with the limit in its status message, the variable is put back from
+# a trap, and the same task completes. Two tasks, three model calls. See commands/agent-drill.sh.
+agent-drill: guard-project
+	@PROJECT=$(PROJECT) REGION=$(REGION) PY=$(PY) bash commands/agent-drill.sh
+
+# The chat's hand-off to the A2A peer (workshop lesson 10.7), on, or off with OFF=1: PEER_URL and PEER_ACCOUNT on
+# documind-chat, one env update and a new revision. The ADK brain may then hand a question to the peer, two a turn and
+# 75 s each at most, and only for a tenant whose roster is the peer account's one roster. The next make
+# deploy-services switches it off again. No model call. See commands/handoff.sh.
+handoff: guard-project
+	@PROJECT=$(PROJECT) REGION=$(REGION) OFF=$(OFF) PY=$(PY) bash commands/handoff.sh
+
+# The hand-off, live: a question about what the corpus holds, to the ADK brain as documind-ui-sa, comes back with
+# documind_peer among its tool calls and the hand-off in the response's handoffs; the LangChain brain answers the same
+# question with none. Two turns. See smoke/smoke_handoff.py.
+smoke-handoff: guard-project
+	@NUMBER=$$(gcloud projects describe $(PROJECT) --format='value(projectNumber)'); \
+	DOCUMIND_CHAT_URL=https://documind-chat-$$NUMBER.$(REGION).run.app \
+	DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$(PROJECT).iam.gserviceaccount.com \
+	  $(PY) smoke/smoke_handoff.py
+
+# The caller graph (workshop lesson 10.7), offline and free: the account each request-path service runs as and the
+# accounts its deploy script binds roles/run.invoker, read from the scripts terraform/sa.tf's graph names, as service
+# edges; then `acyclic` with an order, or the first cycle and exit 1. GRAPH=1 is the only mode so far: no gcloud, so
+# the bindings as the scripts make them, not as the lane holds them. See commands/check_callers.py.
+check-callers:
+	$(PY) commands/check_callers.py $(if $(GRAPH),--graph,)
+
+# The A2A peer's tool pins (workshop lesson 10.8): review the tools the peer gets from its MCP server and pin each
+# one's name, description and input schema, or, with CHECK=1, fail when the server's tools have drifted from the pins.
+# URL=... lists a running server over the MCP wire; the default lists the kit's own server in process (offline, no
+# gcloud, no model call). The peer only enforces the pins when TOOL_PINS=on. See commands/pin_tools.py.
+pin-tools:
+	$(PY) commands/pin_tools.py $(if $(CHECK),--check,) $(if $(URL),--url $(URL),--server-local)
+
+# A poisoned MCP server on 127.0.0.1 for the pins drill (workshop lesson 10.8), a fixture that binds nowhere real and
+# names only .invalid hosts: an extra unpinned tool, or RUG=1 for a rug-pulled description. Point the peer at it
+# (MCP_URL) with TOOL_PINS off, then on, to watch the pins refuse it. See evals/adversarial/evil_mcp.py.
+evil-mcp:
+	@PORT=$(or $(PORT),8900) RUG=$(RUG) $(PY) evals/adversarial/evil_mcp.py
+
+# The kit's MCP server in the local profile (workshop lesson 10.8), as make chat-local serves the chat service: no token
+# and no roster (services/mcp/server.py's LOCAL_USER and LOCAL_TENANT), acme's corpus in the Chroma directory make
+# chat-local seeds, served on 127.0.0.1:8000 (PORT= another). The A2A peer runs beside it on your machine with
+# MCP_URL=http://127.0.0.1:8000 and MCP_AUTH=none, so make attack-agents SURFACES=peer needs nobody to mint a token as
+# documind-agent-sa. With no roster, a tenant the model names is taken as given (server.py's _tenant_for): a question
+# about another tenant finds only what this store holds, acme's corpus, where the lane's server refuses it by the
+# roster. PY's venv needs services/mcp/requirements.txt and the Chroma pins of services/chat/requirements-local.txt
+# (langchain-chroma, chromadb); no Ollama and no embedding model, since the local retrieve ranks chunks by their words.
+# No model call, Rs 0. Seeding upserts, so re-running is harmless.
+mcp-local:
+	DOCUMIND_PROFILE=local DOCUMIND_CHROMA_DIR="$(CURDIR)/documind_chroma" $(PY) -m shared.local_corpus acme
+	cd services/mcp && DOCUMIND_PROFILE=local DOCUMIND_CHROMA_DIR="$(CURDIR)/documind_chroma" PYTHONPATH=../.. \
+	  $(PY) -m uvicorn server:app --host 127.0.0.1 --port $(or $(PORT),8000)
+
+# The attack set on the agents' doors (workshop lesson 10.8), as make attack-eval runs it on rag-api's: lesson 10.8's
+# rows to documind-chat's /v1/chat and /v1/desk as documind-ui-sa, with a token minted for the chat service's canonical
+# URL as make eval-live mints rag-api's (DOCUMIND_ID_TOKEN, when set, instead); CHAT= picks the URL to call. SURFACES=
+# the surfaces whose rows run (default chat,desk): peer sends the A2A peer's row to the peer on your own machine
+# (DOCUMIND_PEER_URL, default http://127.0.0.1:8080) over make mcp-local's server, and SURFACES=peer alone mints
+# nothing and needs no PROJECT. REPORT= writes every row, LABEL= names the run; make attack-offline COMPARE="A B" sets
+# two side by side. Exit 1 when a structural row opens or a reply holds another tenant's text. Each chat or Desk row is
+# one turn on your lane (a few flash calls and one rag-api answer); the peer row one task. See commands/attack-agents.sh.
+attack-agents: $(if $(filter peer,$(SURFACES)),,guard-project)
+	@PROJECT=$(PROJECT) REGION=$(REGION) SURFACES=$(SURFACES) CHAT=$(CHAT) REPORT="$(REPORT)" LABEL="$(LABEL)" PY=$(PY) bash commands/attack-agents.sh
+
+# Two agents that hand one question back and forth, and the cap that ends it (workshop lesson 10.7's loops and
+# deadlocks), offline and free: two ADK desks that may transfer the turn to each other and to their root, under a
+# TransferCap plugin that ends the turn after 3 transfers, once with transfers between the desks allowed and once with
+# them disallowed. OFFLINE=1 is the only mode so far: scripted models, no PROJECT, Rs 0. In ~/graph-venv with the chat
+# image's pins (commands/agent-turn.sh). See commands/agent_shapes.py.
+agent-shapes:
+	@OFFLINE=1 PY=$(PY) bash commands/agent-turn.sh commands/agent_shapes.py $(if $(OFFLINE),--offline,)
+
+# A company's agent_actions switch (workshop lesson 5.8), in tenant_settings/{TENANT} beside the Desk's (a merge write).
+# AGENT_ACTIONS=approval gives the LangGraph brain services/chat/approval.py's approve node for that company: a
+# withdrawal a model asks for pauses the turn as an approval record (shared/approvals.py) that a second person holding
+# doc_approver decides at POST /v1/approvals/{id}/decide, and the paused conversation answers 409 until then; the model
+# may also ask the person one question (ask_user) or offer a case (offer_case). AGENT_ACTIONS=off, what every company
+# has until an operator writes approval, is the brain as lessons 5.4, 5.5 and 5.7 show it. The chat service reads it
+# within 60 s. Without AGENT_ACTIONS it prints the company's switches. The approver is a role: make roles TENANT=acme
+# EMAIL=<second person> ROLES=employee,doc_approver.
+agent-actions: guard-project
+	@GOOGLE_CLOUD_PROJECT=$(PROJECT) $(PY) commands/desk_ops.py --project $(PROJECT) desk --tenant $(TENANT) $(if $(AGENT_ACTIONS),--actions $(AGENT_ACTIONS),)
+
+# An approved withdrawal, run by the operator (workshop lesson 5.8): services/ingest/reconcile.py --approved re-reads
+# approvals/{APPROVAL}, checks it again (approved and not yet run, by a second person who still holds doc_approver in
+# that company, for that company's document), withdraws the document exactly as make retire does (the tombstone; make
+# restore SOURCE= is the way back) and marks the record withdrawn, with the kit's one doc.withdraw audit event. The
+# approval on the chat service withdraws nothing by itself: this run does. DRY=1 runs the checks and writes nothing.
+withdraw-run: guard-project
+	@test -n "$(APPROVAL)" || (echo "APPROVAL=<approval id> is required (GET /v1/approvals lists them)"; exit 2); 	PYTHONPATH=. MANAGED_MIRROR=$(MANAGED_MIRROR) RAG_LOCATION=$(RAG_LOCATION) AUDIT_BUCKET=$(PROJECT)-audit GOOGLE_CLOUD_PROJECT=$(PROJECT) 	DOCUMIND_OPERATOR=$${DOCUMIND_OPERATOR:-$$(gcloud config get-value account 2>/dev/null)} 	  $(PY) services/ingest/reconcile.py --project $(PROJECT) --approved "$(APPROVAL)" $(if $(DRY),,--apply)
+
+# The approval wired in, live (smoke/smoke_approval.py; about Rs 10-15 of model calls), after make agent-actions
+# TENANT=acme AGENT_ACTIONS=approval and doc_approver for documind-evalacme-sa: a withdrawal asked for as documind-ui-sa
+# pauses the turn (200, approval pending); the same session's next question is held (409); the requester's own approval
+# is refused (403); documind-evalzeta-sa cannot see the record (404); documind-evalacme-sa approves it (200, approved,
+# the resumed turn's answer) and a second decision is refused (409); a second withdrawal is rejected with a reason, and
+# the resumed turn's refusals name the tool. It withdraws nothing: it prints the make withdraw-run for the approval it
+# left, and the make restore after that. DOC= names the document (default townhall_2026_q1.md). Not in make smoke-all.
+smoke-approval: guard-project
+	@NUMBER=$$(gcloud projects describe "$(PROJECT)" --format='value(projectNumber)') || exit 1; 	case "$$NUMBER" in ''|*[!0-9]*) echo 'ERROR: gcloud did not return a project number; no smoke request sent.' >&2; exit 1;; esac; 	DOCUMIND_CHAT_URL=https://documind-chat-$$NUMBER.$(REGION).run.app DOCUMIND_PROJECT=$(PROJECT) DOCUMIND_TENANT=$(TENANT) 	$(if $(DOC),DOCUMIND_DOC=$(DOC),) $(PY) smoke/smoke_approval.py

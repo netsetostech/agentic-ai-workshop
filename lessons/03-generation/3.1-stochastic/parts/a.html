@@ -1,0 +1,106 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.1</div>
+<h1>See run-to-run variance and thinking levels in the same prompt: <span>five runs of one golden row at LOW and HIGH, judged by the gate's rule</span></h1>
+<p>Ask DocuMind the same question twice and the answer can come back in other words. Lesson B.5 showed where that comes from, and why the kit sends its model no temperature. This lesson measures it on the kit itself. The prompt bench, <code>evals/prompt_bench.py</code>, reads one golden row's passages from your lane once, asks the kit's own <code>generate()</code> the row's question five times at thinking level LOW and five at HIGH, and judges every answer by the eval gate's own rule. It counts the distinct answers, the distinct sets of citations and the passes, keeps the thought tokens apart from the visible ones, and prices every answer in rupees. Then it sends a temperature of 2.0, keeps proof that the value went out, and lets you read what changed. You will see the variance in the UI, read the code that holds everything else fixed, run the bench for Rs 0 and then on your lane, and read what your lane logged.</p>
+<div class="hero-chips"><div class="hero-chip">golden row %%ROW%%</div><div class="hero-chip">5 runs at LOW, 5 at HIGH</div><div class="hero-chip">thinking_level %%KIT_LEVEL%%: the kit's</div><div class="hero-chip">temperature 2.0, sent and read back</div><div class="hero-chip">pass k/5, with its interval</div><div class="hero-chip">make bench</div><div class="hero-chip">Rs %%INR_PER_K_OUT%% per 1,000 thought tokens</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Why one prompt answers in different words, and what thinking buys</a></li>
+<li><a href="#s2">The words: run, pool, thinking level, thought tokens, arm, recorder, distinct answers, pass k/N</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">One question, five times, in the Chat page</a></li>
+<li><a href="#s4">The kit's code: what every answer is sent, and how the bench turns one knob</a></li>
+<li><a href="#s5">The bench for Rs 0: its tests, and a scripted model</a></li>
+<li><a href="#s6">Five calls to /v1/query, judged by the gate's rule</a></li>
+<li><a href="#s7">make bench: five runs at LOW and five at HIGH</a></li>
+<li><a href="#s8">Change it: send a temperature of 2.0, and read what went out</a></li>
+<li><a href="#s9">What your lane logged, and what the bench did not</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what can change between two runs of one prompt (the words, the citations, the verdict), which of those the eval gate fails, and what a higher thinking level buys and costs. Then you will prove it on your lane: golden row %%ROW%% asked five times at LOW and five at HIGH with the kit's own generator, and five times more with a temperature of 2.0 that the model is documented to ignore.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Why one prompt answers in different words, and what thinking buys</h3><p>What can differ between two runs of one prompt, which difference the gate fails, what the bench holds fixed so that the model is all that is left, and what a thinking level and a temperature change.</p></div></div>
+
+<p><strong>Lesson B.5 explained the mechanism; this page measures it on the kit.</strong> A decoder writes one token at a time, each drawn from a probability distribution, so two runs of one prompt can draw differently and write different answers. B.5 built that loop in numpy, showed the knobs that reshape the distribution (temperature, top-k and top-p), quoted Google's model page saying that %%MODEL%% ignores all three, and sent a bare prompt five times. This page does not repeat any of it. It asks the kit's own generator, on your lane's own passages, and judges every answer the way the eval gate judges <code>/v1/query</code>.</p>
+
+<p><strong>Three things can differ between two runs, and only one of them is a failure.</strong> The <em>wording</em>: "45 days are encashed" and "encashment is capped at 45 days" are one answer to a reader. The <em>citations</em>: which of the passages the answer cites. The <em>verdict</em>: whether the answer carries what the golden row requires. Row %%ROW%% asks: <em>%%Q%%</em> The gate requires 45, the cap on encashed leave in clause LV-07, and 60, the E3 notice period in clause NP-03, each as a figure on its own boundary, and citations that name acme's own, current documents. An answer that has all 50 days encashed has varied in the way that matters. The bench counts all three, per thinking level: distinct answers, distinct cite sets, and pass k of N.</p>
+
+<p><strong>What the bench holds fixed, so that the model is all that is left.</strong> A difference between two answers could come from retrieval (a different pool), from the prompt (a different text), or from the model. The bench removes the first two. It reads the row's pool once from <code>/v1/passages</code>, which runs the same door, retrieval and reranker as <code>/v1/query</code> and stops before the model, and every run answers from that one pool. The prompt is <code>generate()</code>'s own, built from that pool, and the bench prints the sha256 of its head, the rules every prompt starts with, so that you can see it is the text <code>%%PV%%</code> names. What is left is the model: what it draws, and how long it thinks before it answers.</p>
+
+<p><strong>A thinking level is how long the model thinks before it answers, and you pay for it.</strong> A Gemini 3 model writes <em>thought tokens</em> before its answer. Nobody reads them, and they are billed at the output rate: Rs %%INR_PER_K_OUT%% per 1,000 on %%MODEL%%, %%RATIO%% times the price of a prompt token. <code>thinking_level</code> sets how much it thinks: %%LEVELS%%. The kit sends %%KIT_LEVEL%% on every answer. %%ROW%% joins two clauses and needs one small calculation (50 days earned, at most 45 encashed), which is the kind of question where more thinking could change the verdict. The bench asks it five times at %%KIT_LEVEL%% and five at HIGH, and prints per level the passes, the thought tokens an answer and the rupees an answer, so that whether HIGH is worth it is read off one table. Five runs are a small sample: five passes out of five still has a Wilson lower bound of %%W55_LO%%, so every rate on this page is read with its interval.</p>
+
+<p><strong>A temperature the model ignores, sent on purpose.</strong> <code>generator.py</code> sends no temperature: its comment says %%MODEL%% ignores one, and lesson B.5 quotes the model page that says so. The bench can send one anyway. Its <em>edit arm</em> sends 2.0, the hottest value B.5's toy tried, beside the kit's own arm, and its recorder keeps the config each call went out with. So the run answers two questions apart: was 2.0 sent (the recorder's log), and did anything change (the table).</p>
+
+<div class="analogy"><div class="analogy-icon">&#127859;</div><div>
+<p><strong>One recipe card, five cooks, one inspector at the pass.</strong> A restaurant kitchen hands five cooks the same recipe card and the same tray of ingredients, and asks each of them for the same thali. The five plates come back different: one cook puts the dal on the left, another adds coriander, a third folds the roti in half. None of that is a mistake. The inspector at the pass does not compare the plates with one another. She checks each plate against the order: the two items it names, in the quantities it names, made from this kitchen's tray. A plate with three rotis where the order said two goes back, however well it is laid out. Give the cooks ten minutes to plan before they start and the plates may come out more alike, or more often right; the planning is paid by the minute either way, and nobody eats it. And the stove has a knob marked "flame" that, on this model of stove, is not connected to anything. Turn it to full and the cooking does not change, though the order slip still records that you turned it.</p>
+<p>The recipe card is the prompt: <code>generate()</code>'s rules, the packed passages and the question. The tray is the row's pool, read once from <code>/v1/passages</code>. The five cooks are five calls at one thinking level. The plating is the wording, and the items named are the citations. The inspector is <code>run_eval.row_verdict()</code>, and the order's two quantities are 45 and 60. The planning time is the thinking level, paid in thought tokens. The knob is the temperature on %%MODEL%%, and the order slip is the bench's recorder.</p></div></div>
+
+<h4>One row through the bench: what is held fixed, and where the answers can differ</h4>
+<div class="diagram"><div class="dg-title">make bench on one golden row, in the order evals/prompt_bench.py runs it</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><div class="fs-n">1</div><div><b>The row.</b> <code>evals/golden.jsonl</code>'s %%ROW%%: acme's question, the figures it must carry (45 and 60), and the clauses it should draw on (LV-07 and NP-03).</div></div><div class="fs-branch"><b>Fixed:</b> the question, and the truth every answer is judged against.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">2</div><div><b>The pool, read once.</b> <code>POST /v1/passages</code> with top_k %%TOPK%%: the door, the roster, retrieval and the reranker of <code>/v1/query</code>, then the passages, and no model.</div></div><div class="fs-branch"><b>Fixed:</b> every arm, level and run answers from these passages.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">3</div><div><b>The prompt.</b> <code>generate()</code> packs the pool inside the budget and writes the rules, the context and the question, in one text.</div></div><div class="fs-branch"><b>Fixed:</b> one text; its head is hashed and printed, <code>%%SHA12%%...</code> for the kit's rules.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">4</div><div><b>The request, through the recorder.</b> <code>_call()</code>'s config: JSON, the schema, a cap of %%CAP%% output tokens, a thinking level, and in the edit arm a temperature.</div></div><div class="fs-branch"><b>Changed on purpose:</b> the level (LOW or HIGH) or the temperature (none, or 2.0). Nothing else.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">5</div><div><b>The model writes.</b> Thought tokens first, unseen and billed; then the answer, in the schema's JSON.</div></div><div class="fs-branch"><b>Varies:</b> the tokens it draws, so the words, the citations and sometimes the figures.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">6</div><div><b>The judge.</b> <code>run_eval.row_verdict()</code>, the gate's rule for one reply; <code>quote_check()</code> for each quote, against the pool.</div></div><div class="fs-branch"><b>Fixed:</b> the rule, as <code>make eval-live</code> applies it.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">7</div><div><b>The count.</b> Per arm and level: pass k/N with its interval, distinct answers, distinct cite sets, thought and visible tokens an answer, rupees an answer at list price.</div></div><div class="fs-branch"><b>Printed:</b> the table in steps 5, 7 and 8.</div></div>
+</div>
+<p class="dg-cap">The names are the kit's own: <code>evals/prompt_bench.py</code> and what it imports, in the order <code>make bench</code> runs them. Step 4 reads each piece in the code.</p></div>
+
+<h4>The gate's rule, answer by answer</h4>
+<p>Before the bench runs, see what its judge does with wording. The widget below is <code>run_eval</code>'s own reading of a figure, <code>normalise()</code> and <code>contains()</code>, and the text half of <code>row_verdict()</code>, ported to the browser and checked against the kit on %%N_CHECKED%% cases when this page was built. Try an answer in the first box: a chip fills it with one, and the lines under it say what the gate makes of it. Then edit the answers below it and watch three things move: each verdict, the count of distinct answers, and pass k/5 with its interval.</p>
+
+<div class="diagram" id="vb">
+<div class="dg-title">The gate's rule on golden row %%ROW%%: 45 and 60, each on its own boundary</div>
+<p class="vb-src" id="vb-src"></p>
+<div class="vb-try">
+<label class="vb-l" for="vb-try-in">An answer to try</label>
+<input id="vb-try-in" type="text" autocomplete="off" spellcheck="false">
+<div class="vb-chips" id="vb-chips"></div>
+<div class="vb-out" id="vb-try-out" aria-live="polite"></div>
+</div>
+<div class="vb-sets" id="vb-sets"></div>
+<p class="dg-cap">A verdict here is the gate's for a reply whose citations are valid. A figure must stand on its own boundary once number words have become digits on both sides, so "sixty" is 60, "160" is not, and neither is "60.5". Distinct answers counts the texts that still differ once their spaces are collapsed, as the bench counts them, and pass k/5 carries its Wilson interval, as the bench prints it.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the widget is not</div>
+<p>It is the text half of the rule, not all of it. On your lane <code>row_verdict()</code> also checks every citation: that its chunk id and its object belong to acme, and that its version is one the ledger lists as current (<code>judge_citations()</code>, step 4). The widget takes the citations as valid, so an answer it passes could still fail on the lane for a citation; a recorded answer that did keeps the bench's own verdict until you edit it. It calls no model. And the "45 rupees, 60 hours" chip is there to show the rule's blind spot: it checks figures, not meaning. That is why the gate checks citations as well, and why lesson 4.2 adds a judge.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: run, pool, thinking level, thought tokens, arm, recorder, distinct answers, pass k/N</h3><p>Fifteen rows, each with what it means and what it is on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Run</strong></td><td data-label="Meaning">One <code>generate()</code> of the row's prompt from the row's pool. The bench asks every arm and level <code>--runs</code> times, interleaved run by run, so that a slow minute on the lane falls on every arm alike.</td><td data-label="On your lane">Five a level; ten in each <code>make bench</code> on this page.</td></tr>
+<tr><td><strong>Pool held fixed</strong></td><td data-label="Meaning">The row's passages, read once from <code>POST /v1/passages</code> (top_k %%TOPK%%, the gate's) before any answer is asked, then reused by every arm, level and run.</td><td data-label="On your lane">%%ROW%%'s %%TOPK%% passages, from acme's documents.</td></tr>
+<tr><td><strong>Thinking level</strong></td><td data-label="Meaning">How much a Gemini 3 model thinks before it answers: %%LEVELS%%, google-genai's <code>ThinkingLevel</code>. MEDIUM is the model's own default (lesson B.5 quotes Google's guide).</td><td data-label="On your lane"><code>generator.py</code> sends %%KIT_LEVEL%%; the bench also sends HIGH.</td></tr>
+<tr><td><strong>Thought tokens</strong></td><td data-label="Meaning">What the model writes while it thinks: <code>thoughts_token_count</code>. Never shown, billed at the output rate.</td><td data-label="On your lane">The bench's <code>thought</code> column, an answer at a time.</td></tr>
+<tr><td><strong>Visible tokens</strong></td><td data-label="Meaning">The answer itself: <code>candidates_token_count</code>, the JSON the schema asks for.</td><td data-label="On your lane">The bench's <code>visible</code> column.</td></tr>
+<tr><td><strong>tokens_out</strong></td><td data-label="Meaning">The API's figure for one answer: the visible tokens plus the thought tokens, added together by <code>_usage()</code>. Right for the bill, and silent on how much was thinking.</td><td data-label="On your lane"><code>/v1/query</code>'s body and every usage row.</td></tr>
+<tr><td><strong>Temperature</strong></td><td data-label="Meaning">A sampling knob (lesson B.5). <code>generator.py</code> sends none, and %%MODEL%% ignores a custom value; the bench's edit arm can send one.</td><td data-label="On your lane">2.0 in step 8.</td></tr>
+<tr><td><strong>Arm</strong></td><td data-label="Meaning">One prompt and knob setting the bench answers with. <code>kit</code>: <code>generator.py</code>'s rules, no temperature. <code>edit</code>: every change you give at once (a rule added or dropped, or a temperature), so give one change at a time.</td><td data-label="On your lane"><code>kit</code>; <code>kit</code> and <code>edit</code> in step 8.</td></tr>
+<tr><td><strong>Recorder</strong></td><td data-label="Meaning">The bench's stand-in for <code>generator._client</code>: it sets the thinking level and any temperature on each call, passes everything else on as <code>_call()</code> built it, and keeps the config as sent, the usage with the thought tokens apart, and the time.</td><td data-label="On your lane">Its log is in the <code>--report</code> file, read in step 8.</td></tr>
+<tr><td><strong>Distinct answers</strong></td><td data-label="Meaning">Answer texts that differ within a row across its runs, once their spaces are collapsed. "3 of 5" is three wordings among five answers.</td><td data-label="On your lane">Per arm and level, in the table.</td></tr>
+<tr><td><strong>Cite sets</strong></td><td data-label="Meaning">The same count for the set of passages each answer cites.</td><td data-label="On your lane">Per arm and level, beside distinct answers.</td></tr>
+<tr><td><strong>Pass k/N</strong></td><td data-label="Meaning">Answers that passed <code>run_eval.row_verdict()</code>, the gate's rule for one reply, out of those asked: every required figure on its own boundary, no forbidden one, citations to the tenant's own, current documents. An error counts as asked and not passed.</td><td data-label="On your lane">%%ROW%% needs 45 and 60.</td></tr>
+<tr><td><strong>Wilson interval</strong></td><td data-label="Meaning">The 95% score interval printed beside every rate (<code>route_eval.rate()</code>). It stays honest at 0 and at N: %%W55%%.</td><td data-label="On your lane">Beside every pass rate.</td></tr>
+<tr><td><strong>Quote check</strong></td><td data-label="Meaning">Each citation's quote looked for in the passage it names: <code>own</code>, <code>elsewhere</code>, <code>absent</code>, <code>substituted</code> or <code>unread</code> (<code>run_eval.quote_check()</code>). Reported beside the verdict, never part of it; lesson 3.6 is about it.</td><td data-label="On your lane">The table's <code>quotes</code> lines.</td></tr>
+<tr><td><strong>List price</strong></td><td data-label="Meaning"><code>shared/prices.py</code>: %%MODEL%% at USD %%USD_IN%% in and USD %%USD_OUT%% out per million tokens, Rs %%USD_INR%% to the dollar, thought tokens at the output rate.</td><td data-label="On your lane">Rs %%INR_PER_K_OUT%% per 1,000 thought or visible tokens, Rs %%INR_PER_K_IN%% per 1,000 prompt tokens.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words carry the lesson: <em>distinct answers</em>, the variance a reader may not mind, and <em>pass k/N</em>, the variance the gate fails. The rest say how each is held still, counted and priced.</p>

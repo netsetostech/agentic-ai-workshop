@@ -49,7 +49,7 @@ def step_01_three_reads_of_one_pair(session):
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: {'name': 'EMBEDDING_MODEL', 'value': 'text-embedding-005'}
     {'name': 'EMBEDDING_VERSION', 'value': '1'}
-    api serves embedding text-embedding-005@1 | generator gemini-3.6-flash | retrieval hybrid vector
+    api serves embedding text-embedding-005@1 | generator gemini-3.6-flash | retrieval dense vector
     acme/code_on_wages_2019.pdf                  chunks   67  reused    0  embedded   67  text-embedding-005@1
     acme/dpdp_act_2023.pdf                       chunks   44  reused    0  embedded   44  text-embedding-005@1
     acme/hr_policy_2026.md                       chunks  283  reused    0  embedded  283  text-embedding-005@1

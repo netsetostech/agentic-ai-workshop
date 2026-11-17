@@ -1,0 +1,91 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 2 &middot; Retrieval &middot; Lesson 2.5</div>
+<h1>Rewrite the query before retrieval, and measure it: <span>the question in the documents' words for the search, the person's own words for the ranker and the model</span></h1>
+<p>Lesson 2.4 kept the tenant and the filters on every rung a pool can come from. This lesson changes what every rung is searched with. A person asks "%%PP01%%"; the handbook's clause says "%%EXP12%%" The kit's rewrite stage asks <code>%%MODEL%%</code> for the question as a search query in the documents' words, searches the index with that, and hands the reranker and the model the person's question unchanged. A literal guard refuses any rewrite that drops or changes a code, a grade or a figure, and every refusal and every failure searches the question as asked. The stage ships off. You will try the guard in the page, ask the Chat page a paraphrase with the stage off, read the stage in the kit, call the rewrite directly, turn it on for a candidate revision that takes no traffic and make it fail, then measure the rewrite arm against the lane's own retrieval on %%ANCH%% golden rows and %%PARA%% paraphrases: a measurement written to read right when the rewrite earns nothing.</p>
+<div class="hero-chips"><div class="hero-chip">QUERY_REWRITE: off by default</div><div class="hero-chip">%%MODEL%% on global</div><div class="hero-chip">searched: the rewrite</div><div class="hero-chip">reranked and answered: the question</div><div class="hero-chip">keeps_literals()</div><div class="hero-chip">rewritten, same, rejected, fallback</div><div class="hero-chip">make ablate --rewrite --paraphrases</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a rewrite is for, and the one rule it never breaks</a></li>
+<li><a href="#s2">The words: rewrite, search query, literal, guard, outcome, query_rewrite line, prompt version, paraphrase, arm, lift</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The Chat page with the stage off: the stream never asks for a rewrite</a></li>
+<li><a href="#s4">The stage in the kit: the call, the guard, one line in /v1/query, and two lines that did not change</a></li>
+<li><a href="#s5">rewrite() called directly: one question, one call, one outcome</a></li>
+<li><a href="#s6">The stage on a candidate: QUERY_REWRITE=on, a forced failure, and the undo</a></li>
+<li><a href="#s7">The measurement: the rewrite arm against the lane, on the golden rows and the paraphrases</a></li>
+<li><a href="#s8">Change it: delete the prompt's literal rule and measure the guard; where the stage cannot go</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a query rewrite may change and what it must not, how the kit's literal guard decides, and why the stage ships off until it is measured. Then you will prove it on your lane: the Chat page with the stage off, <code>rewrite()</code> called directly, <code>QUERY_REWRITE=on</code> on a candidate revision with a forced failure, and <code>make ablate</code> with <code>--rewrite</code> on the golden rows and their paraphrases.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a rewrite is for, and the one rule it never breaks</h3><p>The asker's words and the documents' words, one cheap call between them, and a guard that keeps every code and figure.</p></div></div>
+
+<p><strong>People ask in their own words; documents are written in theirs.</strong> The dense leg compares meanings, so "quit" finds "resign", as lesson 2.2 showed. It bridges much of the gap between a question and the clause that answers it, not all of it: a question asked as a sentence, with an informal term, an abbreviation or a few filler words, is a different text from the clause. A query rewrite asks a cheap model to restate the question as a search query before retrieval runs: the formal term for an informal one, a law's full name beside its abbreviation, one line of at most 40 words, nothing answered and nothing added. The kit's prompt also takes a question in Hindi or in Hinglish and asks for the query in English.</p>
+
+<p><strong>It changes what is searched, never what is reranked or answered.</strong> On <code>/v1/query</code> the handler embeds the question once. On an answer-cache miss, one line, <code>search_query()</code>, decides what <code>retrieve()</code> searches: the question and its vector, or an accepted rewrite and the rewrite's own vector. Every line after it gets the person's question: <code>rerank()</code> orders the pool against <code>req.query</code>, <code>generate()</code> answers <code>req.query</code>, and the answer cache stores the answer under the question's own vector. The reranker's job is to judge the pool against what the person asked, and the model's job is to answer the person; a rewrite that narrowed or misread the question would be invisible if either of them read it. Confined to the search, a bad rewrite can cost recall, a clause missing from the pool, and the reranker still judges what did arrive against the real question.</p>
+
+<p><strong>Every code and figure survives, or the question is searched as asked.</strong> A model that tidies "Rs 3 lakh" into "Rs 3,00,000", or "E3" into "senior employees", has changed the question: for the index a different grade or amount is a different clause. The guard, <code>keeps_literals()</code>, lists the question's literals, every token with a digit in it plus an amount's rupee and a figure's unit, such as LV-07, E3, s.53, Rs 52,000 and 45 days. It compares them after a normalisation that forgives case, spacing, dashes, the rupee's spellings and digits of any script, and refuses the rewrite when one is missing. Then the stage searches the question. A timeout, an error, an answer outside the schema or an empty query search the question too. Each call ends in one of four outcomes, <code>rewritten</code>, <code>same</code>, <code>rejected</code> or <code>fallback</code>, which the answer's stages carry and one log line per call records, with no question text in it.</p>
+
+<p><strong>It ships off.</strong> <code>QUERY_REWRITE</code> is <code>%%QR_DEFAULT%%</code> unless a revision's environment says otherwise, so the API image every learner builds carries the stage without changing one answer. config.py's own comment says it stays off "until evals/ablate.py --rewrite measures it", and step 7 is that measurement. When the lane's retrieval was last measured, on %%BASE_DATE%% over the %%BASE_ROWS%% anchored rows the golden set had then, its recall at five was already %%BASE_R5%%, so this page is written to read right when the rewrite shows no lift; the paraphrases are where a rewrite may earn its call.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128218;</div><div>
+<p><strong>The reference librarian.</strong> You walk up to the desk and ask in your own words: "How much can I claim per trip for domestic travel?" The librarian does not search the catalogue for "claim" and "trip". She looks under the catalogue's own heading, travel reimbursement, and brings back the shelf. Then she steps aside: the specialist who reads the shelf and answers you works from your question, not from her heading, because yours is the question to be answered. If you quoted a call number, a form or a sum, LV-07, Form 16, Rs 3 lakh, she copies it onto her slip exactly as you said it, and if her heading would have lost it, she searches your words instead. And when she is away from the desk you are not turned away: the catalogue is searched with your words, as it would have been with no librarian at all.</p></div></div>
+
+<h4>Who reads which text: /v1/query, line by line</h4>
+<div class="diagram" id="paths">
+<div class="dg-title">/v1/query with the stage - the text each line is given</div>
+<ol class="wr-list">
+<li class="wr-row"><span class="rb-tag">question</span> <code>qvec = embed_query(req.query)</code>: one vector for the question, which the answer cache and, unless a rewrite is accepted, retrieval share</li>
+<li class="wr-row"><span class="rb-tag">question</span> <code>_semantic_hit(req, qvec, fingerprint)</code>: the answer cache's lookup; a hit retrieves nothing, so it asks for no rewrite (<code>SEMANTIC_CACHE</code> is off on the lane)</li>
+<li class="wr-row wr-stage"><span class="rb-tag s">chooses</span> <code>search_query(req.query, qvec, stages, req.tenant_id)</code>: off, the question and qvec; on, the rewrite and its own embedding when the guard keeps it, else the question and qvec</li>
+<li class="wr-row"><span class="rb-tag s">search query</span> <code>retrieve(search_q, ..., vec=search_vec)</code>: the one line that reads what the stage chose</li>
+<li class="wr-row"><span class="rb-tag">question</span> <code>rerank(req.query, chunks, ...)</code>: the pool ordered against what the person asked</li>
+<li class="wr-row"><span class="rb-tag">question</span> <code>generate(req.query, chunks, ...)</code>: the answer to what the person asked</li>
+<li class="wr-row"><span class="rb-tag">question</span> <code>_semantic_store(req, qvec, ans, fingerprint)</code>: the answer kept under the question and its own vector</li>
+</ol>
+<p class="dg-cap">Every line is main.py's, quoted whole in step 4. <code>/v1/stream</code>, the Chat page's route, and <code>/v1/passages</code> have no <code>search_query</code> line: they search the question whatever <code>QUERY_REWRITE</code> says.</p>
+</div>
+
+<h4>The rewrite bench: the kit's guard in the page, and BM25 over acme's corpus</h4>
+<p>Pick one of %%BENCH_N%% rows, golden questions and paraphrases of them. For each the bench shows the question and its literals, a rewrite, the outcome the kit's rules give that rewrite, and where BM25 ranks the row's anchor clause among the %%CHUNKS%% chunks the kit's chunker cuts from acme's %%DOCS%% markdown mirrors, once for the question and once for the text the stage would search. Then type a rewrite of your own: the guard answers as the kit would, names every literal you dropped, and names any you added, which the guard does not look for. On this page, %%BENCH_STATE%%.</p>
+
+<div class="diagram rb" id="bench">
+<div class="dg-title">Rewrite bench - shared/query_rewrite.py's guard and outcome rule, run in this page</div>
+<label class="rb-l">A golden question or a paraphrase<select id="rb-row">%%BENCH_OPTIONS%%</select></label>
+<div class="rb-out" id="rb-row-out" aria-live="polite"></div>
+<label class="rb-l">Your own rewrite of this question, as the model might answer it<textarea id="rb-mine" rows="2" spellcheck="false" placeholder="a search query for the question above"></textarea></label>
+<div class="rb-out" id="rb-mine-out" aria-live="polite"></div>
+<p class="dg-cap">The guard is <code>normalise()</code>, <code>literals()</code>, <code>dropped()</code> and <code>rewrite()</code>'s outcome rule, ported to JavaScript. When this page was built, node ran the port over every golden and paraphrase question and over %%N_NODE_PAIRS%% question-and-rewrite pairs, and every verdict equalled the kit's. The ranks are BM25 with rank_bm25's constants, lesson 2.2's port of the ablation's sparse leg, computed when the page was built. %%BENCH_SUMMARY%%</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the bench is not</div>
+<p>It is not the lane. The lane searches by meaning, with a 768-number vector this page cannot compute without a model; BM25 counts the words a query shares with each chunk, weighted by how rare they are, which makes visible in a number what "the documents' words" means. On the contractor question, jn-07, the sentence as asked ranks the clause %%JN07_Q%%, partly because this BM25, as rank_bm25 builds it, still gives "a", "to" and "and" a little weight, so a long sentence pulls long Act pages up; %%JN07_S%% Whether a dense retriever gains anything from the same rewrite is a separate question, and step 7 measures it on your lane. Your own rewrite gets the guard's verdict but no rank: ranking it would need the whole corpus in the page.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: rewrite, search query, literal, guard, outcome, query_rewrite line, prompt version, paraphrase, arm, lift</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Query rewrite</strong></td><td data-label="Meaning">One call to <code>QUERY_REWRITE_MODEL</code> for the question as a search query: the documents' formal terms, a law's full name beside its abbreviation, one line of at most 40 words, every literal copied. JSON with one <code>query</code> string, thinking budget 0, one attempt, a %%TIMEOUT%% s timeout, at most %%MAXOUT%% output tokens.</td><td data-label="On your lane"><code>shared/query_rewrite.rewrite()</code>; off on the lane.</td></tr>
+<tr><td><strong>Search query</strong></td><td data-label="Meaning">What <code>retrieve()</code> searches: the rewrite and its own embedding when the outcome is <code>rewritten</code>, else the question and the vector the handler already has.</td><td data-label="On your lane"><code>stages.search_query</code> on a candidate's answer, step 6.</td></tr>
+<tr><td><strong>QUERY_REWRITE, QUERY_REWRITE_MODEL</strong></td><td data-label="Meaning">The switch, <code>off</code> or <code>on</code>, read once at startup; any other value refuses to start. The model is <code>%%MODEL%%</code> unless set.</td><td data-label="On your lane">Both absent from the live service, so the defaults: the names box after the setup.</td></tr>
+<tr><td><strong>Literal</strong></td><td data-label="Meaning">A token of the question with a digit in it, with an amount's rupee and a figure's unit: lv-07, e3, s.53, rs 52,000, 45 days, 12.5%. Compared after <code>normalise()</code>. A figure in words, a name and an acronym are not literals.</td><td data-label="On your lane">%%LIT_ROWS%% of the %%ANCH%% anchored golden rows carry one.</td></tr>
+<tr><td><strong>The literal guard</strong></td><td data-label="Meaning"><code>dropped()</code> lists the question's literals the rewrite does not carry as written; <code>keeps_literals()</code> is true when that list is empty. It never checks what a rewrite adds.</td><td data-label="On your lane">Step 4's offline cell; the refused count in every tally line.</td></tr>
+<tr><td><strong>Outcome</strong></td><td data-label="Meaning"><code>rewritten</code>: search the rewrite. <code>same</code>: the model gave the question back. <code>rejected</code>: the guard refused it. <code>fallback</code>: the call, the parse or the rewrite's embedding failed. Only <code>rewritten</code> changes the search.</td><td data-label="On your lane"><code>stages.rewrite</code>; the tally in step 7.</td></tr>
+<tr><td><strong>query_rewrite line</strong></td><td data-label="Meaning"><code>row()</code>: one log line per call with the outcome, the error, how many literals were dropped, the model, tokens, cost, milliseconds, tenant and prompt version. No question, no rewrite, no literal. The call's cost is on this line only, not on the usage row.</td><td data-label="On your lane">Step 6's log read.</td></tr>
+<tr><td><strong>PROMPT_VERSION</strong></td><td data-label="Meaning">The prompt's version, on every line: <code>%%PROMPT_VERSION%%</code>. An edited prompt under the old version makes every line misreport which prompt ran.</td><td data-label="On your lane">Step 8 edits the prompt in your clone and puts it back.</td></tr>
+<tr><td><strong>Paraphrase row</strong></td><td data-label="Meaning">A <code>same: true</code> row of evals/paraphrases.jsonl: a golden question in other words, scored on the anchors of the row it rewords. A <code>same: false</code> row asks something else and is never scored.</td><td data-label="On your lane">%%PARA%% of the file's %%PARA_ALL%% rows; step 7.</td></tr>
+<tr><td><strong>The rewrite arm</strong></td><td data-label="Meaning">rewrite, then dense 20, then rerank 5: the lane's Firestore rung searched with the rewrite and the reranker given the question. <code>--rewrite</code> builds it beside the <code>--arms</code> keys, never as one of them.</td><td data-label="On your lane">The second line of every run in step 7.</td></tr>
+<tr><td><strong>Lift</strong></td><td data-label="Meaning">The rewrite row's recall@5 or MRR minus the lane's, on the same rows in the same run. One row whose anchors all appear or vanish moves the golden mean by %%ONE_G%% and the paraphrase mean by %%ONE_P%%.</td><td data-label="On your lane">Step 7's reading.</td></tr>
+<tr><td><strong>Candidate revision</strong></td><td data-label="Meaning">A revision of <code>documind-api</code> deployed with <code>--no-traffic</code> and a tag: its own URL, no traffic, the live revision untouched.</td><td data-label="On your lane">Step 6, then untagged.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words carry the lesson: <em>search query</em> and <em>question</em>. The first is all the stage may change; the second is what everything after retrieval reads. When an answer looks wrong with the stage on, <code>stages.search_query</code> says which text found its pool, and the question is still the one that was answered.</p>

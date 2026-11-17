@@ -4,6 +4,12 @@
 # new revision, a pause, then the rest; `gcloud deploy targets rollback documind-prod`
 # at any point. (The `targets` group is not optional - there is no bare
 # `gcloud deploy rollback`, and finding that out during an incident is the wrong time.)
+#
+# Both targets are this project and this region (13 October 2026): the kit has one
+# documind-api, so a "staging" rollout replaces the live service's revision - there is
+# no second environment to stage into. The release path the course proves is lesson
+# 11.2's no-traffic candidate behind the gate (make candidate, make gate, make promote);
+# this pipeline is the optional Cloud Deploy form of it.
 resource "google_clouddeploy_target" "staging" {
   location = var.region
   name     = "documind-staging"

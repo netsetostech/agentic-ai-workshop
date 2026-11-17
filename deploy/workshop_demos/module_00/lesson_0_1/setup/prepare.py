@@ -25,7 +25,7 @@ RETRY_FAILED_STEP = False
 
 
 # Original CLI workflow for step_01_before_you_run_anything_open_cloud_shell.
-COMMANDS_01 = """gcloud --version | head -n 1
+COMMANDS_01 = """gcloud --version | sed -n 1p
 gcloud config get-value account
 gcloud config get-value project
 

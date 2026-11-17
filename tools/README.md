@@ -11,6 +11,7 @@
 | `check_one_retrieval.py` | one retrieval implementation under `deploy/` |
 | `check_real_corpus.py` | every golden figure survives chunking; a plain lexical retriever finds every anchor |
 | `check_local_lane.py` | the Rs 0 lane answers what the corpus answers, refuses what it does not, leaks nothing |
+| `probe_agent_stack.py` | batch 0's Agent Engine probe for lesson 10.9: a dry run unless `--yes`, run by the author on their own lane only; deletes what it creates and writes `plan/agent-engine-probe-<date>.md` with every identifier replaced (`--run-note` prints the prerequisites) |
 | `build_workshop_demos.py` | extracts main-HTML examples and builds the reviewed lesson demos (`--check` detects drift) |
 | `group_workshop_demos.py` | groups actual HTML sections into numbered files, with setup, conditional paths and end-of-lesson restoration |
 | `workshop_demo_groups.py` | reviewed optional/recovery/cleanup roles, manual checkpoints and upstream prerequisites |

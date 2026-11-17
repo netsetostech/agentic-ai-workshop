@@ -132,6 +132,8 @@ for name in re.findall(r'resource "google_monitoring_alert_policy" "(\w+)"', src
     b = tf_block(src[ALERTS], f'resource "google_monitoring_alert_policy" "{name}"')
     if "count        = var.reconcile_job ? 1 : 0" in b:
         continue
+    if name == "ingest_backlog":                     # 13 October 2026, after this lesson's change: the story's lane predates it
+        continue
     disp = re.search(r'display_name = "([^"]+)"', b).group(1)
     flt = re.search(r'\n      filter\s+= "(.*)"\n', b).group(1).replace('\\"', '"')
     flt = flt.replace("${google_pubsub_subscription.ingest_dlq_sub.name}", "ingest-dlq-sub")
@@ -326,7 +328,7 @@ CELLS = {
     "ask": heredoc(ASK_PY) + "\nsleep 20      # Cloud Logging needs a moment to show the rows\nmake usage PROJECT=\"$PROJECT\" HOURS=1",
     "recon": heredoc(RECON_PY),
     "alerts": heredoc(ALERTS_PY),
-    "plan": ('make plan PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ME"   # the flags you gave make up; the plan refuses to delete\n'
+    "plan": ('make plan PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ME" DESK_JOB=true   # your last apply\'s switches: 10.4 added DESK_JOB=true (and GCHAT_DOOR=true if you turned the door on); the plan refuses to delete\n'
              'python commands/infrastructure.py apply --project "$PROJECT" --region "$REGION" --terraform-dir terraform   # make up\'s first line, alone'),
     "drill": ('gcloud pubsub topics publish documind-ingest-dlq --project "$PROJECT" --message="drill 13.2: not an upload" --attribute=drill=13.2\n'
               "sleep 300     # a sample a minute, shown up to two minutes late, and the policy wants a minute above zero\n" + heredoc(GAUGE_PY)),
@@ -671,7 +673,7 @@ def rag():
         LAST["q"] = q
         return [0.001] * 768
     main.embed_query = retriever.embed_query = embed
-    main.enforce_membership = lambda email, tenant_id: None     # the roster is lesson 8's; every ask here is a member's
+    main.enforce_membership = lambda email, tenant_id: None     # the roster is lesson 4.6's; every ask here is a member's
     main.record = lambda db, usd: None                         # the month's budget counter is 11.6's
 
     def caches():
@@ -1106,7 +1108,7 @@ JS = "<script>\n(function(){\n'use strict';\n" + squeeze(UI_JS).replace("</", "<
 assert "<div" not in JS
 
 N_TF_POLICIES = len(re.findall(r'resource "google_monitoring_alert_policy"', src[ALERTS]))
-assert N_TF_POLICIES == 7 and src[ALERTS].count('alert_policy" "dlq_depth"') == 1        # the setup box's grep prints 1
+assert N_TF_POLICIES == 8 and src[ALERTS].count('alert_policy" "dlq_depth"') == 1        # the setup box's grep prints 1
 STATS = {"N_TF_POLICIES": str(N_TF_POLICIES), "N_LANE_POLICIES": str(len(LANE_POLICIES)), "N_METRICS": str(len(METRICS)),
          "IMAGE_INR": f"{int(IMAGE_INR * 100 + 0.5 + 1e-7) / 100:.2f}", "N_INTENTS": str(len(INTENTS)), "N_ROWS": str(len(PANEL))}
 

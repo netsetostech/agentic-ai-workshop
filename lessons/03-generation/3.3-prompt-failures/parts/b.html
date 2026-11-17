@@ -1,0 +1,68 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>API</code> and the token function <code>tok</code> from the setup block, and acme pinned to the kit's own index with the setup section's <code>make tenant-backend</code> line. Step 3 asks one question in the UI, signed in as yourself. Step 5's eval asks every golden row and takes ten minutes or more. Step 7's bench imports <code>services/rag-api/generator.py</code> into your shell, so the venv needs rag-api's packages, which Module 0's install put there (if the bench says one is missing: <code>python -m pip install -r services/rag-api/requirements.txt</code>), and its model calls go out on your Application Default Credentials, which the setup block's <code>adc ok</code> line checks. Steps 4 and 8 read files and call nothing.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The UI</span><h3>One golden question in the Chat page, read the way the gate reads it</h3><p>jn-03 asked as yourself: the answer's two figures, the passages the model was given, and what each would mean.</p></div></div>
+
+<h4>Definition</h4>
+<p>The Chat page sends your question to rag-api's <code>/v1/stream</code> as you, through IAP, and asks for %%UI_TOPK%% passages. Before the first token arrives, the stream sends one citation event per passage the model was given: the packed set, after the budget, which the page lists under <em>Sources</em>, each with its first 200 characters. The answer streams in as plain text, because a stream carries no response schema: no <code>answerable</code> flag, no quotes of the model's own. The gate asks <code>/v1/query</code> instead, for %%TOP_K%% passages and a structured reply. The model reads the same SYSTEM either way, but from a pool one passage deeper, and the gate can judge its reply field by field. So the Chat page is where a person meets a failure, and the gate is where one can be counted.</p>
+
+<h4>The code</h4>
+@@ui_stream@@
+@@stream_cites@@
+
+<h4>Do it: ask jn-03 and judge the reply by eye</h4>
+<p>Open the UI at <code>https://documind-ui-NUMBER.asia-south1.run.app</code>, signed in as yourself; Module 0 put your account on acme's roster. On the Chat page, with Brain <code>direct</code> if the sidebar offers a choice, ask golden row jn-03's question:</p>
+<p><em>I am an E3 leaving with 50 days of earned leave. How much is encashed and what notice do I serve?</em></p>
+<p>Then check it the way <code>row_verdict()</code> and <code>anchors_found()</code> would:</p>
+<ul>
+<li><strong>The figures.</strong> The row's <code>must_contain</code> is 45 and 60: LV-07 caps leave encashed on exit at 45 days, and NP-03 sets an E3's notice period at 60 days. Does the answer hold both?</li>
+<li><strong>The passages.</strong> Open <em>Sources</em>. Each line is a passage's opening, and a handbook passage opens with its clause code. The row's anchors are LV-07 and NP-03: are both there?</li>
+<li><strong>The address.</strong> Both clauses in Sources and a figure missing: the prompt's failure. A clause missing: retrieval's, whatever the answer says. Both figures there: the row would pass.</li>
+</ul>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You judged one reply by eye, the way the gate judges every row: the figures first, then whether the passages that state them were in front of the model. In the UI the Sources list is the evidence, because it is exactly what the model read. The gate cannot see this page. It asks <code>/v1/query</code> for all %%N_ROWS%% rows, with %%TOP_K%% passages and a schema, so its reply to jn-03 can differ from yours: lesson 3.1 measures how much one question's answers vary between runs. Step 5 asks every row that way and keeps each reply.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit</span><h3>The prompt and the gate's rule in the kit: SYSTEM, the prompt line, row_verdict() and the passage checks</h3><p>The %%N_RULES%% rules every answer starts from, the line that joins them to the passages, and the code that decides a row failed and why.</p></div></div>
+
+<h4>Definition</h4>
+<p>SYSTEM is a string set once in <code>generator.py</code>: a line saying who the model is, then %%N_RULES%% numbered rules. Rule 1 confines the answer to the numbered context, rule 2 asks for <code>[N]</code> markers, rule 3 is the refusal rule, rule 4 caps the length, and rule 5 says what a quote is: the clause that answers, at most twenty-five words. A sixth, <code>DATED_RULE</code>, is added only when a packed passage carries an effective date. None of the corpus's documents declares one, while %%N_DEMO_DATED%% rehearsal documents under <code>evals/demo</code> do (%%DEMO_DATED%%). So on a lane that holds the corpus alone, no golden row's prompt carries rule 6; if an earlier lesson left a dated version current, its rows' prompts on the lane do. <code>generate()</code> packs the passages within the budget (lesson 3.4) and builds the prompt in one line: SYSTEM, the dated rule when it applies, the context, the question.</p>
+<p>The gate's rule has two layers. <code>THRESHOLDS</code> are rates over many rows, so a run can be green with rows failing: <code>correct_rate</code> needs %%NEED_CORRECT%% of the %%N_ANS%% answerable rows answered right, so up to %%MAX_FAIL%% can fail before that rate turns red, and <code>refusal_rate</code> needs %%NEED_REFUSED%% of the %%N_UNANS%% unanswerable rows refused. Those failing rows are what this lesson works from. <code>row_verdict()</code> is the gate's judgment of one row as a function of the reply alone: <code>live()</code> keeps an inline copy that lessons quote, and a test holds the two equal. Figures are compared with <code>normalise()</code> on both sides, so 300 and three hundred are one figure, and <code>contains()</code> makes a figure stand on its own: 60 is not in 160 days. Since 8 October each row's record keeps its answer and its citations, and with the switch on, <code>quote_check()</code> and <code>anchors_found()</code> run on the pool read back.</p>
+
+<h4>The code</h4>
+@@system@@
+@@prompt_line@@
+@@thresholds@@
+@@row_verdict@@
+@@normalise@@
+@@kept@@
+@@quote_check@@
+@@anchors@@
+
+<h4>Do it: SYSTEM's rules, as the bench will number them</h4>
+<p>The cell reads SYSTEM and DATED_RULE from <code>generator.py</code> as text, with Python's own parser, and splits SYSTEM into its rules with the bench's own reader, <code>rules_of()</code>. It imports no Google library and calls nothing.</p>
+%%CELL_RULES%%
+%%OUT_RULES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read the instructions every answer on your lane starts from, numbered as step 7's bench numbers them: a rule you add becomes rule 6 there, in memory. The last line is the sha256 of SYSTEM followed by DATED_RULE, the text a prompt version names (lesson 3.6 binds it to <code>%%PROMPT_LABEL%%</code>), and step 7's kit arm prints the same value. Nothing in SYSTEM names a document, a figure or a tenant: its rules are general, and a fix written into it has to be general too.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 4 &middot; REST</span><h3>The live eval, with every answerable row's pool read again</h3><p>Every golden row asked through <code>/v1/query</code>, every answerable row's passages read back through <code>/v1/passages</code>, and every record kept in a report.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make eval-live</code> asks every golden row through <code>/v1/query</code> as <code>documind-ui-sa</code>, which <code>make roster</code> put on the three golden tenants, and every isolation row again as <code>documind-outsider-sa</code>, which must be refused with a 403. <code>REPORT=</code> writes each row's record: its outcome, verdict and why, its latency and stages, the first 600 characters of its answer and its citations. <code>DOCUMIND_EVAL_PASSAGES=1</code> is an environment switch, not a flag, because lessons quote <code>main()</code> and the recipe whole; make passes the environment straight through to the script. With it on, the eval reads each answerable row's pool again from <code>/v1/passages</code>: the same door, roster, retrieval and rerank, and no model call. Each citation gets a quote check, each anchor a found or not found, and two [info] lines print the totals. Neither is a threshold.</p>
+
+<h4>The code</h4>
+@@eval_live@@
+
+<h4>Do it: the eval, with the switch on</h4>
+%%CELL_EVAL%%
+%%OUT_EVAL%%
+
+<p>Read it from the top. The nine rates and their thresholds decide the exit code. The two [info] lines are the switch's: <code>quote_passage_rate</code> counts the answered rows' quotes found in the passage they cite, and <code>must_retrieve_recall</code> the anchors found in the pools read back. The shape table says where the passes fell. Under <em>rows that cost a point</em> each failing row is printed with its why, and the report's path is the last line before the verdict. A run can exit green and still list failing rows, and that list is what step 6 reads.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The gate asked your lane all %%N_ROWS%% rows and judged every reply with the rule you read in step 4. Because of the switch, every answerable row's record also says what the model had in front of it: each anchor found or not, and each quote checked against its own passage. The report is now the eval's answers as data, and step 6 reads it without asking the model anything again.</p></div>

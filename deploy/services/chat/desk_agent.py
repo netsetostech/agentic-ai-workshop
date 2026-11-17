@@ -24,7 +24,8 @@ ledger come from the ToolRuntime context, never from an argument the model write
 only arm A*'s model chooses a class, among the person's. Every search is documind_tools.retrieve(..., passages=True),
 the one retrieval: rag-api's /v1/passages, each chunk's full text and no generated answer; a passage with no doc_type,
 or one outside the search's classes, is dropped. A refusal is a ToolException, which LangChain hands the model as an
-error result with status "error", the one refusal marker.
+error result with status "error", the one refusal marker. With AGENT_FENCE=on (workshop lesson 10.8) the model reads
+each passage's text inside shared/spotlight.py's fence, RULE first; the ledger check_args reads keeps the clean text.
 
 THE ARGUMENT CHECK (desk_calc.check_args). Each argument has one source: a fact about the person (months, days, a
 balance, a wage, years, a headcount, a date) must be written in the person's message as the router masked it; a
@@ -58,7 +59,7 @@ except ImportError:                                   # a bare langgraph install
 
 import limits
 from desk_routes import AGENT_MODEL, DESKS
-from shared import desk_calc, desk_law, documind_tools
+from shared import desk_calc, desk_law, documind_tools, spotlight
 
 log = logging.getLogger("documind.chat.desk_agent")
 
@@ -116,7 +117,8 @@ def _search(ctx: dict, text: str, classes: list[str]) -> dict:
                         "doc_type": p.get("doc_type"), "section": p.get("section"), "text": p["text"]})
         if delivered and r.get("answerable") and found:
             ctx["desk_answerable"] = True
-    return {"passages": out, "answerable": bool(r.get("answerable")) and bool(found)}
+    result = {"passages": out, "answerable": bool(r.get("answerable")) and bool(found)}
+    return spotlight.fenced(result, "passages", "text") if spotlight.FENCE else result     # AGENT_FENCE (lesson 10.8)
 
 
 @tool("retrieve")

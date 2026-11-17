@@ -1,0 +1,88 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 8 &middot; Ingestion practical &middot; Lesson 8.4</div>
+<h1>System design: a self-updating documentation platform, <span>where one changed document ripples through %%N_ST_W%% stations, the copies that do not follow are named, and the bill is read at three scales</span></h1>
+<p>Module 1 built the parts one lesson at a time: the event an upload becomes, the reindex that pays only for what changed, the versions that retire instead of being deleted, and the walk that finds a lost event. Lesson 6.3 made the caches follow the ledger, and lesson 8.3 priced the kit at ten million documents. This page puts them together as one system with one job. When a document changes, the answers change with it, nobody rebuilds anything, and nothing stale is served in between. It is a design page, written in the shape of the capstone rubric that lesson 11.8 publishes. Every number on it is computed from the kit when the page is built, and the sections on the first four dimensions each end in a script you can run for Rs 0.</p>
+<div class="hero-chips"><div class="hero-chip">OBJECT_FINALIZE, and nothing on delete</div><div class="hero-chip">%%REUSED%% of %%N_HB%% chunks reused</div><div class="hero-chip">staged, then one swap</div><div class="hero-chip">retired for %%RETENTION%% days, never deleted</div><div class="hero-chip">one fingerprint, two caches</div><div class="hero-chip">no alert on the main subscription</div><div class="hero-chip">RECONCILE_JOB ?= false</div><div class="hero-chip">Rs at 1k, 100k and 10M documents</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What a self-updating documentation platform is, and how a design is scored</a></li>
+<li><a href="#s2">The words: source, version, generation, claim, carry-over, swap, retire, withdraw, fingerprint, walk, drift</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The UI and the ledger: where a change lands on your lane</a></li>
+<li><a href="#s4">Architecture: the path a change takes, station by station</a></li>
+<li><a href="#s5">Architecture: three designs the kit rejected, and the number that would change each</a></li>
+<li><a href="#s6">Failure modes: what pages, what does not, and what the design does about it</a></li>
+<li><a href="#s7">Cost: standing still, staying fresh, and one change, at 1k, 100k and 10M documents</a></li>
+<li><a href="#s8">Cost at 10&times;: the fingerprint breaks first</a></li>
+<li><a href="#s9">Evals: a change is a release, and the check that cannot fail</a></li>
+<li><a href="#s10">Next month: what the kit's own operating record moved to the top</a></li>
+<li><a href="#s11">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a documentation platform keeps its answers current as its documents change, by tracing one change through every part of the kit it touches, and how such a design is scored on the capstone rubric's five dimensions. Then you will back each answer with a script: the change re-run offline, three rejected designs with their thresholds, the alerts the kit declares and the ones it does not, the cost at 1k, 100k and 10M documents, and the eval rows that move with a document.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a self-updating documentation platform is, and how a design is scored</h3><p>A document changes; the answers follow, every copy follows, and a missed change is found. The kit has every station, and the panel shows what each one does.</p></div></div>
+
+<p><strong>A documentation platform answers questions from a company's own documents, and keeping it current is the hard part.</strong> A handbook gets a new clause, an Act is amended, a policy is withdrawn. Within minutes the platform should answer from the new text, everywhere it keeps a copy. No person should have to rebuild an index, no reader should ever see two versions or none, and no cache should serve the old answer. When something goes wrong, an event that never arrives, a delivery refused twelve times, a worker cut off halfway, the platform should notice. And a person should be able to put the old version back for nothing.</p>
+
+<p>DocuMind already does most of this, part by part. The bucket publishes an event for every upload. The worker refuses events older than what it has indexed, claims each version once, re-embeds only the chunks that changed, and makes the new version current in one swap. The ledger records what is current, and its fingerprint tells both caches when the corpus moved. A nightly walk compares the bucket with the ledger and repairs the difference. This page is the design those parts add up to, with an honest list of where they stop.</p>
+
+<p><strong>A design is scored the way the capstone is.</strong> The capstone rubric, which lesson 11.8 publishes, has %%N_COMPONENTS%% components that must exist in the learner's fork, each checked PASS or FAIL by <code>make capstone-check</code>, and %%N_DIMS%% dimensions the defence scores 0 to 3, %%POINTS%% points in all, with %%PASS%% to pass and no dimension at 0. This page's proof is two of the components: the architecture, naming at least three rejected options and why, and the cost model at three scales, in rupees and dated. The sections below follow the dimensions in order, and each one shows what moves an answer from a 2 to a 3.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Dimension</th><th>A 2 looks like</th><th>A 3 adds</th><th>On this page</th></tr></thead>
+<tbody>
+<tr><td><strong>Architecture</strong></td><td data-label="A 2 looks like">The path a change takes, drawn, with each part defended by reasons specific to this workload.</td><td data-label="A 3 adds">What was rejected, and the threshold that would change the decision: a number, not a feeling.</td><td data-label="On this page">Steps 4 and 5</td></tr>
+<tr><td><strong>Failure modes</strong></td><td data-label="A 2 looks like">Four failure modes with real symptoms, each reproduced by a script.</td><td data-label="A 3 adds">Which ones the monitoring catches, which it misses, and what was done about the misses.</td><td data-label="On this page">Step 6</td></tr>
+<tr><td><strong>Cost at 10&times;</strong></td><td data-label="A 2 looks like">The cost split into its parts, in rupees and dollars, dated.</td><td data-label="A 3 adds">What breaks first at ten times the load, named as a specific limit rather than "we would scale it".</td><td data-label="On this page">Steps 7 and 8</td></tr>
+<tr><td><strong>Evals</strong></td><td data-label="A 2 looks like">Thresholds with reasons, and a red run to point at.</td><td data-label="A 3 adds">Which assertions are vacuous, so they cannot fail, and what replaced them.</td><td data-label="On this page">Step 9</td></tr>
+<tr><td><strong>What you would do next month</strong></td><td data-label="A 2 looks like">A prioritised list with a reason for the order.</td><td data-label="A 3 adds">A top item learned from operating the system: an observation, not a plan made before it ran.</td><td data-label="On this page">Step 10</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="analogy"><div class="analogy-icon">&#128240;</div><div>
+<p><strong>A newspaper's live edition.</strong> A paper that publishes online keeps every story current. When a reporter files a correction, the desk does not retype the paper: it sets the corrected story beside the page, then swaps it in whole, so no reader ever sees half a correction. The old version goes to the archive, stamped with the hour it was replaced, and stays there thirty days, so an editor who regrets the change can put it back in a minute. The syndication partners get the corrected story too, unless a contract keeps that story in the country. The paper's summaries, written from its stories, carry the edition they were written from, and a summary from an old edition is not reused. A night editor walks the shelves against the index and fixes what the day missed, if the paper has hired one. And some things the paper does not notice on its own: a story pulled from the shelf without a word to the desk, a wire that went quiet, a printer that froze halfway through a page.</p>
+<p>The wire is the bucket's notification and its subscription. Setting the story beside the page and swapping it in is the staged swap; the archive is the retired rows and their %%RETENTION%%-day window. The syndication partners are the managed stores, and the contract is the tenant's data_region. The edition stamp is the ledger's fingerprint, the summaries are the two caches, and the night editor is the walk, which the kit does not hire by default. The three things nobody notices are this page's failure modes.</p></div></div>
+
+<h4>The ripple panel: one change, %%N_ST_W%% stations</h4>
+<p>Pick a change and follow it through the stations, in the order the kit runs them. Each station is a part of the kit, named with its file, and says what it did with this change. Then flip a design choice. The nightly walk, the batch job and the answer cache are off on a lane deployed with the defaults, and acme's data_region decides whether its text may leave India. Every line below was produced when this page was built, by running the kit's own functions on a stand-in Firestore: %%N_SCN%% changes under %%N_COMBOS%% settings of the switches.</p>
+
+<div class="diagram rp" id="ripple">
+<div class="dg-title">The ripple - a change, the stations it passes, and the switches that decide what follows</div>
+<div class="rp-in"><label class="rp-wide">What changes<select id="rp-change">%%PANEL_OPTIONS%%</select></label>%%PANEL_SWITCHES%%</div>
+<ol class="rp-path" id="rp-path">%%PANEL_STATIONS%%</ol>
+<p class="rp-out" id="rp-out" aria-live="polite">%%PANEL_OUT%%</p>
+<div class="rp-key"><span><i class="k-run"></i>ran</span><span><i class="k-held"></i>waiting, or stale</span><span><i class="k-stop"></i>refused or acked: it ends here</span><span><i class="k-gap"></i>does not follow</span><span><i class="k-skip"></i>not reached</span></div>
+<p class="dg-cap">The worker's order is <code>push()</code>, then <code>index_document()</code>, in <code>services/ingest/main.py</code>; the walk's is <code>reconcile.py</code>'s. The counts are the handbook's: version 1 is <code>evals/corpus/acme/hr_policy_2026.md</code>, and revision 2 is <code>evals/demo/hr_policy_2026_v2.md</code>. The fingerprints are those of a lane holding exactly the kit's %%N_ACME%% acme objects, shortened; yours differ if your acme corpus does. Before the page was written, node ran this panel's own script on all %%N_NODE%% settings, and it had to show what the build computed.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It is the kit's rules, not your lane. The stores are stand-ins that record calls instead of making them: no Vector Search, RAG Engine, Vertex AI Search or BigQuery call was made. The times are the kit's settings (%%ACK%% s to answer, %%ATTEMPTS%% deliveries, a walk at %%WALK_AT%%), not measurements. And a red station is not a bug report. It is a place where a copy or a signal does not follow the ledger, and the design has to answer for each one.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: source, version, generation, claim, carry-over, swap, retire, withdraw, fingerprint, walk, drift</h3><p>Thirteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Source</strong></td><td data-label="Meaning">A document's identity: its object path under the tenant's prefix. The ledger keeps one row per source, <code>sources/{tenant~path}</code>.</td><td data-label="On your lane">acme's %%N_ACME%% objects after <code>make ingest-corpus</code></td></tr>
+<tr><td><strong>Version</strong></td><td data-label="Meaning">One content of a source. Its <code>doc_key</code> is the tenant and the sha256 of its bytes: new bytes are a new version, and the same bytes are the same version however often they are uploaded.</td><td data-label="On your lane">the handbook's version 1 is <code>%%DK1%%</code>, revision 2 <code>%%DK2%%</code></td></tr>
+<tr><td><strong>Generation</strong></td><td data-label="Meaning">Cloud Storage's number for each write of an object. The ledger records the generation it indexed, and an event carrying an older one is a late redelivery.</td><td data-label="On your lane">one long number per write: yours</td></tr>
+<tr><td><strong>Claim</strong></td><td data-label="Meaning"><code>documents/{doc_key}</code>, taken in a transaction so that exactly one worker processes a version: <code>processing</code>, then <code>indexed</code>, <code>failed</code>, <code>queued</code> or <code>superseded</code>.</td><td data-label="On your lane">one per version the lane has seen</td></tr>
+<tr><td><strong>Chunk identity</strong></td><td data-label="Meaning"><code>chunk_hash</code>, the hash of a chunk's text with its whitespace collapsed, and its locator (<code>NP-03</code>, <code>p7-1</code>, <code>preamble</code>). The chunk's id, <code>tenant:sha256#i</code>, names its version and its position.</td><td data-label="On your lane">%%N_HB%% chunks in the handbook</td></tr>
+<tr><td><strong>Carry-over</strong></td><td data-label="Meaning">Reusing a vector whose <code>chunk_hash</code> the previous version holds, so that only the changed chunks are embedded.</td><td data-label="On your lane">%%REUSED%% reused and %%EMBEDDED%% embedded for revision 2</td></tr>
+<tr><td><strong>Stage and swap</strong></td><td data-label="Meaning">The new version's rows are written invisible (<code>current</code> false, <code>staged</code>), then one pass makes them current and retires the old.</td><td data-label="On your lane">a reader sees one version, never two and never none</td></tr>
+<tr><td><strong>Superseded, retired, withdrawn</strong></td><td data-label="Meaning">Three ways to stop being current: replaced by a newer version, its object gone from the bucket, or taken down by a person. The last is a tombstone that nothing automatic lifts.</td><td data-label="On your lane"><code>make retire</code> writes withdrawn; the walk writes retired</td></tr>
+<tr><td><strong>Undo window</strong></td><td data-label="Meaning"><code>RETENTION_DAYS</code>: how long a retired row lives before the Firestore TTL policy deletes it, the only deleter on the lane. Inside it, the old bytes again are an undo that embeds nothing.</td><td data-label="On your lane">%%RETENTION%% days</td></tr>
+<tr><td><strong>Fingerprint</strong></td><td data-label="Meaning"><code>ledger/{tenant}.fingerprint</code>: sixteen characters of the hash of the tenant's sorted current <code>doc_key</code>s, re-computed after every change. Both caches compare it with the one they were made under.</td><td data-label="On your lane"><code>%%FP0%%</code> on the kit's acme corpus</td></tr>
+<tr><td><strong>The copies</strong></td><td data-label="Meaning">Where a version is held besides its Firestore rows: the Vector Search index; the managed stores, RAG Engine and Vertex AI Search, for a tenant whose data_region is <code>any</code>; and BigQuery's <code>chunk_source</code>.</td><td data-label="On your lane">%%POLICY_ANY%% are <code>any</code>, %%POLICY_IN%% is <code>in</code></td></tr>
+<tr><td><strong>The walk, and drift</strong></td><td data-label="Meaning"><code>reconcile.py</code> over the bucket, the ledger and the claims: it retires what is gone, re-ingests what changed under a lost event, and records a touch. Drift is the count of repairs, one number a night.</td><td data-label="On your lane">off: <code>RECONCILE_JOB ?= false</code></td></tr>
+<tr><td><strong>Freshness gap</strong></td><td data-label="Meaning">The time a copy, a cache or an answer serves something the ledger no longer holds as current. The design's job is to keep it short, and to know when it is not.</td><td data-label="On your lane">the red stations on the panel</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two of these words carry the design. A version is bytes, not a name: uploading the same file again changes nothing, and a one-character edit is a new version with a new <code>doc_key</code>. And the fingerprint names a corpus, not a moment. Put version 1 back and the fingerprint returns to its old value, so everything made under the old corpus is valid again.</p>

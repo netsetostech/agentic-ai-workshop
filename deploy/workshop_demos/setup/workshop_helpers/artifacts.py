@@ -16,6 +16,10 @@ def json_default(value):
         return str(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+    # A Firestore Vector (a chunk row's embedding, read back by lesson 1.1's wait_indexed): its numbers, so the
+    # evidence is the row as stored. Matched by name: the helper does not import Firestore for this one type.
+    if type(value).__name__ == "Vector" and hasattr(value, "__iter__"):
+        return [float(number) for number in value]
     raise TypeError(f"Cannot serialize {type(value).__name__}")
 
 

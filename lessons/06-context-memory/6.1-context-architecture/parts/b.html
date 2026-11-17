@@ -1,0 +1,106 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code> and <code>REGION</code> from the setup block, and acme pinned to the kit's own index with the setup section's <code>make tenant-backend</code> line. Step 3 asks two questions in the DocuMind UI's chat, which lesson 5.1's step 3 deployed. <code>make context-sources</code> runs in <code>~/graph-venv</code>, lesson 5.4's venv with the chat image's pins. Its first run makes the venv if it is missing and installs <code>services/chat/requirements.txt</code> into it, which takes a few minutes. Step 5, and the first cells of steps 8 and 9, run offline for Rs 0. Steps 6 to 9 run real turns on your lane, a few rupees each, and each output's last lines price yours. Nothing is configured. The Desk's run in step 7 searches the classes <code>statute</code> and <code>guidance</code>, which acme's rows carry only once lesson 10.4's doc_type registry has pinned them.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The UI</span><h3>The UI: one number for the whole turn</h3><p>The chat page's caption gives the turn's bill as one figure. Nothing on the page says what the figure bought.</p></div></div>
+
+<h4>Definition</h4>
+<p>On an agent brain, the DocuMind UI's chat page writes a caption under each answer: the brain, the tools it called, the time it took and the rupees. The rupees are the limits the chat service returns with the turn: its Meter's model calls and rag-api's answers, at list price, rounded to two places. That is the whole turn's bill in one number. It does not say how much went on the system prompt, the declarations or the search. It cannot show the thread either, though every later turn in the session carries it.</p>
+
+<h4>The code</h4>
+@@caption@@
+
+<h4>Do it: in the browser</h4>
+<p>Open the DocuMind UI in a new browser tab, so the chat starts a new session, and go to the chat page. Choose the brain <code>langgraph</code> and ask: <em>%%QUESTION%%</em> Read the caption under the answer. Then ask the same question again, in the same tab, and read the second caption.</p>
+%%OUT_UI%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two turns, two numbers. The second turn carried the first one whole, as its thread: the first question, the model's call, the citations and the answer, on each of its own calls. The caption has no way to show that, or what any rupee of either figure bought. Do not read much into the difference between the two figures: each includes an answer of rag-api's, which varies from one ask to the next, and the caption rounds to two places. If a caption says <code>tools: none</code>, the model answered from the thread without searching, and that turn paid for no rag-api answer. The rest of this lesson takes a turn apart by source.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit</span><h3>The kit: where each brain assembles its call</h3><p>One prompt and two tools, put in front of the model three ways; the Desk's own prompt and tools; and a brain that makes no call at all.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat brains share one prompt, <code>brains.SYSTEM</code>, and one tool list, <code>retrieve</code> and <code>calculate_processing_cost</code>. Each puts them in front of the model its own way. LangChain's <code>create_agent</code> takes the prompt as <code>system_prompt</code> and sends it with every model call. The hand-built LangGraph brain binds the tools to its model once. Then its node builds each call's message list itself: the prompt first, then the conversation from the checkpoint, which never stores the prompt. ADK's <code>LlmAgent</code> takes the prompt as its <code>instruction</code>. ADK then adds a line of its own naming the agent, and declares each tool with <code>parametersJsonSchema</code>, titles and defaults included.</p>
+<p>A tool's declaration is made from its name, its docstring and its arguments: the model reads the docstring as the tool's description. What the search hands back is the adapter's projection of rag-api's answer: the citations, <code>answerable</code> and <code>confidence</code>, and nothing of rag-api's own answer text. The Desk's statute agent has its own prompt and %%N_DESK_TOOLS%% tools: %%DESK_TOOLS%%. Its <code>retrieve</code> asks <code>/v1/passages</code> with top_k 5 and gives the model every passage's whole text. The direct brain calls no model of its own: one search, and rag-api's answer is the turn.</p>
+
+<h4>The code</h4>
+@@system@@
+@@assembly@@
+@@decl@@
+@@proj@@
+@@desk@@
+@@direct@@
+
+<div class="wjh"><div class="wjh-title">What this means for the bill</div>
+<p>The system prompt and the declarations are written once in the kit and sent on every call of every turn, so they are the first thing to look at when a brain's calls cost more than you expect. ADK's two extra pieces, its line and its longer declarations, ride every one of its calls. The projection decides what a chat brain's tool result weighs: a few citations, each a short quote, never the chunks rag-api read. The Desk's tool results are the chunks themselves. The direct brain skips the chat model's loop altogether, and the agent brains must beat it to justify the calls they add (lesson 5.7).</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Offline</span><h3>Offline: one turn split by source, for Rs 0</h3><p>The kit's command reads each call where the adapter hands it to google-genai, splits it at the turn's question, and counts each part.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make context-sources</code> runs one turn on a brain, built as <code>services/chat</code> builds it, with its thread kept on your machine (an <code>InMemorySaver</code>, or ADK's in-memory sessions), so your lane's threads are never read or written. For the run it wraps google-genai's two <code>generate_content</code> methods: the one LangChain's <code>ChatGoogleGenerativeAI</code> calls and the async one ADK's <code>Gemini</code> calls. So it reads what each adapter handed the SDK: the system instruction, the declarations and the contents. <code>label()</code> splits the contents at the turn's question. Before it is the thread; after it, a model content is the model's calls and a function response is a tool result.</p>
+<p><code>OFFLINE=1</code> puts a script in the model's place at that boundary. The script asks for a search for the question, then answers from the first passage found. The brain, its adapter, its tools and its limits run as they run on your lane. The search is the Rs 0 lane's <code>retrieve</code> over the kit's corpus, with no network and no credential. rag-api's own call inside it is estimated from <code>generator.py</code>'s prompt: its <code>SYSTEM</code>, the chunks <code>pack_chunks</code> fits in what is left of <code>max_context_tokens</code>, and the question. Every count is rag-api's own estimator, so each call's sources add up to exactly what the script reports it was sent.</p>
+
+<h4>The code</h4>
+@@mk@@
+@@capture@@
+@@record@@
+@@label@@
+@@tokens@@
+@@rag_prompt@@
+
+<h4>Do it</h4>
+%%CELL_OFFLINE%%
+%%OUT_OFFLINE%%
+<p>The same without make: <code>bash commands/graph-venv.sh commands/context_sources.py --offline --brain langgraph</code>. The first run makes <code>~/graph-venv</code> if it is missing and installs the chat image's pins into it; pip's notices may print before the output.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The header names what rides every call: a system prompt of %%SYS_CHARS%% characters, the brain's own, and two declarations, each with its <code>parameters</code>. Model call 1 is %%CALL1%% tokens: the system prompt %%SYS_TOK%%, the declarations %%LC_DECL%% and the question %%Q_TOK%%, and nothing else yet. It asked for <code>retrieve</code>. Under it is the search: top_k 5, %%N_CIT5%% citations back in %%CHARS5%% characters, and inside it rag-api's own call, %%RAG_IN5%% tokens in.</p>
+<p>Model call 2 is %%CALL2%% tokens: the same three sources again, the model's call (%%CALLS_TOK%%) and the tool results (%%RES5%%). The residual is 0 on both calls, because offline the script's input is the sum of its parts. Then comes the turn by source: each source's tokens over both calls, its rupees, and how it rode, <code>%%SYS_TOK%% in each of 2 calls</code> for the system prompt and <code>from call 2 on</code> for the results. The model calls cost Rs %%MODEL_INR%%, and the line says the turn's Meter charged the same: the command prices each call as <code>limits.py</code> does. rag-api's answer adds Rs %%RAG_INR%%, estimated. The turn is Rs %%TURN_INR%% at list price, and offline nothing is billed.</p></div>
+
+<p>The kit holds this for every brain. Its test reads every captured call and checks that each content has one source and that the sources add up to what the call was sent. CI's chat-pins step runs the file on every push, and the file has %%N_TESTS%% tests in all.</p>
+@@t_sum@@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The counter</span><h3>On your lane: the model's own counter, and the probe</h3><p>A real turn, each call's tokens from its usage, and each source counted by <code>count_tokens</code> in context. The probe at the end says whether the counter took every field.</p></div></div>
+
+<h4>Definition</h4>
+<p>Without <code>OFFLINE</code>, the turn is real. Gemini answers on location global through the brain's own model. Each search goes to your lane's rag-api as <code>documind-ui-sa</code>: the make target sets <code>RAG_API_URL</code> from your project's number, and <code>DOCUMIND_IMPERSONATE_SA</code>. The turn runs under the chat service's limits, %%MAX_CALLS%% calls, Rs %%BUDGET_INR%% and %%DEADLINE_S%% s. Each call's tokens are its own <code>usage_metadata</code>: input, cached, output and thinking. Thinking is billed as output, and a cached token at a tenth of the input rate.</p>
+<p>Then the command counts each source with the model's own <code>count_tokens</code> on location global, which is not billed. A piece counted on its own need not add up to its share of a request, so the command counts in context. It counts the question alone, then with the thread before it, with the system instruction, with the declarations, and then with each later content in turn. Each source's tokens are what adding it added, so the sources sum to the request's count. The residual is what the call billed less that count. A field <code>count_tokens</code> refuses, or accepts and counts as nothing, is estimated instead, marked <code>~</code>, and named in the probe at the end of the output.</p>
+
+<h4>The code</h4>
+@@count@@
+@@usage@@
+
+<h4>Do it: the probe</h4>
+<p>Whether <code>count_tokens</code> on location global takes the declarations and the system instruction at all was not known when the kit was written. The probe settles it before any count on this page is trusted, for both forms of declaration: LangChain's <code>parameters</code> on the LangGraph brain, and ADK's <code>parametersJsonSchema</code>. The cell prints only each run's probe. Step 7 shows the whole of each run.</p>
+%%CELL_PROBE%%
+%%OUT_PROBE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>system_instruction: honoured: +N</code> means adding the system prompt raised the count by N, so the endpoint counts it. <code>tools: honoured: +N</code> means the same for the declarations, in the form this brain's adapter sends. Either line could instead say <code>refused: ...</code> or <code>accepted, but counted as nothing</code>. Then that source is estimated and marked <code>~</code> in the breakdown, and the residual shows how far off the estimate is. <code>contents: counted</code> means every content after the question was counted in context, including the model's function call and its result.</p>
+<p>The last line compares call 1's count with its bill. A residual of a few tokens at most says <code>count_tokens</code> and the bill agree on what the call carried. Call 2's residual is in its own lines of the full output (step 7). If it is larger than call 1's, something rode call 2 that the counter did not count. A thought signature is one candidate: Gemini 3 attaches one to the function call it makes, the adapter sends it back on the next call, and the offline estimate counts nothing for it. The same line ends with the number of <code>count_tokens</code> requests the run made, none of them billed.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Five brains</span><h3>Five brains, one question, on your lane</h3><p>The same question through each brain: what each one sends, what its search hands back, and what the turn costs.</p></div></div>
+
+<h4>Definition</h4>
+<p>One real turn on each brain, with the same question each time. What differs is the request each brain assembles and what its search hands back. On the chat brains the tool result is the citations rag-api's answer chose. Inside each search the command prints rag-api's own call from the usage rag-api returns: its tokens in, cached and out, and its rupees. On your lane that call is not split into its prompt, its chunks and the question; lesson 3.4 measures rag-api's prompt. The Desk's search is <code>/v1/passages</code>, with no model call inside. The direct brain makes no call of its own, so its output is the search and rag-api's call alone.</p>
+<p>The Desk searches the classes <code>statute</code> and <code>guidance</code>, and a row on your lane is <code>unknown</code> until lesson 10.4's doc_type registry pins its class. Before that, the statute desk's searches find no passage. Its tool results are then empty lists, and the model may search again in other words before it says the passages do not answer.</p>
+
+<h4>Do it</h4>
+%%CELL_BRAINS%%
+%%OUT_LANE_LANGCHAIN%%
+%%OUT_LANE_LANGGRAPH%%
+%%OUT_LANE_ADK%%
+%%OUT_LANE_DIRECT%%
+%%OUT_LANE_DESK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the five outputs side by side, a source at a time.</p>
+<p><strong>The fixed parts.</strong> The system prompt and the declarations count the same on every call of a turn, and the same for langchain and langgraph. ADK's are larger: its system prompt carries the framework's line, and its declarations are JSON Schema with titles and defaults. Offline the estimate put ADK's at %%ADK_SYS_TOK%% and %%ADK_DECL%% tokens to LangChain's %%SYS_TOK%% and %%LC_DECL%%. Your counts are the model's own.</p>
+<p><strong>The tool results.</strong> On the chat brains they are the clauses rag-api's answer cited, a short quote each unless the answer cited a source only in its prose, so they usually weigh less than offline, where every passage came back with up to 500 characters. On the Desk, when its search finds passages, they come back whole, and they are the largest source of any call that carries them.</p>
+<p><strong>The output.</strong> Thinking is output, billed at the output rate. The LangChain and LangGraph brains run their model with thinking low (<code>shared/profile.py</code>), and so does the Desk's agent. ADK's brain sets no thinking level, so its calls may think more.</p>
+<p><strong>The search's own call.</strong> On the chat brains and the direct brain, rag-api's answer is the line under the search, and its rupees are on the turn's bill as rag-api's. On the direct brain it is the whole bill.</p>
+<p><strong>The Meter.</strong> The model calls' rupees equal what the turn's <code>limits.Meter</code> charged. The chat service charges the same Meter on <code>/v1/chat</code>, and its total is step 3's caption.</p></div>

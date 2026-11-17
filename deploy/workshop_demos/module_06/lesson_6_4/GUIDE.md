@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_6.4_Cache_Measure_WIX.html`, reviewed at blob `afcbff09c9738c4e6b84e3080c2c49c6941152f9`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_6.4_Cache_Measure_WIX.html`, reviewed at blob `a112d661471b3f2686dec1dff812130d94369f00`. Learners read that page on the course site; this guide keeps its prose.
 
 One number decides what the answer cache is worth: how similar a new question must be to an earlier one before it gets the earlier answer. Set it too low and the cache answers the wrong question fast; too high and it never answers at all. You measure that number offline on the kit's 42 labelled pairs. Then you ask the same pairs live on a candidate at the kit's 0.95, and check whether the offline curve predicted the live false hits. Finally you turn the hits into avoided calls in rupees, and set their latency beside a model answer's.
 

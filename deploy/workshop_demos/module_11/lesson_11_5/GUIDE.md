@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_11.5_Usage_Reconcile_WIX.html`, reviewed at blob `f7064bb5d693cc1baf873d3389be6b6a2b2e3ab5`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_11.5_Usage_Reconcile_WIX.html`, reviewed at blob `1ca4b3cd1d316cd0e1bcfbf73c5d8280022ba298`. Learners read that page on the course site; this guide keeps its prose.
 
 Every answer DocuMind gives writes one usage row: the tenant, the tokens, the cost priced at the model that answered, and where the time went. Four readers count those rows, each with its own filter and its own window. Cloud Logging keeps them all. A log sink copies some of them into BigQuery, where the `tenant_daily` view groups them by Indian day. `make usage` reads them straight from the log. A log-based metric counts them for an alert.
 

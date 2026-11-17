@@ -1,0 +1,94 @@
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The deployed UI</span><h3>The UI: your corpus, counted by the lane</h3><p>The chunk counts the lane recorded, document by document, before any arithmetic.</p></div></div>
+
+<p>Every size on this page starts from one number: how many chunks a document becomes. Your lane has already counted them, document by document, when the worker ingested the corpus. Read those counts first, in the browser, where an operator would. The UI's address is built from your project number, as the setup block built <code>API</code>:</p>
+
+%%CELL_UI%%
+%%OUT_UI%%
+
+<p>Open it signed in to Google as yourself and choose <strong>Documents</strong>. The page shows your tenant's ledger under <strong>Versions</strong>: one row per current version of every document, with its status, its <code>chunks</code>, how many of them a re-issue reused or embedded, and when it was indexed. The caption above the table counts the current versions and prints the corpus fingerprint, a hash step 8 comes back to. Your email maps to acme, so these are acme's rows.</p>
+
+<p>Now set the <code>chunks</code> column beside the kit's own count of the same documents. The table below is acme's %%N_ACME%% text documents as the kit's chunker counts them, run when this page was built (step 5 runs the same code on your machine):</p>
+
+%%ACME_TABLE%%
+
+<p>The %%N_ACME_MD%% Markdown documents went up as text, and the worker chunks text by exactly the rules the offline count uses, so their rows should match the table digit for digit. The Acts and the compliance handbook went up as PDFs: the worker sent each to Document AI, whose text is not byte for byte the pypdf text the offline count reads, so their counts can differ by a few chunks. Your table also has rows this one does not: the three figures, which the worker describes in words and embeds as one chunk each, and <code>posh_act_2013</code>, a scanned Act that only Document AI can read. The town hall is a text row unless you made its video in lesson 7.5; then the video takes its place.</p>
+
+<p>The same rows come from the shell. <code>make sources</code> reads the ledger in Firestore directly, as you, the operator, with your Application Default Credentials. The UI asked the API, as you, and the API first checked your email against acme's roster. One table, two callers:</p>
+
+%%CELL_SOURCES%%
+%%OUT_SOURCES%%
+
+<p>The last line is the ledger's summary for the tenant: its fingerprint and its count of current versions. Then the index itself. <code>make vector-status</code> asks gcloud to describe the Vector Search index and its deployment:</p>
+
+%%CELL_VECTOR%%
+%%OUT_VECTOR%%
+
+<p><code>vectorsCount</code> is every current chunk of all three tenants, text and media, because the worker upserts each chunk it makes current and removes the ones a re-issue retires, and since 13 October 2026 a source withdrawn by hand (<code>reconcile.py --retire</code>, lesson 1.8) or retired by the walk has its datapoints removed the same way. One case still runs ahead: a source withdrawn on an older kit, whose datapoints nothing removed, so the count exceeds the current rows by that document's chunks until the index is rebuilt. <code>shardsCount</code> is how many slices the index is cut into, and on your lane it is one. Hold both numbers: step 6 reads the same index over REST and asks how full that one shard is.</p>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit's code</span><h3>The kit's numbers: the chunk, the request, the vector, the shard, the row</h3><p>Every constant the arithmetic uses, read where the kit sets it.</p></div></div>
+
+<p>Five things grow with the corpus: chunks, embedding requests, vectors, shards and Firestore rows. Each has its rule in one place in the kit. Read them in that order.</p>
+
+<h4>The chunk</h4>
+
+@@chunk_consts@@
+
+<p>%%CHUNK_CHARS%% characters with %%OVERLAP%% of overlap. The comment's "~500 tokens per chunk" is the usual four characters a token; the kit's embedding batcher, below, counts more cautiously, at %%CPT%%. The cutting is <code>_windows()</code>:</p>
+
+@@windows@@
+
+<p>A window runs %%CHUNK_CHARS%% characters, then moves back to the last full stop in its second half if it finds one, and the next window starts %%OVERLAP%% characters before that cut. So a long text becomes a little more than its length divided by %%CHUNK_CHARS%%, and the characters sent to the model are more than the characters in the document: every overlap is sent twice. Text with <code>## </code> headings, which the kit's docstring calls a handbook, is cut by its headings first, one chunk per section, and a PDF's text page by page, so a page break also ends a chunk. Those two rules are why a short page or a short section costs a whole chunk: acme's contract is %%MSA_CHARS%% characters, less than one window, and %%MSA_CHUNKS%% chunks, the lines above its first heading and one for each of its %%MSA_HEADS%% sections.</p>
+
+<h4>The request</h4>
+
+@@embed_consts@@
+
+<p>Two ceilings on one request, and the shared copy of the same function says where they come from:</p>
+
+@@embed_doc@@
+
+<p>The model takes at most %%MODEL_TEXTS%% texts and %%MODEL_TOKENS%% tokens in one request; the kit stays under both, at %%EMBED_BATCH%% texts and about %%EMBED_TOKENS%% tokens, counting a token as %%CPT%% characters. For full chunks, the token ceiling is the one that binds: a full %%CHUNK_CHARS%%-character chunk counts as %%TOK_CHUNK%% tokens, so one request carries %%PER_REQ_FULL%% of them, never %%EMBED_BATCH%%. Across the corpus, with its short chunks, a request carries %%PER_REQ_AVG%% on average. And the requests for one document go one after another:</p>
+
+@@embed_all@@
+
+<p>That loop matters at scale. The worker never sends two requests for the same document at once, so the only parallelism in embedding is the number of documents in flight, which step 8 reads.</p>
+
+<h4>The vector and the index</h4>
+
+@@vector_config@@
+
+<p>%%DIMS%% numbers a vector, and the index stores each in 4 bytes, so Google's <em>data size</em> for your index is its vectors times %%VEC_BYTES%% bytes. That one number decides how many shards the index needs. The shard size is a property of the index, and the kit maps each size to the machine that serves it:</p>
+
+@@vector_machine@@
+
+<p>On your lane, %%LANE_SHARD%%; step 6 reads which. The deployed index, the part that answers queries and bills by the hour, has one replica, as both the minimum and the maximum:</p>
+
+@@vector_deployed@@
+
+<p>So the serving bill is a simple product: shards, times replicas (one), times the machine's hourly price, times the hours in a month. Ten million documents changes only the first factor.</p>
+
+<h4>The row</h4>
+
+<p>Every chunk the index holds is also a row in Firestore, with the chunk's text, its version flags and its vector. The rows are what the API searches when the index cannot answer:</p>
+
+@@row@@
+
+<p>The row carries the chunk's text and its vector, which Firestore stores at 8 bytes a number, twice the index's 4. And the rows are indexed for vector search eight ways, one per combination of filters the fallback uses:</p>
+
+@@fs_filters@@
+
+<p>Six indexes come from that map and two more are declared above it in the same file; every one of them ends in the document's name and the %%DIMS%%-number vector. Firestore bills its storage for the rows and for every index entry, and each of the %%FS_IDX_W%% entries holds the whole vector again. By Google's published size rules, the corpus's average chunk is at least %%CHUNK_B%% bytes in Firestore: %%ROW_B%% for the row and %%IDX_B%% for its index entries, about %%FS_TIMES%% times the %%VEC_BYTES%% bytes the same chunk counts for in Vector Search's data size. Step 8 prices it.</p>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Measure</span><h3>Measure the corpus with the kit's own chunker</h3><p>The averages the arithmetic multiplies, from the kit's code on the kit's files, in a second, with no network.</p></div></div>
+
+<p>The cell below loads every text document of the three tenants with <code>shared/documind_corpus.py</code>, the loader, chunker and batcher the notebooks share. They apply the worker's two rules, %%CHUNK_CHARS%% characters with %%OVERLAP%% of overlap and a section per <code>## </code> heading, and the worker's two ceilings on a request. It counts, by document type, the characters, the chunks, the characters sent and the requests, then multiplies by %%N%%. It reads only files in your clone of the kit: nothing on the lane, nothing billed.</p>
+
+%%CELL_MEASURE%%
+%%OUT_MEASURE%%
+
+<p>Read the table from the bottom. %%N_DOCS%% documents make %%N_CHUNKS%% chunks and %%N_REQ%% requests, and the %%N_SENT%% characters sent are more than the %%N_CHARS%% in the documents, because every overlap travels twice. The %%SH_STAT_DOCS%% statutes dominate: %%STAT_CHUNKS%% of the %%N_CHUNKS%% chunks. A contract is a few chunks and a Code is hundreds, so the average, %%PER_DOC%% chunks a document, is a property of this mix, not of documents in general. That is why the calculator in step 1 offers four kinds: the statutes alone average %%SH_STAT_CHUNKS%% chunks, the handbooks %%SH_HAND_CHUNKS%%, the short documents %%SH_SHORT_CHUNKS%%. Before you size a real corpus, run this measurement on a sample of it; the kind of document moves the answer more than anything else on this page.</p>
+
+<p>The last four lines are the straight lines at %%N%%: %%T_CHUNKS%% vectors, %%T_REQ%% requests, %%T_GIB%% GiB of dense index, and %%T_EMBED%% to embed it once at the online price. Lesson 8.2 changes the chunker and re-embeds; at ten million documents, every such change pays that last line again.</p>

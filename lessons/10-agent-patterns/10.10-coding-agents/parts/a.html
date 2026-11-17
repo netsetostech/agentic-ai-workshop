@@ -1,0 +1,97 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 10 &middot; Agent patterns &middot; Lesson 10.10</div>
+<h1>Coding agents: a Ralph loop, an AI code reviewer and paper-to-code: <span>an agent that forgets each iteration, an oracle it cannot see, and a reviewer scored on planted defects</span></h1>
+<p>A coding agent is a model that reads files, edits them and runs commands. Left to itself, it stops when it believes the work is done. A Ralph loop does not take its word for it. The loop starts the agent fresh on the same prompt for each iteration, and an oracle the agent cannot see or edit decides when the work is done. The kit's task is one function, <code>statutory_deadline</code>, cut out of a copy of <code>shared/desk_calc.py</code>, and the answer key is the kit's own function. You play one iteration by hand. Then you run the loop offline at Rs 0 under a strong oracle and a weak one, and watch the weak one let a wrong function through. You read what the loop undoes, what it only flags and what it never does. Then you score an AI code reviewer on six planted defects and run the same loop from the statute's text alone. Last, you read the author's live run: Gemini CLI headless in a container, on a key that can call the model and nothing else.</p>
+<div class="hero-chips"><div class="hero-chip">Ralph loop</div><div class="hero-chip">fresh each iteration</div><div class="hero-chip">strong and weak oracle</div><div class="hero-chip">undone, flagged, never</div><div class="hero-chip">six seeded defects</div><div class="hero-chip">catch count, false alarms</div><div class="hero-chip">paper-to-code</div><div class="hero-chip">model-only key</div><div class="hero-chip">Rs 0 offline</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A loop that forgets, and an oracle it cannot see</a></li>
+<li><a href="#s2">The words: Ralph loop, iteration, oracle, fix plan, context file, seeded defect, rubric, catch count, paper-to-code</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">One iteration by hand</a></li>
+<li><a href="#s4">The oracle, weak and strong</a></li>
+<li><a href="#s5">The loop offline: three runs, two caps and the guards</a></li>
+<li><a href="#s6">Paper-to-code: the same function from the statute alone</a></li>
+<li><a href="#s7">The reviewer: a linter first, then Gemini on your lane</a></li>
+<li><a href="#s8">The live loop: Gemini CLI in a container, on a model-only key</a></li>
+<li><a href="#s9">Direct reads, and the human step</a></li>
+<li><a href="#s10">Why it is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s11">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn how a coding agent is held by code it cannot see: a loop that starts it fresh, an oracle that decides when it is done, guards that undo what it may not touch, and a reviewer measured on defects planted on purpose. Then you will prove it offline at Rs 0: the loop stops on the oracle and on a cap, the weak oracle passes a hard-coded date that the strong one fails, and the reviewer gets a catch count on six seeded defects.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A loop that forgets, and an oracle it cannot see</h3><p>The task, one iteration, the code that inspects it, the oracle that judges it, and the reviewer.</p></div></div>
+
+<p><strong>The task.</strong> The DocuMind Desk answers "when are my final wages due?" with <code>statutory_deadline</code>. It applies the Code on Wages, 2019, s.17(2): two working days, counted from the last working day, Monday to Friday. Lessons 10.4 and 10.5 teach the desk's calculators; here the function is only the subject. The loop gives a coding agent a copy of <code>shared/desk_calc.py</code> in which this one function has lost its body and raises <code>NotImplementedError</code>, and a spec saying what it must do. The agent works in a run directory under your temp directory, never in the kit. The answer key is the kit's own function, read when the loop runs, so no second copy of the right answer can drift out of date.</p>
+
+<p><strong>One iteration, fresh.</strong> Each iteration starts the agent with nothing in its head. It reads the same <code>PROMPT.md</code>, then <code>spec.md</code>, <code>fix_plan.md</code> (the plan, one item an iteration), <code>GEMINI.md</code> (the workspace's standing notes) and <code>oracle.md</code> (the last verdict). It changes the function, runs the fast test, ticks one item and exits. What an iteration learned reaches the next one only through those files. Each iteration is one commit, in a git repository kept beside the workspace, where the agent cannot see it.</p>
+
+<p><strong>Code before the oracle.</strong> Before any verdict, the loop's own code inspects the iteration. Some changes undo it, and the oracle never sees it: a change outside the function, a deleted file, a symlink, more than %%MAX_DIFF%% changed lines, or, live, output that names the kit's public copy. Two things are flagged and kept: two plan items ticked at once, and a <code>RALPH_DONE</code> the oracle does not back. And some things the loop never does: it never writes in the kit, never applies a patch to your clone and never runs <code>git push</code>.</p>
+
+<p><strong>The oracle decides.</strong> The oracle sees only the agent's function, spliced into the kit's own file, so nothing else the agent changed reaches the verdict. The weak oracle is <code>desk_calc</code>'s own selftest, which checks the function on one date: resignation, last working day Friday 2 October 2026, wages due Tuesday 6 October. The strong oracle runs that selftest and %%N_ACCEPT%% acceptance checks, one of them every day of 2026 for each of the four events. The agent learns only <code>oracle.md</code>: each failed check's words and the oracle's own counts, never an acceptance check's expected value. The loop stops when the oracle passes, after <code>RALPH_MAX_ITERS</code> iterations (%%MAX_ITERS%%), or at a rupee cap, <code>RALPH_BUDGET_INR</code>.</p>
+
+<p><strong>The honest result.</strong> A function that returns 6 October for every question passes the weak oracle. It is right on %%PH_RIGHT%% of the %%PH_TOTAL%% questions the strong oracle asks: the three last working days whose due date is 6 October (%%PH_RIGHT_DAYS%%), for each of the four events. A loop judged by the weak oracle stops there, satisfied. The strong one does not.</p>
+
+<p><strong>The reviewer.</strong> An AI code reviewer reads a diff and names defects, each by one rule of a fixed rubric. The kit scores it on seven diffs: the kit's own function, and that function with one of six defects planted on purpose. A finding of the planted defect's rule is a catch, and any other finding is a false alarm. The reviewer reads code; the oracle runs it.</p>
+
+<div class="analogy"><div class="analogy-icon">&#9881;</div><div>
+<p><strong>An apprentice who forgets every night.</strong> Each morning the apprentice remembers nothing of yesterday. On the bench lie the job card, the snag list and the inspector's slip from last evening: "%%CAL_NFAILED%% of %%N_STRONG%% checks failed; %%CAL_WRONG%% of %%PH_TOTAL%% parts out." The apprentice works one snag, ticks it and goes home. The inspector's gauge stays in the inspector's drawer. The apprentice never sees it, only the slip, and the slip says what failed, never the measurement it wanted. The foreman puts back anything touched outside the one part. A gauge that measures one dimension passes a part machined to that dimension and wrong everywhere else: that is the weak oracle.</p></div></div>
+
+<h4>Run the oracle on a diff</h4>
+<p>Choose a version of the function and an oracle. The panel shows the change, the oracle's verdict with each failed check, what a loop judged by that oracle does next, and what the reviewer found in that diff.</p>
+
+<div class="diagram pc" id="rv">
+<div class="dg-title">Eight versions of statutory_deadline, judged by the kit's oracle</div>
+<div class="pc-box"><b class="h">The version and the oracle</b>
+<div class="pc-in two"><label>The version<select id="rv-v"></select></label><label>The oracle<select id="rv-o"></select></label></div>
+<div id="rv-out" aria-live="polite"></div></div>
+<p class="dg-cap">Each verdict is the kit's oracle.py, run on that version when this page was built, as make ralph-check runs it. The linter is commands/review_diff.py's offline stand-in, run on the same diffs. Gemini's findings come from the author's saved run of make review-eval, dated, and they differ from run to run.</p>
+</div>
+
+<div class="diagram">
+<div class="dg-title">One iteration of make ralph</div>
+<ol class="hops">
+<li><b>A fresh agent.</b> Offline, a scripted agent; live, Gemini CLI headless in the ralph image, a new container each iteration. It reads PROMPT.md, spec.md, fix_plan.md, GEMINI.md and oracle.md.</li>
+<li><b>One item.</b> It changes statutory_deadline, runs the fast test, ticks the first open item of fix_plan.md, and may add a line under "Learned" in GEMINI.md.</li>
+<li><b>Code inspects it.</b> A change outside the function, a deleted file, a symlink, over %%MAX_DIFF%% changed lines, or the public copy named: undone. Two items ticked, or an unbacked RALPH_DONE: flagged.</li>
+<li><b>The oracle judges.</b> The function alone, spliced into the kit's own file, in a separate process with the network and new processes refused; live, in a container with no network at all.</li>
+<li><b>The record.</b> oracle.md gets each failed check's words and counts, and the iteration becomes one commit beside the workspace.</li>
+<li class="stop"><b>Stop, or go on.</b> The oracle passed, %%MAX_ITERS%% iterations ran, or one more would pass the rupee cap: the loop stops. Otherwise the next iteration starts fresh.</li>
+</ol>
+<p class="dg-cap">The order is run_loop()'s in commands/ralph.py; step 5 quotes its caps and its inspection.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>These are the kit's own eight versions: the start, the answer key and the six seeds. A live agent writes versions of its own, and the oracle judges each the same way. The panel's verdicts never change from run to run; a model reviewer's findings do, which is why the kit reviews each diff more than once.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: Ralph loop, iteration, oracle, fix plan, context file, seeded defect, rubric, catch count, paper-to-code</h3><p>Fifteen rows, each with what it is in the kit.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>In the kit</th></tr></thead>
+<tbody>
+<tr><td><strong>Coding agent</strong></td><td data-label="Meaning">A model that reads and edits files and runs commands toward a goal.</td><td data-label="In the kit">Gemini CLI, live; a scripted agent, offline</td></tr>
+<tr><td><strong>Ralph loop</strong></td><td data-label="Meaning">The same prompt, a fresh agent each iteration, until a check outside the agent passes.</td><td data-label="In the kit"><code>make ralph</code>, <code>commands/ralph.py</code></td></tr>
+<tr><td><strong>Iteration</strong></td><td data-label="Meaning">One fresh run of the agent, then the inspection, then the oracle.</td><td data-label="In the kit">one commit beside the workspace</td></tr>
+<tr><td><strong>Oracle</strong></td><td data-label="Meaning">The check that decides when the work is done. The agent cannot see it or edit it.</td><td data-label="In the kit"><code>commands/ralph/oracle.py</code>, kept outside the workspace</td></tr>
+<tr><td><strong>Weak, strong</strong></td><td data-label="Meaning">A weak oracle is a test a wrong change can pass; a strong one checks the spec.</td><td data-label="In the kit"><code>ORACLE=weak</code>: the selftest; the default: the selftest and %%N_ACCEPT%% checks</td></tr>
+<tr><td><strong>oracle.md</strong></td><td data-label="Meaning">All the agent learns of a verdict.</td><td data-label="In the kit">each failed check's words and the oracle's counts</td></tr>
+<tr><td><strong>Fix plan</strong></td><td data-label="Meaning">A to-do list carried from one iteration to the next.</td><td data-label="In the kit"><code>fix_plan.md</code>: one item an iteration</td></tr>
+<tr><td><strong>Context file</strong></td><td data-label="Meaning">Standing notes the agent loads when it starts.</td><td data-label="In the kit"><code>GEMINI.md</code>, copied from <code>context.md</code>, with a "Learned" list</td></tr>
+<tr><td><strong>Headless, --yolo</strong></td><td data-label="Meaning">One prompt, then exit; every tool call approved without asking.</td><td data-label="In the kit"><code>iteration.sh</code>, inside the container only</td></tr>
+<tr><td><strong>Seeded defect</strong></td><td data-label="Meaning">A known bug planted on purpose, to measure a check.</td><td data-label="In the kit">six one-line substitutions in <code>seeds.json</code></td></tr>
+<tr><td><strong>Rubric</strong></td><td data-label="Meaning">The only rules a reviewer may answer with.</td><td data-label="In the kit">%%N_RUBRIC%%: six defect classes, three decoys and "other"</td></tr>
+<tr><td><strong>Catch count, false alarm</strong></td><td data-label="Meaning">The seeded defects found in one run; a finding of any other rule.</td><td data-label="In the kit">a run is seven diffs, one review each</td></tr>
+<tr><td><strong>Paper-to-code</strong></td><td data-label="Meaning">The same function written from the source text alone.</td><td data-label="In the kit"><code>TASK=statute</code>: the statute's lines, no engineer's spec</td></tr>
+<tr><td><strong>ralph.patch, kit.patch</strong></td><td data-label="Meaning">The loop's work from the task's start; its function against the kit's own.</td><td data-label="In the kit">you apply kit.patch, or not; the loop never does</td></tr>
+<tr><td><strong>Model-only key</strong></td><td data-label="Meaning">A credential that can call the model and nothing else.</td><td data-label="In the kit"><code>RALPH_API_KEY</code>: the author's, created for a run and deleted after it</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold. The weak oracle and the strong one run the same code on the same function. They differ only in how much of the spec they check. A loop is only as good as the check it stops on.</p>

@@ -3,8 +3,8 @@
 Do it: cut the handbook, Rs 0 The worker cut the same file with the same rule when the corpus was loaded. Its rows for the handbook should be the same 283 locators in the same order.
 
 Run order inside this file:
-1. Do it: cut the handbook, Rs 0 (source window 17)
-2. Read it on the lane (source window 19)
+1. Do it: cut the handbook, Rs 0 (source window 19)
+2. Read it on the lane (source window 21)
 
 Prerequisites: demo_04_count_pages_first_slices_and_the_250_page_line.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -98,8 +98,8 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_17', step_01_cut_the_handbook_rs_0),
-        ('source_19', step_02_on_the_lane),
+        ('source_19', step_01_cut_the_handbook_rs_0),
+        ('source_21', step_02_on_the_lane),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

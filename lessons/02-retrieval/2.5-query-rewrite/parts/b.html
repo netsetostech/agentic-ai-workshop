@@ -1,0 +1,83 @@
+<div class="box box-amber"><div class="box-title">The names this lesson reads off the API, and the package the ablation needs</div>
+<p>The stage's two settings and the retrieval backend live in the API's environment. A name the service does not set is unset here rather than exported empty, because the kit's settings class reads an empty variable as a value, and an empty <code>QUERY_REWRITE</code> is a value the validator refuses. <code>svc_env</code> is the helper lessons 2.2 to 2.4 define; step 6 reads the template with it again. Step 7's ablation reranks through the Ranking API's client at the API's own pin; the pip line is harmless if it is already there.</p>
+%%CELL_NAMES%%
+%%OUT_NAMES%%
+</div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; The deployed UI</span><h3>The Chat page with the stage off: the stream never asks for a rewrite</h3><p>One paraphrase asked the way a person asks it, the route the page sends it down, and the log that shows no rewrite was asked for.</p></div></div>
+
+<h4>Definition</h4>
+<p>The Chat page's direct brain is a thin client: <code>stream_answer()</code> posts the question to <code>/v1/stream</code> with <code>top_k</code> 5 and renders the citation and token events as they arrive. <code>/v1/stream</code> embeds the question, retrieves, reranks and streams the answer from the question as asked. It has no <code>search_query</code> line, so the stage cannot run there whatever <code>QUERY_REWRITE</code> says, and on the lane it is off anyway. What you see in the page is the answer with no rewrite, and it would stay so with the stage on: the stage serves only the callers of <code>/v1/query</code>, which are <code>make eval-live</code> and <code>shared/documind_tools.retrieve()</code>, the function the chat service's agent brains and the MCP server's retrieve tool call. The stream's usage row carries the brain's label, <code>ui</code>, the pool and the stage clocks; a rewrite's cost would be on a line of its own, and there is none.</p>
+
+<h4>The code</h4>
+@@ui_stream@@
+@@api_stream@@
+
+<h4>Do it: a paraphrase in the Chat page, then the log</h4>
+<p>In the Chat page, signed in as yourself, ask: <strong>%%PP01%%</strong> It is a paraphrase of golden row %%PP01_OF%%, whose answer must contain %%PP01_MUST%%. Then read the API's log for the last ten minutes.</p>
+%%CELL_UI%%
+%%OUT_UI%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The question went down <code>/v1/stream</code> and came back answered from its own words: the index was searched with the question's vector, the reranker ordered the pool against the question, and the model answered it. The log holds the stream's usage row, labelled <code>ui</code>, and no <code>query_rewrite</code> line, because the stream has no line that could write one and the lane's switch is off. Step 6 turns the switch on for a revision nobody else reaches and asks <code>/v1/query</code> the same words.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit's code</span><h3>The stage in the kit: the call, the guard, one line in /v1/query, and two lines that did not change</h3><p>shared/query_rewrite.py does the work with the standard library and the price table; rewrite.py wires it into the service; main.py calls it once.</p></div></div>
+
+<h4>Definition: the call</h4>
+<p><code>rewrite(client, question)</code> makes one call to <code>%%MODEL%%</code> on the client its caller passes in; rag-api passes the generator's own client, built on location <code>global</code>, where Gemini 3.x generation is served. The request asks for JSON with one string field, <code>query</code>, with thinking budget 0, one attempt, a %%TIMEOUT%% s timeout and at most %%MAXOUT%% output tokens. The prompt says what the desk's index holds and gives %%N_RULES%% rules; the question goes in fenced as data, cut to %%QCHARS%% characters, the request's own cap, with any fence marker taken out so the question cannot close its own fence. The prompt names no tenant, and its example literals are made up, so it names no code or figure of the corpus.</p>
+@@qr_call@@
+@@qr_prompt@@
+
+<h4>Definition: the guard</h4>
+<p><code>normalise()</code> puts both texts in one form: any script's digits as ASCII, lower case, one kind of dash, every spelling of the rupee as "rs ", "%" for per cent, lakh and crore in the singular, single spaces. <code>literals()</code> reads the question's tokens in that form and keeps each one with a digit in it; a plain number takes the "rs " before it and the unit after it, so "Rs 52,000" and "45 days" are literals whole. <code>_present()</code> looks for each literal in the rewrite as a whole token, so 52,000 is not found inside 52,000,000 and E3 not inside E30. <code>dropped()</code> lists the misses, and <code>keeps_literals()</code> is true when there are none. What it does not guard is stated in the module itself: a figure written in words, a name, an acronym. It also looks in one direction only: a rewrite that adds a figure the question never had passes it, and the prompt's rule against adding a fact is the only line against that.</p>
+@@qr_guard@@
+
+<h4>Definition: the outcome, and the line</h4>
+<p><code>rewrite()</code> never raises. It reads the answer, <code>parse()</code> accepting exactly the schema's one field and nothing empty, then decides in a fixed order: no usable query is <code>fallback</code> with the error <code>parse</code>; the question given back, case and closing punctuation aside, is <code>same</code>; a dropped literal is <code>rejected</code>, with the literals it lost; anything else is <code>rewritten</code>. Any exception, a timeout or a 404 or a quota error, is <code>fallback</code> with the exception's class name. Its query is the rewrite only when the outcome is <code>rewritten</code>. The tokens are priced through <code>shared/prices.py</code> at list price, %%P_IN%% and %%P_OUT%% US dollars per million tokens in and out for %%MODEL%%, and a refused rewrite was still billed. <code>row()</code> turns a result into the <code>query_rewrite</code> line: the outcome, the number of literals dropped, the tokens, the cost and the time, never the question, the rewrite or a literal, any of which may be an amount or a name.</p>
+@@qr_rewrite@@
+@@qr_row@@
+
+<h4>Definition: the stage on /v1/query</h4>
+<p><code>search_query()</code> is the whole stage. Off, it returns the question and the vector the handler already has, makes no call, writes no line and leaves the stages as they were, so the answer and its usage row are what they always were. On, it calls <code>rewrite()</code>, embeds an accepted rewrite, and returns that pair; on anything else, a refusal or a failure of the call or of the second embedding, it returns the question and its vector. It writes one line per call and puts three keys on the answer's stages: <code>rewrite</code>, <code>search_query</code> and <code>rewrite_ms</code>, which sits inside <code>retrieve_ms</code>. main.py imports it below <code>_guard()</code> and calls it on one line, after the answer cache's lookup and only on a miss. The next line retrieves with what it returned. The rerank and generate stages read <code>req.query</code>, as they did before the stage existed, and the answer cache stores the question's own vector. config.py holds the switch and refuses a third value at import, so a typo cannot start a revision whose environment says on while it searches the question.</p>
+@@rw_search@@
+@@api_import@@
+@@api_retrieve@@
+@@api_unchanged@@
+@@api_store@@
+@@cfg_switch@@
+
+<h4>Do it, offline: the guard on the module's own example</h4>
+<p>The cell asks the kit's guard about one question and five rewrites of it: a faithful one, the same one spelt with an en dash, the rupee sign and Devanagari digits, the amount written without its comma, the unit given another word, and the section spelt out. Nothing leaves the machine.</p>
+%%CELL_GUARD%%
+%%OUT_GUARD%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The guard forgave every difference of spelling and refused every difference of substance. The en dash, the rupee sign and the Devanagari digits normalised to the question's own literals, so the second rewrite was kept. "52000" is not "52,000" as written, "45 working days" is not "45 days", and "section 53" is not "s.53", so those three were refused, each with the literal it lost. The last refusal is strict on purpose: a statute's section written out is the same section to a reader, and the guard still prefers to search the question rather than judge that, because a refusal costs one wasted call and a wrong literal costs the right clause. On the lane, every refusal searches the question as asked.</p></div>
+
+<h4>Do it, offline: the kit's own tests</h4>
+<p>evals/tests/%%TEST_FILE%% holds %%N_TESTS%% tests that need neither a model nor a lane: the guard on the design's examples and on the golden rows, every outcome against a fake client, the request against google-genai's own config class, the line with no question text, <code>search_query()</code> lifted from rewrite.py with the switch off and on, and the ablation's rewrite arm and paraphrase rows against a stand-in lane. The pipe keeps the summary and drops the timing.</p>
+%%CELL_TESTS%%
+%%OUT_TESTS%%
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Direct call</span><h3>rewrite() called directly: one question, one call, one outcome</h3><p>The kit's function on the global endpoint, over the bench's rows, with the outcome, the time and the rupees of each.</p></div></div>
+
+<h4>Definition</h4>
+<p>This is the function rag-api calls, called from your shell with your own credentials and a client on <code>global</code>. Each row prints its outcome, the call's milliseconds, and either the rewrite or what the stage would search instead; the last line adds up the tokens and the rupees at list price. The model's wording varies from run to run, so compare the outcomes and the guard's verdicts rather than the words. The rewrites the author's run records here are the ones the bench in step 1 shows.</p>
+
+<h4>Do it: the bench's %%BENCH_N%% questions, one call each</h4>
+%%CELL_DIRECT%%
+%%OUT_DIRECT%%
+
+<h4>The bench's rows, computed when this page was built</h4>
+<p>For each row, the rewrite, its outcome under the kit's rules, the anchor, and where BM25 ranks the anchor among the %%CHUNKS%% chunks for the question and for the searched text. On this page, %%BENCH_STATE%%.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Row</th><th>Question</th><th>Rewrite</th><th>Outcome</th><th>Anchor</th><th>BM25 rank: question, searched</th></tr></thead>
+<tbody>
+%%BENCH_ROWS%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The kit's own function asked the model once per question and named an outcome for every call; nothing in it can raise. A rewrite that kept every literal came back as the text to search, a question given back or a rewrite the guard refused came back as the question, and the tally priced the calls in paise. %%BENCH_SUMMARY%% A word-counting ruler moves where the words move; the lane's dense retriever is measured in step 7.</p></div>

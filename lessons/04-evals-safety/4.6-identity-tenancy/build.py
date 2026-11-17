@@ -67,7 +67,7 @@ EXCERPTS = {
     "api_auth": ("services/rag-api/auth.py - verify_iap() and enforce_membership(): 401 for who, 403 for whether",
                  block(RAPI, "def verify_iap(request: Request) -> dict:") + "\n\n\n" + block(RAPI, "def enforce_membership(")),
     "ui_forward": ("services/frontend/chat.py - _headers(): two credentials on every call to the API",
-                   block(CHAT, "def _headers(audience: str = RAG_API_URL) -> dict:", n=17)),
+                   block(CHAT, "def _headers(audience: str = RAG_API_URL) -> dict:", n=18)),
     "ui_admin": ("services/frontend/auth.py - the UI's own copy: its admin list, parsed the old way",
                  block(FE, 'ADMIN_EMAILS = set(os.getenv("ADMIN_EMAILS", "").split(","))', n=2) + "\n...\n" + block(FE, "def is_admin(user):", n=4)),
     "usage_row": ("services/rag-api/main.py - usage_row(): the tenant and the verified caller on every answer",

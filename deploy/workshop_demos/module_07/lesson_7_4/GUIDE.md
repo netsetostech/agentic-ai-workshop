@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_7.4_Mirror_Freshness_WIX.html`, reviewed at blob `52a2208d70780892bee65299e6a93e78318165ff`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_7.4_Mirror_Freshness_WIX.html`, reviewed at blob `a125e44207864ba40330c6fc86173a9a6fb17712`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 7.3 put a copy of acme's and zeta's documents into two Google-managed stores and read answers back from them. A copy raises two questions. Is it as good: does the store find the clause the kit's own index finds? Is it current: when the ledger changes, does every store change with it?
 
@@ -34,7 +34,7 @@ You will learn how the kit measures a store's quality: recall and MRR on the gol
 
 A measure of quality, four events that change the ledger, and one check after each.
 
-Is the copy as good? A store retrieves by its own rules. RAG Engine cuts a version into pieces of 512 tokens and keeps what falls inside a distance threshold. Vertex AI Search returns extractive segments of whole documents. `make ablate ABLATE_ARGS="--arms all"` runs `evals/ablate.py`. It takes the golden rows that carry anchors, the phrases a right answer must retrieve, through six arms with one knob changed in each:
+Is the copy as good? A store retrieves by its own rules. RAG Engine cuts a version into pieces of 512 tokens and keeps what falls inside a distance threshold. Vertex AI Search ranks whole documents, and on the lane's standard edition the passages are the kit's own rows of the versions it ranked: it refuses extractive segments, and its snippets stop short of the figure. When it ranks no document, the kit's own index answers instead, and the API logs `vertex_search_fallback`. `make ablate ABLATE_ARGS="--arms all"` runs `evals/ablate.py`. It takes the golden rows that carry anchors, the phrases a right answer must retrieve, through six arms with one knob changed in each:
 
 - The kit's four arms: dense 5 with no reranker; dense 20, then the reranker to 5, which is the lane's own path; dense 50, then the reranker; and 4.5's hybrid of dense and BM25, then the reranker.
 
@@ -160,7 +160,7 @@ The expected output comes from a stand-in whose retrieval is word overlap. The s
 
 - recall@depth is the reranker's ceiling. On the stand-in, dense 20, dense 50 and hybrid all reach 1.00 at their depth, and all score 0.94 recall@5. Depth is not the knob there, and their three misses are `ranked out`: the reranker's.
 
-- A store arm's depth is what the store returned, not 20. RAG Engine returns only the contexts inside distance 0.5, and Vertex AI Search returns up to three segments a document. `not retrieved at depth 0` is a row for which the store returned nothing at all.
+- A store arm's depth is what the store returned, not 20. RAG Engine returns only the contexts inside distance 0.5, so a row can be `not retrieved at depth 1`. The Vertex AI Search arm keeps only the kit's nearest rows, three times 20 deep, of the documents the store ranked. When the store ranks no document at all, the arm takes the kit's 20 nearest rows, as the API does, and the line under the arm counts those rows. Read that count before the arm's recall: those rows measure the kit's own index, not the store.
 
 - The two failed rows are globex's. globex has no corpus and no data store (lesson 7.3), so each store arm scores 45 rows. The harness prints the failures beside the line instead of scoring them as zeros.
 
@@ -251,6 +251,8 @@ Each point is checked in the kit's code, and the build asserts it, so this box c
 - `make retire`'s store deletes print no line. `reconcile.py` configures no logging, so Python drops the mirror's INFO lines, in your shell and in the nightly Cloud Run job, which gets `MANAGED_MIRROR` too. Only a failure, which is a WARNING, reaches stderr. The `doc.mirror` audit events are the record, which is why `fresh154` reads the audit bucket.
 
 - The ablation cannot see a stale copy. `source_of()` resolves a store's context through the kit's rows whatever their `current` flag says, while the dense arms filter on it. A store that still held a retired version would score that version's text as a hit. The ablation measures quality, and `make managed-status` measures freshness; neither does the other's job.
+
+- The Vertex AI Search arm's recall includes the kit's own rows. When the store ranks no document, the arm scores the kit's 20 nearest rows, because the API serves those. The line under the arm counts those rows, and `--ledger` keeps the count as `store_empty`, but the recall does not leave them out.
 
 - Nothing waits for a Vertex AI Search import. After every event that copies, the data store reads `drift` until the long-running import finishes, and no make target waits for it; `fresh154` polls. `managed.py`'s comment says the walk verifies the import, but `reconcile.py` calls the mirror only to delete.
 

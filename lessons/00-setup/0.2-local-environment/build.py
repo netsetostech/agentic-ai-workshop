@@ -113,12 +113,13 @@ CHROMA_DIR = re.search(r'CHROMA_DIR = os.environ.get\("DOCUMIND_CHROMA_DIR", "([
 CHROMA_COLL = re.search(r'CHROMA_COLLECTION = "([^"]+)"', PROFILE_PY).group(1)
 assert "DeterministicFakeEmbedding(size=768)" in PROFILE_PY
 # make chat-local: the seed runs from the kit's root, the service from services/chat. CHROMA_DIR is relative, so the two
-# lines open two different directories unless DOCUMIND_CHROMA_DIR names one; the page says to set it, and why.
+# lines would open two different directories; both name one, DOCUMIND_CHROMA_DIR under $(CURDIR), and the page says why.
 CHAT_LOCAL = block("Makefile", "chat-local:", n=4)
+CHROMA_SET = 'DOCUMIND_CHROMA_DIR="$(CURDIR)/documind_chroma"'
 assert CHAT_LOCAL.splitlines()[0] == "chat-local:", CHAT_LOCAL
-assert CHAT_LOCAL.splitlines()[1].strip() == "DOCUMIND_PROFILE=local $(PY) -m shared.local_corpus acme", CHAT_LOCAL
-assert CHAT_LOCAL.splitlines()[2].strip() == "cd services/chat && DOCUMIND_PROFILE=local PYTHONPATH=../.. \\", CHAT_LOCAL
-assert CHROMA_DIR.startswith("./") and "DOCUMIND_CHROMA_DIR" not in MAKEFILE, "the chat-local note on the page is stale"
+assert CHAT_LOCAL.splitlines()[1].strip() == f"DOCUMIND_PROFILE=local {CHROMA_SET} $(PY) -m shared.local_corpus acme", CHAT_LOCAL
+assert CHAT_LOCAL.splitlines()[2].strip() == f"cd services/chat && DOCUMIND_PROFILE=local {CHROMA_SET} PYTHONPATH=../.. \\", CHAT_LOCAL
+assert CHROMA_DIR.startswith("./") and CHAT_LOCAL.count(CHROMA_SET) == 2, "the chat-local note on the page is stale"
 PORT = re.search(r"--port (\d+)", CHAT_LOCAL).group(1)
 TOOLS_PY = kit("shared/documind_tools.py")
 assert '"local corpus is empty - run: python -m shared.local_corpus"' in TOOLS_PY        # what an empty store answers
@@ -588,7 +589,6 @@ CELL_LOCALVENV = """cd "${DEMO_ROOT:-$HOME/deploy_module_rag}"                  
 ollama pull """ + LOCAL_MODEL + """                                                   # the model, once"""
 
 CELL_SERVE = """cd "${DEMO_ROOT:-$HOME/deploy_module_rag}" && source "$HOME/rag-local-venv/bin/activate"
-export DOCUMIND_CHROMA_DIR="$PWD/documind_chroma"     # one directory for the seed and the service
 make chat-local                                       # seeds acme, then serves until Ctrl+C"""
 
 CELL_HEALTH = f"curl -s localhost:{PORT}/health | python -m json.tool"
@@ -604,7 +604,7 @@ CELL_ASK = (f"curl -s localhost:{PORT}/v1/chat -H 'content-type: application/jso
             f"  -d '{{\"question\": \"{QUESTION}\", \"brain\": \"direct\", \"session_id\": \"lesson-0-2\"}}'\n"
             + heredoc(ASK_PY))
 
-CELL_READ = ('cd "$DEMO_ROOT" && DOCUMIND_PROFILE=local DOCUMIND_CHROMA_DIR="$PWD/documind_chroma" \\\n'
+CELL_READ = ('cd "$DEMO_ROOT" && DOCUMIND_PROFILE=local \\\n'
              '  "$HOME/rag-local-venv/bin/python" - <<\'PY\'\n' + READ_PY + "\nPY")
 
 CELL_DRYRUN = """cd "$DEMO_ROOT" && source "$HOME/rag-shell-venv/bin/activate"

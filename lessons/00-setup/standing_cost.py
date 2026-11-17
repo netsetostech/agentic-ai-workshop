@@ -66,7 +66,10 @@ assert float(one(r"Autopilot cluster fee \(after the free-tier credit\) \| \$([\
 V = src["terraform/vector.tf"]
 SHARD_MACHINE = dict(re.findall(r"(SHARD_SIZE_[A-Z]+)\s+= \"([a-z0-9-]+)\"", V))
 assert SHARD_MACHINE == {"SHARD_SIZE_SMALL": "e2-standard-2", "SHARD_SIZE_MEDIUM": "e2-standard-16", "SHARD_SIZE_LARGE": "e2-highmem-16"}
-assert "shard_size" not in V.split('resource "google_vertex_ai_index" "documind" {', 1)[1].split("index_update_method", 1)[0]
+# the size a new lane's index is created with (8 October 2026); ignore_changes leaves an existing index the one it has
+INDEX_TF = V.split('resource "google_vertex_ai_index" "documind" {', 1)[1].split("\n}\n", 1)[0]
+NEW_SHARD = one(r'^\s+shard_size\s+= "(SHARD_SIZE_[A-Z]+)"', INDEX_TF, re.M)
+assert NEW_SHARD == "SHARD_SIZE_SMALL" and "ignore_changes = [metadata[0].config[0].shard_size]" in INDEX_TF, NEW_SHARD
 VS_REPLICAS = int(one(r"min_replica_count = (\d+)", V))
 assert int(one(r"max_replica_count = (\d+)", V)) == VS_REPLICAS
 SP = src["terraform/spanner.tf"]
@@ -121,5 +124,5 @@ PER_MONTH = {k: r0(HOURLY[k] * MONTH_H * USD_INR) for k in SHARDS}
 
 
 def item_usd(key: str, shard: str) -> float:
-    """One item's dollars an hour; the index's depends on the shard size the service chose."""
+    """One item's dollars an hour; the index's depends on its shard size (SMALL for a new index, NEW_SHARD)."""
     return INDEX_USD[shard] if key == "index" else next(u for k, *_, u in ITEMS if k == key)

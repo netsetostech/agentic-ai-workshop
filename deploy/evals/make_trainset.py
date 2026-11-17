@@ -65,7 +65,7 @@ RETRY = {"attempts": 8, "initial_delay": 2.0, "max_delay": 60.0, "http_status_co
 GIVE_UP_AFTER = 3
 
 # The generator's SYSTEM, verbatim (services/rag-api/generator.py). The tuned model is served behind
-# that prompt, so it is trained behind that prompt. tools/check_auth_wiring.py holds the two equal.
+# that prompt, so it is trained behind that prompt. commands/tests/test_prompt_versions.py holds the two equal.
 SYSTEM = """You are DocuMind, a retrieval-grounded assistant.
 Rules:
 1. Answer ONLY from the numbered context below. Never invent sources.

@@ -142,7 +142,7 @@ Operation: bash — run in the operator shell, in $DEMO_ROOT (the withdrawal, th
 Expected shape, not a promised result:
 
 ```text
-{"event": "reconcile_withdrawn", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/smoke_note_v1.md", "fingerprint": "7c2e91a4d05b3f68", "retired_doc_keys": ["acme_9c41d0e2b7f5..."], "retired_ids": ["acme:9c41d0e2b7f5...#0", "acme:9c41d0e2b7f5...#1", "acme:9c41d0e2b7f5...#2"], "retired_chunks": 3, "note": "a tombstone: the object is kept and nothing automatic re-ingests it; make restore SOURCE= does"}
+{"event": "reconcile_withdrawn", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/smoke_note_v1.md", "fingerprint": "7c2e91a4d05b3f68", "retired_doc_keys": ["acme_9c41d0e2b7f5..."], "retired_ids": ["acme:9c41d0e2b7f5...#0", "acme:9c41d0e2b7f5...#1", "acme:9c41d0e2b7f5...#2"], "retired_chunks": 3, "datapoints_removed": 3, "note": "a tombstone: the object is kept and nothing automatic re-ingests it; make restore SOURCE= does"}
 acme/smoke_note_v1.md withdrawn chunks 3
 fingerprint 7c2e91a4d05b3f68 | last event reconcile_withdrawn
 3 rows | current: 0 | with expire_at: 3 | superseded_by: {'None'}
@@ -231,6 +231,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.7_Versions_WIX.html`. All 38 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `3fc7051907aad57df30bf22596ebd56a662a00ac`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.7_Versions_WIX.html`. All 38 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `9d9079026f91a68b0b2e43907d5109b3a5aaf36e`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

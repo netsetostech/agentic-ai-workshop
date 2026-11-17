@@ -26,7 +26,7 @@ RETRY_FAILED_STEP = False
 
 # Original CLI workflow for step_01_read_the_mirror_rows_then_the_audit_event.
 COMMANDS_01 = """bq --project_id="$PROJECT" query --use_legacy_sql=false --format=pretty \\
-  "SELECT chunk_id, heading_path, kind, doc_type, pii_flag, FORMAT_TIMESTAMP('%H:%M:%S', ingested_at) AS at
+  "SELECT chunk_id, heading_path, kind, doc_type, pii_flag, FORMAT_TIMESTAMP('%H:%M:%S', ingested_at) AS at_time
    FROM \\`$BQ_CHUNK_TABLE\\` WHERE tenant_id = 'acme' AND source_uri = 'gs://$PROJECT-uploads/acme/smoke_note_v1.md' ORDER BY chunk_id"
 
 bq --project_id="$PROJECT" query --use_legacy_sql=false --format=pretty \\
@@ -49,7 +49,7 @@ def step_01_read_the_mirror_rows_then_the_audit_event(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: +--------------------------------------------------+---------------------------+------+----------+----------+----------+
-    |                     chunk_id                     |       heading_path        | kind | doc_type | pii_flag |    at    |
+    |                     chunk_id                     |       heading_path        | kind | doc_type | pii_flag | at_time  |
     +--------------------------------------------------+---------------------------+------+----------+----------+----------+
     | acme:9c41d0e2b7f5...#0                           | NULL                      | text | unknown  |    false | 10:39:52 |
     | acme:9c41d0e2b7f5...#1                           | SM-01 - The smoke lantern | text | unknown  |    false | 10:39:52 |

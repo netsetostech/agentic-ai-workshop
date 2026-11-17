@@ -5,7 +5,7 @@ Do it: four filters, four verdicts
 Run order inside this file:
 1. Do it: four filters, four verdicts (source window 16)
 
-Prerequisites: demo_04_authorized_the_tenant_comes_from_identity_and_one_index_serves_three.
+Prerequisites: demo_04_authorized_the_tenant_comes_from_identity_and_one_index_holds_three.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
 The functions below contain the lesson examples in source order. Helpers
 supply configuration, authentication, state and CLI execution. See README.md

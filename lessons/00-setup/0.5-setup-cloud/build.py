@@ -1,12 +1,15 @@
-"""Build lesson 0.5 from its three parts, the shared template and verbatim kit excerpts.
+"""Build lesson 0.5 from its three parts, the author's three setup guides under their own names,, the shared template and verbatim kit excerpts.
 
-Set up the cloud lane end to end from Cloud Shell, in three phases that each end in a checkpoint. Phase 1 (part a):
+Set up the cloud lane end to end from Cloud Shell, in three phases that each end in a checkpoint. Phase 1 (1-infra-setup):
 the project, the tools, Python 3.12 in ~/rag-shell-venv and the kit cloned from main into ~/deploy_module_rag, with
-the settings saved to ~/rag-env.sh. Phase 2 (part b): the APIs, the state bucket, one saved Terraform plan, its apply
-and the vector index check. Phase 3 (part c): pin GIT_SHA, the kit's regression gate, seven images under that tag,
-the seven Cloud Run services with the UI and admin console behind IAP, the tenant rosters, and the checks.
+the settings saved to ~/rag-env.sh. Phase 2 (2-terraform-apply): the APIs, the state bucket, one saved Terraform plan, its apply
+and the vector index check. Phase 3 (3-build-and-deploy): pin GIT_SHA, the kit's regression gate, seven images under that tag,
+the seven Cloud Run services with the UI, the admin console and chat behind IAP, the tenant rosters, the four targets make up
+finishes with (the index wait, the managed stores, the usage views, the vector count), and the checks. Brought to the kit of
+14 October 2026: the kit's state bucket and prefix, its inputs file, the short GIT_SHA its Makefile tags with, the chat and
+peer deploys as commands/lesson-12.8.sh and lesson-8.4.sh make them.
 
-At build time: the Makefile's service list, the roster target and commands/lane.py's roster_plan are quoted verbatim
+At build time: the Makefile's service list and up recipe, the roster target and commands/lane.py's roster_plan are quoted verbatim
 (pagebuild.block), and the standing cost comes from lessons/00-setup/standing_cost.py, the one source 0.1, 0.3 and 0.4
 state it from, so the pages agree.
 
@@ -52,14 +55,23 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 .fixnote-t{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--teal-dark);margin-right:4px;}
 """
 
-PARTS = [part(LESSON, name) for name in ("a", "b", "c")]
+PARTS = [part(LESSON, name) for name in ("1-infra-setup", "2-terraform-apply", "3-build-and-deploy")]
 
 # ---------------------------------------------------------------- verbatim kit excerpts
 EXCERPTS = {
     "services": ("deploy/Makefile - the seven services", block("Makefile", "SERVICES   =", n=4)),
     "roster_target": ("deploy/mk/ingestion.mk - the roster target", block("mk/ingestion.mk", "roster: guard-project", n=2)),
     "roster_plan": ("deploy/commands/lane.py - roster_plan, what the roster writes", block("commands/lane.py", "def roster_plan")),
+    "up_target": ("deploy/Makefile - what make up runs after the apply", block("Makefile", "up: guard-project", n=3)),
 }
+UP_TARGETS = EXCERPTS["up_target"][1].split("\n")[2].split()     # whole target names: "bq-views" is not "bq-views-when-ready"
+for target in ("wait-index", "roster", "managed-stores", "bq-views-when-ready", "vector-status"):
+    assert target in UP_TARGETS, EXCERPTS["up_target"][1]
+CLOSING = re.search(r"^make (wait-index [^\\\n]*?)\s*\\$", PARTS[2], re.M).group(1).split()
+assert CLOSING == ["wait-index", "managed-stores", "bq-views-when-ready", "vector-status"] and set(CLOSING) <= set(UP_TARGETS), CLOSING
+TRUST = re.search(r"<!--BASH bash - Inputs.*?<!--/BASH-->", PARTS[1], re.S).group(0)    # T4: the learner's fork, never the author's repository
+assert 'TF_VAR_github_repository="$GH_REPO"' in TRUST and 'TF_VAR_github_repository_id="$GH_REPO_ID"' in TRUST, TRUST
+assert '"netsetos/agents_workshop_learner" ]]' in TRUST and not re.search(r"TF_VAR_github_repository(_id)?='", TRUST), TRUST
 SERVICES = EXCERPTS["services"][1].split("=", 1)[1].split("\n")[0].split()
 assert SERVICES == ["ingest", "api", "admin", "ui", "chat", "mcp", "agent"], SERVICES
 PLAN = EXCERPTS["roster_plan"][1]

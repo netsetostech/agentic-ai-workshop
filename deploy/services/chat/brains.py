@@ -38,6 +38,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import ToolException
 
 import limits
+import peer
 from shared import documind_tools
 from shared.profile import LOCAL_MODEL, PROFILE, build_llm
 from tools import BLOCKED, REQUEST, TOOLS, for_adk
@@ -47,6 +48,10 @@ logger = logging.getLogger("documind.chat.brains")
 BRAINS = ("langchain", "langgraph", "adk", "direct")
 DEFAULT_BRAIN = os.environ.get("DOCUMIND_BRAIN", "langchain")
 MODEL = os.environ.get("CHAT_MODEL", "gemini-3.6-flash")
+# ADK's own planner on the ADK brain (workshop lesson 10.2), off unless set. plan_react, the one value, is ADK's
+# PlanReActPlanner: a written plan before any call. Read once at import, as the kit's other switches are.
+ADK_PLANNER = os.environ.get("ADK_PLANNER", "")
+NO_FINAL_ANSWER = "The model wrote a plan but no final answer. Its plan:\n"
 
 SYSTEM = (
     "You are DocuMind AI, a document intelligence assistant. "
@@ -265,6 +270,16 @@ class AdkBrain:
                         after_tool_callback=mark_error,
                         before_model_callback=limits.adk_before_model, after_model_callback=limits.adk_after_model,
                         on_model_error_callback=limits.adk_model_error)
+        if peer.PEER_URL:                   # the A2A hand-off (workshop lesson 10.7): one more tool, this brain's only
+            root.tools.append(peer.tool())
+        # ADK_PLANNER (workshop lesson 10.2), set on the agent once it is built: the flow reads root.planner on every
+        # model request (google-adk 2.8.0, flows/llm_flows/_nl_planning.py), and LlmAgent's pydantic config is
+        # neither frozen nor validated on assignment. Verified offline on that pin, 13 October 2026.
+        if ADK_PLANNER == "plan_react":
+            from google.adk.planners import PlanReActPlanner
+            root.planner = PlanReActPlanner()
+        elif ADK_PLANNER:
+            logger.warning("ADK_PLANNER=%r is not one this kit sets (plan_react); no planner", ADK_PLANNER)
         self.svc = self._sessions()
         self.runner = Runner(app=App(name="documind", root_agent=root), session_service=self.svc)
         # ADK's own cap stays, as the backstop: the Meter refuses the call after the last one first.
@@ -292,6 +307,8 @@ class AdkBrain:
         meter = limits.meter_of(ctx)
         token = REQUEST.set(ctx)       # asyncio.run() copies it into the task, and ADK into each tool call
         out = {"answer": "", "tool_calls": [], "refusals": []}      # filled as the events arrive
+        if peer.PEER_URL:                   # this turn's hand-offs (peer.py): in the response, never in the chat row
+            out["handoffs"] = ctx["handoffs"] = []
         try:
             asyncio.run(self._run(question, user_id, session_id, out))
         except LlmCallsLimitExceededError:      # the backstop; the Meter's cap is checked before ADK counts
@@ -318,7 +335,12 @@ class AdkBrain:
                 if isinstance(res.response, dict) and res.response.get("status") == "error":
                     refusals.append(res.name)        # an error result, as a ToolMessage with status "error" is
             if ev.is_final_response() and ev.content and ev.content.parts:
-                out["answer"] = "".join(p.text or "" for p in ev.content.parts)
+                # A part marked thought is not the answer (13 October 2026): ADK_PLANNER's plan and reasoning come back
+                # so marked, and until then they were joined into it. A reply that was all plan says so, never "".
+                out["answer"] = "".join(p.text or "" for p in ev.content.parts if not p.thought)
+                if any(p.thought for p in ev.content.parts):
+                    plan = "".join(p.text or "" for p in ev.content.parts).strip()
+                    out["answer"] = out["answer"].strip() or NO_FINAL_ANSWER + plan
 
 
 # ----------------------------------------------------------------------------- 4. direct

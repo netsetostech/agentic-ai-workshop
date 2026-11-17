@@ -37,7 +37,7 @@ def step_01_embed_one_clause_yourself_both_ways(session):
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: lane vector: 768 numbers; first three [0.0213, -0.0117, 0.0388]
     same text, RETRIEVAL_DOCUMENT: cosine to the lane's vector 1.0
-    same text, RETRIEVAL_QUERY:    cosine to the lane's vector 0.9xxx
+    same text, RETRIEVAL_QUERY:    cosine to the lane's vector 0.8xxx
     """
     import os, math, warnings
     warnings.filterwarnings("ignore", category=UserWarning)

@@ -1165,6 +1165,8 @@ def fake_cli() -> None:
             return subprocess.CompletedProcess(list(cmd), 0, who + "\n", "")
         if isinstance(cmd, (list, tuple)) and list(cmd[:3]) == ["gcloud", "logging", "read"]:
             return subprocess.CompletedProcess(list(cmd), 0, logging_read(list(cmd)), "")
+        if isinstance(cmd, (list, tuple)) and list(cmd[:3]) == ["gcloud", "storage", "rm"]:
+            return subprocess.CompletedProcess(list(cmd), 0, "", f"Removing objects:\nRemoving {cmd[3]}...\n")
         if isinstance(cmd, (list, tuple)) and list(cmd[:3]) == ["make", "-s", "managed-status"]:
             args = dict(a_.split("=", 1) for a_ in cmd[3:])
             out = managed_status(["--project", args["PROJECT"], "--status", "--mode", "both"]

@@ -307,13 +307,19 @@ class LessonCloud:
             require_fresh_vector(result)
         return result
 
-    def fixture(self, tenant, filename, data, *, upload):
+    def fixture(self, tenant, filename, data, *, upload, follow_upload=False):
         """Use exact bytes and a generation guard; never overwrite a different file.
-        
-        UI mode only verifies the existing object. Operator mode creates a missing
+
+        UI mode verifies the existing object, pausing for the learner's upload when it
+        is missing. Operator mode creates a missing
         fixture and reuses an identical existing object, avoiding duplicate-upload
         events whose content claim may already have been completed.
-        
+
+        follow_upload (lesson 3.8): the learner's own upload is the version to follow. A note
+        pasted into an editor can differ from the local file in its line endings; its bytes are
+        then a different version with its own hash, as lesson 1.1's version contract says, and
+        the demo follows the version the upload wrote instead of refusing it.
+
         Example: self.fixture(tenant, filename, data, upload) in the owning lesson/helper context
         """
         from google.api_core.exceptions import NotFound
@@ -323,12 +329,31 @@ class LessonCloud:
         try:
             blob.reload(retry=None, timeout=15)
         except NotFound:
-            require(upload, f"Upload evals/demo/{filename} in the ACME UI (Documents -> Upload -> Index documents), then rerun demo 2. Or explicitly choose ACME_UPLOAD='operator' in that file.")
-            blob.upload_from_string(data, content_type="text/markdown", if_generation_match=0, timeout=60)
-            print("Operator uploaded:", name)
-        require(blob.size == len(data), f"{name} has different bytes. Use the exact kit fixture; this demo will not overwrite it.")
-        remote = blob.download_as_bytes(if_generation_match=blob.generation, retry=None, timeout=30)
-        require(remote == data, f"{name} differs from the local fixture (including line endings). Inspect it before continuing.")
+            if upload:
+                blob.upload_from_string(data, content_type="text/markdown", if_generation_match=0, timeout=60)
+                print("Operator uploaded:", name)
+            elif follow_upload:
+                require(False, f"{name} is not in the uploads bucket yet. Upload the file in the {tenant.upper()} UI "
+                               "(Documents -> Upload -> Index documents), then run this step again.")
+            else:
+                # The UI path: pause for the learner's upload (a manual checkpoint), then read the object again,
+                # instead of failing the demo before the learner had the chance (20 October 2026's run).
+                from .steps import manual_checkpoint
+                manual_checkpoint(f"Upload evals/demo/{filename} in the {tenant.upper()} UI (Documents -> Upload -> Index documents).")
+                try:
+                    blob.reload(retry=None, timeout=15)
+                except NotFound:
+                    require(False, f"{name} is still not in the uploads bucket. Upload it in the {tenant.upper()} UI, then rerun demo 05, or choose ACME_UPLOAD='operator' in that file.")
+        if follow_upload:
+            remote = blob.download_as_bytes(if_generation_match=blob.generation, retry=None, timeout=30)
+            if remote != data:
+                print(f"Your upload differs from the file in your home directory ({len(remote)} bytes against "
+                      f"{len(data)}, often its line endings): following the version your upload wrote.")
+            data = remote
+        else:
+            require(blob.size == len(data), f"{name} has different bytes. Use the exact kit fixture; this demo will not overwrite it.")
+            remote = blob.download_as_bytes(if_generation_match=blob.generation, retry=None, timeout=30)
+            require(remote == data, f"{name} differs from the local fixture (including line endings). Inspect it before continuing.")
         contract = DocumentContract(tenant_id=tenant, sha256=sha256_of(data), gcs_uri=f"gs://{self.bucket.name}/{name}", pages=0)
         return {"tenant": tenant, "name": name, "uri": contract.gcs_uri,
                 "sha256": contract.sha256, "doc_key": contract.doc_key, "generation": str(blob.generation)}

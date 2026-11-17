@@ -68,17 +68,23 @@ def _firestore_fallback(vec: list[float], tenant_id: str, top_k: int, filters: d
     combination. Without it Firestore does not degrade, it refuses.
     """
     query = _fs().collection(settings.chunks_collection).where("tenant_id", "==", tenant_id)
-    if settings.retrieval_current_only == "on":
+    current_only = settings.retrieval_current_only == "on"
+    if current_only:
         # The ledger's promise (12.5): one current version per document. The pre-filter needs the second
         # vector index in firestore_indexes.tf (tenant_id, current, embedding).
         query = query.where("current", "==", True)
     for k, v in (filters or {}).items():
         query = query.where(k, "in", v) if isinstance(v, list) else query.where(k, "==", v)   # doc_type, kind: the keys schemas.FILTER_KEYS allows, main.py checked
+    # Without the pre-filter, retired versions hold places among the nearest rows (the index never does: it keeps
+    # current rows only) and prefer_current() drops them after, so a re-issued corpus answered from here with half a
+    # pool (11 of 20 on 21 October 2026). Ask for four times as many and keep the first top_k current ones.
     hits = (query
             .find_nearest("embedding", Vector(vec),
                           distance_measure=DistanceMeasure.COSINE,
-                          limit=top_k,
+                          limit=top_k if current_only else min(4 * top_k, 1000),
                           distance_result_field="d").get())
+    if not current_only:
+        hits = [h for h in hits if h.to_dict().get("current") is not False][:top_k]
     out = []
     for h in hits:
         d = h.to_dict()
@@ -263,77 +269,53 @@ def _search_filter(filters: dict | None) -> str:
     quoted = lambda v: ", ".join('"' + str(t).replace("\\", "\\\\").replace('"', '\\"') + '"' for t in (v if isinstance(v, list) else [v]))
     return " AND ".join(f"{k}: ANY({quoted(v)})" for k, v in (filters or {}).items() if k != "kind")
 
-def _search_texts(doc) -> list[tuple[str, str]]:
-    """What the store extracted for one result: its extractive segments (content, pageNumber) when it serves them, else
-    its snippet with the markup stripped - the field 4.4's cell reads; nothing for a document with neither."""
-    dd = ((discoveryengine.Document.to_dict(doc).get("derived_struct_data") or {}) if hasattr(discoveryengine.Document, "to_dict")
-          else dict(getattr(doc, "derived_struct_data", None) or {}))
-    out = []
-    for seg in dd.get("extractive_segments") or []:
-        text = str(seg.get("content") or "").strip()
-        if text:
-            out.append((text, str(seg.get("pageNumber") or "")))
-    if not out:
-        for snip in dd.get("snippets") or []:
-            text = re.sub(r"<[^>]+>", "", str(snip.get("snippet") or "")).strip()
-            if text:
-                out.append((text, ""))
-    return out
-
 def _search_retrieve(query: str, tenant_id: str, top_k: int, filters: dict | None = None,
                      vec: list[float] | None = None) -> list[dict]:
     """RETRIEVAL_BACKEND=vertex_search (R4, 13 September 2026 evening): lesson 4.4's data store as the kit's retrieval
-    stage, to the same contract as rag_engine (the plan's D1) - the store ranks, the kit reranks, packs, generates
-    and cites.
+    stage, to the same contract as rag_engine (the plan's D1) - the store ranks the documents; the kit picks their
+    passages, reranks, packs, generates and cites.
 
     The tenant's data store is the mirror's (managed.tf; services/ingest/managed.py: one Document per current version,
     its id the doc_key, its content the version's text), searched by text through its default serving config as
-    4.4's notebook searches it. Each result is the version's text as the store extracted it - extractive segments
-    when it serves them, else the snippet - one chunk each, mapped to the kit's chunk contract through the version's
-    own row (source_uri, doc_type, effective_from, a fresh `current`); the id is stable (tenant, doc_key, a hash of
-    the text), the score is the rank (Vertex AI Search orders, it does not score: 1.0, 0.99, ... until the reranker
-    orders the pool), found_by vertex_search. The caller's doc_type goes to the store as a filter expression on its
-    structData and is applied once more to the mapped chunks; figures and segments join from the kit's own index
-    (D4) unless the caller asked for text alone. No results is an empty pool - the store answered. A tenant with no
-    data store, or a store that will not answer, is the Firestore rung with the filters, logged vertex_search_fallback."""
+    4.4's notebook searches it, for TOP_K_RETRIEVE documents. The passages are the kit's own rows of the versions the
+    store ranked: the Firestore rung's nearest rows to the question, three times TOP_K_RETRIEVE deep, with the tenant,
+    the ledger's current and the caller's filters as pre-filters, kept when their version is among the store's, cut to
+    TOP_K_RETRIEVE, found_by vertex_search and store_rank the version's place in the store's order. Their ids, scores
+    and citations are the kit's rows' own. A standard-edition store has no passage of its own worth reading: extractive
+    segments are an Enterprise feature it refuses outright (400 FailedPrecondition), and a snippet stops short of the
+    figure the question asks for (22 October 2026). The caller's doc_type goes to the store as a filter expression on
+    its structData too; figures and segments join from the kit's own index (D4) unless the caller asked for text alone.
+    A tenant with no data store, a store that will not answer, or a store that ranks no document is the Firestore rung
+    with the filters, logged vertex_search_fallback. A standard-edition store matches the question's words: asked
+    zeta's "What is the per-trip cap on travel reimbursement?", it ranked nothing, and the empty pool refused the
+    required row iso-01, which the tenant's own handbook answers (22 October 2026)."""
     kind = (filters or {}).get("kind")
     if kind and kind != "text":                        # figures or segments only: the store has none, the index has them
         return _media_rows(vec, tenant_id, settings.top_k_retrieve, filters)
     try:
-        spec = discoveryengine.SearchRequest.ContentSearchSpec(
-            snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(return_snippet=True),
-            extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
-                max_extractive_segment_count=settings.search_segments))
         results = list(_search().search(request=discoveryengine.SearchRequest(
             serving_config=_search_serving_config(tenant_id), query=query, page_size=settings.top_k_retrieve,
-            filter=_search_filter(filters), content_search_spec=spec)))
+            filter=_search_filter(filters))))
     except Exception as e:
         logging.warning(json.dumps({"event": "vertex_search_fallback", "tenant": tenant_id, "error": str(e)[:200],
                                     "hint": "no data store for the tenant (MANAGED_SEARCH=true make up declares one per `any` tenant), or the store did not answer"}))
         return _firestore_fallback(vec, tenant_id, settings.top_k_retrieve, filters)
-    rows: dict[str, dict | None] = {}
-    out, rank = [], 0
+    ranked: dict[str, int] = {}
     for r in results:
-        doc = getattr(r, "document", None)
-        doc_key = (getattr(doc, "id", "") or "") if doc is not None else ""
-        if not doc_key:
+        doc_key = getattr(getattr(r, "document", None), "id", "") or ""
+        if doc_key:
+            ranked.setdefault(doc_key, len(ranked) + 1)    # the store's order, first place 1
+    if not ranked:
+        logging.warning(json.dumps({"event": "vertex_search_fallback", "tenant": tenant_id, "error": "the store ranked no document",
+                                    "hint": "the store's search matches words; the kit's own rows answered the question"}))
+        return _firestore_fallback(vec, tenant_id, settings.top_k_retrieve, filters)
+    out = []
+    for chunk in _firestore_fallback(vec, tenant_id, 3 * settings.top_k_retrieve, filters):
+        if chunk.get("doc_key") not in ranked or chunk.get("kind", "text") != "text" or not matches(chunk, filters):
             continue
-        if doc_key not in rows:
-            rows[doc_key] = _version_row(tenant_id, doc_key)
-        row = rows[doc_key]
-        if row is None:                                # a document the ledger does not know: never served
-            continue
-        for text, page in _search_texts(doc):
-            chunk = {"id": f"{tenant_id}:{doc_key}#vs-{hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]}",
-                     "text": text, "source_uri": row.get("source_uri") or "", "doc_key": doc_key,
-                     "doc_type": row.get("doc_type"), "kind": "text", "effective_from": row.get("effective_from"),
-                     "indexed_at": row.get("indexed_at"), "reactivated_at": row.get("reactivated_at"),
-                     "current": row.get("current"), "locator": f"p{page}" if page else "",
-                     "score": max(0.0, 1.0 - rank / 100), "found_by": "vertex_search"}
-            rank += 1
-            if not matches(chunk, filters):
-                continue
-            out.append(chunk)
+        chunk["found_by"], chunk["store_rank"] = "vertex_search", ranked[chunk["doc_key"]]
+        out.append(chunk)
+    out = out[:settings.top_k_retrieve]
     if kind != "text":
         out += _media_rows(vec, tenant_id, max(3, settings.top_k_retrieve // 4), filters)
     return sorted(out, key=lambda c: -c["score"])[:settings.top_k_retrieve]

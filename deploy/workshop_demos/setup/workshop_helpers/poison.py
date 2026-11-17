@@ -66,31 +66,38 @@ def inspect_dead_letter(session, *, acknowledge=False):
         print("This run's dead letter was already acknowledged.")
         return
     url = f"https://pubsub.googleapis.com/v1/projects/{session.config.project}/subscriptions/ingest-dlq-sub"
+    matching, evidence = [], []
     with AuthorizedSession(session.credentials) as client:
-        response = client.post(url + ":pull", json={"maxMessages": 100}, timeout=30)
-        response.raise_for_status()
-        received = response.json().get("receivedMessages", [])
-        matching, release, evidence = [], [], []
-        for row in received:
-            try:
-                payload = json.loads(base64.b64decode(row["message"]["data"]))
-            except (KeyError, ValueError):
-                payload = {}
-            if matches(payload, saved):
-                matching.append(row["ackId"])
-                evidence.append(payload)
+        # A pull may return only some of the waiting messages, so one batch missing the drill's letter is not proof
+        # it is absent: with other letters queued, the cleanup's single pull missed one that demo 07 had just read
+        # (21 October 2026). Read up to five batches, releasing every unrelated message each time.
+        for _ in range(5):
+            response = client.post(url + ":pull", json={"maxMessages": 100}, timeout=30)
+            response.raise_for_status()
+            received = response.json().get("receivedMessages", [])
+            release = []
+            for row in received:
+                try:
+                    payload = json.loads(base64.b64decode(row["message"]["data"]))
+                except (KeyError, ValueError):
+                    payload = {}
+                if matches(payload, saved):
+                    matching.append(row["ackId"])
+                    evidence.append(payload)
+                else:
+                    release.append(row["ackId"])
+            if acknowledge and matching:
+                result = client.post(url + ":acknowledge", json={"ackIds": matching}, timeout=30)
+                result.raise_for_status()
+                saved["acknowledged"] = True
+                session.save()
             else:
-                release.append(row["ackId"])
-        if acknowledge and matching:
-            result = client.post(url + ":acknowledge", json={"ackIds": matching}, timeout=30)
-            result.raise_for_status()
-            saved["acknowledged"] = True
-            session.save()
-        else:
-            release += matching
-        if release:
-            result = client.post(url + ":modifyAckDeadline", json={"ackIds": release, "ackDeadlineSeconds": 0}, timeout=30)
-            result.raise_for_status()
+                release += matching
+            if release:
+                result = client.post(url + ":modifyAckDeadline", json={"ackIds": release, "ackDeadlineSeconds": 0}, timeout=30)
+                result.raise_for_status()
+            if matching:
+                break
     write_json(session.attempt / "drill_dead_letters.json", evidence)
     if not matching:
         raise RuntimeError("This drill's exact generation was not in the pulled batch. It may still be retrying or outside this batch. No unrelated message was acknowledged; retry this read later.")

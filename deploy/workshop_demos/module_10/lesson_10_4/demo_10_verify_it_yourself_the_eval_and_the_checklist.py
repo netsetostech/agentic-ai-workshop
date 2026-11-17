@@ -59,7 +59,10 @@ def step_01_the_router_s_eval_dev_split(session):
     session.shell(COMMANDS_01)
 
 # Original CLI workflow for step_02_the_test_split.
-COMMANDS_02 = """make route-eval PROJECT="$PROJECT" REGION="$REGION" SPLIT=test
+COMMANDS_02 = """set +e +o pipefail   # as the page runs it: its expected output shows a command here failing, as the cell means it to
+make route-eval PROJECT="$PROJECT" REGION="$REGION" SPLIT=test
+true   # that failure is the cell's answer: compare the output with the page's expected window
+
 
 """
 

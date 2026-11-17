@@ -1,0 +1,71 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder. The UI is not used, and nothing on this page asks the API, so the setup's pin of acme to the kit's index changes nothing here. Every step except step 6 reads files and costs nothing; step 6 needs lesson 4.2's <code>~/judge-venv</code> and asks Vertex AI Evaluation for %%N_EVAL_FROZEN%% ratings. The lesson reads four files: the frozen set <code>evals/judge_set.json</code>, the author's labels <code>evals/judge_labels.L1.csv</code>, a peer's <code>evals/judge_labels.L2.csv</code> and the judge's ratings <code>evals/judge_set.ratings.jsonl</code>. They are recorded from the author's run and are <strong>not in the kit yet</strong>; once they are, the setup block's <code>git pull</code> brings them. Until then you build each one yourself, and every step says how: you freeze your own set (step 3, one judge run over lesson 4.2's saved answers), a colleague labels it as your second reader (step 4), and your lane's judge rates it (step 6, which step 5 then reads). Labelling takes the longest: allow time to read every row's context in full.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Your labels</span><h3>Label the frozen rows yourself, blind</h3><p>A blank sheet of the frozen rows, filled in a spreadsheet, then checked against the set.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make label-sheet</code> writes a CSV with one row per frozen answer: its id, your reader id, the two label columns, an optional note, then the question, the answer, the context that answer cites, and <code>row_sha</code>, a hash of those three. Every reader reads the same rows: you, the author and a peer from the same guide, and the judge through its own template. The sheet does not say which rows are constructed, and the target never overwrites a sheet that exists, so running it twice cannot wipe your labels. <code>--check</code> then holds the filled sheet to the frozen set: every row once, each labelled on the same answer, yes or no in both columns, one reader id. The author's and the peer's sheets ship in a public kit, so a reader id is a short pseudonym of letters, digits, <code>-</code> and <code>_</code>, and the check refuses an email.</p>
+
+<h4>The code</h4>
+@@label_target@@
+@@guide@@
+@@emit_doc@@
+@@row_sha@@
+
+<div class="box box-red"><div class="box-title">Label before you read further</div>
+<p>Steps 4 to 8 print the author's labels, a peer's and the judge's ratings of these very rows, and steps 5 and 8 mark the constructed ones. Read any of them first and your labels are no longer your own. Fill your sheet, check it, then go on.</p></div>
+
+<h4>Do it first: a frozen set, your own while the kit has none</h4>
+<p>While your kit has no <code>evals/judge_set.json</code>, freeze your own. <code>make judge</code> with <code>--save-rows</code> rates lesson 4.2's saved answers, <code>evals/reports/judge72.json</code>, and writes every rated row beside its question, context and answer. If that file is gone, <code>--reuse</code> collects the answers afresh, %%N_GOLDEN%% questions to your API, about Rs %%LIVE_RS%%. Each row gets two Evaluation requests either way. <code>--freeze</code> then picks %%ROWS%% of the rated rows by the rules in step 8 and writes them to <code>evals/reports/judge_set.json</code>. Git ignores that folder, so the author's set can arrive later without a clash. The kit's targets read your set while the kit has none, and the author's once it ships. Skip the block if the first line says a set is there.</p>
+%%CELL_OWN%%
+
+<h4>Do it: your sheet</h4>
+%%CELL_SHEET%%
+%%OUT_SHEET%%
+
+<p>Open <code>evals/reports/judge_labels.csv</code> in a spreadsheet or a text editor. For each row, read the context first, then the answer, then the question again, and write <code>yes</code> or <code>no</code> under both label columns. Write a note on any row you hesitate over, now: step 4 prints it beside the other reader's. Here is one filled row of the kit's fixture, as a sheet holds it:</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>id</th><th>reader</th><th>groundedness</th><th>answers_the_question</th><th>note</th><th>question</th><th>answer</th><th>context</th><th>row_sha</th></tr></thead>
+<tbody>
+%%EX_ROW%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The answer refuses, so it claims nothing: grounded, yes. But the context holds the cap, so a refusal does not answer the question: no. The reader's note says why: "%%EX_NOTE%%". Save the sheet as CSV with every column kept and in the same order. A spreadsheet may add a byte-order mark, Windows line endings or a capitalised YES; the check reads all three. Then check it:</p>
+%%CELL_CHECK%%
+%%OUT_CHECK%%
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>exists and may hold labels: nothing written</code> from <code>make label-sheet</code> means you made the sheet before, and your labels are in it; delete it only to start again. <code>evals/judge_set.json: not found</code> means there is no frozen set yet, the kit's or yours: run the block before the sheet, which freezes your own. <code>N problem(s) against the frozen set</code> from <code>--check</code> lists each row and what is wrong with it: a blank, a word other than yes or no, a row missing or there twice, two reader ids, or <code>labelled on another answer</code>, which means the sheet was made from another freeze.</p></div>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>make label-sheet</code> wrote one row for each frozen answer, with the guide printed above it, and <code>--check</code> counted your yes and no for each rubric. Those counts already matter. A reader who says yes to nearly every row leaves little room for agreement beyond chance, as step 4 shows. The author's line is the same check on the sheet the kit ships. Your sheet sits in <code>evals/reports/</code>, which git ignores, so the kit stays clean.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; Two readers</span><h3>Two people on the same rows: Cohen's kappa</h3><p>The author's sheet is your second reader; the kit counts your agreement with it, then takes chance out.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make judge-agree PEOPLE=1</code> reads two sheets of the same frozen rows: yours, and by default the author's, <code>evals/judge_labels.L1.csv</code>. For each rubric it prints the 2x2 of the two readers' labels, raw agreement with its Wilson interval, the agreement chance alone would give, Cohen's kappa, and the rows the two differ on, with both notes. The arithmetic is <code>evals/agreement.py</code>: standard library only and counted in whole rows, so the worked table gives exactly 0.40, and two readers who each gave every row one and the same label get <code>undefined</code>, never a perfect 1. <code>AGAINST=</code> names another reader's sheet. The kit also ships a peer's, <code>evals/judge_labels.L2.csv</code>, labelled once and blind; with the author's, it makes the recorded pair.</p>
+
+<h4>The code</h4>
+@@kappa_doc@@
+@@kappa_fn@@
+@@compare_fn@@
+@@agree_target@@
+
+<h4>Do it: the worked table, and the kit's own tests</h4>
+%%CELL_SELFTEST%%
+%%OUT_SELFTEST%%
+
+<h4>Do it: you against the author, then the author against the peer</h4>
+%%CELL_PEOPLE%%
+%%OUT_PEOPLE%%
+
+<h4>Do it, while the kit has no author's sheet: a colleague as your second reader</h4>
+<p>Until the author's sheet ships, kappa needs a second person. Make a colleague a sheet of the same rows under their own pseudonym. They label it blind, from the guide alone, without seeing yours. Then check their sheet and count your agreement with it. The author-against-peer line above waits for the recorded pair.</p>
+%%CELL_PEER_SHEET%%
+%%CELL_PEER_AGREE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read kappa before agree. On a rubric where both readers say yes to most rows, agreement can look high while kappa stays low, because chance alone would supply most of it. Then read the rows the two of you differ on, with both notes: each is a slip, a place where the guide is unclear, or a real judgement call. The author and the peer are the recorded pair: two people who labelled the same rows blind, once each. Where careful readers split often on a rubric, the rubric is the problem, not the readers, and the judge's agreement with either of them on it is worth little until the guide is sharper. One row moves kappa a long way at this size: on the board, flipping one of nine rows took it from %%FX_PG_K%% to %%FX_FLIP_K%%.</p></div>

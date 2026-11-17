@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_7.5_Video_Clip_WIX.html`, reviewed at blob `139fc0392978c735a000f0aed33bb4a541f5ad5a`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_7.5_Video_Clip_WIX.html`, reviewed at blob `60b7023f7b4564bc393208bde3ca5340656b3802`. Learners read that page on the course site; this guide keeps its prose.
 
 A video has no text for the kit to parse. So the ingest worker has Gemini describe it: segments of at most a minute, each with a start, an end and a summary that quotes every number said. The summary is what the kit retrieves and the model reads. A citation of it carries the video's path and the seconds, and the UI opens the video at the second the segment starts.
 
@@ -54,7 +54,7 @@ A segment among the sources also makes the usage row's modality `video`.
 
 Validating it: three checks.
 
-- The kind. Golden row mm-03 asks the town hall question and requires a segment citation (`must_cite_kind`). `run_eval`'s `media_kind_rate` must reach 0.80, and mm-03 is a required row that must pass on its own.
+- The kind. Golden row mm-03 asks the town hall question and requires a segment citation (`must_cite_kind`). `run_eval`'s `media_kind_rate` must reach 0.80, and mm-03 is a required row that must pass on its own. The gate asks it for the segment once your ledger lists `townhall_2026_q1.mp4` as indexed. Until then it judges mm-03 on its words and prints an `[info]` line saying so.
 
 - The second. Nothing in the kit checks it, so this lesson does. `make media` writes the ground truth beside the video: each speaker turn's start and end, measured from the synthesised audio.
 
@@ -268,7 +268,7 @@ The design choices, from the kit's own comments, then the bill and the gaps.
 
 Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.
 
-- No gate asks for a clip. `make smoke-media` asks one question, the figure one. A lane whose video was never heard still passes it. Only mm-03 in `make eval-live` asks for a segment.
+- No gate asks for a clip. `make smoke-media` asks one question, the figure one. A lane whose video was never heard still passes it. Only mm-03 in `make eval-live` asks for a segment, and only while the ledger lists the town hall's video as indexed. If the video fails to index, the gate judges mm-03 on its words alone and says so on an `[info]` line.
 
 - Nothing checks the second. `run_eval` asks for a segment of any kind, anywhere in any video. No code in the kit reads the ground truth `build_media.py` writes; `upload.sh` and the walk only skip it. Step 5's check is this lesson's own.
 

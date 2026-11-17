@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_7.3_Managed_Mirrors_WIX.html`, reviewed at blob `5d2f8eed1c871bf3e8af3c1094e90280a07c7795`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_7.3_Managed_Mirrors_WIX.html`, reviewed at blob `3281212510aa6d9609fab245b5304486f6909ead`. Learners read that page on the course site; this guide keeps its prose.
 
 The kit's own index lives in Mumbai, asia-south1. Two Google-managed stores can hold a copy of a tenant's documents too: a Vertex AI RAG Engine corpus in us-central1 and a Vertex AI Search data store in `global`. The worker copies each version it makes current into them, but only for a tenant whose `data_region` says `any`. The API reads a store only for a tenant pinned to it, and holds that pin against the same policy.
 
@@ -64,7 +64,7 @@ A picture or a video has no text and is never copied. `MANAGED_MIRROR=both`, whi
 
 The read side: a pin, held against the policy. `tenant_settings/{tenant}.retrieval_backend` pins a tenant to a store (`make tenant-backend`). `make up` pinned acme to `rag_engine` and zeta to `vertex_search`. On every request, `retrieval_backend_for()` checks the policy. A pin to a store for an `in` tenant is served from the kit's own index instead, and the row says `policy_fallback 1`.
 
-The store's answer, a RAG Engine context or a Vertex AI Search segment, becomes a chunk of the kit's contract through the version's own row. It gets the source, the doc_type, a fresh `current`, an id minted from its text (`#rag-...` or `#vs-...`), and `found_by`. The reranker, the packing, the answer and the citations stay the kit's.
+A RAG Engine context becomes a chunk of the kit's contract through the version's own row. It gets the source, the doc_type, a fresh `current`, an id minted from its text (`#rag-...`), and `found_by`. Vertex AI Search gives the documents, in its own order, and nothing to read: on the lane's standard edition it refuses extractive segments, and its snippets stop short of the figure. So its passages are the kit's own rows of the versions it ranked, nearest the question first, with their own ids. When it ranks no document, the kit's own index answers, and the API logs `vertex_search_fallback`. The reranker, the packing, the answer and the citations stay the kit's.
 
 A family's property papers and a lawyer in another city. The originals stay in the almirah at home in Mumbai. The lawyer's office may keep certified copies, but only of the files whose owner signed a consent letter. For each copy sent or recalled, the clerk writes a line in the register, and notes in the family's file index which offices hold one.
 
@@ -186,11 +186,11 @@ acme's pin goes back to `rag_engine`. The API reads a tenant's settings once a m
 
 - acme answered from RAG Engine: 17 chunks in the pool, 14 from the store. The other 3 are the kit's own figure rows: a store holds text only, so the pictures join from the kit's index.
 
-- zeta answered from Vertex AI Search: every chunk in its pool came from the data store, because zeta has no pictures.
+- zeta answered from Vertex AI Search: every chunk in its pool is the kit's own row of a version the data store ranked, because zeta has no pictures.
 
 - globex answered from the kit's index (`vector`): it has no pin and no store.
 
-- The chunk ids tell the stores apart: `#rag-...` for acme, `#vs-...` for zeta, and the kit's own `tenant:sha256#n` for globex. A store does not keep the kit's chunk ids, so the API mints one from the version's key and a hash of the text.
+- The chunk ids: `#rag-...` for acme, and the kit's own `tenant:sha256#n` for zeta and globex. RAG Engine does not keep the kit's chunk ids, so the API mints one from the version's key and a hash of the text. Vertex AI Search only chose zeta's document; the passage is the kit's row, so the id is too, and only `found_by` tells zeta's pool from globex's.
 
 The answer's citation carries no `found_by`, because the kit's Citation has no such field. The stamp is on the chunk in the pool. This cell asks the API again, then runs the kit's own `retrieve()` in your shell with backend `rag_engine`, the call the API made, and looks for the cited chunk in that pool.
 
@@ -244,13 +244,11 @@ Each point is checked in the kit's code, and the build asserts it, so this box c
 
 - Turning a tenant to `in` removes nothing already copied. `set_policy()` writes one field. The copies stay in RAG Engine and Vertex AI Search until each version is retired, and `make managed-status` goes on saying `in sync`, because it never reads the policy.
 
-- Nothing repairs or backfills a missing copy. `managed.py` says the nightly walk repairs the mirror, and the Makefile says a version ingested before its corpus existed waits for that repair. But `reconcile.py` only removes versions from the stores. A failed upload (`mirror_failed`), a version older than its store, or a tenant turned to `any` stays uncopied until each version is ingested again.
+- Only `make managed-sync` repairs a missing copy. `reconcile.py`, the nightly walk, only removes versions from the stores. A failed upload (`mirror_failed`), a version older than its store, or a tenant turned to `any` stays uncopied until `make managed-sync` uploads every current text version a store lacks, or the version is ingested again. One 429 from RAG Engine's own embedding calls left acme's corpus without its handbook on the author's lane, while acme was pinned to it.
 
 - A Vertex AI Search copy is recorded before it exists. The import is a long-running operation. `mirror_ok`, the `doc.mirror` event and the ledger's `mirrored` all follow the request, and nothing checks that the import finished.
 
-- `found_by` stops at the pool. The Citation contract has no `found_by`, so an answer shows its store only in the chunk id's `#rag-` or `#vs-`. The figure rows that join a managed pool carry no `found_by` at all.
-
-- `make down` cannot finish while the data stores exist. `managed.tf` marks them `prevent_destroy`, and Terraform rejects any plan that would destroy such a resource, so `make down`'s `terraform destroy` fails before it removes anything. The README says `make down` names the protected stores; its closing list does not. Deleting the throwaway project, which is `make down`'s own last line, is the sure way to stop the bills.
+- `found_by` stops at the pool. The Citation contract has no `found_by`, so an answer shows its store only in a RAG Engine chunk id's `#rag-`; a Vertex AI Search answer cites the kit's own row. The figure rows that join a managed pool carry no `found_by` at all.
 
 ### Verify it yourself: the checklist
 

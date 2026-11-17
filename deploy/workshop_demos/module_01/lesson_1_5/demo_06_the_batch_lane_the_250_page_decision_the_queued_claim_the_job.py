@@ -3,7 +3,7 @@
 The queue is a Firestore query the kit prints for you. The job and its schedule exist only if BATCH_JOB was set when the lane was deployed; the box above the setup read it off the worker.
 
 Run order inside this file:
-1. Read the lane, Rs 0 (source window 27)
+1. Read the lane, Rs 0 (source window 28)
 
 Prerequisites: demo_05_poison_a_message_that_can_never_succeed_and_the_retries_you_can_watch.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -69,7 +69,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_27', step_01_read_the_lane_rs_0),
+        ('source_28', step_01_read_the_lane_rs_0),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

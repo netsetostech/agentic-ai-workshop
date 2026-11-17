@@ -9,3 +9,4 @@ Run lessons in this order, finishing/restoring each before beginning the next.
 - [5.5: Diagnose tool arguments, access failures and timeouts](lesson_5_5/README.md)
 - [5.6: Hand a question to the person the law names](lesson_5_6/README.md)
 - [5.7: Compare the LangChain and ADK adapters](lesson_5_7/README.md)
+- [5.8: Pause, approve, clarify and escalate: human in the loop](lesson_5_8/README.md)

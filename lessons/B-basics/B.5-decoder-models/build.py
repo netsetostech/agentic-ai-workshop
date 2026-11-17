@@ -105,7 +105,7 @@ FUNCS = {n.name: ast.get_source_segment(GEN, n) for n in TREE.body if isinstance
 K = {n.targets[0].id: ast.literal_eval(n.value) for n in TREE.body
      if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ("SYSTEM", "DATED_RULE")}
 LOW_LINE = 'thinking_config=types.ThinkingConfig(thinking_level="LOW")'
-assert '_client = genai.Client(enterprise=True, project=settings.project_id, location="global")' in GEN
+assert '_client = genai.Client(enterprise=True, project=settings.project_id, location="global", http_options=RETRY)' in GEN
 assert LOW_LINE in FUNCS["_call"] and LOW_LINE in FUNCS["_vertex_stream"]     # the answer and the stream: LOW
 assert 'response_mime_type="application/json"' in FUNCS["_call"] and "response_schema=ModelDraft" in FUNCS["_call"]
 assert "max_output_tokens=max_tokens" in FUNCS["_call"] and "contents=_contents(prompt, packed)" in FUNCS["_call"]
@@ -115,7 +115,7 @@ assert '"tokens_out": n("candidates_token_count") + n("thoughts_token_count")' i
 assert '    prompt = f"{SYSTEM}{_dated_rule(packed)}\\n\\nContext:\\n{context}\\n\\nQuestion: {query}"' in FUNCS["generate"]
 assert "the thinking drawn from the same" in CFG                              # config.py: the cap is shared with the thinking
 assert "NO temperature / top_p / top_k: gemini-3.6-flash ignores all" in FUNCS["_call"]       # the comment step 6 reads
-assert "thinking_level, not thinking_budget=0 - Gemini 3.x" in FUNCS["_call"] and "cannot be switched off" in FUNCS["_call"]
+assert "thinking_level, Gemini 3's own setting, at LOW" in FUNCS["_call"] and "older thinking_budget 0, for the least" in FUNCS["_call"]
 assert "**_cache_kwargs(tenant_id, model)" in FUNCS["_call"]                  # a tenant's cache joins the config when live
 assert 'if c.get("kind") in ("figure", "table") and c.get("media_url"):' in FUNCS["_contents"]   # a packed figure adds its image
 assert "billed = _add(billed, " in FUNCS["generate"]                          # the cut-off attempt is billed with the retry

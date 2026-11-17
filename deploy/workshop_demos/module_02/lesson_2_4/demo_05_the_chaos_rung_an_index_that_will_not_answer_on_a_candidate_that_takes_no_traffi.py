@@ -37,8 +37,12 @@ j = json.load(sys.stdin); s = j['stages']
 print('candidate: backend', s['retrieval_backend'], '| vector_chunks', s['vector_chunks'], '| pool', s['pool'], '| answerable', j['answerable'], '| citations', len(j['citations']))
 ok = s['retrieval_backend'] != 'vector' or s.get('vector_chunks', 0) > 0                   # smoke.py check 3a, by hand
 print('the smoke would say:', '[PASS] vector tier' if ok else '[FAIL] vector tier  RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1')"
-gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="vector_search_fallback"' \\
-  --project "$PROJECT" --freshness 10m --limit 2 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)'
+for i in $(seq 1 12); do                                                     # the line reaches Cloud Logging seconds after the answer
+  LINE="$(gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="documind-api" AND jsonPayload.event="vector_search_fallback"' \\
+    --project "$PROJECT" --freshness 10m --limit 1 --format='value(timestamp,jsonPayload.tenant,jsonPayload.error)')"
+  case "$LINE" in *documind_chunks_nonesuch*) break;; esac; sleep 5
+done
+echo "${LINE:-no vector_search_fallback line in a minute: run the read again}"
 
 """
 
@@ -48,14 +52,14 @@ def step_01_a_candidate_that_cannot_reach_the_index(session):
     Do it: a candidate that cannot reach the index
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
-    Operations: bash — run in the operator shell (one new revision, no traffic; one question to it; one log read; ask() from step 4).
+    Operations: bash — run in the operator shell (one new revision, no traffic; one question to it; the log read until its line lands, a minute at most; ask() from step 4).
     Returns: None; observations are printed or saved by the lesson code.
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: candidate: backend vector | vector_chunks 0 | pool 20 | answerable True | citations 3
+    Observe: candidate: backend vector | vector_chunks 0 | pool 20 | answerable True | citations 1
     the smoke would say: [FAIL] vector tier  RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1
-    2026-09-2xT1x:xx:xx.xxxxxxZ	acme	... documind_chunks_nonesuch ...
+    2026-09-2xT1x:xx:xx.xxxxxxZ	acme	404 Index 'documind_chunks_nonesuch' is not found.
     """
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_01)
@@ -82,8 +86,8 @@ def step_02_a_candidate_that_cannot_reach_the_index(session):
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
     Observe: template now: documind_chunks_v1
-    backend vector | vector_chunks 20 | pool 20 | retrieve_ms 6xx | answerable True | first 1 hr_policy_2026.md | A confirmed employee in grade E3 ...
-    100;documind-api-00048-xyz
+    backend vector | vector_chunks 20 | pool 20 | retrieve_ms 1xxx | answerable True | first 1 hr_policy_2026.md | A confirmed employee at grade E3 or above ...
+    100	documind-api-000xx-xxx
     """
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_02)

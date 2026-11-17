@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_5.7_Adapters_WIX.html`, reviewed at blob `38fb9d89de6f76a3929d154aa4d2e3b39a759159`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_5.7_Adapters_WIX.html`, reviewed at blob `7b788e47fb381194f1e5727a02e66f3807706416`. Learners read that page on the course site; this guide keeps its prose.
 
 The chat service can answer with four brains, and all four reach the same `retrieve()`. What differs is the adapter between each framework and that one tool. It decides what the model is shown, what is filled in behind its back, what the model reads back and what happens when a call fails. It also decides where the conversation is kept and what gets counted. You put the LangChain adapter beside the ADK adapter offline, on the kit's own code. You also see the turn's limits from lesson 5.5 wired into each harness its own way. Then you ask one question through all four brains on your lane and read the four cost lines that rag-api's rows and the chat rows give together. Last, you take each agent's loop apart, call by call.
 

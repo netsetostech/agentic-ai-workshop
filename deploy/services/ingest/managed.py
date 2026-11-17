@@ -14,7 +14,7 @@ after_undo() when the undo made an older version current again (its text read of
 Document AI call); retired() when versions leave (a retirement by the walk, a withdrawal by hand). The managed
 document id is the doc_key on both stores - a Vertex AI Search Document.id, a RagFile's display name - so every call
 is idempotent and a listing compares with the ledger. A tenant with no store is mirror_no_store (once), a call that
-fails is mirror_failed (with the error): one line each, never a failed ingest; the walk repairs the mirror (P9.3).
+fails is mirror_failed (with the error): one line each, never a failed ingest; make managed-sync uploads what is missing.
 MANAGED_MIRROR is off | rag_engine | vertex_search | both: the deployment's capability list, which stores exist to
 mirror into. Whether a TENANT's text may go there is the tenant's data_region policy (shared/tenancy.py; the plan's
 section 7, 13 September 2026 evening): `in` keeps it on the kit's rows in asia-south1, `any` permits a store outside
@@ -33,11 +33,15 @@ import os
 import re
 import sys
 import tempfile
+import time
 
 log = logging.getLogger("documind.ingest")
 
 MODES = ("off", "rag_engine", "vertex_search", "both")
 CHUNK_SIZE, CHUNK_OVERLAP = 512, 100          # what 4.3's ManagedRAG.ingest() asks of RAG Engine
+# A RagFile is indexed by RAG Engine's own embedding calls, which share the project's quota: one 429 there failed an
+# undo's upload and left acme's corpus with no handbook at all (22 October 2026). Two more tries, 20 s then 40 s apart.
+UPLOAD_ATTEMPTS, UPLOAD_BACKOFF_S = 3, 20
 STRUCT_FIELDS = ("tenant_id", "doc_key", "source_uri", "kind", "title", "doc_type", "effective_from", "generation", "name")
 
 
@@ -146,16 +150,24 @@ class RagEngineStore:
     def upsert(self, tenant_id: str, doc_key: str, source_uri: str, text: str, meta: dict) -> str:
         rag = self.rag()
         corpus_name = self.corpus(tenant_id)
-        for f in self._files(corpus_name, doc_key):            # the same version again: one file per doc_key
-            rag.delete_file(name=f.name, corpus_name=corpus_name)
-        with tempfile.TemporaryDirectory() as d:
-            path = os.path.join(d, f"{doc_key}.txt")
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(text)
-            f = rag.upload_file(corpus_name=corpus_name, path=path, display_name=doc_key, description=source_uri,
-                                transformation_config=rag.TransformationConfig(
-                                    chunking_config=rag.ChunkingConfig(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)))
-        return f.name
+        for attempt in range(1, UPLOAD_ATTEMPTS + 1):
+            for f in self._files(corpus_name, doc_key):        # the same version again, or a try that failed: one file per doc_key
+                rag.delete_file(name=f.name, corpus_name=corpus_name)
+            try:
+                with tempfile.TemporaryDirectory() as d:
+                    path = os.path.join(d, f"{doc_key}.txt")
+                    with open(path, "w", encoding="utf-8") as fh:
+                        fh.write(text)
+                    f = rag.upload_file(corpus_name=corpus_name, path=path, display_name=doc_key, description=source_uri,
+                                        transformation_config=rag.TransformationConfig(
+                                            chunking_config=rag.ChunkingConfig(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)))
+                return f.name
+            except RuntimeError as e:                           # "Failed in indexing the RagFile due to: ... 429 ..."
+                if attempt == UPLOAD_ATTEMPTS or "429" not in str(e):
+                    raise
+                log.warning(json.dumps({"event": "rag_upload_retry", "tenant": tenant_id, "doc_key": doc_key,
+                                        "attempt": attempt, "error": str(e)[:160]}))
+                time.sleep(UPLOAD_BACKOFF_S * attempt)
 
     def delete(self, tenant_id: str, doc_key: str) -> int:
         rag = self.rag()
@@ -172,9 +184,11 @@ class RagEngineStore:
 
 
 class VertexSearchStore:
-    """A Vertex AI Search data store per tenant (4.4, managed.tf): the version's text as an object in the audit bucket
-    (which has no notification, so nothing ingests it; Document.content.raw_bytes has a 1 MB ceiling, an object has
-    none) imported inline as one Document whose id is the doc_key and whose structData is the schema's fields.
+    """A Vertex AI Search data store per tenant (4.4, managed.tf): the version's text as an object in the search bucket
+    (SEARCH_BUCKET, <project>-search: no notification, so nothing ingests it; Document.content.raw_bytes has a 1 MB
+    ceiling, an object has none) imported inline as one Document whose id is the doc_key and whose structData is the
+    schema's fields. Its own bucket, not the audit bucket (21 October 2026): the audit bucket's retention refuses the
+    overwrite a re-mirror is and the delete a retire is, so a restored document never came back to the store.
     `clients` (de, docs, ds, gcs) is injectable for the gate."""
     name = "vertex_search"
 
@@ -224,7 +238,7 @@ class VertexSearchStore:
         c = self.clients()
         self.ensure(tenant_id)
         if not self.bucket:
-            raise RuntimeError("AUDIT_BUCKET is not set: the mirror keeps the version's text there")
+            raise RuntimeError("SEARCH_BUCKET is not set: the mirror stages the version's text there")
         obj = self.object_name(tenant_id, doc_key)
         c.gcs.bucket(self.bucket).blob(obj).upload_from_string(text, content_type="text/plain; charset=utf-8")
         struct = {"tenant_id": tenant_id, "doc_key": doc_key, "source_uri": source_uri, "kind": "text",
@@ -284,8 +298,9 @@ class Mirror:
             stores.append(RagEngineStore(os.environ.get("GOOGLE_CLOUD_PROJECT", ""), os.environ.get("RAG_LOCATION", "us-central1"),
                                          os.environ.get("EMBEDDING_MODEL", "text-embedding-005")))
         if mode in ("vertex_search", "both"):
-            stores.append(VertexSearchStore(os.environ.get("GOOGLE_CLOUD_PROJECT", ""), os.environ.get("SEARCH_LOCATION", "global"),
-                                            os.environ.get("AUDIT_BUCKET", "")))
+            project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+            stores.append(VertexSearchStore(project, os.environ.get("SEARCH_LOCATION", "global"),
+                                            os.environ.get("SEARCH_BUCKET") or (f"{project}-search" if project else "")))
         return cls(db, stores, mode, policy_for=policy_for, audit=audit)
 
     @property
@@ -332,7 +347,7 @@ class Mirror:
                     log.warning(json.dumps({"event": "mirror_no_store", "store": store.name, "tenant": tenant_id,
                                             "doc_key": doc_key, "op": op, "hint": str(e)}))
                 continue
-            except Exception as e:  # noqa: BLE001 - the mirror never fails the ingest; the walk repairs it
+            except Exception as e:  # noqa: BLE001 - the mirror never fails the ingest; make managed-sync repairs it
                 log.warning(json.dumps({"event": "mirror_failed", "store": store.name, "tenant": tenant_id, "doc_key": doc_key,
                                         "op": op, "error": f"{type(e).__name__}: {e}"[:300]}))
                 continue
@@ -383,13 +398,15 @@ class Mirror:
         confirmed this version and the region each holds it in, the policy it was judged under, and when; so GET
         /v1/sources and the UI's Documents page say where a document is held. An empty dict is a real answer (a
         policy of `in`, or no store confirming): the row reads "the kit's rows only". Merged, so record_source() and
-        this land in either order; best-effort like every line here."""
+        this land in either order; best-effort like every line here. `mirrored` is replaced, not merged into (21 October
+        2026): merged, a store that failed this version stayed listed from an earlier one, claiming a copy it no longer had."""
         if not name:
             return
         try:
             from google.cloud import firestore
             self.db.collection("sources").document(name.replace("/", "~")).set(
-                {"mirrored": dict(held), "data_region": self.policy(tenant_id), "mirrored_at": firestore.SERVER_TIMESTAMP}, merge=True)
+                {"mirrored": dict(held), "data_region": self.policy(tenant_id), "mirrored_at": firestore.SERVER_TIMESTAMP},
+                merge=["mirrored", "data_region", "mirrored_at"])
         except Exception as e:  # noqa: BLE001
             log.warning(json.dumps({"event": "mirror_stamp_failed", "tenant": tenant_id, "doc_key": doc_key,
                                     "error": f"{type(e).__name__}: {e}"[:200]}))
@@ -449,15 +466,49 @@ def status(db, stores: list, tenant_only: str | None = None) -> list[dict]:
     return out
 
 
+def sync(mirror: "Mirror", tenant_only: str | None = None) -> list[dict]:
+    """Drift's repair: each text version the ledger holds current and a store lacks, uploaded through the mirror, so
+    the tenant's data_region and the audit event are the worker's. A failed upload is logged and never fails an
+    ingest, and nothing put it back: one 429 left acme's corpus without its handbook (22 October 2026). A picture has
+    no text and stays missing, as status() counts it; an orphan is left for --status to name."""
+    db, current = mirror.db, {}
+    for snap in db.collection("sources").stream():
+        row = snap.to_dict() or {}
+        t = row.get("tenant_id")
+        if t and (not tenant_only or t == tenant_only) and row.get("status") == "indexed" and row.get("doc_key"):
+            current.setdefault(t, set()).add(row["doc_key"])
+    out = []
+    for tenant in sorted(current):
+        for store in mirror.stores:
+            one = Mirror(db, [store], mirror.mode, policy_for=mirror.policy_for, audit=mirror._audit)
+            try:
+                missing = sorted(current[tenant] - set(store.listing(tenant)))
+            except NoStore as e:
+                out.append({"tenant": tenant, "store": store.name, "status": "no store", "hint": str(e)})
+                continue
+            uploaded, failed, pictures = [], [], []
+            for doc_key in missing:
+                text, meta = version_rows(db, tenant, doc_key)
+                if not text.strip():
+                    pictures.append(doc_key)
+                    continue
+                uri = (db.collection("documents").document(doc_key).get().to_dict() or {}).get("gcs_uri", "")
+                (uploaded if one.upsert(tenant, doc_key, uri, text, meta) else failed).append(doc_key)
+            out.append({"tenant": tenant, "store": store.name, "missing": len(missing), "uploaded": len(uploaded),
+                        "failed_or_not_permitted": failed, "pictures": len(pictures)})
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--project", default=os.environ.get("GOOGLE_CLOUD_PROJECT"))
     ap.add_argument("--tenant")
     ap.add_argument("--status", action="store_true", help="each tenant, each store, against the ledger")
+    ap.add_argument("--sync", action="store_true", help="upload the current text versions a store lacks (drift's repair)")
     ap.add_argument("--create-corpus", action="store_true", help="the tenant's RAG Engine corpus, once (needs --tenant)")
     ap.add_argument("--delete-corpus", action="store_true", help="the tenant's RAG Engine corpus and its files, gone (needs --tenant)")
     ap.add_argument("--mode", default=os.environ.get("MANAGED_MIRROR") or "both",
-                    help="which stores --status reads: rag_engine | vertex_search | both")
+                    help="which stores --status and --sync read: rag_engine | vertex_search | both")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
     if not args.project:
@@ -485,7 +536,17 @@ def main() -> int:
         for line in status(db, mirror.stores, args.tenant):
             print(json.dumps(line))
         return 0
-    ap.error("one of --status, --create-corpus, --delete-corpus")
+    if args.sync:
+        from google.cloud import firestore
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # shared/, from deploy/
+        from shared.tenancy import policy_for
+        db = firestore.Client(project=args.project)
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", args.project)
+        mirror = Mirror.from_env(db, mode=check_mode(args.mode), policy_for=lambda tenant_id: policy_for(tenant_id, db))
+        for line in sync(mirror, args.tenant):
+            print(json.dumps(line))
+        return 0
+    ap.error("one of --status, --sync, --create-corpus, --delete-corpus")
     return 2
 
 

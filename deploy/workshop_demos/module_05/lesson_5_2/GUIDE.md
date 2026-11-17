@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_5.2_MCP_Tools_WIX.html`, reviewed at blob `3d3bcb639cec27a1d6e8a8182559d7ce705e358a`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_5.2_MCP_Tools_WIX.html`, reviewed at blob `c8d94db34e2bd24045e0c60768c637d37f426c68`. Learners read that page on the course site; this guide keeps its prose.
 
 The UI is how a person reaches your lane. MCP is how an agent does: Claude Desktop, Cursor, another team's ADK app, any agent you did not build. The kit's MCP server exposes four of the lane's own operations as tools. A client discovers them with one JSON-RPC method, `tools/list`, and invokes one with another, `tools/call`. You import the server and read what it declares. You start it on your machine with your lane behind it, send `tools/list` over plain HTTP, and call `retrieve` from fastmcp's client, the same client the smoke test and ADK use. Three calls that fail show where the server checks what.
 
@@ -34,9 +34,9 @@ Three verbs, and the checks between them.
 
 Expose. An MCP server offers tools: named operations, each with a description and an input schema. FastMCP builds all three from an ordinary Python function. The name is the function's own, or the one given. The description is the docstring's first line. The schema comes from the signature, with each argument's line taken from the docstring's Args. The kit's server, `services/mcp/server.py`, exposes four tools: `retrieve`, `list_documents`, `corpus_stats` and `calculate_processing_cost`. Each is one of the lane's own operations. `retrieve` calls the one `retrieve()` the chat brains call, and the server keeps no index of its own.
 
-Discover. A client asks `tools/list` and receives those declarations. A model reads them the way it read the kit's tool definitions in lesson 5.7: the description says when to use a tool, and the schema says what to send. The protocol is JSON-RPC 2.0 over HTTP. The kit's server is stateless, so a single POST to `/mcp` is enough, and the server answers as a server-sent event.
+Discover. A client asks `tools/list` and receives those declarations. A model reads them the way it read the kit's tool definitions in lesson 5.1: the description says when to use a tool, and the schema says what to send. The protocol is JSON-RPC 2.0 over HTTP. The kit's server is stateless, so a single POST to `/mcp` is enough, and the server answers as a server-sent event.
 
-Invoke. `tools/call` names a tool and its arguments. The server runs it and returns the result as data, or a tool error with a message the caller can act on. The kit's server checks three things, in order. First the arguments. Then who is calling, from a bearer token minted for the server's own address. Then which tenant, from the roster. The `tenant` argument only chooses among rosters the caller is already on. The cost tool asks none of this, because it touches no tenant's data.
+Invoke. `tools/call` names a tool and its arguments. The server runs it and returns the result as data, or a tool error with a message the caller can act on. One request runs one tool, so a model that asks for two searches in one message, as lesson 5.1's scripted model did, has its client send two `tools/call` requests. The server answers each on its own and numbers nothing: a chunk both searches find comes back in both results, and numbering it once, as the chat service's ledger does, is the client's job. The kit's server checks three things, in order. First the arguments. Then who is calling, from a bearer token minted for the server's own address. Then which tenant, from the roster. The `tenant` argument only chooses among rosters the caller is already on. The cost tool asks none of this, because it touches no tenant's data.
 
 Where the checks are not. Listing needs no identity. Anyone who can reach the server can read its four declarations. On Cloud Run, IAM decides who can reach it, and that is lesson 5.3.
 
@@ -46,7 +46,7 @@ A restaurant's menu card. The card is `tools/list`: each dish's name, a line on 
 
 Choose a tool, its arguments and who is calling. The panel shows the JSON-RPC request a client sends, and what the kit's server answers.
 
-Every answer was returned by the kit's own `server.py`, run on localhost at build time with the token check, the roster, rag-api and Firestore stood in. The stand-ins hold each document under the class lesson 10.4's relabel gave it. So `statute` keeps the Act's passages, and `form`, a listed type that is no class, empties the pool.
+Every answer was returned by the kit's own `server.py`, run on localhost at build time with the token check, the roster, rag-api and Firestore stood in. The stand-ins hold each document under the class the relabel gives it, which the box before step 3 runs on your lane. So `statute` keeps the Act's passages, and `form`, a listed type that is no class, empties the pool.
 
 It shows the server's checks and messages, not your lane's documents. Your corpus, your rosters and your answers will differ.
 
@@ -82,7 +82,11 @@ How to tell which store answered any call: read `stages.retrieval_backend` on th
 
 Calls from the shell impersonate `documind-ui-sa`, the UI's own account, which `make roster` put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. `otok` mints a token for `documind-outsider-sa`, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.
 
-The shell, in the kit's folder, with `PROJECT`, `API` and `tok`. You need fastmcp 3.4.7 in the operator venv, and the first cell installs it. Step 4 starts the kit's server on port 8121 of your machine, as a background process that uses your credentials. It reads the roster from Firestore and asks rag-api as `documind-ui-sa`. Step 6 stops it. Nothing on your lane changes.
+The shell, in the kit's folder, with `PROJECT`, `REGION`, `API` and `tok`. You need fastmcp 3.4.7 in the operator venv, and the first cell installs it. Step 4 starts the kit's server on port 8121 of your machine, as a background process that uses your credentials. It reads the roster from Firestore and asks rag-api as `documind-ui-sa`. Step 6 stops it. The box below gives acme's stored rows their classes for this lesson, and its last cell, when you finish, puts them back; nothing else on your lane changes.
+
+Step 1's panel and the last point of step 7 are about `doc_type` filters, and a filter finds a row by its class. On your lane every text row still carries `unknown`, the label the worker writes, so a class filter finds nothing (lesson 2.1). `make doc-types SEED=manifest` writes acme's doc_type registry from the kit's `evals/manifest.json`: each document's class, pinned to the version it was reviewed at. Then it prints the view, one line per document, and the relabel's plan. `APPLY=1` carries out the plan. It moves the stored rows to their classes in Firestore, Vector Search, Vertex AI Search and BigQuery, and expires acme's answer cache. Nothing is uploaded again, and no row is embedded again unless its vector is not the declared model's. The relabel needs the index's name, which the first line reads off your lane. Lesson 10.4 teaches the registry and the relabel in full.
+
+If `make` stops with error 3, BigQuery deferred a statement for rows still in its streaming buffer. The other stores are relabelled, and the same line run again later finishes it. Lesson 5.5 expects every text row `unknown` again, so the last cell puts the rows back when you finish this lesson. It keeps the registry.
 
 ### Expose: what the server declares
 
@@ -166,13 +170,13 @@ Each point is checked in the kit's code, and the build asserts it, so this box c
 
 - A refused call leaves no audit line. The `mcp_call` line is written only after the checks pass. A call refused for its tenant, its token or its arguments leaves no row naming the caller and the tenant.
 
-- `retrieve` offers filters the corpus cannot honour. Its `doc_type` list names eight types, and six of them are classes from lesson 10.4's registry, which your registered documents now carry. `form` and `research_paper` are not classes, so no row carries them, and either one empties the pool. `transcript` is a class, but the list leaves it out, so the server refuses it. A class filter also skips every text upload still stamped `unknown`: an object the manifest does not name, and a new version nobody has re-pinned. The chat service's `retrieve`, which lesson 5.5 tested, still offers `form` and `research_paper` too.
+- `retrieve` offers filters the corpus cannot honour. Its `doc_type` list names eight types, and six of them are classes of the kit's doc_type registry, which the box before step 3 gave your registered documents. `form` and `research_paper` are not classes, so no row carries them, and either one empties the pool. `transcript` is a class, but the list leaves it out, so the server refuses it. A class filter also skips every text upload still stamped `unknown`: an object the manifest does not name, and a new version nobody has re-pinned. The chat service's `retrieve`, which lesson 5.5 tests, still offers `form` and `research_paper` too.
 
 ### Verify it yourself: the checklist
 
 Eight checks, each one block above, each with the value that proves it on your lane.
 
-Nothing on your lane. Your machine ran the kit's server for a few minutes and stopped it, and `/tmp/mcp121.log` holds its log. rag-api's log has one more row, with the brain `mcp`. Lesson 5.3 deploys the same server behind Cloud Run and checks who may reach it.
+acme has a doc_type registry, written from the kit's manifest with you as `set_by`, and it stays. Its stored rows carried their classes for the lesson, and the last cell of the box before step 3 put them back to what the worker wrote, `unknown` for text, in Firestore, Vector Search, Vertex AI Search and BigQuery, as lesson 5.5 expects. Each relabel expired acme's answer cache. Your machine ran the kit's server for a few minutes and stopped it, and `/tmp/mcp121.log` holds its log. rag-api's log has one more row, with the brain `mcp`. Lesson 5.3 deploys the same server behind Cloud Run and checks who may reach it.
 
 Netsetos GenAI on GCP · Module 5 MCP and agents · Lesson 5.2 Expose, discover and invoke MCP tools · v5.0
 

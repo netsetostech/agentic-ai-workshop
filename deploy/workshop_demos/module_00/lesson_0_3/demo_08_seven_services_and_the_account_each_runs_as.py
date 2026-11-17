@@ -1,10 +1,10 @@
 """Lesson 0.3: Seven services, and the account each runs as
 
-The first proof: the services are up, and each runs as the account step 4 said it would. Cloud Run keeps the account a service runs as on the service itself. Listing the services with that one field beside the name is the whole check: 7 rows, each with its own account, matching the table in step 4. Step 5 left one fact open: the deployed index's machine follows the index's shard size, and the kit lets the service choose it. Read both from the live lane; step 10 prices the row that matches.
+The first proof: the services are up, and each runs as the account step 4 said it would. Cloud Run keeps the account a service runs as on the service itself. Listing the services with that one field beside the name is the whole check: 7 rows, each with its own account, matching the table in step 4. Step 5 left one fact to read: the deployed index's machine follows the index's shard size, SMALL on a new lane and whatever an older index was created with. Read both from the live lane; step 10 prices the row that matches.
 
 Run order inside this file:
 1. Seven services, and the account each runs as (source window 49)
-2. The shard size the service chose (source window 51)
+2. The shard size of your index (source window 51)
 
 Prerequisites: demo_07_make_up_apply_that_plan_then_build_deploy_and_seed.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -48,7 +48,7 @@ def step_01_seven_services_and_the_account_each_runs_a(session):
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_01)
 
-# Original CLI workflow for step_02_the_shard_size_the_service_chose.
+# Original CLI workflow for step_02_the_shard_size_of_your_index.
 COMMANDS_02 = """IDX=$(terraform -chdir=terraform output -raw vector_index_name); EP=$(terraform -chdir=terraform output -raw vector_index_endpoint)
 gcloud ai indexes describe "$(basename "$IDX")" --region="$REGION" --project="$PROJECT" --format='value(metadata.config.shardSize)'
 gcloud ai index-endpoints describe "$(basename "$EP")" --region="$REGION" --project="$PROJECT" \\
@@ -56,10 +56,10 @@ gcloud ai index-endpoints describe "$(basename "$EP")" --region="$REGION" --proj
 
 """
 
-def step_02_the_shard_size_the_service_chose(session):
-    """Run The shard size the service chose at this checkpoint.
+def step_02_the_shard_size_of_your_index(session):
+    """Run The shard size of your index at this checkpoint.
 
-    Step 5 left one fact open: the deployed index's machine follows the index's shard size, and the kit lets the service choose it. Read both from the live lane; step 10 prices the row that matches.
+    Step 5 left one fact to read: the deployed index's machine follows the index's shard size, SMALL on a new lane and whatever an older index was created with. Read both from the live lane; step 10 prices the row that matches.
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
     Operations: bash — run in the operator shell.
@@ -80,7 +80,7 @@ def demonstrate(session):
     """
     run_steps(session, [
         ('source_49', step_01_seven_services_and_the_account_each_runs_a),
-        ('source_51', step_02_the_shard_size_the_service_chose),
+        ('source_51', step_02_the_shard_size_of_your_index),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

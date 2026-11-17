@@ -1,6 +1,6 @@
 """Lesson 12.2: The endpoint, and where it answers
 
-The first cell polls the job once a minute until it ends. The poll only reads, so it costs nothing, and after a disconnect it is safe to run again: it takes the job from step 5's log. When the job succeeds, tune.py prints: The cell keeps the endpoint in ~/poll172.log and in ENDPOINT. The cell keeps the endpoint in ~/poll172.log and in ENDPOINT. The second cell asks the endpoint one question the way the generator would. It sends SYSTEM, one source under its header and the question, with generator._call's settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: us-central1, the job's region; global, where the served model answers; and the location the generator would use, from the path.
+The first cell polls the job once a minute until it ends. The poll only reads, so it costs nothing, and after a disconnect it is safe to run again: it takes the job from step 5's log. When the job succeeds, tune.py prints: The cell keeps the endpoint in ~/poll172.log and in ENDPOINT. The cell keeps the endpoint in ~/poll172.log and in ENDPOINT. The second cell asks the endpoint one question the way the generator would. It sends SYSTEM, one source under its header and the question, with generator._call's settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: us-central1, the job's region; global, where the served model answers; and the location the generator would use, from the path. It reads the answer with the generator's own _draft(): the tuned model learned long quotes from the rows, so a quote past the schema's 200 characters is cut, and a generation_repaired line says so.
 
 Run order inside this file:
 1. Definition (source window 19)
@@ -63,7 +63,7 @@ def step_01_definition(session):
 def step_02_definition(session):
     """Run Definition at this checkpoint.
 
-    The cell keeps the endpoint in ~/poll172.log and in ENDPOINT. The second cell asks the endpoint one question the way the generator would. It sends SYSTEM, one source under its header and the question, with generator._call's settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: us-central1, the job's region; global, where the served model answers; and the location the generator would use, from the path.
+    The cell keeps the endpoint in ~/poll172.log and in ENDPOINT. The second cell asks the endpoint one question the way the generator would. It sends SYSTEM, one source under its header and the question, with generator._call's settings: ModelDraft's schema, 2,048 tokens and thinking at LOW. The chunk is not one the rows were written from, and the question is not a golden one. The cell asks in three places: us-central1, the job's region; global, where the served model answers; and the location the generator would use, from the path. It reads the answer with the generator's own _draft(): the tuned model learned long quotes from the rows, so a quote past the schema's 200 characters is cut, and a generation_repaired line says so.
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
     Operations: bash — run in the operator shell, in the kit (one answer from the endpoint, and two calls that are not found).
@@ -78,18 +78,20 @@ def step_02_definition(session):
       the answer: No. A loss of wages from withholding an increment for a good and sufficient cause is not deemed a deduction from wages, where the employer's provisions meet the requirements the appropriate Government notifies.
       the price: Rs 0.0322 as Google bills a tuned Gemini 3 endpoint (1.5 x flash-lite); cost.py would log Rs 0.0215
     """
-    import ast, os, re, sys, types as pytypes
+    import ast, json, logging, os, re, sys, types as pytypes
     sys.path[:0] = [".", "evals", "services/rag-api"]
     from google import genai
     from google.genai import errors, types
+    from pydantic import ValidationError
     import make_trainset as mt
     from context_budget import source_header
-    from shared.documind_schemas import ModelDraft
+    from shared.documind_schemas import DraftCitation, ModelDraft
     P, EP = os.environ["PROJECT"], os.environ["ENDPOINT"]
-    fn = next(n for n in ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read()).body
-              if isinstance(n, ast.FunctionDef) and n.name == "_endpoint_location")
-    ns = {"re": re, "settings": pytypes.SimpleNamespace(generator_location=os.environ.get("GENERATOR_LOCATION", ""), region=os.environ["REGION"])}
-    exec(compile(ast.Module([fn], []), "generator.py", "exec"), ns)       # lifted: generator.py builds its clients when imported
+    fns = [n for n in ast.parse(open("services/rag-api/generator.py", encoding="utf-8").read()).body
+           if isinstance(n, ast.FunctionDef) and n.name in ("_endpoint_location", "_quote_limit", "_problems", "_draft")]
+    ns = {"re": re, "json": json, "log": logging.getLogger("generator"), "ValidationError": ValidationError, "DraftCitation": DraftCitation,
+          "ModelDraft": ModelDraft, "settings": pytypes.SimpleNamespace(generator_location=os.environ.get("GENERATOR_LOCATION", ""), region=os.environ["REGION"])}
+    exec(compile(ast.Module(fns, []), "generator.py", "exec"), ns)       # lifted: generator.py builds its clients when imported
     where = ns["_endpoint_location"](EP)
     print(f"the endpoint's path says {EP.split('/locations/', 1)[1].split('/', 1)[0]}; the generator would call it at {where}")
     c = next(c for c in mt.load_chunks("acme") if c["chunk_id"] == "acme:code_on_wages_2019#p9-1")       # not a training row's chunk
@@ -101,12 +103,16 @@ def step_02_definition(session):
     usd_in, usd_out = next(ast.literal_eval(n.value) for n in tree.body
                            if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "FALLBACK")["gemini-3.1-flash-lite"]
     for loc in dict.fromkeys(("us-central1", "global", where)):
+        client = genai.Client(enterprise=True, project=P, location=loc)      # held in a name: a client closes once nothing holds it
         try:
-            r = genai.Client(enterprise=True, project=P, location=loc).models.generate_content(model=EP, contents=prompt, config=cfg)
+            r = client.models.generate_content(model=EP, contents=prompt, config=cfg)
         except errors.APIError as e:
             print(f"  {loc:12} {e.code} {e.status}")
             continue
-        d, u = ModelDraft.model_validate_json(r.text), r.usage_metadata
+        d, u = ns["_draft"](r), r.usage_metadata      # read as the generator reads it: a quote over 200 characters is cut, and logged
+        if d is None:
+            print(f"  {loc:12} answered, and the generator reads no draft from it: {r.text[:200]}")
+            continue
         out = (u.candidates_token_count or 0) + (u.thoughts_token_count or 0)
         marks = re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", d.answer)
         rs = (u.prompt_token_count * usd_in + out * usd_out) / 1e6 * 85

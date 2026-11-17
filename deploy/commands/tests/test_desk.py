@@ -1146,6 +1146,26 @@ class CalculatorTests(unittest.TestCase):
                                                                 "fixed_term": True}, [S53], GRATUITY)
         self.assertEqual(refused, ["fixed_term is true only when the person's message says so"])
 
+    def test_an_instruments_year_is_no_number_and_service_stops_at_sixty_years(self):
+        """13 October 2026: "Code on Social Security, 2020" in the question made years = 2020 a number the message
+        states, and the estimate came to Rs 6,06,30,000. The year in an instrument's name is the instrument's, as the
+        figure check already reads it, and years of service stop at sixty, in the check's own words."""
+        question = "Under the Code on Social Security, 2020, what gratuity is due on Rs 52,000 after 7 years?"
+        got = desk_calc.numbers_in(question)
+        self.assertLessEqual({Decimal(52000), Decimal(7)}, got)
+        self.assertNotIn(Decimal(2020), got)
+        names = desk_calc.numbers_in("the Code on Wages, 2019 and the Act of 1972")
+        self.assertFalse({Decimal(2019), Decimal(1972)} & names)
+        self.assertIn(Decimal(2020), desk_calc.numbers_in("2020 days of leave"))       # a bare number stays one
+        refused, _ = desk_calc.check_args("gratuity_estimate", {"monthly_wage": 52000, "years": 2020}, [S53], question)
+        self.assertEqual(refused, ["years = 2020 is a fact about the person that their message does not state: ask them "
+                                   "for it"])
+        with self.assertRaisesRegex(desk_calc.CalcError, r"^years must be from 0 to 60$"):
+            desk_calc.gratuity_estimate(52000, 2020, 8)
+        self.assertEqual(desk_calc.gratuity_estimate(52000, 60)["value"], 1800000)       # 52,000 / 26 x 15 x 60
+        self.assertEqual(desk_calc.unsupported("Under the Code on Social Security, 2020 the estimate is Rs 2,40,000.",
+                                               [desk_calc.gratuity_estimate(52000, 7, 8)], GRATUITY), [])
+
     def test_each_argument_has_one_source(self):
         """A fact about the person from their message; a handbook figure from its own clause; never a date's digits."""
         hb = {code: desk_calc._clause_passage("acme/hr_policy_2026.md", code) for code in ("NP-03", "PB-02", "LV-01",
@@ -1216,7 +1236,7 @@ class WiringTests(unittest.TestCase):
 
     def test_the_make_targets(self):
         mk, agents, readme = self.read("Makefile"), self.read("mk", "agents.mk"), self.read("mk", "README.md")
-        self.assertEqual(len(mk.splitlines()), 885)                     # workshop lesson 9.3 counts it
+        self.assertEqual(len(mk.splitlines()), 888)                     # workshop lesson 9.3 counts it
         phony = mk[mk.index(".PHONY:"):mk.index("# ---------- the module files")].replace("\\", " ").split()
         for target in ("route-index", "route-calibrate", "smoke-desk", "route-eval"):
             self.assertIn(target, phony)

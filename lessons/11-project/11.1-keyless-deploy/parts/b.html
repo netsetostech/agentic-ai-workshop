@@ -1,0 +1,124 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs</div>
+<p>The shell from the setup block above, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>API</code> and <code>tok</code>, and acme pinned to the kit's index for the dispatch's gate. A GitHub account that owns the repository your lane trusts, which lesson 0.3's step 3 asked you to make a public fork of <code>netsetos/agents_workshop_learner</code>. The GitHub CLI, signed in as that account: <code>gh --version</code> prints a version (if not, install it from the GitHub CLI's own site), then <code>gh auth login</code>. The machine that ran <code>make plan</code>, because <code>make ci-vars</code> reads the inputs that plan saved; step 5 says what to do on another. About twenty minutes for the dispatch, most of it the build and the live gate.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The UI</span><h3>Your fork and your project, as GitHub and the console show them</h3><p>Which repository your lane trusts, whether it can run the workflow, and where Google keeps the trust.</p></div></div>
+
+<h4>Definition</h4>
+<p>Your lane's trust lives in two places. Google holds it as a provider in a workload identity pool and a binding on the pipeline's account. Your checkout holds the same three values in <code>terraform/runbook-project.auto.tfvars.json</code>, which <code>infrastructure.py prepare</code> saved at lesson 0.3's step 3 and every plan since has read. The workflow lives in the trusted repository, at <code>.github/workflows/documind-cd.yml</code>: the learner repository is the kit itself, so your fork carries it at its root. Before anything runs, three things must hold. The trusted repository is yours and public, its workflows can run, and the console shows the trust you expect.</p>
+
+<h4>Do it: what your lane trusts, and what GitHub says about it</h4>
+<p>The cell reads the trust from the inputs file and exports the repository as <code>GH_REPO</code>, which every later cell uses. Then it asks GitHub about that repository: whether it is public and a fork, its numeric id, and the state of its workflows.</p>
+%%CELL_TRUST%%
+%%OUT_TRUST%%
+<p>Read four things. The repository is yours, by name. It is <code>PUBLIC</code>: required reviewers on an environment are free on a public repository and need a paid plan on a private one, and step 5 needs one. Its GitHub id equals the id in the trust; if not, the trust names a repository that was deleted or replaced, and every run will be refused at the auth step. And both workflows are <code>active</code>. A fork starts with its workflows switched off: open your fork's Actions tab once, press the button that enables them, then run the cell again.</p>
+
+<div class="box box-red"><div class="box-title">If your lane trusts another repository</div>
+<p>The trust was fixed when the lane was created. <code>wif.tf</code>'s three values came from lesson 0.3's step 3, and a later plan that would change them is refused (step 4 shows the lines). If the cell names a repository you do not own, a private one, or the upstream itself, do not try to move it. Read this page's recordings, which show every run on the author's lane and fork, and build and deploy the same candidate as yourself on the local operator path in step 9. Moving a lane's CI trust is a reviewed migration, outside this course.</p></div>
+
+<h4>In the browser: GitHub</h4>
+<ul>
+<li><strong>Actions</strong>, on your fork: <code>documind-cd</code> and <code>DocuMind dry run (Tier A)</code> in the list of workflows. <code>documind-cd</code> runs only when a person starts it, so it has no runs yet.</li>
+<li><strong>Settings &gt; Secrets and variables &gt; Actions</strong>: no repository secret, and this lesson adds none. The Variables tab stays empty until step 5.</li>
+<li><strong>Settings &gt; Environments</strong>: none yet. GitHub would create <code>%%ENV_NAME%%</code> the first time a job named it, with no reviewer at all; step 5 creates it first, with you as its reviewer.</li>
+</ul>
+
+<h4>In the browser: the Google Cloud console</h4>
+<ul>
+<li><strong>IAM &amp; Admin &gt; Workload Identity Federation</strong>: the pool <code>%%POOL_ID%%</code> and, in it, the provider <code>%%PROVIDER_ID%%</code>. Its page shows the issuer, the four attribute mappings and the condition, with your repository, its id and <code>%%TRUST_REF%%</code> written in.</li>
+<li><strong>IAM &amp; Admin &gt; Service accounts &gt; sa-documind-cicd</strong>: the Keys tab lists no key. The Permissions tab lists who has access to the account, and one of them is the pool's set of identities whose repository id is yours.</li>
+</ul>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Nothing changed. You found the one repository whose runs can become <code>sa-documind-cicd</code>, checked that GitHub agrees on its id, and saw the same trust in Google's console. Every later step acts through that repository. If a check above failed, the red box says what to do instead.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 3 &middot; The kit's code</span><h3>What makes it keyless: the trust, the account and the workflow</h3><p>wif.tf's provider and binding, sa.tf's account, documind-cd.yml's one permission, and the plan guard that keeps the trust where it is.</p></div></div>
+
+<h4>Definition</h4>
+<p>Four files make the pipeline keyless, and none of them holds a secret. <code>wif.tf</code> declares the pool, the provider with its mapping and condition, and the binding that lets a federated identity become the pipeline's account. <code>sa.tf</code> declares that account and what it may do. <code>documind-cd.yml</code> lets its jobs ask GitHub for a token, which Google's auth action exchanges. <code>infrastructure.py</code> keeps the trust from moving once it exists. Read them in that order: who is trusted, as whom, by which workflow, and what stops the trust from drifting.</p>
+
+<h4>The trust</h4>
+@@wif_provider@@
+<p>The mapping copies four claims. <code>sub</code> becomes the subject, the name Google's audit log gives the federated identity (step 8), and three become attributes. The condition is the %%N_CLAUSES_W%% equalities the panel in step 1 evaluated, written with Terraform variables that your confirmed inputs fill. The issuer is GitHub's own, so only tokens GitHub signs are considered at all.</p>
+@@wif_binding@@
+<p>The binding grants <code>%%BIND_ROLE%%</code> on <code>sa-documind-cicd</code> to a <code>principalSet</code>: every identity in the pool whose <code>attribute.repository_id</code> is yours. The condition already pins the same id, so on your lane the binding never refuses a token the condition accepted. It is the second lock, for the day someone loosens the first, and the panel's middle trust showed what it still stops. The two outputs are the values <code>make ci-vars</code> reads in step 5.</p>
+@@wif_ref@@
+<p><code>deploy_ref</code> defaults to <code>%%TRUST_REF%%</code>, and your confirmed inputs set it explicitly. The second resource lets the pipeline mint tokens as exactly %%N_TOKENS_W%% accounts, the UI's and the outsider's, because the live gate on the candidate asks as both. Lessons 4.2 and 4.3 ran that gate from your shell.</p>
+
+<h4>The account</h4>
+@@sa_cicd@@
+@@sa_roles@@
+<p>%%N_ROLES_CAP%% project roles: %%ROLES%%. The comments refuse two more: object admin on Cloud Storage, which at project scope would reach the uploads bucket of customer documents and the audit bucket, and log writing. The account may also act as %%N_ACTAS_W%% named accounts, itself included: %%ACTAS%%. They are granted one by one in <code>cicd_actas</code>, and lesson 0.3's step 4 shows that list and why it is never one grant on the project. (The comments carry the earlier course's lesson numbers.)</p>
+
+<h4>The workflow</h4>
+@@cd_keyless@@
+@@cd_steps@@
+<p>One permission makes the token possible: <code>id-token: write</code>. Without it GitHub mints nothing, and the auth step has nothing to exchange. The dry-run workflow does not ask for it, so its runs, on every push and pull request, never hold one. The auth step names the provider and the account through two repository variables, not secrets, because neither value grants anything to whoever reads it: only a token from your repository, on <code>main</code>, satisfies the provider. After it, <code>make build</code> and <code>make release-candidate</code> are the same targets you could run from your shell, run here as <code>sa-documind-cicd</code>. Lesson 4.3 read the two steps that follow: the check that the candidate answers as the tag, and the live gate.</p>
+
+<h4>The trust, once applied, does not move</h4>
+@@infra_refuse@@
+<p>Every <code>make plan</code> reads the existing provider's condition back from the state, and refuses a plan that would change its condition, mapping, issuer or switch, or the binding's member. A <code>prepare</code> that names another repository, id or ref than the applied trust is refused too. That is why the repository you named at lesson 0.3's step 3 is the repository this lesson runs in.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>You read every line that makes the pipeline keyless, and there is no secret among them. The four values a run needs are public facts about your lane: the project, the region, the provider's full name and the account's email. What a run must <em>be</em>, not what it must hold, decides whether it gets in.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; The kit's command</span><h3>Four variables from your lane, and a person in front of production</h3><p>make ci-vars reads the values the workflow needs, refuses a wrong region, and warns until production has a reviewer.</p></div></div>
+
+<h4>Definition</h4>
+<p>The workflow reads %%N_VARS_W%% repository variables: %%CI_VARS%%. <code>make ci-vars</code> prints the <code>gh variable set</code> line for each, so nothing is typed by hand, after checking that the workflow reads exactly those %%N_VARS_W%%. The project and the region come from the inputs your <code>make plan</code> confirmed, and a <code>PROJECT</code> or <code>REGION</code> the lane was not planned with is refused: the Makefile's <code>REGION</code> defaults to <code>%%REGION_DEFAULT%%</code>, and a workflow told the wrong region would build into an image repository that does not exist. The provider's name and the account's email come from <code>terraform output</code>, checked against the names <code>wif.tf</code> and <code>sa.tf</code> give them and against the project. Then, if <code>gh</code> is installed, it reads your fork's <code>%%ENV_NAME%%</code> environment, because GitHub creates a missing environment the first time a job names it, with no reviewer, and <code>promote</code> would then move traffic with nobody approving.</p>
+
+<h4>The code</h4>
+@@rel_values@@
+@@rel_env@@
+@@mk_release@@
+
+<h4>Do it: the first make ci-vars</h4>
+%%CELL_CIVARS%%
+%%OUT_CIVARS%%
+<p>Four lines to run, the trust they serve, the one dispatch line the trust allows, and a warning on standard error: there is no <code>%%ENV_NAME%%</code> environment yet. The command only read: <code>terraform output</code> in your checkout, and one GET of the environment. If it stops instead, its message names the fix. On a machine other than the one that ran <code>make plan</code>, <code>make tf-backend PROJECT="$PROJECT"</code> connects the checkout to the lane's state, and <code>python commands/infrastructure.py prepare --project "$PROJECT" --region "$REGION"</code> writes the inputs file back from it.</p>
+
+<h4>Do it: a reviewer, then the variables</h4>
+<p>The cell creates <code>%%ENV_NAME%%</code> through GitHub's REST API with you as its one required reviewer (in the browser: Settings &gt; Environments &gt; New environment, then Required reviewers). It runs <code>make ci-vars</code> again, pipes the four lines it printed into the shell, and reads back what the repository now holds.</p>
+%%CELL_CONFIGURE%%
+%%OUT_CONFIGURE%%
+<p>The warning is gone; in its place <code>make ci-vars</code> ends on <code>%%REVIEWER_LINE%%</code>. The list shows the four variables with your values, and the repository holds no secret. On a team, also set the environment's <code>prevent_self_review</code>, so the person who starts a run cannot approve it; alone on a fork, you are both.</p>
+
+<h4>Change it: the Makefile's region</h4>
+<p>A shell that never exported <code>REGION</code> sends the Makefile's default. The kit refuses it before any tool runs:</p>
+%%CELL_REGION%%
+%%OUT_REGION%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Your fork now knows where to deploy and as whom, and it knows nothing that would let anyone else do it. Promote waits for a person, the one gate in the workflow that is not a program. Every value came from the lane and was checked against the others, so a variable set from the wrong checkout, project or region was refused here, instead of failing ten minutes into a run.</p></div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The dispatch</span><h3>A build and a deploy from main, with no key</h3><p>One run on your fork: the offline gate, a build, a candidate revision with no traffic, the live gate, then a person.</p></div></div>
+
+<h4>Definition</h4>
+<p>A dispatch on <code>main</code> with <code>path=candidate</code> runs three jobs. <code>eval-gate</code> runs the offline gate with no credential at all, as every push's dry run does. <code>release-candidate</code> needs it to pass, then signs in through the auth step, builds the API's image with <code>make build</code>, tagged with the run's commit, and puts it on a new revision of <code>documind-api</code> with no traffic and the tag <code>candidate</code>. It checks that the candidate answers as that commit, then runs the live gate against it: %%N_GOLDEN%% golden rows, as the roster member and as the outsider. <code>promote</code> needs a green <code>release-candidate</code> and the approval of the <code>%%ENV_NAME%%</code> environment's reviewer. Here you say no: lesson 11.2 judges exactly this candidate before anything moves traffic to it, and lesson 11.3 promotes.</p>
+
+<h4>Do it: dispatch, and wait for the build and the gate</h4>
+<p>The cell starts the run, finds its id, prints its page, waits until <code>release-candidate</code> has finished, and prints the run's summary. Open the page while it waits and watch the jobs and their steps. In the browser the same start is Actions &gt; documind-cd &gt; Run workflow, on <code>main</code>, with <code>candidate</code> as the path.</p>
+%%CELL_DISPATCH%%
+%%OUT_DISPATCH%%
+<p>A green <code>release-candidate</code> is the lesson's proof. Every Google call in it (the build, the new revision, the tokens for the gate) was made as <code>sa-documind-cicd</code>, which the run became through the auth step, with no key. <code>promote</code> waits for its reviewer. If <code>release-candidate</code> is red instead, read its failed step with <code>gh run view "$RUN" --repo "$GH_REPO" --log-failed | tail -n 30</code>; step 9 names what the build asks of the account and where the kit grants it.</p>
+
+<h4>Do it: say no at promote</h4>
+<p>On the run's page: <strong>Review deployments</strong>, tick <code>%%ENV_NAME%%</code>, then <strong>Reject</strong>. The cell does the same through GitHub's REST API, as the reviewer:</p>
+%%CELL_REJECT%%
+<p>The run ends, and nothing has moved traffic. The candidate keeps its tag and its 0%, which is where lesson 11.2 starts.</p>
+
+<h4>Do it: what the run left on Cloud Run</h4>
+<p>The cell reads <code>documind-api</code>'s traffic and the candidate revision, then asks GitHub which commit the run built and how the run ended.</p>
+%%CELL_LEFT%%
+%%OUT_LEFT%%
+<p>Four facts to match. The serving revision still takes 100%, and the candidate takes 0% under the tag <code>candidate</code>. The candidate's image is <code>api:</code> followed by the run's full commit, and its <code>GIT_SHA</code> is the same commit, which is what <code>/version</code> reports on its tag URL. The revision was made by <code>sa-documind-cicd</code>, not by a person. And the run ended with <code>promote</code> rejected.</p>
+
+<div class="box box-red"><div class="box-title">Never dispatch with path=clouddeploy</div>
+<p>The workflow's other path cuts a Cloud Deploy release from <code>run-service.yaml</code> and rolls it out over <code>documind-api</code>. That file sets %%RS_ENV%% with a literal <code>PROJECT_NUMBER</code> on <code>us-central1</code>, so the rollout would replace your API's settings with values that are not your lane's, and break it. <code>make ci-vars</code> prints the dispatch line with <code>-f path=candidate</code> for this reason, and the candidate path is the lane's release.</p></div>
+@@rs_env@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>A workflow on GitHub's machines built your API's image and deployed it to your project as a revision that serves nobody yet, and at no point did a key exist. GitHub signed a token for the job; Google checked it against <code>wif.tf</code> and gave the run an hour as <code>sa-documind-cicd</code>; the account's roles let it build and make the revision; the person in front of production said no. Step 7 sends the same workflow from a branch.</p></div>

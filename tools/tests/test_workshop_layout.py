@@ -46,6 +46,30 @@ class LayoutTests(unittest.TestCase):
             with patch.object(pagebuild,'KIT',kit):
                 self.assertEqual([p.relative_to(kit).as_posix() for p in pagebuild.kit_runtime_files('*.py')],['services/worker.py'])
 
+    def test_lesson_15_poison_cells_are_found_by_their_code(self):
+        # Window numbers went stale once and the drill ran the page's wildcard delete; the roles follow the code.
+        from workshop_demo_runtime_adaptations import poison_role
+        self.assertEqual(poison_role('export POISON_SINCE="$(date)"\nmake poison PROJECT=$PROJECT TENANT=acme'), "create_drill")
+        self.assertEqual(poison_role('make dlq PROJECT=$PROJECT\ngcloud pubsub subscriptions pull ingest-dlq-sub --limit 1'), "inspect_dead_letter")
+        self.assertEqual(poison_role('gcloud pubsub subscriptions pull ingest-dlq-sub --limit 1 --auto-ack'), "finish_drill")
+        self.assertEqual(poison_role('ACK="$(gcloud pubsub subscriptions pull ingest-dlq-sub --limit 10 --format=json)"\n'
+                                     'gcloud pubsub subscriptions ack ingest-dlq-sub --ack-ids="$ACK"'), "finish_drill")
+        self.assertIsNone(poison_role('make smoke PROJECT=$PROJECT'))
+
+    def test_a_status_echo_runs_with_the_pages_shell_while_its_output_awaits(self):
+        # 0.4's smoke without the tenant and 11.1-11.3's refused gates stopped their demos: no recorded output to read.
+        from workshop_demo_runtime_adaptations import adapt
+        cell = 'make gate PROJECT="$PROJECT"; echo "exit $?"'
+        awaiting = {"window": 9, "expected": "[awaiting the author's run: data/gate.txt]"}
+        code, body, changes = adapt("9.9", dict(awaiting), cell, None)
+        self.assertTrue(code.startswith("set +e +o pipefail") and code.rstrip().endswith("true   # the status it printed is the cell's answer: compare it with the page's prose"), code)
+        self.assertEqual(len(changes), 1)
+        recorded_ok = {"window": 9, "expected": "PASS: gate green\nexit 0"}            # a recorded success: as written
+        self.assertEqual(adapt("9.9", dict(recorded_ok), cell, None)[0], cell)
+        no_echo = adapt("9.9", dict(awaiting), 'make gate PROJECT="$PROJECT"', None)  # no status asked for: as written
+        self.assertEqual(no_echo[0], 'make gate PROJECT="$PROJECT"')
+        self.assertEqual(adapt("9.9", dict(awaiting), cell, "print(1)")[0], cell)   # a Python body: the shell is not used
+
 
 if __name__ == '__main__':
     unittest.main()

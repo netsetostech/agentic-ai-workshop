@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_6.6_Durable_Storage_WIX.html`, reviewed at blob `3f82eb1abf6a809f82f7d6b46288248b73c26c3e`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_6.6_Durable_Storage_WIX.html`, reviewed at blob `eb322c6653eba541a539f50ded85a90c263be5a1`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 6.5 showed that your lane's conversations live in `PostgresSaver` on Cloud SQL. This lesson opens that storage. Terraform made an instance, a database, a user and a secret; the service mounts them; a one-off job made the tables. Each turn then writes a checkpoint row per step and, for the conversation itself, the whole list of messages again at every new version. You count what a turn writes on the kit's own code, and read the configuration your lane runs. You connect to the database the way the service does, through the Cloud SQL connector, and list the tables and one row per thread. On the way you find which brain's conversations are not there at all.
 
@@ -163,8 +163,6 @@ The design choices, from the kit's own comments, then the bill and the gaps.
 Each point is checked in the kit's code, and the build asserts it, so this box changes when the kit does.
 
 - ADK's conversations are not durable. `brains.py` says the ADK brain uses `DatabaseSessionService` on the same Cloud SQL. The image installs google-adk without its `db` extra, so SQLAlchemy is missing, and the ADK brain keeps its sessions in memory, with only a warning.
-
-- The setup job keeps its first image. The deploy script creates the job only when it is missing, then executes it. A newer checkpointer library in the service never has its migrations applied.
 
 - Nothing prunes a thread's versions. Every version of messages stays, so storage grows with the square of a conversation's length. The package ships `ShallowPostgresSaver`, which keeps only the latest checkpoint, and the kit does not use it.
 

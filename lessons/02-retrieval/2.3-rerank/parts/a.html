@@ -10,7 +10,7 @@
 <div class="toc"><div class="toc-title">On this page</div>
 <ol>
 <li><a href="#s1">What the reranker does, and what a clock on every stage is for</a></li>
-<li><a href="#s2">The words: pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</a></li>
+<li><a href="#s2">The words: bi-encoder, cross-encoder, pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</a></li>
 <li><a href="#setup">Before you run anything: set up the shell</a></li>
 <li><a href="#s3">One answer, read end to end: the citations, their scores, the stages</a></li>
 <li><a href="#s4">The Ranking API by hand: the API's pool, the API's request, the API's order</a></li>
@@ -32,6 +32,35 @@
 <p><strong>Every stage has its own clock, and the row carries all three.</strong> <code>stage()</code> in main.py wraps retrieve, rerank and generate: each writes its own milliseconds into the answer's <code>stages</code> and opens a span of the same name in Cloud Trace. The usage row flattens the three clocks beside <code>pool</code>, the number of candidates the reranker saw, and the warehouse view takes the 95th percentile of each. A page that says "p95 is 3 seconds" tells you to worry; a row that says "generate is 2.6 of them" tells you where.</p>
 
 <p><strong>When the ranker does not answer, the pool by retrieval score stands in, and the row says so.</strong> The Ranking API gets <code>RERANK_TIMEOUT_S</code>, %%TIMEOUT%% seconds by default, for the whole call. Past it, or on any exception at all, <code>rerank()</code> sorts the pool by its retrieval score, marks every chunk, logs one <code>rerank_fallback</code> line with the error's type, and returns; the handler puts <code>rerank_fallback: 1</code> on the answer and the row, and the view sums those into a column. A worse order is a degraded answer that a person can count.</p>
+
+<h4>A bi-encoder built the pool, a cross-encoder orders it</h4>
+<p>Retrieval and reranking are the two ways an encoder can score a question against a passage. The embedding model behind retrieval is a <em>bi-encoder</em>: one text in, one vector out, and the comparison afterwards, so each chunk's vector was made once, at ingest, and a question costs one embedding and the index's arithmetic. The ranker is a <em>cross-encoder</em>: the question and one candidate go in together and one score comes out, so nothing can be computed before the question arrives, and each candidate is read afresh for every question. That is why the bi-encoder searches the corpus and the cross-encoder reads only its pool. The two names are the roles the models play; Google documents what each takes and returns, not how it is built. Lesson B.4, steps 4, 5 and 8, builds a toy of each and prices the two at the kit's scale.</p>
+
+<div class="diagram" id="encoders">
+<div class="dg-title">The two encoders - each step under the name the kit's code gives it</div>
+<div class="band">
+<div class="lane">
+<div class="lane-h">Lane 1 &middot; the bi-encoder: each text alone</div>
+<div class="band">
+<div class="node code"><b>each chunk, at ingest</b><code>indexer.py</code>: <code>%%EMBED_MODEL%%</code> under <code>%%DOC_TASK%%</code>, %%DIMS%% numbers, written to the index</div>
+<div class="node code"><b>the question, per request</b><code>embed_query()</code>: the same model under <code>%%QUERY_TASK%%</code>, %%DIMS%% numbers</div>
+</div>
+<div class="down">&darr;</div>
+<div class="node"><b>vector against vector</b><code>find_neighbors</code> ranks the tenant's chunks by <code>%%DISTANCE%%</code> (<code>vector.tf</code>); no text is read</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>the pool: %%TOPK%% candidates</b><code>%%POOL_CALL%%</code>, each with its retrieval score</div>
+</div>
+<div class="lane">
+<div class="lane-h">Lane 2 &middot; the cross-encoder: the pair together</div>
+<div class="node code"><b>the question and each candidate</b><code>rerank()</code> sends the question with one <code>%%RANK_RECORD%%</code> per chunk, at most %%RECORDS%%: text, not vectors</div>
+<div class="down">&darr;</div>
+<div class="node"><b>%%MODEL%%</b>on <code>%%RANK_LOC%%</code>, reads each pair and scores it</div>
+<div class="down">&darr;</div>
+<div class="node hub"><b>top_k of them, in the ranker's order</b><code>top_n</code> is the request's <code>top_k</code>; each score is written back as <code>rerank_score</code>, the citation's score</div>
+</div>
+</div>
+<p class="dg-cap">Lane 1 runs inside the <code>retrieve</code> clock, on the default path (the index, dense mode), and lane 2 inside the <code>rerank</code> clock; lane 1's pool is lane 2's input. Every name and number in the boxes is read from the kit, or checked against it, when this page is built.</p>
+</div>
 
 <div class="analogy"><div class="analogy-icon">&#128203;</div><div>
 <p><strong>The shortlist.</strong> A recruiter pulls twenty CVs from thousands by the words on them, fast, reading each CV alone; that is the retriever, and the twenty are the pool. An interviewer reads each of the twenty against the job description and orders them; that is the reranker, and the panel room seats five, which is <code>top_k</code>. The brief for the panel has a page limit, so a clerk fits in as many of the five as the pages allow, most promising first; that is the packer. The offer letter names only people who were in the room; those are the citations. Every step is timed on the file, and when the interviewer is off sick the recruiter's order goes to the room instead, with a note on the file that says so: a worse shortlist than usual, but a shortlist today, and a note someone will read.</p></div></div>
@@ -68,11 +97,13 @@
 <p>It is not the warehouse: <code>tenant_daily</code> runs the same GROUP BY in BigQuery over the sink's copy of the rows once the day has closed. And the four cases it can add are shaped by main.py's rules with the selftest's numbers left in place; a real fallback on your lane is step 5's business.</p></div>
 
 <!-- ============================ STEP 2 ============================ -->
-<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</h3><p>Ten rows, each with the value it takes on your lane.</p></div></div>
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: bi-encoder, cross-encoder, pool, record, reranker, rerank_score, top_k, timeout, fallback, stage, found_by, packed set, p95</h3><p>Twelve rows, each with the value it takes on your lane.</p></div></div>
 
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
 <thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
 <tbody>
+<tr><td><strong>Bi-encoder</strong></td><td data-label="Meaning">A model that turns one text into one vector, so the question and each chunk are embedded apart and compared afterwards, by arithmetic. The chunks' half is done once, at ingest, which is what lets it search the whole corpus; it never reads a question and a chunk together.</td><td data-label="On your lane"><code>%%EMBED_MODEL%%</code>, %%DIMS%% numbers: <code>%%DOC_TASK%%</code> at ingest, <code>%%QUERY_TASK%%</code> in <code>embed_query()</code>; the index compares the two by <code>%%DISTANCE%%</code>.</td></tr>
+<tr><td><strong>Cross-encoder</strong></td><td data-label="Meaning">A model that reads the question and one passage as a single input and returns one score for the pair. Nothing can be computed before the question arrives, so it reads a shortlist, never the corpus.</td><td data-label="On your lane">The reranker: <code>%%MODEL%%</code>, one record per candidate in the pool; its clock is <code>stages.rerank_ms</code>.</td></tr>
 <tr><td><strong>Pool</strong></td><td data-label="Meaning">What retrieval hands the reranker: <code>TOP_K_RETRIEVE</code> candidates from the index (or the Firestore rung), retired versions and older versions of a source already dropped by <code>prefer_current()</code>.</td><td data-label="On your lane">%%TOPK%% by default; <code>stages.pool</code> on every answer.</td></tr>
 <tr><td><strong>Reranker, record</strong></td><td data-label="Meaning">The Ranking API's <code>%%MODEL%%</code> on the <code>global</code> location: given the question and up to %%RECORDS%% records, each an id (the chunk's position in the pool) and the chunk's text, it returns the top n with a relevance score each. It reads the pair; the retriever compared two vectors made apart.</td><td data-label="On your lane"><code>rerank()</code> in retriever.py; the API's service account holds <code>discoveryengine.viewer</code> for it (sa.tf).</td></tr>
 <tr><td><strong>rerank_score</strong></td><td data-label="Meaning">The ranker's score, stamped on the chunk. <code>resolve()</code> makes it the citation's <code>score</code>, clipped to 0 to 1; when the ranker stood down, the retrieval score is what the citation shows.</td><td data-label="On your lane"><code>citations[].score</code> in step 3, a retrieval score in step 5.</td></tr>

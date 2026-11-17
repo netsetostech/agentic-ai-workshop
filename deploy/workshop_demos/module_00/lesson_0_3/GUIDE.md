@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_0.3_Deploy_Lane_WIX.html`, reviewed at blob `840ab0010164fb7bf8900b43fb668aa2e80d08fb`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_0.3_Deploy_Lane_WIX.html`, reviewed at blob `17f0725e414e34f01369f2c5e5156d893ad7cfdd`. Learners read that page on the course site; this guide keeps its prose.
 
 Lesson 0.2 left you with an operator shell and a lane that runs on your laptop for nothing. This lesson builds the real one in your Google Cloud project, and reads it before it exists: the accounts the kit creates and what each of them may touch, the stores it declares, the switches that would add more, and the items that bill by the hour whether anyone uses them or not. Then you run one `make plan`, read it, let the kit's guard check it, and run one `make up` from a blank project: images built, every service deployed as its own account, the UI behind Google's sign-in, and your address on the roster.
 
@@ -42,7 +42,7 @@ A lane is one complete copy of DocuMind in one Google Cloud project: yours, made
 
 Identities are the part that is easy to skip and expensive to get wrong. A program on Google Cloud never acts as "the system". It acts as a service account, an identity with roles but no password, and every call it makes is allowed or refused by what that account holds. The kit gives each of the seven services its own account, and grants each one what its code uses and nothing it does not: the UI's account cannot read the warehouse, the ingest worker's cannot read a secret, the A2A peer's cannot touch Firestore at all. The same thinking guards the doors. IAM decides which accounts may call a service. IAP, Google's sign-in in front of the UI, decides which people may reach it. The roster, a few documents in Firestore, decides which tenant each signed-in person may read.
 
-The resource map is the whole list: 234 resource instances for a blank project, by the kit's own files, and a small part of it that bills by the hour while it exists, used or idle. Knowing which part that is turns "I deployed something" into "I know what I am paying for", which is what lesson 0.4 needs when it switches the lane off.
+The resource map is the whole list: 237 resource instances for a blank project, by the kit's own files, and a small part of it that bills by the hour while it exists, used or idle. Knowing which part that is turns "I deployed something" into "I know what I am paying for", which is what lesson 0.4 needs when it switches the lane off.
 
 A new office building. The project is the building, on one lease and one electricity meter (the billing account). The service accounts are the staff ID cards: the cleaner's card opens the store rooms, the accountant's opens the finance office, and nobody's card opens every door. The Terraform plan is the architect's drawing, signed before any wall goes up; the kit's guard refuses any drawing that would knock a wall down. `make up` is the construction crew: it builds exactly the signed drawing, moves the staff in, each with their own card, and hands reception the guest list.
 
@@ -56,7 +56,7 @@ The counts are the kit's own, read from its Terraform and Makefile when this pag
 
 Every account the kit declares is in the menu below, grouped by what it is for. Choose one and the map lights the stores its roles reach, then lists the roles themselves, the grants on single resources (one bucket, one secret, one database), who may call it if it runs a service, and who may act as it. All of it is read from `terraform/*.tf` and from the deploy scripts `make up` runs, when this page was built: if the kit changes a grant, the map changes with it.
 
-documind-ui-sa | DocuMind UI (Streamlit on Cloud Run) | terraform/sa.tf | touches 7 of 18 stores
+documind-ui-sa | DocuMind UI (Streamlit on Cloud Run) | terraform/sa.tf | touches 7 of 19 stores
 
 - `documind-ui`, deployed by `commands/lesson-12.4.sh`
 
@@ -106,7 +106,7 @@ documind-ui-sa | DocuMind UI (Streamlit on Cloud Run) | terraform/sa.tf | touche
 
 - each address in ADMIN_EMAILS (make operators, run by make up): `serviceAccountTokenCreator`
 
-A lit store is one the account's roles or grants reach. A role held at project scope reaches every resource of its kind, including any added later: that is why the ingest worker lights all five buckets while the UI's account lights three, each granted by name. Try `documind-agent-sa` (Vertex AI and nothing else), `documind-outsider-sa` (no role at all) and `sa-documind-cicd` (no data, but it may act as eight accounts).
+A lit store is one the account's roles or grants reach. A role held at project scope reaches every resource of its kind, including any added later: that is why the ingest worker lights all six buckets while the UI's account lights three, each granted by name. Try `documind-agent-sa` (Vertex AI and nothing else), `documind-outsider-sa` (no role at all) and `sa-documind-cicd` (no data, but it may act as eight accounts).
 
 It is what the kit's files grant, not a live read of your project's IAM. Google's own service agents (Pub/Sub's, IAP's, Dataplex's), roles your organization grants from above, and anything you add by hand are not in it. Two accounts appear that a default lane does not have: the Google Chat bridge's pair, declared only when `GCHAT_DOOR=true`. Step 8 checks the part that matters most on the live lane: the account each running service really uses.
 
@@ -138,13 +138,13 @@ The APIs, a state bucket of your own, the one repository you trust, and the sign
 
 #### 1. The APIs
 
-A Google Cloud API is off until a project turns it on, and Terraform cannot create a resource whose API is off. `make apis` turns on the 40 the lane uses, in two calls, because the Service Usage API takes at most twenty at a time. It is safe to run again; an API already on stays on.
+A Google Cloud API is off until a project turns it on, and Terraform cannot create a resource whose API is off. `make apis` turns on the 41 the lane uses, in three calls, because the Service Usage API takes at most twenty at a time. It is safe to run again; an API already on stays on.
 
 What it prints is gcloud's own report of the operations it waited for. Step 5's preflight is the check that matters: it names any of the APIs it looks for that is still off.
 
 #### 2. A state bucket of your own
 
-Terraform keeps its record of what it built, the state, in a bucket, so that the next plan in any shell compares the files with what exists instead of trying to create everything again. Bucket names are global: the first person in the world to create a name owns it. The Makefile's default, `documind-tfstate`, is one name for the whole world and can serve only one lane, so the setup block named yours after your project, the form the kit's own `smoke/preflight.sh` uses in its example. It exported `TFSTATE_BUCKET` and `TFSTATE_PREFIX` too, so the targets that connect to the state later (`make tf-backend`, `make down`) find this one. Versioning keeps every earlier copy of the state file, which is how a damaged state is recovered.
+Terraform keeps its record of what it built, the state, in a bucket, so that the next plan in any shell compares the files with what exists instead of trying to create everything again. Bucket names are global: the first person in the world to create a name owns it, so the kit names yours after your project. `-tfstate` is the default of the Makefile and of `smoke/preflight.sh`, and the setup block exported the same name as `TFSTATE_BUCKET`, with `TFSTATE_PREFIX`, so the targets that connect to the state later (`make tf-backend`, `make down`) find this one. Versioning keeps every earlier copy of the state file, which is how a damaged state is recovered.
 
 The last command ends on Terraform's line Terraform has been successfully initialized! It connects this checkout to the state and downloads the providers `terraform/backend.tf` pins. Run it again only on a new machine or a fresh clone, and always with the same bucket and prefix: `terraform/` in a checkout pointed at another prefix is a checkout that believes the lane does not exist.
 
@@ -200,7 +200,7 @@ Every bucket, index and database the plan creates, where each lives, and what a 
 
 Two variables decide where things go. `REGION` is where the services run, and with them the connector, the image repository, the search index, the databases and the cluster; the setup block set it to `asia-south1`. Data at rest that must stay in India, Firestore and the buckets, follows `india_region` in `terraform/variables.tf`, which is `asia-south1` whatever `REGION` says.
 
-#### Five buckets
+#### Six buckets
 
 The last column is the one to read twice. Three accounts reach every bucket because they hold a storage role on the whole project, and `sa.tf` gives each one's reason: the ingest worker reads the uploaded object and writes audit rows, the MCP server writes audit rows, the admin console writes its exports to the audit bucket. Everyone else is granted bucket by bucket. The audit bucket keeps every object for five years and refuses to delete one inside that term; locking the policy as well is a separate, irreversible decision the kit leaves off for a lab:
 
@@ -212,9 +212,9 @@ A new index takes minutes to build, and a vector query against an index still bu
 
 #### The other stores, and the rest of what a plan creates once
 
-One line in `terraform/vector.tf` deserves a second look before step 10 prices it. The deployed index runs on a machine chosen by the index's shard size, and the index declares none, so the service picks it. The kit's own comment records an existing index whose service-selected size was MEDIUM, which deploys on `e2-standard-16`, not on SMALL's `e2-standard-2`. Step 8 reads which one your lane got.
+One line in `terraform/vector.tf` deserves a second look before step 10 prices it. The deployed index runs on a machine chosen by the index's shard size. The index declares SMALL, so a new lane's index deploys on `e2-standard-2`, and the declaration is ignored once the index exists, because changing a shard size replaces the index. An index created before the kit named the size keeps the one the service picked: the kit's own comment records one whose size was MEDIUM, which deploys on `e2-standard-16`. Step 8 reads which one your lane has.
 
-#### 234 resource instances, file by file
+#### 237 resource instances, file by file
 
 Counting every resource block, with each `count` and `for_each` worked out for the values `make plan` passes, gives the number a blank project's plan should add. One variable moves it: each address in `ADMIN_EMAILS` adds one e-mail channel for the alerts.
 
@@ -236,21 +236,21 @@ The check reads Terraform's machine-readable plan, not the text you scroll throu
 
 Run it now. Terraform prints the whole plan, one block per resource, so the block keeps a copy in `~/plan.log` and then prints only the lines that summarize it.
 
-The kit's files declare 234 resource instances for this lane (step 5, with one address in `ADMIN_EMAILS`), so Terraform's summary should be `Plan: 234 to add, 0 to change, 0 to destroy.` It sits between the two `PASS` lines `infrastructure.py` prints: the saved inputs before the plan, the passed check after it.
+The kit's files declare 237 resource instances for this lane (step 5, with one address in `ADMIN_EMAILS`), so Terraform's summary should be `Plan: 237 to add, 0 to change, 0 to destroy.` It sits between the two `PASS` lines `infrastructure.py` prints: the saved inputs before the plan, the passed check after it.
 
 #### Every resource, counted from the saved plan
 
 The plan file is binary; Terraform turns it into JSON on request. The cell below counts what the plan would create, by type, in the same format as the count this page made from the kit's files, so the two can be read side by side. Run it before `make up`: the apply consumes the selection record that names the file.
 
-Every line of the two should match: 55 resource types, 234 instances, and only `create` among the actions. A count that differs means the plan read a file or a variable differently from the way this page assumed; find which before the apply, not after it. To read the plan itself, `terraform -chdir=terraform show "$PLAN" | less` prints it as text; on a later plan, the words to search for are must be replaced and will be destroyed.
+Every line of the two should match: 55 resource types, 237 instances, and only `create` among the actions. A count that differs means the plan read a file or a variable differently from the way this page assumed; find which before the apply, not after it. To read the plan itself, `terraform -chdir=terraform show "$PLAN" | less` prints it as text; on a later plan, the words to search for are must be replaced and will be destroyed.
 
 ### make up: apply that plan, then build, deploy and seed
 
-One apply of the checked file, then nine more targets, in order.
+One apply of the checked file, then ten more targets, in order.
 
 `make up` never makes a plan to apply. Its first line applies the plan `make plan` selected, after checking it twice more: the file's hash, the backend, the inputs and the state's serial must all be what they were when the plan was checked. If anything moved, it stops and asks for a new plan. Then it removes the selection record, so the same file can never be applied twice.
 
-The second line runs nine targets in one make, so the first one to fail stops the rest:
+The second line runs ten targets in one make, so the first one to fail stops the rest:
 
 The build is Cloud Build, one image per service, each tagged with the kit's commit. Every service but the UI builds from the whole kit with one config and its own Dockerfile, because most of them import the kit's `shared/` folder; the UI is self-contained and builds from its own folder. `commands/lesson-12.8.sh` and `commands/lesson-8.4.sh` also carry a build of their own inside their DEPLOY block, so a first `make up` builds those two images twice.
 
@@ -258,9 +258,9 @@ The deploy step is the reason the kit has no second copy of its deploy flags: it
 
 Now run it. It takes a long time: Cloud SQL, the GKE cluster and the deployed index each take minutes to create, and the builds run one after another. Run it inside `tmux` if your shell has it, so that a closed browser tab or a dropped connection does not stop an apply halfway; an interrupted apply needs a new plan. `time` reports how long it took.
 
-A plan refused as stale (The saved plan is stale; create a new plan, or The selected plan is missing or changed): the state, the inputs or the file changed since `make plan`. Run step 6 again, read the new plan, then `make up`. An apply that failed halfway: keep the state as it is. Terraform has recorded everything it created, so the next `make plan` lists only what is still missing; read it, then `make up`. Never delete the state or `terraform/.terraform` to "start clean": the next apply would try to create everything again over resources that exist. A build that stops at `storage.objects.get` with a 403 naming the Compute Engine default account: Cloud Build runs as that account when the kit names none, and in an organization created on or after 3 May 2024 it is created without the broad role older projects gave it. Grant it exactly what a build needs (the block below), and wait a few minutes for IAM to apply the grants. The apply had already finished by then and its plan is used up, so run `make plan` (it reports no changes) and `make up`, which applies nothing and carries on from the build. A drift line after the apply means the plan after it is not empty: a resource the provider reads back differently from how it was written. It does not stop `make up`, but it is a definition to fix before the next apply repeats it. A `bq-views` failure naming a table or a field that does not exist: the view reads the log sink's table, and the kit's own comment on the target (below) says that table is typed by the rows the API has logged. Every service is deployed by then; run `make bq-views` again once the API has answered a question (lesson 0.4's smoke asks the first one), then `make vector-status`, the one step left.
+A plan refused as stale (The saved plan is stale; create a new plan, or The selected plan is missing or changed): the state, the inputs or the file changed since `make plan`. Run step 6 again, read the new plan, then `make up`. An apply that failed halfway: keep the state as it is. Terraform has recorded everything it created, so the next `make plan` lists only what is still missing; read it, then `make up`. Never delete the state or `terraform/.terraform` to "start clean": the next apply would try to create everything again over resources that exist. A build that stops at `storage.objects.get` with a 403 naming the Compute Engine default account: Cloud Build runs as that account when the kit names none, and in an organization created on or after 3 May 2024 it is created without the broad role older projects gave it. `make up` grants it exactly what a build needs before it builds (`make build-access`, the block below, each grant only if it is missing), so this 403 now means IAM took longer than the two minutes it waits. Run the block below, and wait a few minutes for IAM to apply the grants. The apply had already finished by then and its plan is used up, so run `make plan` (it reports no changes) and `make up`, which applies nothing and carries on from the build. A drift line after the apply means the plan after it is not empty: a resource the provider reads back differently from how it was written. It does not stop `make up`, but it is a definition to fix before the next apply repeats it. A `bq-views` line: the view reads the log sink's table, and the kit's own comment on the target (below) says that table is typed by the rows the API has logged. On a new lane the API has answered nothing yet, so `make up` says bq-views deferred and goes on to `make vector-status`; run `make bq-views` once the API has answered a question (lesson 0.4's smoke asks the first one). A failure naming a field that does not exist means the same: run it again after an answer.
 
-Three narrow grants: read access to its own source bucket only, push access to the `documind` repository, and log writing. Not Editor, and not `roles/cloudbuild.builds.builder` on the project: either would let every build read, write and delete every object in every bucket, the uploads of customer documents included.
+Three narrow grants: read access to its own source bucket only, push access to the `documind` repository, and log writing. Not Editor, and not `roles/cloudbuild.builds.builder` on the project: either would let every build read, write and delete every object in every bucket, the uploads of customer documents included. `make build-access` also makes the bucket and the repository that `gcloud run deploy --source` builds through, in the lane's region and in `us-central1` for Module 9's small model, and gives the account the same read and push there.
 
 ### Seven services, and the account each runs as
 
@@ -270,9 +270,9 @@ Cloud Run keeps the account a service runs as on the service itself. Listing the
 
 A service missing from the list was not deployed: `~/up.log` shows which DEPLOY block stopped, and the services after it in the order (`documind-ingest`, `documind-api`, `documind-admin`, `documind-ui`, `documind-chat`, `documind-mcp`, `documind-agent`) are missing too, because the loop stops at the first failure. A service running as the Compute Engine default account would mean a script lost its `--service-account` flag; none of the seven does today. Besides the services, the lane now has two Cloud Run jobs: `documind-off`, from `terraform/off.tf`, and `documind-checkpoint-setup`, which the chat service's script creates and runs to prepare its database.
 
-#### The shard size the service chose
+#### The shard size of your index
 
-Step 5 left one fact open: the deployed index's machine follows the index's shard size, and the kit lets the service choose it. Read both from the live lane; step 10 prices the row that matches.
+Step 5 left one fact to read: the deployed index's machine follows the index's shard size, SMALL on a new lane and whatever an older index was created with. Read both from the live lane; step 10 prices the row that matches.
 
 ### The UI behind IAP, and the roster behind the UI
 
@@ -302,7 +302,7 @@ Most of the lane bills for what you do with it: a page parsed, a token generated
 
 The cluster and the connector complete the list. The cluster is a regional Standard one, so its management fee is not covered by GKE's free-tier credit, and its node is an ordinary Compute Engine machine. The connector keeps at least two small machines running so that the services can reach the VPC.
 
-The table prices each line as lesson 0.1 does: the declaration's size times Google's list price for Mumbai (`asia-south1`, where the course's lane runs its services and where `spanner.tf` keeps the graph), read from Google's pricing pages on 7 October 2026, at the kit's rate of Rs 85 to the dollar from `shared/prices.py`. Of the kit's own figures above, the cluster fee matches; Cloud SQL comes to $11.24 a month for each instance at these prices, above the roughly $8-10 that `cloudsql.tf`'s comment gives. The Vector Search row has two machines because the service chose the shard size: step 8's output says which line is yours.
+The table prices each line as lesson 0.1 does: the declaration's size times Google's list price for Mumbai (`asia-south1`, where the course's lane runs its services and where `spanner.tf` keeps the graph), read from Google's pricing pages on 7 October 2026, at the kit's rate of Rs 85 to the dollar from `shared/prices.py`. Of the kit's own figures above, the cluster fee matches; Cloud SQL comes to $11.24 a month for each instance at these prices, above the roughly $8-10 that `cloudsql.tf`'s comment gives. The Vector Search row has two machines because an index keeps the shard size it was created with: SMALL on a new lane, MEDIUM on the older index the kit's comment records. Step 8's output says which line is yours.
 
 What is not in the table matters as much. The seven Cloud Run services cost nothing while idle at their default floor of zero instances; `MIN_INSTANCES=1`, the kit's setting for a session day, would floor `documind-ui`, `documind-mcp` and `documind-agent` at one instance each. Firestore, the buckets, BigQuery, Pub/Sub, Secret Manager, Document AI, Gemini and the managed stores bill per use or per gigabyte stored, so they cost little until something is ingested or asked. `make off` floors the UI and the GPU services to zero but leaves every row of the table running; only `make down` and deleting the project remove them. Lesson 0.4 turns these rows into what a day of a lane left up costs, and switches it off.
 
@@ -310,7 +310,7 @@ What is not in the table matters as much. The seven Cloud Run services cost noth
 
 Twelve checks, each one block above, each with the value that proves it on your lane.
 
-Everything: the project went from blank to a running lane. 40 APIs are on. The state bucket you made yourself holds Terraform's record of 234 resources: 19 accounts with their roles, five buckets, Firestore with 17 indexes and four TTL fields, Vector Search with its deployed index, two Cloud SQL instances, Spanner, `rag_data` and `documind_observability` in BigQuery, a GKE cluster, the network, the alerts and the budget. Artifact Registry holds seven images; Cloud Run runs seven services and two jobs. Firestore holds the roster's 11 memberships and three data-region policies; RAG Engine holds empty corpora for acme and zeta. On your machine, `terraform/` is connected to the state and holds the saved inputs and the applied plan file. From the end of the apply, the rows of step 10 bill every hour. Lesson 0.4 proves the lane end to end, breaks it once on purpose, and switches it off.
+Everything: the project went from blank to a running lane. 41 APIs are on. The state bucket you made yourself holds Terraform's record of 237 resources: 19 accounts with their roles, six buckets, Firestore with 17 indexes and four TTL fields, Vector Search with its deployed index, two Cloud SQL instances, Spanner, `rag_data` and `documind_observability` in BigQuery, a GKE cluster, the network, the alerts and the budget. Artifact Registry holds seven images; Cloud Run runs seven services and two jobs. Firestore holds the roster's 11 memberships and three data-region policies; RAG Engine holds empty corpora for acme and zeta. On your machine, `terraform/` is connected to the state and holds the saved inputs and the applied plan file. From the end of the apply, the rows of step 10 bill every hour. Lesson 0.4 proves the lane end to end, breaks it once on purpose, and switches it off.
 
 Netsetos GenAI on GCP · Module 0 Setup · Lesson 0.3 Understand the project, identities and resource map, and deploy the lane · v5.0
 

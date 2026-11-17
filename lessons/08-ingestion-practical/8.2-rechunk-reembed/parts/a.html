@@ -1,0 +1,82 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 8 &middot; Ingestion practical &middot; Lesson 8.2</div>
+<h1>Change a chunker, re-embed and reconcile: <span>two lines in two files, one handbook re-issued, the ledger walked, the old image put back</span></h1>
+<p>The kit cuts every text document into chunks of up to %%KIT_CHARS%% characters, and it says so in two places: once in the ingest worker, which cuts what the lane indexes, and once in the module the notebooks, the Rs 0 lane and the offline checks share. This lesson changes the chunk size and its overlap to %%NEW_PAIR%% in both places, with a test that fails if only one is changed, and follows the change through a real deploy: a worker built under its own image tag, the handbook re-issued so the new rule cuts it, the counts of what was reused and what was embedded, the ledger walked against the bucket, the handbook's golden questions asked again, and the original image put back.</p>
+<p>Two findings shape the practical. A chunk size of %%LONGEST%% characters or more changes nothing at all on the handbook, because no section in it is longer than that. And changing the rule re-cuts nothing that is already indexed: only a document the worker ingests after the deploy is cut by the new rule, which is why the handbook goes up again as new bytes.</p>
+<div class="hero-chips"><div class="hero-chip">%%NEW_PAIR%% in both twins</div><div class="hero-chip">the twin test</div><div class="hero-chip">%%LONGEST%% is the line</div><div class="hero-chip">%%N400%% chunks, %%R400%% reused</div><div class="hero-chip">%%E400%% embedded, Rs %%RS400%%</div><div class="hero-chip">an image tag of its own</div><div class="hero-chip">drift 0</div><div class="hero-chip">the original tag again</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What changing a chunker changes, and what it does not</a></li>
+<li><a href="#s2">The words: twins, pair, window, re-issue, tag, revision, drift</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The kit's code: two lines, one rule, and the test that holds them</a></li>
+<li><a href="#s4">Measure before you deploy: the handbook at eight sizes, Rs 0</a></li>
+<li><a href="#s5">Do it: edit both twins, then build and deploy a tagged worker</a></li>
+<li><a href="#s6">Re-issue the handbook as new bytes, and read the counts</a></li>
+<li><a href="#s7">REST: which image serves, and how many tokens a new chunk is</a></li>
+<li><a href="#s8">Reconcile: the ledger against the bucket, the index against the rows, the golden rows</a></li>
+<li><a href="#s9">Put it back: the original tag, version 1, the checkout</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn where the kit sets its chunk size (twice), why %%NEW_PAIR%% re-cuts %%CUT400%% of the handbook's %%N_SECTIONS%% sections while any size from %%LONGEST%% up re-cuts none, and why a new rule reaches only the documents ingested after it. Then you will make the change on your lane under the twin test, re-issue the handbook, read %%N400%% chunks, %%R400%% reused and %%E400%% embedded off the worker's line, reconcile the ledger to drift 0, ask the handbook's golden questions again, and put the original worker back.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What changing a chunker changes, and what it does not</h3><p>A rule set in two files, a section rule ahead of the size, and an index that only learns the rule one document at a time.</p></div></div>
+
+<p>A <strong>chunker</strong> is the code that cuts a document into the pieces that are embedded, stored and retrieved. Lesson 1.2 read the kit's: a handbook is cut at its <code>## </code> headings, one chunk per section, and only a section longer than the chunk size is cut again, into overlapping <em>windows</em> that end on a sentence when there is one in the window's second half. Anything without headings is windows, page by page. Two numbers set the windows: <code>CHUNK_CHARS</code>, the most characters a window holds (%%KIT_CHARS%% today), and <code>CHUNK_OVERLAP</code>, how far back the next window starts (%%KIT_OV%%). Changing a chunker, in this kit, means changing that pair.</p>
+
+<p>The pair is written down twice. <code>services/ingest/main.py</code>, the worker, cuts every document the lane indexes. <code>shared/documind_corpus.py</code> cuts the same documents for everything that runs outside the worker's image: the notebooks that seed a Colab lane, the Rs 0 lane on a laptop, the offline checks, and every lesson page that counts chunks when it is built. The image cannot import a notebook and a notebook cannot import the image, so each carries its own copy, the <em>twins</em>, and each says it follows the other. If only one is edited, the lane serves chunks that no offline count, check or estimate has ever seen, and nothing fails. The kit's twin test, <code>commands/tests/test_twin_chunker.py</code>, is what fails: it holds the two pairs equal and the two chunkers to the same chunks over the whole corpus.</p>
+
+<p>The size is the second rule, not the first. Sections come first, so a size only matters for sections longer than it. The handbook has %%N_SECTIONS%% chunks today: a short preamble and %%N_HEADINGS%% sections. Of the sections, %%N_REAL_W%% are the clauses the course keeps asking about (%%REAL_LIST%%), none longer than %%SHORT_MAX%% characters. The other %%N_GEN%%, <code>%%GEN_FIRST%%</code> to <code>%%GEN_LAST%%</code>, are the handbook's generated filler, %%GEN_MIN%% to %%LONGEST%% characters each. The longest section of all is %%LONGEST%% characters, so any size of %%LONGEST%% or more leaves every section whole: the same chunks, the same hashes, the same vectors, nothing to embed. The cohort plan's "600 or more changes nothing" is true, and the exact line is %%LONGEST%%. At %%NEW_PAIR%%, every generated section is cut in two and every real clause stays whole: %%N400%% chunks, of which %%R400%% are the very texts the lane holds now.</p>
+
+<p>Last, and easiest to miss: a new rule re-cuts nothing that is already indexed. The rows in Firestore and the vectors in the index were cut when each document was ingested, and the worker cuts again only when a document arrives. So the practical is a deploy (the rule), a re-issue (the one document you want re-cut, as bytes the lane has never seen), a reconcile (the ledger still names what the bucket holds), a gate (the golden questions about that document), and a way back. The kit has no command that re-cuts a whole corpus; <code>INDEXING.md</code> lists a full re-embed under "Not yet".</p>
+
+<div class="analogy"><div class="analogy-icon">&#128451;</div><div>
+<p><strong>A coaching centre in Kota re-cuts its revision cards.</strong> Every chapter of every textbook is printed onto revision cards, each card filed in a catalogue students search. The press has two rules: a topic becomes one card, and a topic too long for a card is cut onto overlapping cards. Head office decides cards should be smaller. Three things follow. The short topics already fit, so their cards come out word for word the same and keep their place in the catalogue; only the long topics are re-cut, and the indexer bills only for those. Nothing already in the drawers changes: only a chapter sent to the press after the decision comes out on new cards, so the centre sends again the one chapter it wants re-cut. And the centre has two presses, one at head office and one at the branch that prints the practice sets: if only one press gets the new card size, the practice sets point at cards head office never printed. Every night a clerk checks the register of chapters against the shelves.</p>
+<p>The two presses are the twins and the card size is the pair. The short topics are the handbook's %%N_REAL_W%% real clauses and its preamble, kept with their vectors; the long ones are the %%N_GEN%% generated sections, embedded again. Sending a chapter again is the re-issue. The night clerk is the reconcile: she counts chapters and their editions, not card sizes, so she finds nothing wrong either way, which step 8 shows.</p></div></div>
+
+<h4>The explorer: the handbook at another size</h4>
+<p>The explorer runs the kit's chunker in your browser, ported line for line from <code>shared/documind_corpus.py</code>; when this page was built, the same script cut the whole handbook at every size and overlap below and matched both twins' chunks exactly. Move the size and the overlap. The line under the controls is the whole handbook against what your lane holds today (version 1, cut at %%KIT_PAIR%%): how many chunks, how many keep their vectors, how many are embedded again, and what that costs at the embedding price lesson 8.3 dates. The cards are one section's chunks at the chosen size: teal kept its vector, amber is new text, and blue is the overlap a window repeats from the one before it.</p>
+
+<div class="diagram" id="ck">
+<div class="dg-title">The handbook, cut by the kit's chunker at another size</div>
+<div class="ck-btns"><button type="button" class="ck-btn" id="ck-kit" aria-pressed="false">The kit's %%KIT_PAIR%%</button><button type="button" class="ck-btn" id="ck-lesson" aria-pressed="true">This lesson's %%NEW_PAIR%%</button></div>
+<div class="ck-in">
+<label><span>Chunk size: <b id="ck-size-v">%%NEW_CHARS%%</b> characters</span><input type="range" id="ck-size" min="0" max="%%SIZE_MAX%%" step="1" value="%%SIZE_IDX%%" aria-label="Chunk size in characters"></label>
+<label>Overlap, in characters<select id="ck-ov">%%OPT_OV%%</select></label>
+<label>The section shown below<select id="ck-sec">%%OPT_SEC%%</select></label>
+</div>
+<p class="ck-sum" id="ck-sum" aria-live="polite">%%CK_SUM%%</p>
+<div class="ck-out" id="ck-out"></div>
+<p class="dg-cap">The sizes stop at %%SIZE_LIST%% characters; an overlap of half the size or more is not offered, because the window would creep forward a character at a time. Rupees are for the characters sent to <code>text-embedding-005</code> and nothing else; step 8's table has the re-issue's other costs. %%N_GRID%% size and overlap pairs were checked against the kit when this page was built.</p>
+</div>
+
+<p>The explorer opens at %%NEW_PAIR%% on <code>%%BIG_LOC%%</code>, the longest section: two windows, the second starting a few words before the first ends, both amber. Choose <code>NP-03</code>: one teal card, the same %%NP03_LEN%% characters the lane holds, so the worker will lend it the vector it already has. Now drag the size up. At 500 the count is still %%N400%%, because every generated section is still longer than the size. At %%LONGEST_MINUS%% only the %%N_LONGEST_W%% sections of exactly %%LONGEST%% characters are cut, %%E598%% chunks to embed, the cheapest real change there is; at %%LONGEST%% every section is whole again and the line says every chunk is reused. And try the overlap at %%NEW_PAIR%%: it changes what the windows repeat and how many characters you pay for, not how many windows there are.</p>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: twins, pair, window, re-issue, tag, revision, drift</h3><p>Twelve terms, each with the value it takes on your lane in this lesson.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>The twins</strong></td><td data-label="Meaning">The kit's two chunkers: <code>_chunk()</code> in the worker's <code>main.py</code>, and <code>chunk_document()</code> in <code>shared/documind_corpus.py</code>, which everything outside the worker's image uses.</td><td data-label="On your lane">both edited in step 5, both put back in step 9</td></tr>
+<tr><td><strong>The pair</strong></td><td data-label="Meaning"><code>CHUNK_CHARS, CHUNK_OVERLAP</code>: the most characters a window holds, and how far back the next window starts. Each twin sets it on one line.</td><td data-label="On your lane">%%KIT_PAIR%% today, on line %%MAIN_LINE%% of <code>main.py</code> and line %%CORPUS_LINE%% of <code>documind_corpus.py</code>; %%NEW_PAIR%% in this lesson</td></tr>
+<tr><td><strong>Section</strong></td><td data-label="Meaning">The text under one <code>## </code> heading of a handbook. A section is one chunk unless it is longer than the size; its locator is the clause code in its heading.</td><td data-label="On your lane">%%N_HEADINGS%% in the handbook, plus a preamble</td></tr>
+<tr><td><strong>Window</strong></td><td data-label="Meaning">One piece of a section (or a page) longer than the size, ending on a sentence when one ends in the window's second half. A window after the first carries <code>-1</code>, <code>-2</code> on its locator.</td><td data-label="On your lane">%%WIN400%% windows from %%CUT400%% sections at %%NEW_PAIR%%</td></tr>
+<tr><td><strong>The twin test</strong></td><td data-label="Meaning"><code>commands/tests/test_twin_chunker.py</code>: the same pair on both lines, and the same chunks from both twins over every Markdown text in the corpus. Standard library only.</td><td data-label="On your lane">%%TEST_N%% tests, Rs 0, in steps 3, 5 and 9</td></tr>
+<tr><td><strong>Re-issue as new bytes</strong></td><td data-label="Meaning">The handbook uploaded again with one comment line in front of version 1's text. The bytes are new, so the version is new; both twins drop the comment, so the chunks are version 1's text cut by the new rule.</td><td data-label="On your lane"><code>acme_%%R4_KEY%%...</code>, in step 6</td></tr>
+<tr><td><strong>Reused, embedded</strong></td><td data-label="Meaning">The carry-over's two counts (lessons 1.3 and 1.6): a chunk whose text the current version already holds borrows its vector; the rest are sent to the embedding model.</td><td data-label="On your lane">%%R400%% reused, %%E400%% embedded</td></tr>
+<tr><td><strong>Image tag</strong></td><td data-label="Meaning">The name a build pushes an image under and a deploy runs it by: <code>GIT_SHA</code>, by default the checkout's commit. An edit does not change the commit, so the edited build must be given a tag of its own.</td><td data-label="On your lane"><code>ingest:COMMIT</code> today; <code>ingest:COMMIT-c400</code> in step 5</td></tr>
+<tr><td><strong>Revision</strong></td><td data-label="Meaning">What each Cloud Run deploy creates: the image and its settings, frozen. The service keeps its old revisions; traffic goes to the newest ready one.</td><td data-label="On your lane">two more on <code>documind-ingest</code> by the end</td></tr>
+<tr><td><strong>Revert by redeploy</strong></td><td data-label="Meaning">Deploying the original tag again: the image already exists, so nothing is built.</td><td data-label="On your lane">step 9</td></tr>
+<tr><td><strong>Drift</strong></td><td data-label="Meaning">The nightly walk's number (lesson 1.8): how many sources the ledger got wrong against the bucket, gone, changed under a lost event, or never seen. The chunker is not one of its inputs.</td><td data-label="On your lane">0 in step 8</td></tr>
+<tr><td><strong>A no-op size</strong></td><td data-label="Meaning">A size at or above a document's longest section: the document's chunks do not change, so a re-issue embeds nothing.</td><td data-label="On your lane">%%LONGEST%% or more, for the handbook</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>Two pairs of words are easy to confuse. A <em>re-issue</em> is new bytes under an old name, which the worker always processes, while the <em>undo</em> of lessons 1.6 and 1.7 is old bytes again, which the worker answers by flipping retired rows back with nothing cut and nothing embedded. And an <em>image tag</em> is a name that can be moved, while a <em>revision</em> is fixed: step 5 gives the edited worker a tag nobody else uses, so that step 9 can trust the original tag to mean the original image.</p>

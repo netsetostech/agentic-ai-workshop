@@ -27,6 +27,7 @@ Verified 2026-09-04 against deploy/services/rag-api/schemas.py.
 """
 from __future__ import annotations
 
+import functools
 import logging
 import math
 import os
@@ -149,6 +150,7 @@ def retrieve(query: str, tenant_id: str, top_k: int = 5,
     headers = {"Authorization": f"Bearer {_id_token(RAG_API_URL)}"}
     if assertion:
         headers[ASSERTION_HEADER] = assertion
+        headers["x-documind-assertion"] = assertion    # Cloud Run drops the line above (shared/iap.FORWARD_HEADER)
     if passages:
         return _passages(payload, headers)
 
@@ -241,6 +243,17 @@ def _match(word: str, token: str) -> bool:
             or (word.isalpha() and len(word) >= 6 and len(token) >= 6 and token[:5] == word[:5]))
 
 
+@functools.lru_cache(maxsize=4096)
+def _counted(text: str) -> tuple[int, dict[str, int]]:
+    """A chunk's tokens as _lexical_rank counts them: (how many, {token: how often}), cached by the chunk's text; the
+    cache holds the kit's whole corpus (evals/corpus) with room. The dict is shared between calls: read it only."""
+    counts: dict[str, int] = {}
+    toks = re.findall(r"[a-z0-9]+", text.lower())
+    for t in toks:
+        counts[t] = counts.get(t, 0) + 1
+    return len(toks), counts
+
+
 def _lexical_rank(query: str, rows: list[tuple[str, dict]]) -> tuple[list[tuple[float, list[str], str, dict]], dict[str, float]]:
     """BM25 over a tenant's chunks - the textbook form, no package - with 6.4's gate made
     honest for a 465-chunk corpus. Query words are content words (four letters or more, not a
@@ -252,9 +265,17 @@ def _lexical_rank(query: str, rows: list[tuple[str, dict]]) -> tuple[list[tuple[
     words = _words(query)
     if not rows or not words:
         return [], {}
-    toks = [re.findall(r"[a-z0-9]+", text.lower()) for text, _ in rows]
-    n, avgdl = len(toks), sum(map(len, toks)) / max(1, len(toks))
-    tf = [{w: sum(1 for t in doc if _match(w, t)) for w in words} for doc in toks]
+    # Each chunk tokenised once (_counted), and each word matched against the tenant's vocabulary, not every token of
+    # every chunk - and only against the tokens that start as it does, as every _match does: the same counts and scores,
+    # in a fraction of the time (13 October 2026: 1.5 s a search over acme's chunks made make window-check slow, and
+    # whether a search passed retrieve's budget a matter of the machine).
+    docs = [_counted(text) for text, _ in rows]
+    n, avgdl = len(docs), sum(size for size, _ in docs) / max(1, len(docs))
+    vocab: dict[str, list[str]] = {}
+    for t in set().union(*(counts for _, counts in docs)):
+        vocab.setdefault(t[0], []).append(t)
+    matches = {w: [t for t in vocab.get(w[0], ()) if _match(w, t)] for w in words}
+    tf = [{w: sum(counts.get(t, 0) for t in matches[w]) for w in words} for _, counts in docs]
     df = {w: sum(1 for d in tf if d[w]) for w in words}
     if n >= 8:                                                # a tiny set has no "ubiquitous"
         words = [w for w in words if df[w] / n <= 0.5]
@@ -263,11 +284,11 @@ def _lexical_rank(query: str, rows: list[tuple[str, dict]]) -> tuple[list[tuple[
     idf = {w: math.log(1 + (n - df[w] + 0.5) / (df[w] + 0.5)) for w in words}
     k1, b = 1.5, 0.75
     ranked = []
-    for (text, meta), doc, f in zip(rows, toks, tf):
+    for (text, meta), (size, _), f in zip(rows, docs, tf):
         hit = [w for w in words if f[w]]
         if not hit:
             continue
-        s = sum(idf[w] * f[w] * (k1 + 1) / (f[w] + k1 * (1 - b + b * len(doc) / avgdl)) for w in hit)
+        s = sum(idf[w] * f[w] * (k1 + 1) / (f[w] + k1 * (1 - b + b * size / avgdl)) for w in hit)
         ranked.append((s, hit, text, meta))
     ranked.sort(key=lambda r: (-r[0], -len(r[1]), len(r[2])))
     return ranked, idf

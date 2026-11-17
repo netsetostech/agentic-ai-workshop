@@ -87,6 +87,20 @@ def list_members(tenant_id: str) -> list[str]:
                   .collection("members").stream())
 
 
+def tenants_of(email: str) -> list[str]:
+    """Every tenant whose roster holds this account, sorted; [] for none. Workshop lesson 10.7.
+
+    tenant_for() answers for a person, who belongs to one customer (the first match). An agent's account can sit on
+    several rosters, and the chat's hand-off to the A2A peer must see them all: it hands a question over only when
+    the peer's account sits on exactly one roster, the asker's (services/chat/peer.py). The same collection-group
+    query as tenant_for(), without its limit. It reads, as list_members() does, and writes nothing.
+    """
+    if not email:
+        return []
+    hits = _db().collection_group("members").where("email", "==", email.lower()).get()
+    return sorted({doc.reference.parent.parent.id for doc in hits})    # tenants/{THIS}/members/{email}
+
+
 # ---- the data-region policy (13 September 2026, evening) ---------------------------------
 # Where a tenant's text may be held, per tenant, as data. tenant_settings/{tenant} is the
 # document 11.4's pin already reads once a minute (model_backend, generator_model); the policy

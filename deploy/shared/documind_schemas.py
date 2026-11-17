@@ -27,6 +27,7 @@ THREE THINGS, NOT ONE, because they are three different moments:
 # No `from __future__ import annotations`, on purpose. 3.2 and 4.2 exec these classes as
 # a notebook cell, where a deferred `List` never resolves and pydantic refuses to build
 # the model. Plain annotations work everywhere the text is pasted, which is the point.
+import re
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -83,22 +84,53 @@ def resolve(draft: ModelDraft, packed: List[dict]) -> RAGAnswer:
 
     An out-of-range index is dropped, not raised: the model's answer is still worth returning,
     and a citation to a source that was not in the context is not a citation.
+
+    One Citation per chunk, and one for every source the answer cites (21 October 2026). The
+    draft's citations array and the [N] markers in its prose are two answers to one question,
+    and the model does not always keep them in step: a live answer cited [1, 2] with one entry,
+    another listed the same chunk three times. So a chunk quoted twice keeps its first quote,
+    and an in-range [N] (or [N, M], or [Source N]) the answer uses with no entry gets one, its
+    quote the chunk's own text. The answer's prose is never rewritten.
     """
     cits: List[Citation] = []
-    for d in draft.citations:
-        if not 1 <= d.source <= len(packed):
-            continue
-        c = packed[d.source - 1]
+    seen = set()
+
+    def cite(n: int, quote: str) -> None:
+        c = packed[n - 1]
+        chunk_id = str(c.get("chunk_id") or c.get("id") or "")
+        if chunk_id in seen:
+            return
+        seen.add(chunk_id)
         cits.append(Citation(
-            chunk_id=str(c.get("chunk_id") or c.get("id") or ""),
+            chunk_id=chunk_id,
             source_uri=c.get("source_uri", ""),
             page=c.get("page_start") or c.get("page"),
-            quote=(d.quote or c.get("text", ""))[:500],
+            quote=(quote or c.get("text", ""))[:500],
             score=float(min(1.0, max(0.0, c.get("rerank_score") or c.get("score") or 0.0))),
             kind=c.get("kind", "text"),
             media_url=c.get("media_url"),
             start=c.get("start"),
             end=c.get("end"),
         ))
+
+    for d in draft.citations:
+        if 1 <= d.source <= len(packed):
+            cite(d.source, d.quote)
+    for n in cited_numbers(draft.answer):
+        if 1 <= n <= len(packed):
+            cite(n, "")
     return RAGAnswer(answer=draft.answer, citations=cits,
                      confidence=draft.confidence, answerable=draft.answerable)
+
+
+MARKER = re.compile(r"\[(?:Source\s+)?(\d+(?:\s*,\s*(?:Source\s+)?\d+)*)\]")
+
+
+def cited_numbers(answer: str) -> List[int]:
+    """The source numbers an answer's [N], [N, M] and [Source N] markers name, first use first."""
+    numbers: List[int] = []
+    for group in MARKER.findall(answer or ""):
+        for n in re.findall(r"\d+", group):
+            if int(n) not in numbers:
+                numbers.append(int(n))
+    return numbers

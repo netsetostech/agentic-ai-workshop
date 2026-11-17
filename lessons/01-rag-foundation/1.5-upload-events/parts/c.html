@@ -13,8 +13,9 @@
 <p>The poison message from step 5 reaches the queue about an hour after its first refusal. Run the first line then; an empty listing earlier is the retries still running, not a fault. The second read decodes the message's own record, the same JSON the worker refused, to see the size of zero with your own eyes.</p>
 <div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, about an hour after step 5 (both peek; nothing is acknowledged)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make dlq PROJECT=$PROJECT
 
-gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 --format='value(message.data)' \
-  | base64 -d | python -c "import json,sys; r=json.load(sys.stdin); print({k: r.get(k) for k in ('name','size','contentType','generation','timeCreated')})"</pre></div>
+DATA="$(gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 --format='value(message.data)')"
+[ -n "$DATA" ] &amp;&amp; echo "$DATA" | base64 -d | python -c "import json,sys; r=json.load(sys.stdin); print({k: r.get(k) for k in ('name','size','contentType','generation','timeCreated')})" \
+  || echo "no dead letter yet: the retries are still running; read again later"</pre></div>
 
 <div class="cw"><div class="ch-bar"><span>expected (your ids and times differ; the last column is this subscription's own count, not the twelve)</span><span class="ro">read only</span></div><pre tabindex="0">MESSAGE_ID         OBJECT_ID                    EVENT_TIME                DELIVERY_ATTEMPT
 12345678901234567  acme/poison-1758542871.pdf   2026-09-22T12:17:52.318Z  1
@@ -22,11 +23,15 @@ gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 -
 
 <h4>Decide, then clean up</h4>
 <p>This dead letter deserves the second choice: the object was never meant to be indexed. Acknowledge the message to remove it from the queue, and delete the empty object from the bucket, because an object with no ledger row is exactly what the nightly walk of lesson 1.8 looks for, and it would rewrite the object onto itself and send the same poison round again every night. Both commands change your lane; both act only on the drill's own artefacts.</p>
-<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (removes the dead letter and the empty object; nothing else)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 1 --auto-ack --format='value(message.attributes.objectId)'
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell (removes the drill's dead letter and the empty object; nothing else)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">ACK="$(gcloud pubsub subscriptions pull ingest-dlq-sub --project "$PROJECT" --limit 10 --format=json \
+  | python -c "import json,sys; print(next((m['ackId'] for m in json.load(sys.stdin) if m['message'].get('attributes', {}).get('objectId', '').startswith('acme/poison-')), ''))")"
+[ -n "$ACK" ] &amp;&amp; gcloud pubsub subscriptions ack ingest-dlq-sub --project "$PROJECT" --ack-ids="$ACK" \
+  || echo "the drill's dead letter is not in this read: run this block again"
 gcloud storage rm "gs://$PROJECT-uploads/acme/poison-"*.pdf</pre></div>
 
-<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme/poison-1758542871.pdf
+<div class="cw"><div class="ch-bar"><span>expected (your ack id differs)</span><span class="ro">read only</span></div><pre tabindex="0">Acked the messages with the following ackIds: [...]
 Removing gs://documind-ai-YOUR-ID-uploads/acme/poison-1758542871.pdf...</pre></div>
+<p>The read takes up to ten letters and acknowledges only the drill's, the one whose object is an <code>acme/poison-</code> file, so a busy queue's other letters are left for their own decision; they come back after the subscription's ack deadline.</p>
 
 <div class="wjh"><div class="wjh-title">What just happened</div>
 <p>You read a message that had been refused twelve times, decoded the record inside it and found the zero that made it poison, and then took the operator's decision: drop it, and remove its cause. Notice what did not need doing: no worker was restarted, no subscription touched, no retry forced. The platform did the retrying, stopped at the ceiling, and kept the evidence for you. A dead letter you could not explain would be the other case, and the first read in step 4, the request log, is where that investigation starts.</p></div>
@@ -38,7 +43,7 @@ Removing gs://documind-ai-YOUR-ID-uploads/acme/poison-1758542871.pdf...</pre></d
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
 <thead><tr><th>The queue may</th><th>Because</th><th>The defence</th></tr></thead>
 <tbody>
-<tr><td>Deliver a message twice, even concurrently</td><td data-label="Because">an answer arrives after the ack deadline, or a redelivery overlaps a slow first attempt</td><td data-label="The defence">the claim, taken in a Firestore transaction: the second delivery finds <code>processing</code> or <code>indexed</code> and is acknowledged as a duplicate (lesson 1.4)</td></tr>
+<tr><td>Deliver a message twice, even concurrently</td><td data-label="Because">an answer arrives after the ack deadline, or a redelivery overlaps a slow first attempt</td><td data-label="The defence">the claim, taken in a Firestore transaction: a second delivery that finds it <code>indexed</code> is acknowledged as a duplicate (lesson 1.4), and one that finds it <code>processing</code> inside its lease is nacked and comes back</td></tr>
 <tr><td>Deliver events out of order</td><td data-label="Because">retries and backoff reorder them: an older generation's event can arrive after the newer one was indexed</td><td data-label="The defence">the generation guard: the ledger's generation is read first, an older event is acknowledged as <code>stale</code>, and the bytes are fetched by generation, never "whatever the object holds now" (lesson 1.7)</td></tr>
 <tr><td>Refuse the worker's door</td><td data-label="Because">Cloud Run answers "no available instance" while it cold-starts, and a corpus upload lands thirty objects at once against one request per instance</td><td data-label="The defence">twelve attempts, not five, so a document is never dead-lettered for a refusal that was not its fault</td></tr>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
@@ -46,7 +51,8 @@ Removing gs://documind-ai-YOUR-ID-uploads/acme/poison-1758542871.pdf...</pre></d
 @@deploy_flags@@
 
 <h4>The hazard the ceiling exists for</h4>
-<p>There is one failure the claim cannot defend against on its own. A request that runs past 600 seconds is killed by the platform, not by the worker, so the code that releases the claim never runs. The claim stays <code>processing</code>; the subscription retries; the retry finds the claim taken and is acknowledged as a duplicate; and the document is never indexed while every delivery reports success. The 250-page ceiling is the answer: no push request is allowed to begin a document that could reach the deadline, and the job that takes such documents has two hours and no platform retries, because a failed document says why on its claim and the next run does not retake it. Lesson 1.8's reconcile is the backstop that would notice a claim stuck in <code>processing</code>.</p>
+<p>There is one failure the claim cannot defend against on its own. A request that runs past 600 seconds is killed by the platform, not by the worker, so the code that releases the claim never runs, and the claim stays <code>processing</code>. Until 13 October 2026 every retry then found the claim taken and was acknowledged as a duplicate, and the document was never indexed while every delivery reported success. Now the claim holds for a lease counted from its <code>claimed_at</code>: the subscription's ack deadline and a minute, 660 seconds, after which no request can still be working on it. A retry inside the lease is nacked with a 409 (<code>ingest_claim_held</code>); the first one after it takes the claim back in a transaction (<code>ingest_claim_retaken</code>) and starts again. A worker cut off by an out-of-memory kill is repaired that way. A document that outruns the deadline every time is not: it spends its twelve attempts and lands on the dead-letter queue, where at least it pages. So the 250-page ceiling is still the answer: no push request is allowed to begin a document that could reach the deadline, and the job that takes such documents has two hours and no platform retries, because a failed document says why on its claim and the next run does not retake it. A claim the job holds keeps the job's two hours and a minute as its lease. Lesson 1.8's reconcile plans a reingest for a claim left in <code>processing</code>, and the lease is what lets that rewrite's delivery take it back.</p>
+@@lease@@
 @@batch_timeout@@
 
 <h4>What deliveries bill, and what they do not</h4>

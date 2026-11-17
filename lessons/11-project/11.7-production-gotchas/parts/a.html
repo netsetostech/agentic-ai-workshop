@@ -1,0 +1,101 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 11 &middot; Project &middot; Lesson 11.7</div>
+<h1>Reproduce the agent failures production shows and no eval row does: <span>a drill, a detector and a lever for each</span></h1>
+<p>An eval row asks one question of whichever revision answers, and judges the answer. It cannot see the lane around the answer: which revision is answering, which settings it was made with, what the next routine deploy will put back, what the month's reports leave out, and what no alert reads. The kit keeps %%N_GOTCHAS%% such failures in one registry, <code>ops/gotchas.json</code>. Each comes with its symptom, why no eval row catches it, a drill that reproduces it, a detector that finds it on a lane, and the lever that fixes it.</p>
+<p>In this lesson you read the registry and run every offline drill, at Rs 0. Then you run the two drills that have a lane form on your own documind-chat: traffic held on an old revision, and a setting made by hand that a routine deploy drops. Each one puts the chat back as it was, and the detectors then read your lane.</p>
+<div class="hero-chips"><div class="hero-chip">ops/gotchas.json</div><div class="hero-chip">%%N_GOTCHAS%% gotchas: %%N_LOUD%% loud, %%N_SILENT%% silent</div><div class="hero-chip">%%N_OFFLINE%% offline drills at Rs 0</div><div class="hero-chip">pinned traffic</div><div class="hero-chip">a deploy drops a hotfix</div><div class="hero-chip">make gotcha-detect</div><div class="hero-chip">make deploy-services skips the gate</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What production shows and no eval row does</a></li>
+<li><a href="#s2">The words: gotcha, registry, signal, drill, stand-in, detector, lever, evidence, held traffic, template, hand-set setting, routine deploy</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The registry, read at Rs 0</a></li>
+<li><a href="#s4">The lines the two drills rest on</a></li>
+<li><a href="#s5">Every offline drill, on a stand-in of Cloud Run</a></li>
+<li><a href="#s6">Your two services, as Cloud Run's API returns them</a></li>
+<li><a href="#s7">The two drills on your lane</a></li>
+<li><a href="#s8">The detectors: what your lane shows now</a></li>
+<li><a href="#s9">The release no gate judged, loud against silent, and what the kit does not do yet</a></li>
+<li><a href="#s10">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why a passing eval says nothing about which revision answers or which settings it carries, and how the kit's registry reproduces, finds and fixes %%N_GOTCHAS%% such failures. Then you will prove it on your lane: two live drills reproduce their gotchas and leave documind-chat as it was.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What production shows and no eval row does</h3><p>An eval row judges an answer. The registry names what goes wrong around the answer, and how to reproduce, find and fix each one.</p></div></div>
+
+<p><strong>An eval row judges an answer, not the lane.</strong> The gate (lessons 4.3 and 11.2) sends the golden rows to a candidate revision and reads every reply. That is the right test for a model, a prompt or a retriever. It is blind to three kinds of failure:</p>
+<ul>
+<li><strong>Which revision answers.</strong> Change a setting on a service whose traffic is held on a named revision, and you get a new revision that takes none of the traffic. The rows still pass, on the old revision.</li>
+<li><strong>What the next deploy puts back.</strong> Every deploy script sets its service's whole environment with <code>--set-env-vars</code>. A variable set by hand holds until the next routine <code>make deploy-services</code>, and then it is gone. The rows still pass, on the default.</li>
+<li><strong>What nobody reads.</strong> A turn stopped at its call cap answers HTTP 200. A search the turn gave up on still bills. The agents' own model calls are in no report of the month. No alert policy reads any of it.</li>
+</ul>
+
+<p><strong>The registry names %%N_GOTCHAS%% of them</strong>, in <code>ops/gotchas.json</code>. Every entry carries the same five things:</p>
+<ul>
+<li>the symptom;</li>
+<li>why no eval row catches it;</li>
+<li>a drill that reproduces it;</li>
+<li>a detector that finds it on a lane and changes nothing;</li>
+<li>the lever that fixes it.</li>
+</ul>
+<p>Each entry also names the kit lines it rests on, word for word: %%N_EVIDENCE%% lines in %%N_EV_FILES%% files. If the kit changes so that a drill no longer reproduces its gotcha, the kit's tests fail until the entry is marked fixed, with the test that proves it.</p>
+
+<p><strong>Loud or silent.</strong> Of the %%N_GOTCHAS%%, %%N_LOUD%% are loud: something pages or goes red on its own. A poison upload pages through the dead-letter policy, about an hour after the upload. A token minted for a candidate's tag URL makes the gate itself go red. The other %%N_SILENT%% are silent: nothing in the kit pages on them, and the detector is the only watch.</p>
+
+<p><strong>Drills at Rs 0.</strong> An offline drill runs on a stand-in of Cloud Run, or on the kit's own code, with no lane and no credential; %%N_OFFLINE%% entries have one. The stand-in is the JSON that <code>gcloud run services describe</code> prints, changed only by the gcloud and make lines a lane would run. A lane form exists for %%N_LIVE%% entries. Two of those are the kit's own live drills, on documind-chat, and neither makes a model call: pinned traffic, and a routine deploy that drops a hotfix. The other %%N_OTHER_LIVE%% are commands other lessons teach, such as <code>make limits-drill</code> and <code>make poison</code>.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128663;</div><div>
+<p><strong>A carmaker's service bulletins.</strong> Every car leaves the plant after the end-of-line test: brakes, lights, emissions, a run on the rollers. Some faults never show on the rollers: a seal that whistles only above 100 km/h, a sensor that trips only after a week of monsoon rain. When the field reports enough of one fault, the carmaker sends every dealer workshop a bulletin. It gives the symptom the owner describes, why the end-of-line test passes the car, how to reproduce the fault in the workshop, the check that finds it on any car that comes in, and the fix. The workshop runs the check on every car it services, without waiting for the owner to complain.</p>
+<p>The registry is the bulletins. An eval row is the end-of-line test. A drill reproduces the fault in the workshop or on the car itself, the detector is the check, and the lever is the fix.</p></div></div>
+
+<h4>The registry as a board</h4>
+<p>Filter by signal, by drill and by lesson. Then open a gotcha to read its symptom, why no eval row catches it, its drill, its detector, its lever and the kit lines it rests on.</p>
+
+<div class="diagram gb" id="gb">
+<div class="dg-title">ops/gotchas.json: %%N_GOTCHAS%% gotchas, each with a drill, a detector and a lever</div>
+<div class="gb-filters">
+<label>Signal<select id="gb-sig"><option value="all">loud and silent</option><option value="loud">loud: something pages or goes red</option><option value="silent">silent: nothing does</option></select></label>
+<label>Drill<select id="gb-drill"><option value="all">any drill</option><option value="offline">an offline drill, Rs 0</option><option value="live">a drill on a lane</option></select></label>
+<label>Lesson<select id="gb-les"><option value="all">every lesson</option>%%LESSON_OPTIONS%%</select></label>
+</div>
+<p class="gb-count" id="gb-count" aria-live="polite"></p>
+<div id="gb-list"></div>
+<p class="dg-cap">Generated from the kit's <code>ops/gotchas.json</code> when this page was built. First the build ran the registry's own rules, <code>gotchas.problems()</code>: every field present, and every drill and check it names is one that <code>commands/gotchas.py</code> runs. Then it ran <code>gotchas.kit_problems()</code> on the kit behind each entry: every evidence line still in its file, the one alert policy it names declared in terraform, and every log event a detector reads written by a service. Every lesson the registry names is in the course's manifest. A check in Node compares the board's filter with the registry on every choice.</p>
+</div>
+
+<div class="box box-red"><div class="box-title">One gotcha you can trigger by accident</div>
+<p><code>make deploy-services</code> with its default <code>SCRIPTS</code> redeploys documind-api from your checkout. So does <code>make up</code>, which runs it. Then it moves 100% of the API's traffic to the revision it just made, by name, with no gate. After a gated promote (lessons 11.2 and 11.3), <code>GET /version</code> then names a commit no gate judged.</p>
+<p>To deploy the other services, leave the API's script out: <code>make deploy-services SCRIPTS=commands/lesson-12.8.sh</code> deploys the chat alone. Step 9 drills this at Rs 0.</p></div>
+
+<div class="box box-amber"><div class="box-title">What the board is not</div>
+<p>It is the registry as the kit holds it, not your lane. Your lane's state is what the detectors read, in step 8.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: gotcha, registry, signal, drill, stand-in, detector, lever, evidence, held traffic, template, hand-set setting, routine deploy</h3><p>Fourteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Gotcha</strong></td><td data-label="Meaning">What a lane does in production that no eval row shows.</td><td data-label="On your lane">%%N_GOTCHAS%% in the registry</td></tr>
+<tr><td><strong>The registry</strong></td><td data-label="Meaning"><code>ops/gotchas.json</code>, one entry per gotcha. <code>commands/gotchas.py</code> reads it, and <code>make gotchas</code> lists it.</td><td data-label="On your lane">the same file in your clone</td></tr>
+<tr><td><strong>Signal</strong></td><td data-label="Meaning">Loud when something pages or goes red on its own; silent when nothing does.</td><td data-label="On your lane">%%N_LOUD%% loud, %%N_SILENT%% silent</td></tr>
+<tr><td><strong>Status</strong></td><td data-label="Meaning">Open; guarded, when the kit's own paths avoid it; or fixed, with the test that proves it.</td><td data-label="On your lane">%%N_OPEN%% open, %%N_GUARDED%% guarded</td></tr>
+<tr><td><strong>Offline drill</strong></td><td data-label="Meaning">Reproduces a gotcha on a stand-in, with no lane. It prints <code>REPRODUCED</code>, and <code>CLEARED</code> once it has applied the lever.</td><td data-label="On your lane">%%N_OFFLINE%%, through <code>make gotcha-drill</code>, Rs 0</td></tr>
+<tr><td><strong>Live drill</strong></td><td data-label="Meaning">The same function on your lane. It refuses to start unless documind-chat follows its latest revision, and puts every setting back from a <code>finally</code> block.</td><td data-label="On your lane">two, through <code>make gotcha-drill ID=... LIVE=1</code></td></tr>
+<tr><td><strong>Stand-in</strong></td><td data-label="Meaning">Cloud Run with no lane: the JSON <code>gcloud run services describe</code> prints, changed only by the gcloud and make lines a lane would run.</td><td data-label="On your lane"><code>StandIn</code>, in <code>commands/gotchas.py</code></td></tr>
+<tr><td><strong>Detector</strong></td><td data-label="Meaning">Reads the lane and changes nothing: Cloud Run's describe output, Cloud Logging, your checkout's revision files, or one GET through gh. A check is the kit's own reading in Python; a log detector is a Cloud Logging filter, counted.</td><td data-label="On your lane"><code>make gotcha-detect</code>: %%N_CHECKS%% checks, %%N_LOGS%% log filters</td></tr>
+<tr><td><strong>Lever</strong></td><td data-label="Meaning">What fixes the gotcha, or keeps it from happening.</td><td data-label="On your lane">one per entry</td></tr>
+<tr><td><strong>Evidence</strong></td><td data-label="Meaning">The kit lines an entry rests on. Each must still be in the kit, word for word.</td><td data-label="On your lane">%%N_EVIDENCE%% lines in %%N_EV_FILES%% files</td></tr>
+<tr><td><strong>Held traffic</strong></td><td data-label="Meaning">A traffic entry that names a revision, instead of following the latest one. Every later revision takes 0%.</td><td data-label="On your lane">documind-api, on purpose; documind-chat follows its latest revision</td></tr>
+<tr><td><strong>Template</strong></td><td data-label="Meaning">What a service's next revision is made from, <code>spec.template</code>: its image and its settings.</td><td data-label="On your lane">the newest revision's settings</td></tr>
+<tr><td><strong>Hand-set setting</strong></td><td data-label="Meaning">A variable put on a running service with <code>gcloud run services update --update-env-vars</code>, which merges it into the variables already there.</td><td data-label="On your lane">lesson 6.7's <code>LESSON113_RESTART</code>, if you ran it</td></tr>
+<tr><td><strong>Routine deploy</strong></td><td data-label="Meaning"><code>make deploy-services</code>: each deploy script's <code>gcloud run deploy ... --set-env-vars</code>, which replaces the whole list.</td><td data-label="On your lane">%%N_SCRIPTS%% scripts by default, the API's among them</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: <code>--update-env-vars</code> merges, and <code>--set-env-vars</code> replaces. A hand update merges, and so does <code>make candidate</code>; a routine deploy replaces. The board's first five entries follow from that one difference, and from where the traffic is held.</p>

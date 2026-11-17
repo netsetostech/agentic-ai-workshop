@@ -289,7 +289,7 @@ Use the state transition and the exact evidence, then return the tenant to its s
 
 Operation: bash — finish the demo, then restore the pin saved before it began.
 
-IDE adaptation: Restore the saved backend in finally even when the final observation fails; the failed observation remains a failure.
+IDE adaptation: Restore the saved backend in finally even when the final observation fails; the failed observation remains a failure. With no saved baseline the pin was never changed, so the restore is skipped and the run can finish.
 
 ### setup/finish.py
 
@@ -297,6 +297,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.8_Restore_Reconcile_WIX.html`. All 44 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `8889e75f35fcc52db957363e2e142eb5b523f6d8`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.8_Restore_Reconcile_WIX.html`. All 44 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `1071cdd21108fa3390a4d88102c100d4069b8275`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

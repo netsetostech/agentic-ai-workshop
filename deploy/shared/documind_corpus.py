@@ -121,8 +121,9 @@ def chunk_document(doc: dict, tenant: str, version: str = "") -> list:
     base = {"tenant_id": tenant, "source_uri": doc["source_uri"], "doc_type": doc["doc_type"], "kind": "text"}
     at = f"@{version}" if version else ""
     out = []
-    heads = list(_SECTION.finditer(text))
-    if heads:                                                  # a handbook: one chunk per section
+    heads = list(_SECTION.finditer(text.strip()))              # read stripped, as the worker does (13 October 2026): a
+    if heads:                                                  # first heading indented with spaces is a heading for both
+        text = text.strip()                                    # a handbook: one chunk per section
         for k, piece in enumerate(windows(text[:heads[0].start()])):
             loc = "preamble" + (f"-{k}" if k else "")
             out.append({**base, "chunk_id": f"{tenant}:{doc['slug']}{at}#{loc}", "text": piece, "page_start": 1,

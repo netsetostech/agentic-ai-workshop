@@ -1,0 +1,137 @@
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; By construction</span><h3>A loop among the lane's own services: refused by construction</h3><p>The caller graph, read from the deploy scripts, and one edge back that fails it.</p></div></div>
+
+<h4>Definition</h4>
+<p>Who may invoke a Cloud Run service is that service's own IAM binding, <code>roles/run.invoker</code>, made by the script that deploys it. <code>terraform/sa.tf</code> names the services on the request path and the script for each. <code>check_callers.py</code> reads each script as it stands: the account its <code>gcloud run deploy</code> runs the service as, and the accounts its invoker bindings name, with a <code>for</code> loop expanded. Wherever one service's account may invoke another service, that is an edge. Then it walks the graph. It prints <code>acyclic</code> and an order in which every service calls only services after it, or the first cycle it meets, and exits 1. It reads files only: no gcloud, no credential.</p>
+
+<h4>The code</h4>
+@@callers@@
+@@graph@@
+@@cycle@@
+
+<h4>Do it</h4>
+%%CELL_CC%%
+%%OUT_CC%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>%%N_SERVICES%% services and %%N_EDGES%% edges, and no cycle: <code>%%ORDER%%</code>. The chat may call the peer, and nothing the peer runs as may call the chat. The eval accounts, the outsider, the Chat push account and Google's two service agents may call services but run none, so nothing calls them and they close no loop. The kit's own CI runs <code>commands/tests/test_check_callers.py</code>, which holds this graph acyclic, so a back edge fails a pull request before anything is deployed.</p></div>
+
+<h4>Change it: an edge back from the peer to the chat</h4>
+<p>This loop in <code>lesson-12.8.sh</code> binds who may invoke <code>documind-chat</code>. Add <code>documind-agent-sa</code> to it, as an edit meant to let the peer ask the chat something would, then run the check, then put the file back.</p>
+@@loopline@@
+%%CELL_CHANGE%%
+%%OUT_CHANGE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>One added name made a tenth edge, <code>documind-agent -&gt; documind-chat</code>, and with it the cycle <code>documind-chat -&gt; documind-agent -&gt; documind-chat</code>. The check exits 1, so a pipeline that runs it stops there. That is the deadlock from step 1, refused before it could be deployed: under load, the chat's slots and the peer's would fill with requests waiting on each other. With the file put back, the graph is acyclic again.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; At run time</span><h3>A loop through someone else's agent: refused at run time</h3><p>The request carries its chain, and the peer reads it before its first model call.</p></div></div>
+
+<h4>Definition</h4>
+<p>The caller graph sees only what the lane deploys. A partner's agent that the peer answers could hand the question on to an agent that asks the peer again. Every hop is a new task, every task may spend %%PEER_CAP%% model calls, and nothing but a timeout ends the loop. So the request carries its own chain in its metadata, because A2A 1.0 has no standard field for one: <code>%%CHAIN_KEY%%</code>, the agents that handed it on in order, and <code>%%HANDOFF_KEY%%</code>. The chat sends <code>["%%ASKER%%"]</code>. With <code>PEER_CHAIN=on</code>, <code>agent.py</code> hands <code>to_a2a</code> the factory in <code>chain.py</code>: ADK's own executor, with one check in front. A chain that already names the peer is a loop, and one that holds %%MAX_HOPS%% agents would make a third hop. Both are refused before the runner starts, so they cost no model call. The refusal is a task, ended as ADK ends one: <code>TASK_STATE_REJECTED</code>, with the reason in its status message. Off, <code>agent.py</code> never imports <code>chain.py</code>.</p>
+
+<h4>The code</h4>
+@@refusal@@
+@@executor@@
+@@factory@@
+
+<h4>What the build ran: five chains, off and on</h4>
+%%BUILD_CHAIN%%
+
+<h4>Do it: switch it on, then send two chained tasks</h4>
+<p>The first cell deploys the peer again with the switch on; lesson-8.4.sh builds the image first, so it takes a few minutes. The second reads the peer's <code>/health</code>, stops if the switch is still off, and sends two tasks whose chains the peer must refuse.</p>
+%%CELL_CHAIN_ON%%
+%%CELL_CHAIN%%
+%%REC_CHAIN%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Both tasks came back <code>rejected</code>, the A2A 0.3 wire's name for <code>TASK_STATE_REJECTED</code>, and each history holds the question alone: the peer's model never ran. The first chain already named <code>documind_peer</code>; the second held %%MAX_HOPS%% agents. In the build's run, the same requests with the switch off ran to completion, two model calls each, and the chat's own chain was answered with the switch on. The peer logged one <code>a2a_refused</code> line for each refusal, with the reason, the chain's length and the hand-off id, and no words and no names.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it is built this way, what it costs, and what the kit does not do yet</h3><p>The design choices, every guard as a constant you can find, a ping-pong ended by a cap, then the bill and the gaps.</p></div></div>
+
+<ul>
+<li><strong>Only the question crosses.</strong> The peer has its own account and its own roster, so it needs nothing about the asker, and nothing personal goes into the message or its metadata.</li>
+<li><strong>The gate runs before the send.</strong> A refused hand-off costs no token mint, no request and no peer model call, and it reads the rosters each time, so a roster change counts at once.</li>
+<li><strong>Every failure is data.</strong> A refusal, a failed task, a cut hand-off and a shut door each return a value the model reads, and the turn still answers 200, as a failed search does. A roster that cannot be read, or a token that cannot be minted, still fails the turn, as a failed mint does in lesson 5.5.</li>
+<li><strong>The record lives in the response and one log line.</strong> The chat row's keys are what lesson 11.5 reads, so they stay as they are.</li>
+<li><strong>Two kinds of loop, two guards.</strong> The lane's own services are checked from the deploy scripts before anything runs. An agent the lane does not run can only be met at run time, so the request carries the evidence.</li>
+</ul>
+
+<h4>Every guard, and where it lives</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Guard</th><th>Where</th><th>Value</th><th>What it stops</th></tr></thead>
+<tbody>
+<tr><td><strong>HANDOFF_MAX_PER_TURN</strong></td><td data-label="Where"><code>services/chat/peer.py</code></td><td data-label="Value">%%MAX_HANDOFFS%%</td><td data-label="What it stops">a third hand-off in one turn</td></tr>
+<tr><td><strong>PEER_TIMEOUT_S</strong></td><td data-label="Where"><code>services/chat/peer.py</code></td><td data-label="Value">%%PEER_TIMEOUT%% s, within the turn's %%TURN_DEADLINE%% s</td><td data-label="What it stops">a slow peer holding the turn</td></tr>
+<tr><td><strong>The turn's model calls</strong></td><td data-label="Where"><code>services/chat/limits.py</code></td><td data-label="Value">%%TURN_CALLS%%</td><td data-label="What it stops">the chat's own loop (lesson 5.5)</td></tr>
+<tr><td><strong>ADK_MAX_LLM_CALLS</strong></td><td data-label="Where"><code>services/agent/agent.py</code></td><td data-label="Value">%%PEER_CAP%% a task</td><td data-label="What it stops">a looping peer task</td></tr>
+<tr><td><strong>MAX_HOPS</strong></td><td data-label="Where"><code>services/agent/chain.py</code></td><td data-label="Value">%%MAX_HOPS%% agents in the chain</td><td data-label="What it stops">a third hop, and a loop, with <code>PEER_CHAIN=on</code></td></tr>
+<tr><td><strong>The caller graph</strong></td><td data-label="Where"><code>commands/check_callers.py</code></td><td data-label="Value">acyclic</td><td data-label="What it stops">a cycle among the lane's services</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>A ping-pong, and the cap that ends it</h4>
+<p>Every guard above sits on the lane. One more loop needs neither a hand-off nor a second service: two agents that may each hand the turn to the other, where neither owns the answer. In ADK it is one setting away. An agent under a parent is offered <code>transfer_to_agent</code>, whose <code>agent_name</code> is an enum of the agents it may reach: its parent, and its peers unless <code>disallow_transfer_to_peers</code> is set. <code>commands/agent_shapes.py</code> builds two such desks under a root, scripts each to want the other desk to answer, and puts one plugin on the run, <code>TransferCap</code>. It counts the agents a turn starts in a <code>temp:</code> key, which ADK keeps for one turn and never stores, and once %%MAX_TRANSFERS%% transfers have been made it answers in place of the next agent, before that agent's model is called.</p>
+@@transfer_cap@@
+@@shape@@
+<p>Run it offline, at Rs 0. It runs the same turn twice, with the peer edges and without them:</p>
+%%CELL_SHAPES%%
+%%OUT_SHAPES%%
+<p>Three things to read in it. The enum is the graph of allowed hand-offs, and the desks only follow it. The cap, not the desks, ends each turn: the fourth transfer is refused before the agent it names runs, so a turn makes %%SHAPE_CALLS%% model calls and no more. And taking the peer edges away does not end the loop: each desk is offered only the root, the question goes round through the root, and the same cap ends it. Fewer edges still left a cycle; only the count stopped it. This cap lives in a command, not on the lane: no agent the kit deploys transfers to another.</p>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>3, the switch and the UI</td><td data-label="Costs">one env update; two turns, each a few chat model calls and a peer task, and one retrieval</td><td data-label="On your lane">a few rupees</td></tr>
+<tr><td>4, the gate</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>5, the cap</td><td data-label="Costs">a GET; two tasks, %%DRILL_CALLS%% model calls in all; two env updates</td><td data-label="On your lane">a rupee or two</td></tr>
+<tr><td>6, the smoke and the deputy</td><td data-label="Costs">three turns: two hand the question on or search, the deputy's stops at the gate</td><td data-label="On your lane">a few rupees</td></tr>
+<tr><td>7, the logs and the switch off</td><td data-label="Costs">two log reads, one env update</td><td data-label="On your lane">free</td></tr>
+<tr><td>8, the caller graph</td><td data-label="Costs">files read on your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>9, the chain</td><td data-label="Costs">one Cloud Build and a deploy; two tasks refused before any model call</td><td data-label="On your lane">no model spend</td></tr>
+<tr><td>10, the ping-pong</td><td data-label="Costs">two scripted turns on your machine</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is read from the kit's code, and the page's build asserts it, so this box cannot outlive the kit it describes.</p>
+<ul>
+<li><strong>The chain binds only agents that forward it.</strong> A partner that drops the metadata starts a fresh chain. What bounds it then are the local limits: %%MAX_HANDOFFS%% hand-offs a turn on the chat, %%PEER_CAP%% model calls a task on the peer.</li>
+<li><strong><code>check-callers</code> reads the scripts, not the lane.</strong> <code>GRAPH=1</code> is its only mode. A binding added by hand on Cloud Run is not in any script, so the check cannot see it.</li>
+<li><strong>A cut hand-off is not cancelled at the peer.</strong> The chat stops waiting, but the peer's task runs on, up to its %%PEER_CAP%% calls, and those calls are billed. No deadline travels with the request.</li>
+<li><strong>The peer's answer carries no citations.</strong> It comes back in words, and the turn's citations are only its own searches.</li>
+<li><strong>The ADK brain alone hands off.</strong> The LangChain, LangGraph and direct brains never see the tool.</li>
+<li><strong>The hand-off is not on the chat row.</strong> Whatever reads the chat row, lesson 11.5's reports included, does not see a hand-off. You join the hand-off line to its turn by tenant, user and time.</li>
+<li><strong><code>smoke-handoff</code> is in no gate.</strong> The hand-off is off by default, so no gate runs its smoke.</li>
+<li><strong>The next deploy switches it off.</strong> <code>lesson-12.8.sh</code> sets every variable on <code>documind-chat</code>, and <code>PEER_URL</code> is not among them.</li>
+<li><strong>The response keeps the question's words.</strong> <code>handoffs[].request</code> holds what crossed; only the log line is reduced to a length.</li>
+<li><strong>The transfer cap is offline only.</strong> <code>agent_shapes.py</code> runs on scripted models, <code>OFFLINE=1</code> being its only mode, and no agent the kit deploys transfers to another, so nothing on the lane carries the cap. Whether Gemini itself would pass a question back and forth is not shown.</li>
+</ul></div>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Twelve checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The hand-off switches on with one env update</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>&gt;&gt; documind-chat: PEER_URL=</code> and <code>PEER_ACCOUNT=documind-agent-sa@...</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The model hands the inventory question to the peer</td><td data-label="The check">step 3, the UI</td><td data-label="Pass looks like"><code>tools: documind_peer</code>, then <code>documind_peer, retrieve</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Only the question crosses</td><td data-label="The check">step 4, the build's run</td><td data-label="Pass looks like">the message's keys <code>messageId, parts, role</code>; the metadata's chain <code>['%%ASKER%%']</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The gate refuses the third, and the deputy</td><td data-label="The check">step 4</td><td data-label="Pass looks like">one <code>sent</code>, one <code>(HANDOFF_MAX_PER_TURN)</code>, two <code>(a confused deputy)</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The wait never outlasts the turn</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>waits at most %%PEER_TIMEOUT%% s</code>, then <code>30 s</code>, then the floor, <code>%%TOOL_FLOOR%% s</code></td></tr>
+<tr><td>6</td><td data-label="Claim">The peer has a cap, and it trips</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>"max_llm_calls":%%PEER_CAP%%</code>; <code>[PASS] task failed</code>, then <code>[PASS] task completed</code></td></tr>
+<tr><td>7</td><td data-label="Claim"><code>documind_peer</code> in <code>tool_calls</code> with a completed task</td><td data-label="The check">step 6, the smoke</td><td data-label="Pass looks like"><code>[PASS] adk hands off</code> with <code>('answered', 'completed', ...)</code>; <code>2 passed, 0 failed</code></td></tr>
+<tr><td>8</td><td data-label="Claim">A confused deputy is refused before anything is sent</td><td data-label="The check">step 6, the deputy</td><td data-label="Pass looks like"><code>refused, budget None</code> and <code>(a confused deputy)</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Each hand-off is logged, without its words</td><td data-label="The check">step 7</td><td data-label="Pass looks like">one line per hand-off, <code>the question: N characters</code>; <code>handoffs key: False</code></td></tr>
+<tr><td>10</td><td data-label="Claim">A cycle is refused by construction</td><td data-label="The check">step 8</td><td data-label="Pass looks like"><code>acyclic</code>; with the edit, <code>cycle: documind-chat -&gt; documind-agent -&gt; documind-chat</code> and <code>exit 1</code></td></tr>
+<tr><td>11</td><td data-label="Claim">A loop is refused at run time</td><td data-label="The check">step 9</td><td data-label="Pass looks like"><code>rejected, history ['user']</code> twice, each <code>refused before any model call</code></td></tr>
+<tr><td>12</td><td data-label="Claim">A ping-pong ends at the cap, with or without the peer edges</td><td data-label="The check">step 10</td><td data-label="Pass looks like"><code>transfer 4: ... refused: TransferCap answered before ... ran</code> twice, each turn <code>model calls: %%SHAPE_CALLS%% | transfers made: %%MAX_TRANSFERS%%</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>The peer and the chat run this lesson's kit, and the peer's cap of %%PEER_CAP%% stays: it is the kit's default now. The hand-off was on from step 3 to step 7; if you skipped step 7, it stays on until <code>make handoff OFF=1</code> or the chat's next deploy. The peer runs with <code>PEER_CHAIN=on</code> until its next deploy. The drill and the deputy cell put back what they changed. Lesson 10.8 attacks these agents with an injected document and a poisoned tool, and measures what holds.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 10 Agent patterns &middot; Lesson 10.7 Hand one question to the A2A peer, and stop loops and deadlocks &middot; v5.0</p><p>Next: Lesson 10.8 Defend agents against injected documents and poisoned tools.</p></div>

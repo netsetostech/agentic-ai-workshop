@@ -126,7 +126,7 @@ assert "FROM ollama/ollama:0.33.3" in src[DOCKER] and "gemma4 support arrived in
 assert "An older Ollama loads the GGUF and produces nonsense rather than refusing" in flatc(src[DOCKER]) and "10.5 fine-tunes unsloth/gemma-4-E2B-it" in flatc(src[DOCKER])
 assert "a template that disagrees with the checkpoint produces fluent text that never stops" in flatc(src[DOCKER])
 assert "ENV OLLAMA_HOST=0.0.0.0:8080" in src[DOCKER] and "OLLAMA_KEEP_ALIVE" not in src[DOCKER] and "KEEP_ALIVE" not in MK
-DEPLOY = MK[MK.index("\ndeploy-slm: guard-project\n") + 1:].split("\n\n", 1)[0]
+DEPLOY = MK[MK.index("\ndeploy-slm: guard-project build-access\n") + 1:].split("\n\n", 1)[0]   # the build account's grants first
 assert "--cpu 8 --memory 32Gi" in DEPLOY and "--max-instances 1 --min-instances 0 --timeout 600 --concurrency 4" in DEPLOY
 assert "--no-allow-unauthenticated --labels slm-source=$(if $(SLM_STOCK),stock,gguf)" in DEPLOY
 assert "httpGet.path=/api/tags,httpGet.port=8080,initialDelaySeconds=10,periodSeconds=5,failureThreshold=30" in DEPLOY
@@ -148,7 +148,7 @@ STOCK = "gemma3:4b"
 # the waits
 assert "def call(method: str, url: str, token: str | None, body: dict | None = None, timeout: int = 240):" in src[SMOKE]
 assert "with urllib.request.urlopen(req, timeout=90) as r:" in src[EVAL] and "def ask(api_url: str, question: str, tenant: str, email: str, token: str | None, retries: int = 1):" in src[EVAL]
-assert "time.sleep(2)" in src[EVAL].split("def ask(", 1)[1].split("def ", 1)[0]
+assert "time.sleep(RETRY_AFTER_429_S if status == 429 else 2)" in src[EVAL].split("def ask(", 1)[1].split("def ", 1)[0]   # a timeout: two seconds
 assert src[CFG].count("      timeout: 110") == 4 and "    - documind-slm: [\"documind-general\"]" in src[CFG] and "documind-sensitive:" not in src[CFG].split("fallbacks:", 1)[1].split("num_retries", 1)[0]
 assert "TimeoutErrorRetries: 1" in src[CFG] and "A cold GPU means a slow answer, not a leak." in src[CFG]
 assert "Self-host cold, scaled to zero or out of quota -> Gemini answers." in src[CFG]

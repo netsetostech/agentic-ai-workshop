@@ -53,7 +53,7 @@ site-packages is inside the venv: True
 numpy 2.5.3, installed in that site-packages: True
 google-genai 2.22.0, installed in that site-packages: True
 google-genai brought 10 more: anyio, distro, google-auth, httpx, pydantic, requests, sniffio, tenacity, typing-extensions, websockets
-its rule for google-auth is google-auth[requests]<3.0.0,>=2.56.0; pip chose 2.60.0
+its rule for google-auth is google-auth[requests]<3.0.0,>=2.56.0; pip chose 2.62.0
 ```
 
 **`step_02_a_venv_is_a_folder_make_one_ask_it_delete(session)` — The venv: what the setup block built, and why the kit pins / A venv is a folder: make one, ask it, delete it**
@@ -123,6 +123,8 @@ A call to the API, or to Gemini, is mostly waiting: the request goes out, the ot
 
 Operation: bash — run on your laptop: the same kind of server, slowed down on purpose.
 
+IDE adaptation: The counter `busy` is a local of this step function, not a module global, so the request handler declares it nonlocal. The page's cell runs at top level, where global is right.
+
 Expected shape, not a promised result:
 
 ```text
@@ -151,6 +153,6 @@ Expected shape, not a promised result:
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_B.1_Python_Basics_WIX.html`. All 35 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `b482dea9a2284388eb04f3568de55f25c04ffeac`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_B.1_Python_Basics_WIX.html`. All 35 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `4c852e5d90652bfb191b5cfb76d484c4b62a2ef9`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

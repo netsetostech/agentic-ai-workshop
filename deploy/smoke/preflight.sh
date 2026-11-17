@@ -4,7 +4,7 @@
 # Prints one line per check and exits non-zero if any is missing. Creates nothing.
 set -u
 PROJECT="${PROJECT:?set PROJECT}"
-TFSTATE_BUCKET="${TFSTATE_BUCKET:-documind-tfstate}"
+TFSTATE_BUCKET="${TFSTATE_BUCKET:-${PROJECT}-tfstate}"
 REGION="${REGION:-us-central1}"
 bad=0
 ok()   { printf '  ok    %s\n' "$1"; }

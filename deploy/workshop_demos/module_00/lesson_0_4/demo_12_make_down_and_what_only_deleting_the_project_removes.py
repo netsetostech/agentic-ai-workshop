@@ -1,6 +1,6 @@
 """Lesson 0.4: make down, and what only deleting the project removes
 
-MANAGED_SEARCH is true by default, so the state holds two Vertex AI Search data stores, one for acme and one for zeta, each with prevent_destroy. Terraform rejects any plan that would destroy such a resource, and a destroy plan destroys everything, so this one destroys nothing: the six lines of step 10 keep billing after make down, still Rs 2,666 a day with a MEDIUM index. The list the recipe prints afterwards does not name the data stores; the kit's README does. Lesson 7.3 meets the same guard from the stores' side. The recipe's last line is the one that ends the bill: delete the throwaway project. Shutting a project down stops all of its billing; for 30 days the project can still be restored, and then it and everything in it are deleted. The same page adds two cautions: charges already run up can still arrive until the current billing cycle ends, and it advises disabling billing on the project before you shut it down. One switch would block the deletion itself: AUDIT_LOCK=true locks the audit bucket's five-year retention and liens the project, which is why it is false for a lab.
+So the six lines of step 10 stop billing with make down. What the destroy cannot delete is what the list names: Firestore, which keeps its delete protection, and every bucket that still holds objects, because no bucket in storage.tf sets force_destroy to true. A used lane's uploads bucket holds the corpus, so the destroy ends with an error for each such bucket, and the recipe prints its list and exits with that error. No bucket depends on any of the six lines, so the error holds none of them back. The recipe's last line is the one that ends the bill: delete the throwaway project. Shutting a project down stops all of its billing; for 30 days the project can still be restored, and then it and everything in it are deleted. The same page adds two cautions: charges already run up can still arrive until the current billing cycle ends, and it advises disabling billing on the project before you shut it down. One switch would block the deletion itself: AUDIT_LOCK=true locks the audit bucket's five-year retention and liens the project, which is why it is false for a lab.
 
 Run order inside this file:
 1. make down, and what only deleting the project removes (source window 75)
@@ -25,14 +25,17 @@ RETRY_FAILED_STEP = False
 
 
 # Original CLI workflow for step_01_make_down_and_what_only_deleting_the_proje.
-COMMANDS_01 = """make down PROJECT="$PROJECT" REGION="$REGION"
+COMMANDS_01 = """set +e +o pipefail   # as the page runs it: the cell prints its own exit status, which a failure must reach
+make down PROJECT="$PROJECT" REGION="$REGION"; echo "exit $?"
+true   # the status it printed is the cell's answer: compare it with the page's prose
+
 
 """
 
 def step_01_make_down_and_what_only_deleting_the_proje(session):
     """Run make down, and what only deleting the project removes at this checkpoint.
 
-    MANAGED_SEARCH is true by default, so the state holds two Vertex AI Search data stores, one for acme and one for zeta, each with prevent_destroy. Terraform rejects any plan that would destroy such a resource, and a destroy plan destroys everything, so this one destroys nothing: the six lines of step 10 keep billing after make down, still Rs 2,666 a day with a MEDIUM index. The list the recipe prints afterwards does not name the data stores; the kit's README does. Lesson 7.3 meets the same guard from the stores' side. The recipe's last line is the one that ends the bill: delete the throwaway project. Shutting a project down stops all of its billing; for 30 days the project can still be restored, and then it and everything in it are deleted. The same page adds two cautions: charges already run up can still arrive until the current billing cycle ends, and it advises disabling billing on the project before you shut it down. One switch would block the deletion itself: AUDIT_LOCK=true locks the audit bucket's five-year retention and liens the project, which is why it is false for a lab.
+    So the six lines of step 10 stop billing with make down. What the destroy cannot delete is what the list names: Firestore, which keeps its delete protection, and every bucket that still holds objects, because no bucket in storage.tf sets force_destroy to true. A used lane's uploads bucket holds the corpus, so the destroy ends with an error for each such bucket, and the recipe prints its list and exits with that error. No bucket depends on any of the six lines, so the error holds none of them back. The recipe's last line is the one that ends the bill: delete the throwaway project. Shutting a project down stops all of its billing; for 30 days the project can still be restored, and then it and everything in it are deleted. The same page adds two cautions: charges already run up can still arrive until the current billing cycle ends, and it advises disabling billing on the project before you shut it down. One switch would block the deletion itself: AUDIT_LOCK=true locks the audit bucket's five-year retention and liens the project, which is why it is false for a lab.
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
     Operations: bash — run in the operator shell, in the kit, when you are finished with the lane - not now: Module 1 starts on this lane.

@@ -3,7 +3,8 @@
 The numbers and lists on the page come from the kit at build time: the composite vector indexes from
 terraform/firestore_indexes.tf (the rung finder's table), the backend names and filter keys from the API's
 config and schemas, the index and endpoint names from vector.tf, the settings cache window from main.py, the
-smoke's two sentences from smoke/smoke.py, and the reads estimate from the size of acme's mirror.
+smoke's two sentences from smoke/smoke.py, the Firestore rung's over-fetch from _firestore_fallback(), and the
+reads estimate from the size of acme's mirror and that over-fetch.
 """
 import html
 import json
@@ -101,6 +102,10 @@ EXCERPTS = {
 }
 assert EXCERPTS["chaos_except"][1].startswith("    except Exception as e:") and "vector_search_fallback" in EXCERPTS["chaos_except"][1]
 assert EXCERPTS["fallback_fn"][1].rstrip().endswith("return out")
+# step 3's cell and prose repeat the rung's over-fetch with the switch off: four times the pool, at most 1,000, the
+# first top_k whose `current` is not False kept
+OVER, CAP = map(int, re.search(r"limit=top_k if current_only else min\((\d+) \* top_k, (\d+)\)", EXCERPTS["fallback_fn"][1]).groups())
+assert (OVER, CAP) == (4, 1000) and 'hits = [h for h in hits if h.to_dict().get("current") is not False][:top_k]' in EXCERPTS["fallback_fn"][1]
 assert EXCERPTS["smoke_tier"][1].rstrip().endswith('skipped")'), EXCERPTS["smoke_tier"][1][-80:]
 assert EXCERPTS["probe_modes"][1].rstrip().endswith("settings.retrieval_current_only = previous")
 assert EXCERPTS["view_policy"][1].rstrip().endswith("AS policy_fallbacks,")
@@ -130,16 +135,18 @@ smoke_txt = (KIT / SMOKE).read_text(encoding="utf-8")
 SMOKE_FAIL = "RETRIEVAL_BACKEND=vector and no chunk came from the index - the Firestore rung answered. make vector-status; make backfill-vectors APPLY=1"
 assert SMOKE_FAIL[:60] in smoke_txt and "chunks came from the index" in smoke_txt and "— skipped" in smoke_txt
 
-# the reads estimate: acme's mirror through the kit's chunker, one read per hundred index entries plus the pool
+# the reads estimate: acme's mirror through the kit's chunker, one read per hundred index entries plus every row the
+# rung fetches, which with the switch off (the lane's) is the over-fetch, not the pool
 sys.path.insert(0, str(KIT))
 from shared import documind_corpus as dc  # noqa: E402
 N = sum(len(dc.chunk_document({"slug": p.stem, "doc_type": "policy", "source_uri": f"gs://x/acme/{p.name}", "text": p.read_text(encoding="utf-8")}, "acme"))
         for p in sorted((KIT / "evals" / "corpus" / "acme").glob("*.md")))
-READS_EST = math.ceil(N / 100) + TOPK
+FETCH = min(OVER * TOPK, CAP)
+READS_EST = math.ceil(N / 100) + FETCH
 
 STATS = {
     "N_INDEXES": str(len(INDEXES)), "BACKENDS": ", ".join(BACKENDS), "FILTER_KEYS": " and ".join(f"<code>{k}</code>" for k in FILTER_KEYS),
-    "TOPK": str(TOPK), "CACHE_S": str(CACHE_S), "READS_EST": str(READS_EST),
+    "TOPK": str(TOPK), "FETCH": str(FETCH), "CACHE_S": str(CACHE_S), "READS_EST": str(READS_EST),
     "INDEX_NAME": html.escape(INDEX_NAME), "ENDPOINT_NAME": html.escape(ENDPOINT_NAME),
 }
 
@@ -222,5 +229,5 @@ body = "".join([
     subst(fill(pb.part(LESSON, "c"))),
 ])
 finish(LESSON, title, EXTRA_CSS, body, JS)
-print(f"kit: backends {BACKENDS} | managed {MANAGED} | filter keys {FILTER_KEYS} | pool {TOPK} | pin cache {CACHE_S} s | indexes {len(INDEXES)}"
+print(f"kit: backends {BACKENDS} | managed {MANAGED} | filter keys {FILTER_KEYS} | pool {TOPK} of {FETCH} fetched | pin cache {CACHE_S} s | indexes {len(INDEXES)}"
       f" | index {INDEX_NAME!r} endpoint {ENDPOINT_NAME!r} | acme mirror {N} chunks -> about {READS_EST} reads a question")

@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_1.4_Indexed_Records_WIX.html`, reviewed at blob `25ca420f96d82cacd1aeaffd37bdfde92039ecbe`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_1.4_Indexed_Records_WIX.html`, reviewed at blob `2f5efe45e2ad0f47f4e30cf4cb9f732e3bf58f91`. Learners read that page on the course site; this guide keeps its prose.
 
 Lessons 1.1 to 1.3 followed one document from bytes to vectors. This lesson is about what it leaves behind: the records in Firestore, in the Vector Search index, in BigQuery and in the audit bucket that say the document is indexed, and the order the worker writes them in so that a reader never sees half a document. You will index a three-chunk note, read every record it created from the store that holds it, check that they agree with each other, and learn which store is the truth when they do not.
 
@@ -104,7 +104,7 @@ Read the four comments in the swap block again: staged and invisible, one pass, 
 
 #### Do it: index a note, and count the datapoints before and after
 
-The note is the kit's three-clause warehouse memo with one line added: your account and today's date. The line matters. A version is its bytes, and the kit's reindex smoke from Module 0 uploads the unchanged file under another name; if it ever ran on your lane, those bytes are already claimed, and the worker acks the same bytes again as a duplicate and writes nothing. One line of your own makes a new version key. The note is a Markdown file of about 500 characters with no PII: no Document AI, three embeddings, about a hundredth of a paisa. The block reads the index's datapoint count, writes and uploads the note, waits for the worker's line, then waits for the count to move. The index's statistics refresh on their own schedule, so the last wait can take a few minutes.
+The note is the kit's three-clause warehouse memo with one line added: your account and today's date. The line matters. A version is its bytes, and the kit's reindex smoke from Module 0 uploads the unchanged file under another name; if it ever ran on your lane, those bytes are already claimed, and the worker acks the same bytes again as a duplicate and writes nothing. One line of your own makes a new version key. The note is a Markdown file of about 500 characters with no PII: no Document AI, three embeddings, about a hundredth of a paisa. The block reads the index's datapoint count, writes and uploads the note, waits for the worker's line, then waits for the count to move. The index's statistics refresh on their own schedule, so the last wait can take up to ten minutes (about nine on 21 October 2026), and the cell says so if it runs out.
 
 Two reads tell you what the worker did with an upload. The first lists every ingest event of the last twenty minutes with its verdict: `ingest_duplicate` means the bytes were already claimed on this lane, `ingest_failed` carries the error, and no line at all means the event never reached the worker. The second reads the claim for the unchanged demo bytes; its `gcs_uri` names the object that holds them, which on a lane where the smoke has run is `acme/smoke_note.md`. The claim is per version, not per name: that is the record this whole step is about.
 

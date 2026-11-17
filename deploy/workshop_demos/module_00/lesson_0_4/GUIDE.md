@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_0.4_Prove_Switch_Off_WIX.html`, reviewed at blob `227e9752d5a191e48fe77a44ab7d3f59135b88bd`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_0.4_Prove_Switch_Off_WIX.html`, reviewed at blob `0925e73b92f0f407229bac5fab5f2a4694f0f5d0`. Learners read that page on the course site; this guide keeps its prose.
 
 Your lane has been up since lesson 0.3. This lesson proves it works from the outside, the way a caller meets it: the kit's preflight, its smoke test, and the three URLs the API answers without a question. Then you break the smoke once, on purpose, and follow the failure to the line of code that printed it and the line that refused. You save the session so the next one starts with one command, switch the lane off, and prove it is off from the instance count Google keeps.
 
@@ -50,19 +50,19 @@ Breaking it once is the quickest way to learn to read a failure. You will run th
 
 Switching off is not tearing down. `make off` lowers four floors to zero: the minimum number of instances Cloud Run keeps warm for the UI, the gateway and the two GPU services. Cloud Run then lets every idle service whose floor is zero fall to zero instances, which on your lane is all of them, and a service at zero instances bills nothing. But six things on the lane are provisioned capacity, not instances, and they bill by the hour whether or not anyone asks a question: the deployed Vector Search index, Spanner's processing units, the GKE cluster and its node, two Cloud SQL databases, and the VPC connector's two machines. Zero instances is not zero cost.
 
-Tearing down is `make down`. It deletes the services, the candidate tag, the context caches and the RAG Engine corpora, then asks Terraform to destroy everything Terraform made. In the one shape the lane runs today, Terraform refuses: two Vertex AI Search data stores carry `prevent_destroy`, and Terraform rejects a whole plan that would destroy one. So `make down` ends by naming what it could not remove, and by printing its last line: delete the project. Shutting a project down is what stops all of its billing.
+Tearing down is `make down`. It deletes the services, the candidate tag, the context caches and the RAG Engine corpora, then asks Terraform to destroy everything Terraform made. Terraform destroys the six hourly lines, but not Firestore, which keeps its delete protection, a bucket that still holds files, or a Vertex AI Search data store that holds documents. So `make down` ends by naming what it could not remove, and by printing its last line: delete the project. Shutting a project down is what stops all of its billing.
 
 Saving progress between sessions is three things, none of them a secret: the Terraform state in your state bucket, the inputs `commands/infrastructure.py` confirmed before planning, and the shell variables `commands/session-restart.sh` saves in `~/rag-resume.env`. Next session, one function, `rag_resume`, puts the shell back and proves the API answers.
 
-A hotel room in Pune, booked for the month. Before the guest arrives, housekeeping walks through it: the lights come on, the tap runs, the shower is hot, and the door stays shut to anyone without a key card. When the guest goes out for the day, they switch off the lights and the air conditioner, and the electricity meter stops. The room tariff does not: it is charged every night the room is booked, whether or not anyone sleeps in it. Checking out returns the room, though the cloakroom keeps the bags left there. And if a bag is tagged "do not discard", the desk will not complete the check-out at all; the only way to stop the tariff then is to leave the hotel.
+A hotel room in Pune, booked for the month. Before the guest arrives, housekeeping walks through it: the lights come on, the tap runs, the shower is hot, and the door stays shut to anyone without a key card. When the guest goes out for the day, they switch off the lights and the air conditioner, and the electricity meter stops. The room tariff does not: it is charged every night the room is booked, whether or not anyone sleeps in it. Checking out returns the room and stops the tariff, though the cloakroom keeps the bags left there until you leave the hotel.
 
-The walk-through is `make smoke`, and the door that stays shut is its last check, the question asked with no token. Switching off the lights is `make off`, and the electricity meter is Cloud Run's instance count. The room tariff is the six provisioned lines. Checking out is `make down`, the cloakroom is Firestore and the buckets that hold files, the tagged bag is the data stores' `prevent_destroy`, and leaving the hotel is deleting the project.
+The walk-through is `make smoke`, and the door that stays shut is its last check, the question asked with no token. Switching off the lights is `make off`, and the electricity meter is Cloud Run's instance count. The room tariff is the six provisioned lines. Checking out is `make down`, the cloakroom is Firestore and the buckets that hold files, and leaving the hotel is deleting the project.
 
 #### The lane's four states, priced
 
 The panel is the lane as the kit defines it. Pick a state and read each row: something the lane runs, bills by the hour, or keeps. The six hourly lines are priced at Google's list prices for Mumbai (asia-south1), where your lane runs, read on 7 October 2026, at Rs 85 to the dollar; step 10 shows every number's source. Your own bill is the number that counts.
 
-Up and Off cost the same by the hour: `make off` lowers floors and removes the vLLM workload from the GKE cluster, and none of the six lines is a floor or that workload: the cluster and its node stay. Down costs the same again today: `make down` deletes the services and the corpora, then Terraform refuses to destroy anything while the two data stores carry `prevent_destroy` (step 12). Only Deleted stops the hourly lines. Five days is the gap between two weekend sessions.
+Up and Off cost the same by the hour: `make off` lowers floors and removes the vLLM workload from the GKE cluster, and none of the six lines is a floor or that workload: the cluster and its node stay. Down stops the hourly lines: `make down` deletes the services and the corpora, then Terraform destroys the six lines (step 12). What it cannot delete, Firestore, the buckets that hold files and the data stores that hold documents, bills by size until the project is deleted. Five days is the gap between two weekend sessions.
 
 Two things in the panel are worth saying out loud. First, nothing you do inside the lane changes the hourly total: the corpus, the number of questions, the tenants. It is set by what Terraform declared. Second, the biggest line by far is the Vector Search index: with the shard size the kit's comment records, it is Rs 1,839 of the day, 69 percent of it. Step 10 reads the size on your lane.
 
@@ -126,7 +126,7 @@ The shell is a different caller. The setup block's `tok` function mints a token 
 
 The script is short enough to read whole. It checks the tools (`gcloud`, `terraform`, `make`, `python`), that Terraform is at least 1.9, that gcloud is signed in, that the project exists and has billing, that the state bucket exists, that 22 APIs are enabled, and that the one Python package `make roster` needs is importable. Every check is a read, and every `MISS` line carries the command that fixes it.
 
-Run it with your state bucket. The script's own usage line names the bucket after the project, `-tfstate`, and the cell uses that name unless you have already exported another. Do not leave `TFSTATE_BUCKET` off: the Makefile's default, `documind-tfstate`, is a bucket name only one project in the world can own, and it is not yours.
+Run it with your state bucket. The Makefile and the script both default to the bucket named after the project, `-tfstate`, the one lesson 0.3 created, and the cell exports that name unless you have already exported another: step 8 reads the state through it.
 
 Read it as a checklist. Every line should say `ok`, and the summary should say `preflight clean`. The advice after it, next: make plan, then make up, is the script speaking to a project that has no lane yet; yours has one, so read the line as "nothing the lane stands on has moved". That is what preflight is for on a running lane: a billing account unlinked, an API disabled, an expired sign-in or an old Terraform in a new shell shows up here, as one `MISS` with its fix, before a `make` target stops halfway. The last line names the one thing no command can check from the shell: the OAuth consent screen that IAP needs.
 
@@ -250,7 +250,7 @@ With every service at zero, six things on the lane still bill by the hour. None 
 
 The deployed Vector Search index. An index and an endpoint are records; the deployed index is a machine, and it bills while it serves:
 
-Which machine depends on the index's shard size, which `vector.tf` does not set. The API picks it when the index is created, the map below translates it, and the comment records what the API picked for the index the kit was written against: MEDIUM, served on `e2-standard-16`.
+Which machine depends on the index's shard size. `vector.tf` sets SMALL for a new index, so a new lane's index is served on `e2-standard-2`, and it ignores the size once the index exists, because changing it replaces the index. The map below translates the size the index has, and the comment records the index the kit was written against, created before the kit named a size: the API picked MEDIUM, served on `e2-standard-16`.
 
 Spanner, provisioned, Enterprise edition, 100 processing units, by the hour:
 
@@ -260,15 +260,15 @@ GKE: a regional cluster with one Standard node. Every cluster pays a management 
 
 The VPC connector the services reach the network through, whose machines never drop below two:
 
-Two of these comments promise that `make down` removes the resource, and `gke-down`'s message in step 9 says the same of the cluster. Terraform's destroy would remove them all. Step 12 shows why, in the shape the lane runs today, that destroy never starts.
+Two of these comments promise that `make down` removes the resource, and `gke-down`'s message in step 9 says the same of the cluster. Terraform's destroy removes them all, as step 12 shows.
 
 #### The arithmetic
 
 Every unit price is Google's list price for Mumbai (asia-south1), where your lane runs, read on 7 October 2026 on the official pages for Vector Search, Spanner, Cloud SQL, GKE, Compute Engine's E2 machines and its disks. The GKE fee, $0.10 an hour, is the one `gke/README.md` states, and GKE's page says where the free-tier credit applies. The connector guide names `e2-micro` as the machine a connector gets when none is set, and VPC pricing bills connector instances as Compute Engine VMs. A month is 730 hours, 8,760 hours a year over twelve months, and a dollar is Rs 85, the course's rate in `shared/prices.py`.
 
-Rs 2,666 a day, every day the lane exists, whether it is up, off, or still standing after a refused `make down`: Rs 13,332 over the five weekdays between two weekend sessions, Rs 81,100 over a month. It is the figure lesson 0.1 had you write down for a MEDIUM index. The Vector Search node alone is Rs 1,839 a day. The kit's default budget, a `BUDGET_AMOUNT` of 5,000 in the billing account's currency (rupees, on an Indian account), lasts 1.9 days at this rate without a single question asked, and the budget's alerts (`terraform/budget.tf`, lesson 0.1) fire on the way.
+Rs 2,666 a day, every day the lane exists, whether it is up or off: Rs 13,332 over the five weekdays between two weekend sessions, Rs 81,100 over a month. It is the figure lesson 0.1 had you write down for a MEDIUM index. The Vector Search node alone is Rs 1,839 a day. The kit's default budget, a `BUDGET_AMOUNT` of 5,000 in the billing account's currency (rupees, on an Indian account), lasts 1.9 days at this rate without a single question asked, and the budget's alerts (`terraform/budget.tf`, lesson 0.1) fire on the way.
 
-With a SMALL index the same day is Rs 1,057. The size is fixed when the index is created, and changing it replaces the index, as the comment in `vector.tf` warns: it is a decision for before `make up`, not after.
+With a SMALL index, the one a new lane gets, the same day is Rs 1,057. The size is fixed when the index is created, and changing it replaces the index, as the comment in `vector.tf` warns: an index created MEDIUM stays MEDIUM until it is replaced on purpose.
 
 The table prices the lane where it runs. Its services, index, databases and cluster are in Mumbai, `asia-south1` (Spanner's configuration is `regional-asia-south1` on every lane), and each unit price is Mumbai's list price as Google's pages gave it on 7 October 2026, before tax. Prices change, and an Indian billing account is charged at Google's own rupee prices rather than at Rs 85 to the dollar. The number that counts is your bill: in the console, Billing, then Reports, filtered to your project and grouped by SKU, on a day the lane sat idle.
 
@@ -292,19 +292,19 @@ The proof is in the last lines: the project and region the shell found are the o
 
 ### make down, and what only deleting the project removes
 
-The kit's teardown, the guard that stops its destroy, and the one command that ends the bill.
+The kit's teardown, what its destroy cannot remove, and the one command that ends the bill.
 
 Module 1 begins on this lane, so do not run `make down` at the end of this lesson. Read what it does now, and run it when you are done with the lane.
 
 In order: `down-services`, then `managed-stores-down`, then `terraform destroy` with the same variables `make plan` used, then the list, whatever the destroy did. `down-services` deletes what Terraform never owned: every service in `DOWN_SERVICES`, the gateway and the two GPU services from Module 9 (the comment's "Module 11's three"), the candidate tag and the tenants' context caches, each on its own line so that an absent one never stops the next:
 
-`managed-stores-down` deletes the RAG Engine corpora for acme and zeta and clears their pins. Then `terraform destroy` plans the destruction of everything in the state, and stops at plan time:
+`managed-stores-down` deletes the RAG Engine corpora for acme and zeta and clears their pins. Then `terraform destroy` destroys everything in the state that it can. `MANAGED_SEARCH` is true by default, so the state holds two Vertex AI Search data stores, one for acme and one for zeta, and an empty one goes too. One that holds documents does not: once `make ingest-corpus` has mirrored the corpus into them, Vertex AI Search refuses to delete either schema (`Active documents exists for schema`), the destroy reports that error for both, and they bill storage until the project is deleted. Nothing in the Terraform refuses the destroy:
 
-`MANAGED_SEARCH` is true by default, so the state holds two Vertex AI Search data stores, one for acme and one for zeta, each with `prevent_destroy`. Terraform rejects any plan that would destroy such a resource, and a destroy plan destroys everything, so this one destroys nothing: the six lines of step 10 keep billing after `make down`, still Rs 2,666 a day with a MEDIUM index. The list the recipe prints afterwards does not name the data stores; the kit's README does. Lesson 7.3 meets the same guard from the stores' side.
+So the six lines of step 10 stop billing with `make down`. What the destroy cannot delete is what the list names: Firestore, which keeps its delete protection, and every bucket that still holds objects, because no bucket in `storage.tf` sets `force_destroy` to true. A used lane's uploads bucket holds the corpus, so the destroy ends with an error for each such bucket, and the recipe prints its list and exits with that error. No bucket depends on any of the six lines, so the error holds none of them back.
 
 The recipe's last line is the one that ends the bill: delete the throwaway project. Shutting a project down stops all of its billing; for 30 days the project can still be restored, and then it and everything in it are deleted. The same page adds two cautions: charges already run up can still arrive until the current billing cycle ends, and it advises disabling billing on the project before you shut it down. One switch would block the deletion itself: `AUDIT_LOCK=true` locks the audit bucket's five-year retention and liens the project, which is why it is false for a lab.
 
-Read it against the recipe: the deleted and absent lines from `down-services`, the corpora and pins from `managed-stores-down`, Terraform's refusal naming the two data stores, the kit's list, and a non-zero exit, because the recipe exits with the destroy's status. Then, when the course is over, `gcloud projects delete "$PROJECT"` ends every line on this page.
+Read it against the recipe: the deleted and absent lines from `down-services`, the corpora and pins from `managed-stores-down`, Terraform destroying the lane's resources and then an error for each bucket that holds objects, the kit's list, and a non-zero exit, because the recipe exits with the destroy's status. Then, when the course is over, `gcloud projects delete "$PROJECT"` ends every line on this page.
 
 ### Verify it yourself: the checklist
 
@@ -314,4 +314,4 @@ Nothing new bills. `documind-ui`'s floor is 0, now set by `make off` itself; acm
 
 Netsetos GenAI on GCP · Module 0 Setup · Lesson 0.4 Prove the lane, break it once, and switch it off · v5.0
 
-Next: Module 1 RAG foundation, Lesson 1.1 Understand source, tenant, page and chunk contracts.
+Next: Lesson 0.5 Set up the cloud lane end to end: clone in Cloud Shell, create the infrastructure with Terraform, deploy every service and the UI, the same lane built by hand in Cloud Shell: read it, but run it only if you did not build your lane in 0.3. Then Module 1 RAG foundation, Lesson 1.1 Understand source, tenant, page and chunk contracts.

@@ -9,13 +9,15 @@ gate: the tuned candidate passes make eval-live. The proofs: the pairwise verdic
 tuned endpoint priced at 1.5 times its base, as Google prices it, where the usage rows log the base (cost.py).
 Offline: the answer cache's test (semantic_cache._alive, lifted), cost.price() for the endpoint two ways against
 Google's, and make usage's model column. Live: make candidate; the audit; both gates and the rows that moved; make
-judge API_B=; make usage and the delta; the candidate's tag removed.
+judge API_B=; make usage and the delta; the models compared (the untuned base, TUNE_BASE, on a no-traffic tag of its
+own, its gate, and the three reports side by side with their generation times); the tags removed.
 
 Build-time proof: every cell ran the kit's own code - run_eval.live() for both gates, judge.py main() for the pairwise
 judge, usage_rows.py for make usage, make_trainset.py main() to leave the bucket as lesson 12.1 leaves it - over a
-stand-in lane (lane173.py, beside this file): the two revisions' answers, their settings, the usage rows (priced by
-the kit's cost.price()), Vertex AI Evaluation, Firestore and Cloud Storage. The panel is make candidate's settings,
-parsed from the Makefile, and cost.price(), ported and compared with the kit's on every combination it offers.
+stand-in lane (lane173.py, beside this file): the revisions' answers (the untuned base's as the live one's), their
+settings, the usage rows (priced by the kit's cost.price()), Vertex AI Evaluation, Firestore and Cloud Storage. The panel
+is make candidate's settings, parsed from the Makefile, and cost.price(), ported and compared with the kit's on every
+combination it offers.
 """
 import ast
 import contextlib
@@ -468,10 +470,106 @@ DE = OUT["delta"]
 assert "\nprojects/NUMBER/loca  vertex" in DE and "gemini-3.6-flash      vertex" in DE and "  live        130 answers" in DE, DE
 DELTA = re.search(r"the rupee delta: the tuned endpoint costs Rs ([\d.]+) less an answer, Rs ([\d,]+) per 1,000 answers", DE).groups()
 LIVE_EACH, LOGGED, BILLED = re.search(r"live +130 answers +Rs ([\d.]+) an answer\n  candidate +130 answers +Rs ([\d.]+) an answer as logged, Rs ([\d.]+) as Google bills it", DE).groups()
+# The template back to what serves. Every update since step 4 wrote documind-api's template, the untuned base's last
+# (GENERATOR_MODEL=TUNE_BASE), and removing a tag moves no template. On 23 October 2026 lesson 12.4's make
+# prompt-candidate, which changes only PROMPT_VERSION and GIT_SHA, started from that template, and its promote put
+# gemini-3.1-flash-lite live with the new prompt. A revision holds its image as a digest, the template as a tag, so the
+# images are compared revision to revision (gotchas.template_image()); the kit's own detector checks the result.
+TEMPLATE_PY = r'''import json, os, subprocess, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+P, R = os.environ["PROJECT"], os.environ["REGION"]
+def describe(*what):
+    out = subprocess.run(["gcloud", "run", *what, "--region", R, "--project", P, "--format=json"], capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+def runs(rev):                        # a revision's image (the digest it holds) and its literal settings
+    c = describe("revisions", "describe", rev)["spec"]["containers"][0]
+    return c["image"], {e["name"]: e.get("value", "") for e in c.get("env") or [] if "valueFrom" not in e}
+svc = describe("services", "describe", "documind-api")
+serving = next(t["revisionName"] for t in svc["status"]["traffic"] if t.get("percent") == 100)
+image, want = runs(serving)
+made, have = runs(svc["status"]["latestCreatedRevisionName"])      # the revision the template last made
+put, drop = {k: v for k, v in want.items() if have.get(k) != v}, sorted(set(have) - set(want))
+print(f"the template against {serving}: image {'the same' if made == image else 'another'}; put back {sorted(put)}; remove {drop}")
+if put or drop or made != image:
+    cmd = ["gcloud", "run", "services", "update", "documind-api", "--region", R, "--project", P, "--no-traffic", "--quiet", "--image", image]
+    cmd += ["--update-env-vars", "^|^" + "|".join(f"{k}={v}" for k, v in put.items())] if put else []
+    cmd += ["--remove-env-vars", ",".join(drop)] if drop else []
+    subprocess.run(cmd, check=True, capture_output=True)'''
 CELLS["cleanup"] = ('gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate\n'
                     'rm -f .candidate-revision      # make promote flips to the revision this file names, tag or no tag\n'
-                    'curl -s -o /dev/null -w "the candidate URL now: HTTP %{http_code}\\n" -H "Authorization: Bearer $(tok "$API")" "$CAND/health"')
-OUT["cleanup"] = "...\nthe candidate URL now: HTTP 404\n"
+                    'curl -s -o /dev/null -w "the candidate URL now: HTTP %{http_code}\\n" -H "Authorization: Bearer $(tok "$API")" "$CAND/health"\n'
+                    + "python - <<'PY'\n" + TEMPLATE_PY + "\nPY\n"
+                    'make gotcha-detect ID=rollback-keeps-template PROJECT="$PROJECT" REGION="$REGION" | tail -3')
+OUT["cleanup"] = ("...\nthe candidate URL now: HTTP 404\n"
+                  f"the template against {REVS[0]}: image another; put back ['GENERATOR_MODEL', 'GIT_SHA', 'RAG_MODEL_BASE']; remove []\n"
+                  f"documind-api's template is what its serving revision {REVS[0]} was made from\nnothing found\n")
+assert "documind-ai-" not in CELLS["cleanup"]
+GOT =(KIT / "commands/gotchas.py").read_text(encoding="utf-8")
+assert 'f"{API}\'s template is what its serving revision {now} was made from"' in GOT and "def template_image(" in GOT
+
+# ------------------------------------------------------------------ step 6, compare the models: the untuned base on a tag of its own
+# The tuned flash-lite against the live flash mixes two changes: a smaller model, and the tuning on top of it. The model v2
+# was tuned from (TUNE_BASE), untuned, on a revision with no traffic, separates them. Not make candidate: it moves the
+# candidate tag and records the revision it makes in .candidate-revision, which make promote moves traffic to.
+TUNE_BASE = re.search(r"^TUNE_BASE\s*\?=\s*(\S+)$", MK, re.M).group(1)
+assert TUNE_BASE == OVER["RAG_MODEL_BASE"] == "gemini-3.1-flash-lite"               # the model v2 was tuned from, and is priced at
+assert f"--base {TUNE_BASE} " in (T / "tune172.log").read_text(encoding="utf-8")     # lesson 12.2's job, as its log records it
+assert "@$(MAKE) --no-print-directory record-candidate PROJECT=$(PROJECT) REGION=$(REGION)" in RECIPE
+assert 'echo "$$REV" > .candidate-revision' in MK and "--to-revisions $$CAND=100" in MK
+GEN_PY_SRC = (KIT / "services/rag-api/generator.py").read_text(encoding="utf-8")
+assert 'return _client_at(_endpoint_location(model)) if model.startswith("projects/") else _client' in GEN_PY_SRC   # a name: global
+UNTUNED = "https://untuned---documind-api-NUMBER.asia-south1.run.app"
+CELLS["untuned"] = ('gcloud run services update documind-api --region "$REGION" --project "$PROJECT" --no-traffic --tag untuned \\\n'
+                    f'  --update-env-vars GENERATOR_MODEL={TUNE_BASE}     # the candidate\'s settings, the untuned model in the endpoint\'s place\n'
+                    'export UNTUNED="https://untuned---documind-api-$NUMBER.$REGION.run.app"; echo "UNTUNED=$UNTUNED"')
+OUT["untuned"] = f"...\nUNTUNED={UNTUNED}\n"
+CELLS["gate_untuned"] = 'make eval-live PROJECT="$PROJECT" API="$UNTUNED" REPORT="$HOME/untuned173.json"'
+OUT["gate_untuned"] = gate(UNTUNED, "untuned173.json")
+GU = OUT["gate_untuned"]
+assert GU.rstrip().endswith("All thresholds met.") and "rows that cost a point (2):" in GU, GU[-900:]
+assert "jn-06  join      acme    answered without" in GU and "lk-27  lookup    acme    REFUSED" in GU, GU[-900:]   # the live revision's two
+UNT = json.loads((HOME / "untuned173.json").read_text(encoding="utf-8"))
+assert {r["model"] for r in UNT["records"] if r["outcome"] == "ok"} == {TUNE_BASE}
+COMPARE3_PY = """import json, os, sys
+sys.path[:0] = ["evals"]
+from run_eval import pct                          # the gate's own percentile, as its generate_ms line uses it
+rep = {k: json.load(open(os.path.expanduser(f"~/{f}173.json"), encoding="utf-8"))
+       for k, f in (("live", "base"), ("untuned", "untuned"), ("tuned", "cand"))}
+print(f"  {'':21} " + " ".join(f"{k:>8}" for k in rep) + f"  {'needs':>5}")
+for s in rep["live"]["scores"]:
+    if any(s in r["judged"] for r in rep.values()):
+        print(f"  {s:21} " + " ".join(f"{r['scores'][s]:8.1%}" for r in rep.values()) + f"  {rep['live']['thresholds'][s]:5.0%}")
+print(f"  {'rows passed':21} " + " ".join(f"{sum(x['pass'] for x in r['records']):5}/{len(r['records'])}" for r in rep.values()))
+for q in (0.5, 0.95):                             # over the answered rows, as the gate prints it
+    ms = [[int(x["stages"].get("generate_ms", 0)) for x in r["records"] if x["outcome"] == "ok" and x.get("stages")] for r in rep.values()]
+    print(f"  {'generate_ms p' + format(q * 100, '.0f'):21} " + " ".join(f"{pct(m, q):8}" for m in ms))
+for k, r in rep.items():
+    names = sorted({x["model"] for x in r["records"] if x.get("model")})
+    print(f"  {k:8} answered by " + ", ".join("endpoint " + m.rsplit("/", 1)[1] if m.startswith("projects/") else m for m in names))
+for a, b, what in (("live", "untuned", "the smaller model"), ("untuned", "tuned", "the tuning")):
+    was = {x["id"]: x["pass"] for x in rep[a]["records"]}
+    moved = [x for x in rep[b]["records"] if was.get(x["id"]) != x["pass"]]
+    print(f"  {a} to {b}, what {what} moved: {len(moved)} row(s)")
+    for x in moved:
+        print(f"    {x['id']}: {'pass' if was.get(x['id']) else 'fail'} to {'pass' if x['pass'] else 'fail'} ({x['why'] or x['outcome']})")"""
+CELLS["compare3"] = "python - <<'PY'\n" + COMPARE3_PY + "\nPY"
+RAW3 = run([sys.executable, "-"], COMPARE3_PY)
+GEN = re.findall(r"^  generate_ms p(50|95) +(\d+) +(\d+) +(\d+)$", RAW3, re.M)
+assert GEN == [("50", "1500", "800", "900"), ("95", "1500", "800", "900")], (GEN, RAW3)      # the stand-in's own times, read back
+# the stand-in's generation times are its own invention, as its round trips are in step 5's gates: shown as ...
+OUT["compare3"] = re.sub(r"(?m)^(  generate_ms p(?:50|95) +)\d+ +\d+ +\d+$",
+                         lambda m: f"  {m.group(1).strip():21} " + " ".join(f"{'...':>8}" for _ in range(3)), RAW3)
+C3 = OUT["compare3"]
+assert "  must_contain_rate        97.8%    97.8%    95.7%    85%" in C3 and "  correct_rate             95.7%    95.7%    93.6%    68%" in C3, C3
+assert "  rows passed              63/65    63/65    62/65" in C3, C3
+assert "  untuned  answered by gemini-3.1-flash-lite" in C3 and f"  tuned    answered by endpoint {ENDPOINT.rsplit('/', 1)[1]}" in C3, C3
+assert "  live to untuned, what the smaller model moved: 0 row(s)\n  untuned to tuned, what the tuning moved: 3 row(s)\n" in C3, C3
+assert ("    jn-03: pass to fail (answered without ['45', '60'])\n    jn-06: fail to pass (ok)\n"
+        "    jn-09: pass to fail (answered without ['8.33', 'twenty per cent'])") in C3, C3
+CELLS["untag"] = ('gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags untuned\n'
+                  'curl -s -o /dev/null -w "the untuned URL now: HTTP %{http_code}\\n" -H "Authorization: Bearer $(tok "$API")" "$UNTUNED/health"')
+OUT["untag"] = "...\nthe untuned URL now: HTTP 404\n"
+assert CELLS["untag"].split("\n")[1] == CELLS["cleanup"].split("\n")[2].replace("candidate", "untuned").replace("$CAND", "$UNTUNED")
 
 # ------------------------------------------------------------------ step 7 (optional): v3's endpoint on the candidate, and the gate on it
 ENDPOINT_V3 = "projects/NUMBER/locations/us/endpoints/3784707595493887459"       # lesson 12.2's step 7 stand-in endpoint (its build prints it)
@@ -643,6 +741,10 @@ CELL_LABELS = {
     "judge": "run in the operator shell, in the kit (the judge's venv from lesson 4.2: 65 answers from each revision, then Vertex AI Evaluation)",
     "delta": "run in the operator shell, in the kit (reads the last two hours of usage rows)",
     "cleanup": "run in the operator shell, in the kit (removes the candidate's address; the revision stays, with no traffic)",
+    "untuned": "run in the operator shell, in the kit (one more revision with no traffic, at a tag of its own)",
+    "gate_untuned": "run in the operator shell, in the kit (every golden row on the untuned base: about ten minutes)",
+    "compare3": "run in the operator shell, in the kit (reads the three reports)",
+    "untag": "run in the operator shell, in the kit (removes the untuned revision's address; the revision stays, with no traffic)",
     "cand3": "optional: run in the operator shell, in the kit (v3's endpoint behind the candidate address; still no traffic)",
     "gate3": "optional: run in the operator shell, in the kit (every golden row on the v3 candidate: about ten minutes)",
     "demo": "optional: run in the operator shell, in the kit (three questions on each revision; ask again as often as you like)",
@@ -656,6 +758,10 @@ OUT_LABELS = {
     "judge": "(judge.py's own code over a stand-in Evaluation service that chooses by each row's must_contain phrases; the template hash is SDK 2.1.0's, as in lesson 4.2; your judge is Gemini, and your rates are your lane's)",
     "delta": "(make usage and this cell over the usage rows those runs leave, priced by the kit's own cost.price(); your rupees are your lane's)",
     "cleanup": "(the removal's own output is left out)",
+    "untuned": "(gcloud's own progress lines are left out; your revision's name differs)",
+    "gate_untuned": "(run_eval.py's own code over the stand-in's untuned base, which answers every row as the live revision does; your rows and times are your lane's)",
+    "compare3": "(this cell over the three reports; the stand-in's generation times are made up, so they are left out: yours are your lane's)",
+    "untag": "(the removal's own output is left out)",
     "cand3": "(the echo is the kit's recipe with lesson 12.2's step 7 endpoint; gcloud's progress lines are left out, and your revision's name differs)",
     "gate3": "(run_eval.py's own code over the stand-in v3 candidate: the house style, and the v2 candidate's misses; your rows are your lane's)",
     "demo": "(this cell over the stand-in revisions: the live answers as gemini-3.6-flash writes them, the candidate's as v3's rows teach; your answers are the models' own)",
@@ -667,7 +773,8 @@ STATS = {"N_CHECKED": str(N_CHECKED), "N_GOLD": str(len(GOLDEN)), "WIN_C": f"{WI
          "DELTA_EACH": DELTA[0], "DELTA_1K": DELTA[1], "LIVE_EACH": LIVE_EACH, "LOGGED": LOGGED, "BILLED": BILLED,
          "N_DROP": str(M2["dropped_golden_overlap"]), "DROPPED_IDS": ", ".join(DROPPED), "N_DROPPED_IDS": str(len(DROPPED)),
          "EX_LITE": f"{EX['lite']:.4f}", "EX_FLASH": f"{EX['flash']:.4f}", "EX_GOOGLE": f"{1.5 * EX['lite']:.4f}",
-         "N_CWIN": str(N_CWIN), "N_BWIN": str(N_BWIN), "N_TIE": str(len(GOLDEN) - N_CWIN - N_BWIN), "N_ANSWERS": str(4 * len(GOLDEN)),
+         "N_CWIN": str(N_CWIN), "N_BWIN": str(N_BWIN), "N_TIE": str(len(GOLDEN) - N_CWIN - N_BWIN), "N_ANSWERS": str(5 * len(GOLDEN)),
+         "GATE_UNTUNED": f"{len(GOLDEN) * kit_price(TUNE_BASE, *TOK['live'], None)['inr']:,.0f}", "TUNE_BASE": TUNE_BASE,
          "GATE_LIVE": f"{len(GOLDEN) * float(LIVE_EACH):,.0f}", "GATE_CAND": f"{len(GOLDEN) * float(BILLED):,.0f}",
          "DEMO_LIVE_RS": f"{LIVE_RS:.2f}", "DEMO_CAND_RS": f"{CAND_RS:.2f}", "DEMO_ALL_RS": f"{sum(DEMO_RS):.0f}",
          "BASE_OPTIONS": opts([("gemini-3.1-flash-lite", "gemini-3.1-flash-lite (step 4's)"), ("", "left out: the Makefile's gemini-3.6-flash")], "gemini-3.1-flash-lite"),

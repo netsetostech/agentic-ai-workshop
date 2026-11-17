@@ -645,7 +645,7 @@ def rag():
         LAST["q"] = q
         return [0.001] * 768
     main.embed_query = retriever.embed_query = embed
-    main.enforce_membership = lambda email, tenant_id: None     # the roster is lesson 8's; every ask here is a member's
+    main.enforce_membership = lambda email, tenant_id: None     # the roster is lesson 4.6's; every ask here is a member's
     main.record = lambda db, usd: None                         # the month's budget counter is 11.6's
 
     def caches():

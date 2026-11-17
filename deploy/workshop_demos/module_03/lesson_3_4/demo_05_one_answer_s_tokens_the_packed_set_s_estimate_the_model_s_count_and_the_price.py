@@ -35,9 +35,9 @@ def step_01_one_question_its_tokens_its_price_and_the(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: the answer: tokens_in 1xxx | cached_tokens 0 | tokens_out 4xx | cost_usd 0.00xxxx | citations 3 | model gemini-3.6-flash
-    cost.price(): $0.00xxxx = Rs 0.xxxx at 85.0 | in 1xxx out 4xx cached 0
-    the estimate for the same packed set: fixed 168 + context 8xx = 1xxx | the model counted 1xxx | ratio 0.9x
+    Observe: the answer: tokens_in 1xxx | cached_tokens 0 | tokens_out 1xx | cost_usd None | citations 1 | model gemini-3.6-flash
+    cost.price(): $0.00xxxx = Rs 0.xxxx at 85.0 | in 1xxx out 1xx cached 0
+    the estimate for the same packed set: fixed 168 + context 7xx = 8xx | with the answer's schema 2xx: 1xxx | the model counted 1xxx | ratio 1.0x
     """
     import os, sys, json, subprocess, urllib.request
     sys.path[:0] = [".", "services/rag-api"]
@@ -61,7 +61,9 @@ def step_01_one_question_its_tokens_its_price_and_the(session):
         ranked = [dict(d["pool"][i], source_uri="gs://uploads/acme/" + d["pool"][i]["source"]) for i, _ in d["ranked"]][:5]
         context, packed, dropped = pack_chunks(ranked, 7832, estimate_tokens)
         est = 168 + estimate_tokens(context)
-        print(f"the estimate for the same packed set: fixed 168 + context {estimate_tokens(context)} = {est} | the model counted {j['tokens_in']} | ratio {j['tokens_in'] / est:.2f}")
+        from shared.documind_schemas import ModelDraft
+        schema = estimate_tokens(json.dumps(ModelDraft.model_json_schema()))   # /v1/query asks for this schema, and the model counts it as input
+        print(f"the estimate for the same packed set: fixed 168 + context {estimate_tokens(context)} = {est} | with the answer's schema {schema}: {est + schema} | the model counted {j['tokens_in']} | ratio {j['tokens_in'] / (est + schema):.2f}")
     except FileNotFoundError:
         print("no /tmp/pool53.json here: run lesson 2.3's step 4 first to put the estimate beside tokens_in")
 

@@ -1,0 +1,124 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>You need the shell in the kit's folder, with <code>PROJECT</code>, <code>REGION</code> and <code>ME</code> set.</p>
+<ul>
+<li><strong>Steps 3 to 5</strong> are offline: nothing leaves your machine.</li>
+<li><strong>Step 7</strong> changes documind-chat for a few minutes, twice, and puts it back each time. Its second drill runs a routine deploy of the chat alone, which builds the chat's image from your checkout.</li>
+<li><strong>Step 9's Change-it</strong> edits <code>ops/gotchas.json</code> in your clone, and git puts it back.</li>
+</ul></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 1 &middot; The registry</span><h3>The registry, read at Rs 0</h3><p>One file of %%N_GOTCHAS%% entries, the three make targets that run them, and one entry read in full.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make gotchas</code> prints the registry, one line per gotcha: its id, its signal, which drills it has, its status, the lessons it touches and its title. <code>ID=</code> prints every field of one entry. Each target is one line in <code>mk/operations.mk</code> that runs <code>commands/gotchas.py</code>, so the same command runs without make: <code>python commands/gotchas.py list</code>.</p>
+@@targets@@
+
+<h4>Do it: the registry</h4>
+%%CELL_LIST%%
+%%OUT_LIST%%
+
+<h4>Do it: one entry, every field</h4>
+%%CELL_SHOW%%
+%%OUT_SHOW%%
+
+<p>Here is the same entry as the file holds it. A new entry takes this shape, and step 9 adds one.</p>
+@@entry@@
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>One id per gotcha</strong>, each a few words joined by hyphens, in the order the board shows them. Of the %%N_GOTCHAS%%, %%N_OFFLINE%% have an offline drill and %%N_LIVE%% a lane form; %%N_BOTH%% have both.</li>
+<li><strong>The entry rests on %%N_DROP_EV%% kit lines</strong>, marked <code>kit</code> in the output: the chat's deploy, its hook for more variables, the Makefile's empty <code>CHAT_EXTRA_ENV</code>, the API's deploy, and the cap's default in <code>limits.py</code>. Step 4 shows the chat's lines and the cap's in their files, and its cell reads the API's deploy with the rest.</li>
+<li><strong>Nothing was called.</strong> The registry is a file, and these targets only read it.</li>
+</ul></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit's code</span><h3>The lines the two drills rest on</h3><p>Where documind-chat's traffic is held, what its deploy writes, where its cap comes from, and the check both live drills make first.</p></div></div>
+
+<h4>Where the traffic is held</h4>
+<p>A Cloud Run service's traffic either follows its latest revision or names one. <code>make candidate</code>'s <code>--no-traffic</code> pins the service to a named revision. The Makefile's comment says what happened when nobody noticed: a routing change ran on the old revision for an hour (F44). So after the API's deploy, <code>make deploy-services</code> moves documind-api's traffic by name, to the revision it just made. <code>make promote</code> and <code>make rollback</code> move it by name too. documind-api is held by name on purpose. documind-chat follows its latest revision, until something holds it.</p>
+@@flip@@
+
+<h4>What a deploy writes</h4>
+<p>The chat's deploy script sets the service's whole environment with <code>--set-env-vars</code>: %%N_CHAT_VARS%% variables, then <code>${CHAT_EXTRA_ENV-}</code> at the end, the script's hook for more. <code>make deploy-services</code> sets that hook to the empty string for every deploy. A variable the list does not name is gone after the deploy.</p>
+@@chat_deploy@@
+@@extra_env@@
+
+<h4>Where the cap comes from</h4>
+<p><code>limits.py</code> reads <code>CHAT_MAX_MODEL_CALLS</code> once, when the module loads, which is when an instance of a revision starts. <code>/health</code> publishes it. So <code>/health</code> reports the cap of whichever revision answers.</p>
+@@cap@@
+
+<h4>The check before a drill</h4>
+<p><code>limits-drill.sh</code> (lesson 5.5) refuses to change the chat when its latest revision does not take all the traffic: the change would make a revision that serves nobody. <code>gotchas.py</code> makes the same check on the same JSON, and both live drills run it before they change anything.</p>
+@@latest@@
+@@follows@@
+
+<h4>Do it: what each routine deploy writes</h4>
+<p>The cell loads the kit's own reader of the deploy scripts, the one the drills and the detectors use, and prints what each deploy writes. It reads the scripts and the Makefile, and calls nothing.</p>
+%%CELL_READER%%
+%%OUT_READER%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>Every one of the %%N_SCRIPTS%% deploys sets its service's whole environment</strong> with <code>--set-env-vars</code>. Every hand-set variable on every service is one routine deploy away from gone.</li>
+<li><strong>documind-chat's list has %%N_CHAT_VARS%% names, and <code>CHAT_MAX_MODEL_CALLS</code> is not one of them.</strong> A cap set by hand is dropped, and the default, %%CAP_DEFAULT%%, comes back.</li>
+<li><strong>The switches the recipe passes go back to the Makefile's defaults</strong> unless you pass them again, <code>ADMIN_EMAILS</code> among them. Step 8's detector finds that one on every lane deployed with your own address.</li>
+</ul></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Offline drills</span><h3>Every offline drill, on a stand-in of Cloud Run</h3><p>The two Rs 0 drills in full, with their levers clearing them; then all %%N_OFFLINE%% at once.</p></div></div>
+
+<h4>Definition</h4>
+<p>An offline drill runs on a stand-in of Cloud Run: the JSON that <code>gcloud run services describe</code> and <code>gcloud run revisions describe</code> print. Only two things change it: the gcloud lines a lane would run, and make's targets, played from the kit's own recipes. The stand-in plays four of Cloud Run's rules:</p>
+<ul>
+<li><code>--update-env-vars</code> merges into the variables already there;</li>
+<li><code>--set-env-vars</code> replaces every literal variable;</li>
+<li>a new revision takes traffic only when a traffic entry follows the latest revision;</li>
+<li><code>--no-traffic</code> first binds what followed the latest to the revision that was latest.</li>
+</ul>
+<p>Its <code>/health</code> reports the answering revision's own cap. The live drill in step 7 is the same function, on your lane.</p>
+@@drill_pinned@@
+
+<h4>Do it: pinned traffic</h4>
+%%CELL_PINNED%%
+%%OUT_PINNED%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The stand-in started where <code>make deploy-services</code> leaves documind-chat: <code>%%FIRST_REV%%</code> takes 100% of the traffic, following the latest revision, and <code>/health</code> says %%CAP_DEFAULT%%, the default in <code>limits.py</code>.</p>
+<ul>
+<li><strong>The traffic held on that revision by name</strong> is what a rollback by traffic leaves behind.</li>
+<li><strong>The hand update made <code>%%SECOND_REV%%</code></strong> with a cap of 3. It takes 0% of the traffic. The template says 3, and <code>/health</code> still says %%CAP_DEFAULT%%: every request is answered by the old revision. Nothing failed.</li>
+<li><strong>The detector named both halves:</strong> the traffic is held away from the latest revision, and the newest revision takes nothing and carries no tag.</li>
+<li><strong>The lever</strong> moved the traffic to the latest revision, and <code>/health</code> said 3. The last line put the setting back as it was, unset, and the chat follows its latest revision again.</li>
+</ul></div>
+
+<h4>Do it: a routine deploy drops a hotfix</h4>
+%%CELL_DROP%%
+%%OUT_DROP%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The hand-set cap of 8 served:</strong> <code>/health</code> said 8.</li>
+<li><strong>Before the deploy, the detector named the drop.</strong> The variable is not in <code>lesson-12.8.sh</code>'s <code>--set-env-vars</code>, and <code>make deploy-services</code> empties <code>CHAT_EXTRA_ENV</code>.</li>
+<li><strong>The routine deploy</strong>, played from the script's own list, made a revision without the variable, and <code>/health</code> said %%CAP_DEFAULT%% again. Nothing failed here either.</li>
+<li><strong>The lever is a change to your fork:</strong> a deploy that carries the setting keeps it. With <code>CHAT_EXTRA_ENV='|CHAT_MAX_MODEL_CALLS=8'</code> in the recipe, the cap survived the deploy, and the detector found nothing to drop. Then the stand-in deployed as the kit does, and the chat was back where it started.</li>
+</ul></div>
+
+<h4>Do it: every offline drill</h4>
+<p>The command runs all %%N_OFFLINE%% drills, and <code>grep</code> keeps each drill's verdict lines: its name, <code>REPRODUCED</code>, <code>CLEARED</code> where it shows its lever, and the count at the end. Run <code>make gotcha-drill ID=&lt;id&gt;</code> to read any one of them in full.</p>
+%%CELL_ALL%%
+%%OUT_ALL%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>All %%N_OFFLINE%% offline drills reproduced their gotcha, and the %%N_CLEARED%% that show a lever cleared it. Besides the two above, here is what the other drills show.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Gotcha</th><th>What its drill shows</th></tr></thead>
+<tbody>
+<tr><td><code>ungated-api-release</code></td><td data-label="What its drill shows">A routine deploy after a gated release moved documind-api to a revision no gate judged. Step 9 runs it in full.</td></tr>
+<tr><td><code>switch-rides-into-candidate</code></td><td data-label="What its drill shows">Lesson 2.5's candidate with <code>QUERY_REWRITE=on</code>, left in place: the next <code>make release-candidate</code> carried it, though nobody set it there. After lesson 2.5's undo, the next candidate differed from the serving revision in <code>GIT_SHA</code> alone.</td></tr>
+<tr><td><code>rollback-keeps-template</code></td><td data-label="What its drill shows"><code>make candidate GENERATOR_MODEL=gemini-3.6-flsh</code>, then <code>make promote</code> and <code>make rollback</code>. The traffic went back, the template kept the typo, and the next <code>make release-candidate</code> inherited it. Lesson 11.3's repair, before the release, cleared it.</td></tr>
+<tr><td><code>looping-model-stopped</code></td><td data-label="What its drill shows"><code>limits.py</code>'s own Meter, at the defaults, allowed %%CAP_DEFAULT%% calls and refused the next, with Rs %%LOOP_RS%% spent: HTTP 200 and the stop answer. None of terraform's %%N_WATCHERS%% alert policies and log metrics reads <code>stopped_by</code> or the chat rows.</td></tr>
+<tr><td><code>abandoned-call-bills</code></td><td data-label="What its drill shows">The ADK brain's timed wrapper, on a search that takes %%CUT_S%% s, cut at its %%CUT_BUDGET%% s budget. The turn moved on, the model read a payload error, and the search ran on to its end. <code>may_commit()</code> said False, so it wrote nothing into the turn. On a lane that search is rag-api's, and rag-api bills it on its own row.</td></tr>
+<tr><td><code>agent-spend-outside-the-month</code></td><td data-label="What its drill shows">One langchain turn, three model calls and one search. <code>tenant_daily</code> and <code>make usage</code> count Rs %%SPEND_RS%% of it: rag-api's row. The agent's own Rs %%AGENT_RS%% is on the chat row alone. The log sink <code>%%SINK%%</code> copies that row to BigQuery, and the view leaves it out.</td></tr>
+<tr><td><code>ci-promote-loses-previous</code></td><td data-label="What its drill shows">A promote on a CI runner recorded the previous revision there, and the runner was gone, so <code>make rollback</code> stopped in this checkout. With the name from the job's log written to <code>deploy/.previous-revision</code>, it worked.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+</div>

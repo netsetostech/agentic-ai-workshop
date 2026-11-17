@@ -20,7 +20,8 @@
 # image (make batch-job), which the worker starts by name the moment it queues a document over MAX_INLINE_PAGES;
 # empty until make deploy-services BATCH_JOB=true, and then the hourly schedule alone drains the queue.
 # P9 (13 September 2026): MANAGED_MIRROR is the managed mirror - the version the worker swaps current copied into
-# the tenant's RAG Engine corpus (4.3) and / or Vertex AI Search data store (4.4), managed.py; off on the lane.
+# the tenant's RAG Engine corpus (4.3) and / or Vertex AI Search data store (4.4), managed.py. make deploy-services
+# passes the Makefile's (MANAGED_MIRROR ?= both, 13 October 2026); run by hand, this script's own default is off.
 # Which TENANTS it copies is each tenant's data_region (tenant_settings, make tenant-policy), not this env.
 # RAG_LOCATION is the corpora's region (serverless corpora: us-central1 only).
 gcloud run deploy documind-ingest \

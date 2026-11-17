@@ -1,0 +1,94 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; The ref clause</span><h3>A branch dispatch, refused at the auth step</h3><p>The same workflow, the same fork, another branch: eval-gate passes, and release-candidate stops before it can call Google as anyone.</p></div></div>
+
+<h4>Definition</h4>
+<p>A run started on a branch carries <code>refs/heads/&lt;branch&gt;</code> in its token's <code>ref</code> claim, and the provider's third clause wants <code>%%TRUST_REF%%</code>. So the token service refuses the exchange, and the auth step fails. <code>documind-cd.yml</code>'s header says so in advance: a run from any other branch fails at the auth step, and that is the branch gate working, not a misconfiguration. Here is why it matters. Anyone who can push a branch to your fork can change the workflow file on that branch, and a run of that branch uses that branch's file. Without the ref clause, the rewritten workflow would get the same hour as <code>sa-documind-cicd</code> that <code>main</code> gets.</p>
+
+<h4>Do it: a branch, a run, a refusal</h4>
+<p>The cell makes a branch at <code>main</code>'s commit through GitHub's REST API, dispatches the workflow on it, waits for the run to finish, prints its summary and the error lines of the failed step, and deletes the branch. In the browser: the branch menu on your fork's code page, then Run workflow with that branch chosen.</p>
+%%CELL_BRANCH%%
+%%OUT_BRANCH%%
+<p><code>eval-gate</code> passed: it needs no credential, so the branch makes no difference to it. <code>release-candidate</code> failed at its auth step, with Google's refusal in the error line, and the steps after it never ran, so nothing was built and nothing was deployed. <code>promote</code> never started. The workflow file, the repository and the commit were step 6's; only the ref differed.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The refusal happened at Google, before any credential existed: the token service read the branch from GitHub's signed token and found the condition false. Nothing in the branch could change that, because the token is GitHub's to sign and the branch is GitHub's to report. To deploy from another branch you would change the trust itself, which <code>make plan</code> refuses (step 4).</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; REST and direct reads</span><h3>What Google holds, and who did what</h3><p>The provider and the binding over IAM's REST API, the audit trail of step 6's run, and every account's keys.</p></div></div>
+
+<h4>Definition</h4>
+<p>Three reads close the proof. The provider and the account's policy, read from IAM's REST API as you, show the trust Google enforces, not the trust a file declares. The Admin Activity audit log, which Google writes for every call that changes a resource and which cannot be switched off, shows what <code>sa-documind-cicd</code> changed and on whose behalf. And <code>make keys-check</code> lists every account in the project with its user-managed keys: the count that must be zero.</p>
+
+<h4>Do it: the trust and the binding, from IAM's REST API</h4>
+%%CELL_IAM%%
+%%OUT_IAM%%
+<p>The condition is the %%N_CLAUSES_W%% equalities with your values, as <code>wif.tf</code> renders them, and the mapping is its four lines. On the account, <code>%%BIND_ROLE%%</code> goes to the pool's identities with your repository's id, and <code>roles/iam.serviceAccountUser</code> to the account itself, from <code>cicd_actas</code>. The last line asks the same API for the account's user-managed keys, and gets none.</p>
+
+<h4>Do it: the audit trail of step 6's run</h4>
+%%CELL_AUDIT%%
+%%OUT_AUDIT%%
+<p>Each entry is a change <code>sa-documind-cicd</code> made: the build it submitted, the revision it created. Where Google records the delegation, <em>on behalf of</em> names the federated identity that became the account: the pool, then <code>subject/</code> and the job's <code>sub</code> claim, with your repository and its ref. A key can never give you that line. Whoever holds a key signs in as the account and leaves no trace of who they are.</p>
+
+<h4>Do it: zero user-managed keys</h4>
+@@rel_keys@@
+%%CELL_KEYS%%
+%%OUT_KEYS%%
+<p>The first line says where your project sits. Under an organization, <code>org_policy.tf</code>'s <code>enforce_no_sa_keys</code> can forbid making keys at all, and an organization created on or after 3 May 2024 forbids it by default. A personal account's project has no organization, nothing can forbid a key there, and this check is the control. Every account follows with its count, and the last line must be <code>%%NO_KEYS_LINE%%</code>, with exit 0.</p>
+
+<h4>Change it: what a key looks like to the check</h4>
+<p>Never make a key to see this. Here is the same command, run when this page was built, against a stand-in project in which <code>sa-documind-cicd</code> holds one key, the shortcut this lesson replaces:</p>
+%%OUT_PLANTED%%
+<p>Exit 1, the key's id and creation time, <em>never expires</em>, and the delete command. A key that was disabled but not deleted is still listed, and marked so: it can be enabled again.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Google holds the trust you declared, the run is on record as the account acting for your repository's <code>main</code>, and no account in the project has a key. The proof of keyless is that zero, not the absence of a JSON file in the repository: a key made last month for a local script would deploy just as well.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What may stop the first dispatch, the trust that cannot move, and the path without GitHub</h3><p>What the build asks of the pipeline's account and where the kit grants it, the author's first dispatch, the local operator path, and what each run costs.</p></div></div>
+
+<h4>Each Google call the run makes, and what the kit grants for it</h4>
+<p>Read the candidate path's calls against <code>sa-documind-cicd</code>'s roles, the APIs <code>make apis</code> enables and the two grants <code>make build-access</code> adds:</p>
+%%CALLS_TABLE%%
+@@mk_build@@
+@@cb_logging@@
+<p>None of the %%N_ROLES_W%% roles is a Cloud Storage role, and none reads logs, on purpose. <code>gcloud builds submit</code> uploads the source to the project's Cloud Build bucket before the build starts. Left to choose that bucket, it lists the project's buckets to check the bucket is the project's own, which needs a project-wide storage permission. The workflow names the bucket instead, and <code>make build-access</code>, which <code>make up</code> runs, gives the account the bucket's legacy writer role on that one bucket. Following the build's log would mean reading Cloud Logging, so the step submits the build <code>--async</code> and polls its status, printing a link to the log. Cloud Build runs the build as the project's default compute account, and with Google's default organization policy the account that submits a build must be able to act as that account: <code>make build-access</code> grants that too, and refuses on a project whose default account holds Editor or Owner, where acting as it would hand the pipeline the same. <code>sts.googleapis.com</code>, the token service, is among the %%N_APIS%% APIs <code>make apis</code> enables. A lane made up before these grants gets them from <code>make build-access PROJECT="$PROJECT"</code>. The first dispatch on a real lane proves them, so the author runs it before this lesson is taught:</p>
+%%OUT_PROBE%%
+<p>If a dispatch of yours still stops at a permission or an API, the failed step's last lines name it. The fix belongs in the kit, as a grant in <code>sa.tf</code> or <code>build-access.sh</code>, or an API in <code>make apis</code>, so report it to the course team rather than granting a broad role by hand. Meanwhile the local operator path below builds and deploys the same candidate.</p>
+
+<h4>The trust you named at lesson 0.3 is the trust you have</h4>
+<p>The provider's condition and the binding were written when <code>make up</code> first applied <code>wif.tf</code>, from the three values lesson 0.3's step 3 confirmed, and step 4's lines refuse any plan that would change them. A fork renamed after that day fails the name clause, and a fork deleted and made again gets a new id and fails the id clause: either way every run is refused until the trust is migrated, deliberately. If your lane trusts a repository you cannot run Actions in, this page's recordings and the path below are your lesson.</p>
+
+<h4>Without GitHub: the local operator path</h4>
+<p>The workflow's two release steps are make targets, and you can run them from the operator shell as yourself: the same image built by Cloud Build, the same revision with no traffic and the tag <code>candidate</code>. It proves the build and the deploy, not the keyless identity, because your own sign-in makes both calls. It also moves the <code>candidate</code> tag to the revision it makes, so run it only if step 6 could not run.</p>
+%%CELL_LOCAL%%
+%%OUT_LOCAL%%
+<p>Your checkout now holds <code>.candidate-revision</code>, the name <code>make promote</code> would move traffic to. The dispatch's job kept that file on GitHub's runner, and passed the name to <code>promote</code> as a job output instead.</p>
+
+<h4>What it costs</h4>
+%%COST_TABLE%%
+<p>The gate's usage rows price generation only: the query embedding and the Ranking API bill on their own lines. <code>make usage PROJECT="$PROJECT" HOURS=1</code> after the dispatch prints what the gate's answers cost on your lane.</p>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">Your lane trusts your public fork, on main</td><td data-label="The check">step 3, the trust cell</td><td data-label="Pass looks like">your repository, <code>PUBLIC</code>, a fork of <code>netsetos/agents_workshop_learner</code>, the same GitHub id as the trust, both workflows <code>active</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The four variables come from the lane</td><td data-label="The check">step 5, <code>make ci-vars</code></td><td data-label="Pass looks like">four <code>gh variable set</code> lines, with the region the lane was planned in</td></tr>
+<tr><td>3</td><td data-label="Claim">Promote waits for a person</td><td data-label="The check">step 5, the second <code>make ci-vars</code></td><td data-label="Pass looks like"><code>%%REVIEWER_LINE%%</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The repository holds no secret</td><td data-label="The check">step 5, the read-back</td><td data-label="Pass looks like"><code>repository secrets: 0</code></td></tr>
+<tr><td>5</td><td data-label="Claim">A build with no key</td><td data-label="The check">step 6, the run's summary</td><td data-label="Pass looks like"><code>release-candidate</code> green, with <em>Build the API image</em> among its steps</td></tr>
+<tr><td>6</td><td data-label="Claim">A deploy with no key</td><td data-label="The check">step 6, what the run left</td><td data-label="Pass looks like">the candidate at 0%, its image and <code>GIT_SHA</code> the run's commit, made by <code>sa-documind-cicd</code></td></tr>
+<tr><td>7</td><td data-label="Claim">A branch is refused at the auth step</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>eval-gate</code> green, <code>release-candidate</code> failed at its auth step, <code>promote</code> never started</td></tr>
+<tr><td>8</td><td data-label="Claim">Google enforces the %%N_CLAUSES_W%% clauses and the id binding</td><td data-label="The check">step 8, IAM's REST API</td><td data-label="Pass looks like">%%N_CLAUSES_W%% <code>condition</code> lines with your values; <code>%%BIND_ROLE%%</code> for <code>.../attribute.repository_id/REPO_ID</code></td></tr>
+<tr><td>9</td><td data-label="Claim">The audit names the account, and the repository behind it</td><td data-label="The check">step 8, the audit trail</td><td data-label="Pass looks like">entries by <code>sa-documind-cicd</code>; where recorded, on behalf of <code>.../subject/repo:YOUR-GITHUB-USER/YOUR-REPO:ref:%%TRUST_REF%%</code></td></tr>
+<tr><td>10</td><td data-label="Claim">Zero user-managed keys</td><td data-label="The check">step 8, <code>make keys-check</code></td><td data-label="Pass looks like"><code>%%NO_KEYS_LINE%%</code>, then <code>exit 0</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>On your fork: the <code>%%ENV_NAME%%</code> environment with you as its reviewer, the four repository variables, and two runs in the Actions history, step 6's with <code>promote</code> rejected and step 7's failed at auth. The branch <code>try-a-branch</code> is gone, and no secret was added. In Artifact Registry: one more image, <code>documind/api:</code> with the run's commit. On Cloud Run: one more revision of <code>documind-api</code>, made by <code>sa-documind-cicd</code>, tagged <code>candidate</code>, taking no traffic; the serving revision is unchanged. In Cloud Build, one build submitted by the same account; in Cloud Logging, the gate's usage rows under the candidate's revision, and the audit entries step 8 read. Keep the candidate: lesson 11.2 judges exactly that revision. If you stop here instead, <code>gcloud run services update-traffic documind-api --region "$REGION" --project "$PROJECT" --remove-tags candidate</code> removes its URL. Put acme's pin back now, with the setup section's pin-back window.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 11 Project &middot; Lesson 11.1 Build and deploy using keyless identity &middot; v5.0</p><p>Next: Lesson 11.2 %%NEXT_TITLE%%.</p></div>

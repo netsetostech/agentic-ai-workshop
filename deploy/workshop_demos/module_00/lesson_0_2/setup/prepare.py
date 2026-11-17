@@ -28,7 +28,7 @@ RETRY_FAILED_STEP = False
 COMMANDS_01 = """for t in git curl python3.12 terraform gcloud docker ollama make; do    # each prints a path, or MISSING
   printf '%-10s %s\\n' "$t" "$(command -v "$t" || echo MISSING)"
 done
-python3.12 --version; terraform version | head -1; gcloud --version | head -1
+python3.12 --version; terraform version | sed -n 1p; gcloud --version | sed -n 1p
 docker --version; ollama --version
 
 """

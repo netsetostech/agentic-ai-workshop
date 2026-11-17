@@ -117,7 +117,7 @@ cost_src = (KIT / COST).read_text(encoding="utf-8")
 assert tuple(float(x) for x in re.search(r'"' + re.escape(MODEL) + r'": \(([\d.]+), ([\d.]+)\)', cost_src).groups()) == (USD_IN, USD_OUT)
 assert float(re.search(r'USD_INR = float\(os.environ.get\("USD_INR_RATE", "([\d.]+)"\)\)', cost_src).group(1)) == USD_INR
 assert "cached_tokens * usd_in * 0.10" in cost_src and "billable_in = max(tokens_in - cached_tokens, 0)" in cost_src
-GEN_LOCATION = grab(r'_client = genai\.Client\(enterprise=True, project=settings\.project_id, location="([^"]+)"\)', GEN)
+GEN_LOCATION = grab(r'_client = genai\.Client\(enterprise=True, project=settings\.project_id, location="([^"]+)"[,)]', GEN)
 assert GEN_LOCATION == "global"
 
 

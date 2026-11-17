@@ -68,11 +68,12 @@ def step_01_ask_the_stores_and_find_who_found_the_cite(session):
     acme: retrieval_backend rag_engine, policy_fallback 0; pool 17, 14 from a managed store
       A: A confirmed employee at grade E3 or above serves a notice period of 60 days [2].
       cites acme:acme_497809ff...#rag-c31c1f459b60 (hr_policy_2026.md)
-    zeta: retrieval_backend vertex_search, policy_fallback 0; pool 12, 12 from a managed store
+    zeta: retrieval_backend vertex_search, policy_fallback 0; pool 20, 20 from a managed store
       A: A confirmed employee at grade L4 or above serves a notice period of 30 days [1].
-      cites zeta:zeta_e920a147...#vs-9b9cb379153b (hr_policy_zeta_2026.md)
+      cites zeta:e920a147...#1 (hr_policy_zeta_2026.md)
     globex: retrieval_backend vector, policy_fallback 0; pool 20, 0 from a managed store
-      A: Either party may terminate the agreement for convenience on 120 days' written notice [
+      A: Either party may terminate the agreement for convenience on 120 days' written notice [1].
+      cites globex:
     """
     # Preserve the kit CLI's arguments, conditions and observation order.
     session.shell(COMMANDS_01)

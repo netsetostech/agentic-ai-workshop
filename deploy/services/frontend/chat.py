@@ -55,6 +55,7 @@ def _headers(audience: str = RAG_API_URL) -> dict:
     assertion = (st.context.headers or {}).get("x-goog-iap-jwt-assertion")
     if assertion:
         h["x-goog-iap-jwt-assertion"] = assertion
+        h["x-documind-assertion"] = assertion    # Cloud Run drops the line above (shared/iap.FORWARD_HEADER)
     return h
 
 
@@ -65,6 +66,18 @@ def _as_source(c: dict) -> dict:
     return {"text": c.get("quote", ""), "source_uri": c.get("source_uri", ""), "page_start": c.get("page"),
             "kind": c.get("kind", "text"), "media_url": c.get("media_url"),
             "start": c.get("start"), "end": c.get("end")}
+
+
+def _scrubbed_line(body: dict) -> str:
+    """The chat service's exit scrub, said under the answer (workshop lesson 10.8). With AGENT_SCRUB=on documind-chat
+    replaces each image, HTML tag and off-list link in an answer with a visible marker ([image removed], [html removed],
+    [link removed]) and returns how many as `scrubbed`; one marker in a long answer is easy to miss. Empty when nothing
+    was replaced, or when the switch is off and the reply has no `scrubbed`, so the page shows what it always showed."""
+    n = body.get("scrubbed")
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        return ""
+    what, by = ("image, tag or link was", "a marker") if n == 1 else ("images, tags or links were", "markers")
+    return f"scrubbed: {n} {what} replaced by {by} before the answer left the chat service (AGENT_SCRUB)"
 
 
 def stream_answer(query: str, tenant_id: str):
@@ -114,12 +127,8 @@ def chat_page(user):
                                                 help="Chirp 3 HD (en-IN) via voice.cached_tts; free on a cache hit")
         st.divider()
         st.subheader("Cost this session")
-        ss = st.session_state
-        st.metric("USD", f"${ss.get('session_cost_usd', 0):.4f}",
-                  delta=f"+${ss.get('last_turn_cost', 0):.4f} last turn")
-        st.metric("INR", f"Rs {ss.get('session_cost_usd', 0) * USD_INR:.2f}")
-        st.metric("Tokens", f"{ss.get('tokens_in', 0)} in / "
-                            f"{ss.get('tokens_out', 0)} out")
+        cost_slot = st.empty()
+        show_cost(cost_slot)
 
     st.title("DocuMind Chat")
     if "messages" not in st.session_state:
@@ -173,6 +182,16 @@ def chat_page(user):
                        + f" · {body.get('latency_ms', 0)} ms"
                        + (f" · Rs {lim['cost_inr']:.2f}" if lim.get("cost_inr") is not None else "")
                        + (f" · stopped: {lim['stopped_by']}" if lim.get("stopped_by") else ""))
+            scrubbed = _scrubbed_line(body)          # AGENT_SCRUB on documind-chat (workshop lesson 10.8)
+            if scrubbed:
+                st.caption(scrubbed)
+        if lim.get("cost_inr") is not None:
+            # The turn's whole bill, its model calls and rag-api's searches, counted in the sidebar too: it stayed at
+            # Rs 0.00 under an agent brain (22 October 2026). The response carries no token counts, so Tokens does not move.
+            ss = st.session_state
+            ss.last_turn_cost = lim["cost_inr"] / USD_INR
+            ss.session_cost_usd = ss.get("session_cost_usd", 0) + ss.last_turn_cost
+            show_cost(cost_slot)
         st.session_state.messages.append({"role": "assistant", "content": answer})
         return
 
@@ -209,7 +228,11 @@ def chat_page(user):
                     return
         except (requests.RequestException, ValueError, KeyError) as exc:
             slot.empty()
-            st.error(f"The answer stream failed: {type(exc).__name__}. Retry after checking the API.")
+            if getattr(getattr(exc, "response", None), "status_code", None) == 401:
+                # The API refused the person's IAP assertion, the one this tab opened with: past its ten minutes
+                st.error("This tab's sign-in has expired: reload the page to sign in again.")
+            else:
+                st.error(f"The answer stream failed: {type(exc).__name__}. Retry after checking the API.")
             return
         if not saw_done or not answer.strip():
             slot.empty()
@@ -227,7 +250,21 @@ def chat_page(user):
     ss.last_turn_cost = cost
     ss.tokens_in = ss.get("tokens_in", 0) + done.get("tokens_in", 0)
     ss.tokens_out = ss.get("tokens_out", 0) + done.get("tokens_out", 0)
+    show_cost(cost_slot)
     st.session_state.messages.append({"role": "assistant", "content": answer})
+
+
+def show_cost(slot) -> None:
+    """The sidebar's running cost, drawn into its placeholder. Streamlit draws the sidebar before the answer streams,
+    so the totals are drawn again once the turn has added to them: drawn only at the top, the sidebar showed the
+    turn before, Rs 0.00 after a first answer (21 October 2026)."""
+    ss = st.session_state
+    with slot.container():
+        st.metric("USD", f"${ss.get('session_cost_usd', 0):.4f}",
+                  delta=f"+${ss.get('last_turn_cost', 0):.4f} last turn")
+        st.metric("INR", f"Rs {ss.get('session_cost_usd', 0) * USD_INR:.2f}")
+        st.metric("Tokens", f"{ss.get('tokens_in', 0)} in / "
+                            f"{ss.get('tokens_out', 0)} out")
 
 
 def transcribe_from_mic() -> str:

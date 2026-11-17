@@ -80,7 +80,7 @@ Expected shape, not a promised result:
 ```text
 {'name': 'EMBEDDING_MODEL', 'value': 'text-embedding-005'}
 {'name': 'EMBEDDING_VERSION', 'value': '1'}
-api serves embedding text-embedding-005@1 | generator gemini-3.6-flash | retrieval hybrid vector
+api serves embedding text-embedding-005@1 | generator gemini-3.6-flash | retrieval dense vector
 acme/code_on_wages_2019.pdf                  chunks   67  reused    0  embedded   67  text-embedding-005@1
 acme/dpdp_act_2023.pdf                       chunks   44  reused    0  embedded   44  text-embedding-005@1
 acme/hr_policy_2026.md                       chunks  283  reused    0  embedded  283  text-embedding-005@1
@@ -102,7 +102,7 @@ Expected shape, not a promised result:
 ```text
 lane vector: 768 numbers; first three [0.0213, -0.0117, 0.0388]
 same text, RETRIEVAL_DOCUMENT: cosine to the lane's vector 1.0
-same text, RETRIEVAL_QUERY:    cosine to the lane's vector 0.9xxx
+same text, RETRIEVAL_QUERY:    cosine to the lane's vector 0.8xxx
 ```
 
 ### demo_05_batches_250_texts_and_15_000_tokens_per_request.py
@@ -182,7 +182,7 @@ OK
 
 ### demo_07_carry_over_re_issue_the_handbook_embed_only_what_changed.py
 
-The worker's planner on the two versions of the handbook, with a stand-in for what held_vectors() would lend: one vector per version-1 hash. The upload must keep the object name, acme/hr_policy_2026.md, or it is a new source and nothing is held. The loop then waits for the worker's ingest_ok line and prints its counts. Cost: two clauses, 453 characters, about a hundredth of a paisa; a Markdown file pays no Document AI. Refresh Documents. The handbook's row in the Versions table now reads reused 281, embedded 2, retired 283, with an effective date of 1 October 2026 that the revision declares in its first lines. The first call below is the same row from the API; the second reads the rows themselves and checks the thing the counts claim: an unchanged clause's new row carries the same numbers as its retired predecessor, and a changed clause's does not. The third asks the question the revision changed the answer to. Upload version 1 again under the same name. Its doc_key is the one the lane retired a minute ago, so the worker does not parse, chunk or embed anything: it flips the retired rows back to current, retires revision 2, and logs ingest_reactivated with embedded 0. This is the undo from lesson 1.1, seen from the embedding side: nothing was ever deleted, so nothing has to be made again.
+The worker's planner on the two versions of the handbook, with a stand-in for what held_vectors() would lend: one vector per version-1 hash. The upload must keep the object name, acme/hr_policy_2026.md, or it is a new source and nothing is held. The loop then waits for the worker's ingest_ok line and prints its counts. Cost: two clauses, 453 characters, about a tenth of a paisa; a Markdown file pays no Document AI. Refresh Documents. The handbook's row in the Versions table now reads reused 281, embedded 2, retired 283, with an effective date of 1 October 2026 that the revision declares in its first lines. The first call below is the same row from the API; the second reads the rows themselves and checks the thing the counts claim: an unchanged clause's new row carries the same numbers as its retired predecessor, and a changed clause's does not. The third asks the question the revision changed the answer to. Upload version 1 again under the same name. Its doc_key is the one the lane retired a minute ago, so the worker does not parse, chunk or embed anything: it flips the retired rows back to current, retires revision 2, and logs ingest_reactivated with embedded 0. This is the undo from lesson 1.1, seen from the embedding side: nothing was ever deleted, so nothing has to be made again.
 
 **`step_01_plan_it_locally_rs_0(session)` — Carry-over: re-issue the handbook, embed only what changed / Plan it locally, Rs 0**
 
@@ -200,7 +200,7 @@ v2: 283 chunks, reused 281, to embed 2: ['preamble', 'NP-03']
 
 **`step_02_on_the_lane_revision_2_over_the_same_name(session)` — Carry-over: re-issue the handbook, embed only what changed / Do it on the lane: revision 2 over the same name**
 
-The upload must keep the object name, acme/hr_policy_2026.md, or it is a new source and nothing is held. The loop then waits for the worker's ingest_ok line and prints its counts. Cost: two clauses, 453 characters, about a hundredth of a paisa; a Markdown file pays no Document AI.
+The upload must keep the object name, acme/hr_policy_2026.md, or it is a new source and nothing is held. The loop then waits for the worker's ingest_ok line and prints its counts. Cost: two clauses, 453 characters, about a tenth of a paisa; a Markdown file pays no Document AI.
 
 Operation: bash — run in the operator shell, in $DEMO_ROOT (one re-issue; the worker takes under a minute).
 
@@ -278,6 +278,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.3_Embeddings_WIX.html`. All 48 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `56ae46416219aee8c45075960c9f86bab98015ac`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_1.3_Embeddings_WIX.html`. All 48 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `91794cb6f727b4b8fc4a76fc59be7b03f06fbaf5`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

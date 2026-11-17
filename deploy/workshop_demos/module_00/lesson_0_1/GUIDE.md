@@ -4,9 +4,9 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_0.1_Billing_Project_WIX.html`, reviewed at blob `e8752816c7f6df23f638d88cde838439debb5a23`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_0.1_Billing_Project_WIX.html`, reviewed at blob `942926b9d8fb2dfb282e1f1cbd06c74ba68c2fdf`. Learners read that page on the course site; this guide keeps its prose.
 
-Before the kit builds anything, someone has to pay for it, and someone has to be told when it costs more than planned. This lesson sets up the three things every later lesson stands on: a billing account, on the free trial or paid; a project of its own for the lane, linked to that account, with the 40 APIs the kit uses switched on; and a budget that emails at the kit's own thresholds. Then it prices what the lane will cost per day just for existing, from the kit's Terraform, so you know the number before lesson 0.3 starts the meter.
+Before the kit builds anything, someone has to pay for it, and someone has to be told when it costs more than planned. This lesson sets up the three things every later lesson stands on: a billing account, on the free trial or paid; a project of its own for the lane, linked to that account, with the 41 APIs the kit uses switched on; and a budget that emails at the kit's own thresholds. Then it prices what the lane will cost per day just for existing, from the kit's Terraform, so you know the number before lesson 0.3 starts the meter.
 
 - What a billing account, a budget and a project are
 
@@ -18,7 +18,7 @@ Before the kit builds anything, someone has to pay for it, and someone has to be
 
 - The project: create it, link it, make it the default
 
-- The APIs: 40 services in two calls
+- The APIs: 41 services in three calls
 
 - The budget: an alert on the billing account
 
@@ -28,7 +28,7 @@ Before the kit builds anything, someone has to pay for it, and someone has to be
 
 - Verify it yourself: the checklist
 
-You will learn how Google Cloud bills (an account that pays, projects that spend, a budget that only emails) and what the DocuMind lane costs per day just for existing. Then you will set it up: a billing account, the project `documind-ai-YOUR-ID` with the kit's 40 APIs, a budget alert at the kit's thresholds, and the lane's standing cost written down.
+You will learn how Google Cloud bills (an account that pays, projects that spend, a budget that only emails) and what the DocuMind lane costs per day just for existing. Then you will set it up: a billing account, the project `documind-ai-YOUR-ID` with the kit's 41 APIs, a budget alert at the kit's thresholds, and the lane's standing cost written down.
 
 ### What a billing account, a budget and a project are
 
@@ -122,23 +122,23 @@ Put your account ID from step 3 and your project ID in the first two lines, then
 
 The first command asked Resource Manager for a new project with your ID, and switched gcloud to it. The second linked the project to the billing account and printed its billing information: the account's name and `billingEnabled: true`, the two things the kit reads before it plans (step 7). From this moment the project can spend, but nothing in it can: no resource exists, and the kit's APIs are not on yet. An ID someone already holds answers with an error on the first command: choose another suffix and run the block again.
 
-### The APIs: 40 services in two calls
+### The APIs: 41 services in three calls
 
 Why an API has to be switched on, the kit's list and the target that runs it, and a loop that counts them.
 
 #### Definition
 
-An API, in Google Cloud's sense, is a product switched on for one project: Cloud Run, Firestore, Vertex AI. Until it is enabled, every call to it from that project is refused, whoever makes it, with a message that names the API. Enabling costs nothing; using is what bills. The kit needs 40 of them before Terraform can create anything, and keeps the list in one block of `commands/lesson-12.1.sh`, the one marked `ENABLE_APIS`. It is two calls rather than one because the Service Usage API takes at most 20 services per request, as the block's own comment records. `make apis` runs that block unchanged:
+An API, in Google Cloud's sense, is a product switched on for one project: Cloud Run, Firestore, Vertex AI. Until it is enabled, every call to it from that project is refused, whoever makes it, with a message that names the API. Enabling costs nothing; using is what bills. The kit needs 41 of them before Terraform can create anything, and keeps the list in one block of `commands/lesson-12.1.sh`, the one marked `ENABLE_APIS`. It is three calls rather than one because the Service Usage API takes at most 20 services per request, as the block's own comment records. `make apis` runs that block unchanged:
 
-You have no clone yet, so you paste the same lines. They are the block exactly, taken from the kit when this page was built: the first sets gcloud's project, which step 4 already did, and the next two enable the list.
+You have no clone yet, so you paste the same lines. They are the block exactly, taken from the kit when this page was built: the first sets gcloud's project, which step 4 already did, and the next three enable the list.
 
 #### Count them
 
 A short loop compares the project's enabled services with the kit's list and names any that is missing. Run it now, and again whenever a later lesson's command complains that an API is disabled.
 
-#### What the 40 are for
+#### What the 41 are for
 
-Two of them belong to this lesson: `cloudbilling` lets Terraform read which billing account pays for the project, and `billingbudgets` lets it create the kit's budget on that account (step 7); your own read-back in step 6 goes through the second. The kit's read-only `make preflight` checks 22 of the 40 by name before a plan, and names `make apis` for any that is missing.
+Two of them belong to this lesson: `cloudbilling` lets Terraform read which billing account pays for the project, and `billingbudgets` lets it create the kit's budget on that account (step 7); your own read-back in step 6 goes through the second. The kit's read-only `make preflight` checks 22 of the 41 by name before a plan, and names `make apis` for any that is missing.
 
 Each `gcloud services enable` became one operation on the Service Usage API, and gcloud waited for it to finish. Nothing that bills was created: an enabled API with no resource behind it costs nothing. The loop's last line counts every service enabled on the project, the kit's and any others, so it is not meant to equal the kit's list; the line before it is the check. The project now accepts calls to every service the kit uses.
 
@@ -216,7 +216,7 @@ That sentence names the index, the two Cloud SQL instances and the cluster. Read
 
 #### The six, as the kit declares them
 
-The index. One replica (`min_replica_count = 1`), on the machine its shard size names. `vector.tf` does not choose the shard size: the index is created without one, the API picks it, and the comment above the map records an existing index that came back `MEDIUM`. A small shard runs one `e2-standard-2`, Rs 230 a day; a medium one runs one `e2-standard-16`, Rs 1,839 a day. Once the index exists its description names its shard size; until then this page carries both.
+The index. One replica (`min_replica_count = 1`), on the machine its shard size names. `vector.tf` creates a new index with a small shard, so the lane lesson 0.3 deploys gets one. An index created before the kit named the size keeps the one the API picked, and the comment above the map records an existing index that came back `MEDIUM`. A small shard runs one `e2-standard-2`, Rs 230 a day; a medium one runs one `e2-standard-16`, Rs 1,839 a day. Once the index exists its description names its shard size; this page carries both.
 
 Spanner. Enterprise edition, which Spanner Graph needs, at 100 processing units: a tenth of a node, the smallest a provisioned instance can be, in `regional-asia-south1`. The comment above it says it bills by the hour while it exists, and asks for it to be priced on the Spanner page for `regional-asia-south1` before a cohort. That pricing is the table below: Rs 351 a day.
 
@@ -250,7 +250,7 @@ Storage, which bills by the gigabyte-month: Firestore, the buckets, BigQuery, th
 
 The index, Spanner, both databases and the connector are not touched by it either. Only `make down` removes them, by destroying what the Terraform made, and the last lines it prints name the one action that stops everything at once, which is why the lane gets a project of its own:
 
-This is the lesson's proof. In your notes, with today's date: Rs 1,057 a day with a small-shard index, Rs 2,666 a day with a medium one; Rs 2,114 or Rs 5,333 for a weekend left up. Plan for the larger until you know which machine your index got. Lesson 0.4 comes back to this number when it switches the lane off.
+This is the lesson's proof. In your notes, with today's date: Rs 1,057 a day with a small-shard index, Rs 2,666 a day with a medium one; Rs 2,114 or Rs 5,333 for a weekend left up. The lane lesson 0.3 deploys gets the small-shard index; the larger figure is for an index created before the kit named its size. Lesson 0.4 comes back to this number when it switches the lane off.
 
 ### Verify it yourself: the checklist
 
@@ -258,7 +258,7 @@ Eight checks, each one block above, each with the value that proves it on your a
 
 One more read-only block first: the project's billing information, the record the kit's helper reads in step 7, and gcloud's default project.
 
-There is no lane yet, and nothing bills. Your billing account carries a budget, Billing account guard: 5000 a month in its currency, emails at 50, 80 and 100 percent of actual spend and at a 120 percent forecast, measured before the trial's promotional credit. Your project, `documind-ai-YOUR-ID`, exists, is linked to that account, is gcloud's default in Cloud Shell, and has the kit's 40 APIs enabled, which cost nothing. The lane's standing cost is in your notes: Rs 1,057 to Rs 2,666 a day, from the moment the lane exists. Lesson 0.2 clones the kit and proves a first success at Rs 0; lesson 0.3 deploys the lane into this project, adds the kit's own DocuMind monthly budget for it, and starts that meter.
+There is no lane yet, and nothing bills. Your billing account carries a budget, Billing account guard: 5000 a month in its currency, emails at 50, 80 and 100 percent of actual spend and at a 120 percent forecast, measured before the trial's promotional credit. Your project, `documind-ai-YOUR-ID`, exists, is linked to that account, is gcloud's default in Cloud Shell, and has the kit's 41 APIs enabled, which cost nothing. The lane's standing cost is in your notes: Rs 1,057 to Rs 2,666 a day, from the moment the lane exists. Lesson 0.2 clones the kit and proves a first success at Rs 0; lesson 0.3 deploys the lane into this project, adds the kit's own DocuMind monthly budget for it, and starts that meter.
 
 Netsetos GenAI on GCP · Module 0 Setup · Lesson 0.1 Set up the Google Cloud billing account, budget and project · v5.0
 

@@ -90,16 +90,15 @@ IDE adaptation: Reject semantic-cache hits or a fallback-only pool before compar
 Expected shape, not a promised result:
 
 ```text
-top_k 5: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 17xx ms of 28xx | rerank_fallback 0 | cache_hit none
-   3 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
-   [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'NP-03 ...'
-   [2] score 0.8xxx  #  4  hr_policy_2026.md          p.-  '...'
-   [3] score 0.6xxx  #  2  hr_policy_2026.md          p.-  '...'
-   sorted by score, the ranker's order among them: ['#1', '#4', '#2']
+top_k 5: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 2xxx ms of 4xxx | tokens_in 1xxx | rerank_fallback 0 | cache_hit none
+   1 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
+   [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'A confirmed employee at grade E3 or above se'
+   sorted by score, the ranker's order among them: ['#1']
 
-top_k 20: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 3xxx ms of 4xxx | rerank_fallback 0 | cache_hit none
-   4 citations: ...
-   sorted by score, the ranker's order among them: ['#1', '#4', '#2', '#7']
+top_k 20: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 2xxx ms of 4xxx | tokens_in 5xxx | rerank_fallback 0 | cache_hit none
+   1 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
+   [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'A confirmed employee at grade E3 or above se'
+   sorted by score, the ranker's order among them: ['#1']
 
 saved /tmp/ans53_5.json and /tmp/ans53_20.json for steps 4, 7 and 8
 ```
@@ -120,9 +119,9 @@ Expected shape, not a promised result:
 pool: 20 current ids from the index in 9xx ms, every one found_by vector
 ranker: 20 of 20 back in 2xx ms, 20 records sent, model semantic-ranker-fast-004
    rank 1  score 0.9xxx  pool # 1  NP-03     hr_policy_2026.md
-   rank 2  score 0.xxxx  pool # x  ...       hr_policy_2026.md
+   rank 2  score 0.xxxx  pool # x  ...       ...
    ...
-the API's cited ids, by score: ['#1', '#4', '#2'] | by hand, first 5: ['#1', '#4', '#2', '#7', '#3']
+the API's citations, by score: ['pool #1'] | by hand, first 5: ['pool #1', 'pool #3', 'pool #10', 'pool #6', 'pool #18']
 every citation is in the by-hand top 5: True | in the same relative order: True
 saved /tmp/pool53.json for steps 5, 7 and 8
 ```
@@ -159,9 +158,7 @@ Expected shape, not a promised result:
 
 ```text
 candidate: rerank_fallback 1 | rerank_ms 1x | pool 20 | answerable True
-   score 0.7xxx  #1  hr_policy_2026.md
-   score 0.7xxx  #4  hr_policy_2026.md
-   score 0.6xxx  #2  hr_policy_2026.md
+   score 0.6xxx  #1  hr_policy_2026.md
 2026-09-2xT1x:xx:xx.xxxxxxZ	acme	DeadlineExceeded
 ```
 
@@ -322,6 +319,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.3_Rerank_WIX.html`. All 46 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `8add3ea3d051cb7b8df416e54ddb7e3cb12dc3a9`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_2.3_Rerank_WIX.html`. All 46 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `6ea6bccc9d84443d85de0ff2d91c6334d71f6e2a`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

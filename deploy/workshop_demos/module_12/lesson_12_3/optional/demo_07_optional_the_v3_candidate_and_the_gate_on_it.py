@@ -3,8 +3,8 @@
 Do it Then the chapter's gate, on v3. A tidy format is worth nothing if the answers under it fail:
 
 Run order inside this file:
-1. Do it (source window 28)
-2. Do it (source window 30)
+1. Do it (source window 36)
+2. Do it (source window 38)
 
 Prerequisites: setup_prepare.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -91,8 +91,8 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_28', step_01_optional_the_v3_candidate_and_the_gate_on),
-        ('source_30', step_02_optional_the_v3_candidate_and_the_gate_on),
+        ('source_36', step_01_optional_the_v3_candidate_and_the_gate_on),
+        ('source_38', step_02_optional_the_v3_candidate_and_the_gate_on),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

@@ -1,0 +1,441 @@
+{
+  "note": "Production gotchas (workshop lesson 11.7): what a lane does in production that no eval row shows. Each entry gives the symptom, why no eval row catches it, a drill that reproduces it (offline: Rs 0, no lane, run by make gotcha-drill; live: on a lane, the author's), a detector that finds it on a lane (make gotcha-detect; it only reads), the lever that fixes it, the lessons involved (the manifest's numbers), the cost, and the kit lines it rests on (evidence: each text must still be in that file word for word). signal is loud when something pages or goes red on its own (signal_by says what), silent when nothing does; status is open, guarded (the kit's own paths avoid it) or fixed (fixed_by names the test that proves it). An offline drill prints REPRODUCED with its marker and, where it shows the lever, CLEARED with its cleared line; when the kit changes so that a drill no longer reproduces, commands/tests/test_gotchas.py fails until the entry moves to fixed. commands/gotchas.py reads this file; it changes nothing on a lane except in a live drill.",
+  "gotchas": [
+    {
+      "id": "pinned-traffic",
+      "title": "A service pinned to one revision never serves a later change",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "Traffic held on a named revision stays there. A gcloud run services update, or a make deploy-services of any service but documind-api (whose recipe moves the API's traffic itself), then makes a revision that takes 0% of the traffic: the service's template shows the new setting while every request is answered by the old revision. make limits reads /health from the revision that answers, so it reports the old value, and nothing fails. documind-api is held by name on purpose (make promote, make rollback and make deploy-services move its traffic by name), so a hand update of the API never serves; documind-chat is held after a rollback by traffic.",
+      "why_no_eval": "An eval row asks whichever revision serves, and the old one passes. Nothing in a row says that the revision you changed is not the one answering.",
+      "drill": {
+        "offline": {
+          "how": "A stand-in documind-chat, shaped like gcloud run services describe: its traffic pinned to the serving revision by name, CHAT_MAX_MODEL_CALLS=3 set with gcloud run services update, the cap read as make limits reads it from /health; then gcloud run services update-traffic --to-latest, and the setting put back.",
+          "marker": "the new revision takes 0% of the traffic, and /health still reports the old cap",
+          "cleared": "after --to-latest the new revision takes the traffic, and /health reports the new cap"
+        },
+        "live": {
+          "run": "make gotcha-drill ID=pinned-traffic LIVE=1 PROJECT=documind-ai-YOUR-ID REGION=<region>",
+          "changes": "documind-chat for a few minutes: its traffic pinned to the serving revision, then a revision with CHAT_MAX_MODEL_CALLS=3, then traffic to the latest revision",
+          "restores": "CHAT_MAX_MODEL_CALLS as it was (removed when it was unset) and traffic on the latest revision, from a finally block, so a failure restores them too; it refuses to start when the chat's traffic is already pinned",
+          "cost": "Rs 0: no model call, four /health reads"
+        }
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=pinned-traffic PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "gcloud run services describe for each service make deploy-services deploys (status.traffic, status.latestCreatedRevisionName), and gcloud run revisions describe of the serving revision when a newer one takes no traffic",
+        "finds": "a service other than documind-api whose traffic does not follow its latest revision, and on any service a revision newer than the one serving that takes no traffic, carries no tag and holds other settings",
+        "pages": null
+      },
+      "lever": "Move the traffic, by name or to the latest revision. documind-chat: gcloud run services update-traffic documind-chat --to-latest (make limits-drill refuses until you do). documind-api: change it through a candidate (make candidate or make release-candidate), the gate, then make promote, which moves the traffic to that revision by name.",
+      "lessons": ["5.5", "6.7", "11.3"],
+      "cost": "Rs 0, offline and live",
+      "evidence": [
+        ["commands/limits-drill.sh", "latest_takes_all() {"],
+        ["Makefile", "--no-traffic pins the service to a named revision, and Cloud Run then leaves every later deploy at 0%"],
+        ["Makefile", "--to-revisions $$CAND=100"],
+        ["Makefile", "--to-revisions $$PREV=100"]
+      ]
+    },
+    {
+      "id": "deploy-drops-hotfix",
+      "title": "A routine make deploy-services drops a setting made by hand",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "A setting put on a running service with gcloud run services update --update-env-vars (lesson 2.5's QUERY_REWRITE=on, a chat cap, a Change-it left in place) holds until the next routine make deploy-services. Each deploy script sets its service's whole environment with --set-env-vars, so a variable the script does not list is gone, and a switch the deploy does carry (ARMOR, ROUTING, GENERATOR_MODEL, ADMIN_EMAILS) goes back to the Makefile's default unless it is passed again. The service carries on with the default, without a word.",
+      "why_no_eval": "The gate judged the revision that had the setting. After the deploy the default serves, the rows still pass, and the setting that made the difference is simply not there.",
+      "drill": {
+        "offline": {
+          "how": "A stand-in documind-chat: CHAT_MAX_MODEL_CALLS=8 set by hand, then make deploy-services SCRIPTS=commands/lesson-12.8.sh applied as that script's own --set-env-vars list, with CHAT_EXTRA_ENV empty as the Makefile leaves it; then the same deploy carrying the value in CHAT_EXTRA_ENV, as a fork that keeps the setting would.",
+          "marker": "the routine deploy dropped the hand-set CHAT_MAX_MODEL_CALLS, and /health reports the default again",
+          "cleared": "the deploy that carries CHAT_MAX_MODEL_CALLS keeps it, and the detector finds nothing left to drop"
+        },
+        "live": {
+          "run": "make gotcha-drill ID=deploy-drops-hotfix LIVE=1 PROJECT=documind-ai-YOUR-ID REGION=<region> ADMIN_EMAILS=<you>",
+          "changes": "documind-chat: CHAT_MAX_MODEL_CALLS=8, then make deploy-services SCRIPTS=commands/lesson-12.8.sh GIT_SHA=<the serving image's tag>, which rebuilds the chat image from this checkout; it refuses unless this checkout is at that commit and the deploy would change nothing else",
+          "restores": "the deploy removes the variable itself; after a failure a finally block removes it",
+          "cost": "Rs 0 in model calls; one Cloud Build of the chat image, about four minutes"
+        }
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=deploy-drops-hotfix PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "gcloud run services describe for the seven services make deploy-services deploys, against each deploy script's --set-env-vars list and the Makefile's defaults",
+        "finds": "each variable the next make deploy-services would drop, and each switch it would put back to the Makefile's default unless you pass it",
+        "pages": null
+      },
+      "lever": "Carry the setting in the deploy, so that every deploy keeps it. A switch make deploy-services passes goes on its command line every time (make deploy-services ARMOR=on ADMIN_EMAILS=you@example.com); one it does not pass goes into the deploy script's --set-env-vars in your fork, reviewed like any change (for documind-chat, CHAT_EXTRA_ENV, which the Makefile empties). Until then, run the detector before each deploy and set again what it lists.",
+      "lessons": ["0.3", "2.5", "5.5"],
+      "cost": "Rs 0 offline; live, one chat image build",
+      "evidence": [
+        ["commands/lesson-12.8.sh", "--set-env-vars=\"^|^GOOGLE_CLOUD_PROJECT=$PROJECT|DOCUMIND_PROFILE=gcp"],
+        ["commands/lesson-12.8.sh", "${CHAT_EXTRA_ENV-}\""],
+        ["Makefile", "CHAT_EXTRA_ENV=; \\"],
+        ["commands/lesson-12.2.sh", "--set-env-vars=\"^|^GOOGLE_CLOUD_PROJECT=$PROJECT|RETRIEVAL_BACKEND="],
+        ["services/chat/limits.py", "MAX_MODEL_CALLS = int(os.environ.get(\"CHAT_MAX_MODEL_CALLS\", \"12\"))"]
+      ]
+    },
+    {
+      "id": "ungated-api-release",
+      "title": "make deploy-services and make up put an ungated API revision live",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "After a gated make promote, a routine make deploy-services (whose default SCRIPTS include commands/lesson-12.2.sh) or a make up redeploys documind-api from this checkout and moves 100% of its traffic to the revision it just made, by name, with no gate. GET /version names a sha no make eval-live judged, and nothing says so.",
+      "why_no_eval": "The gate runs on a candidate. make deploy-services makes no candidate, so no row judges the revision before its traffic moves.",
+      "drill": {
+        "offline": {
+          "how": "A stand-in documind-api after make release-candidate and make promote, then make deploy-services with the Makefile's default SCRIPTS: lesson-12.2.sh's gcloud run deploy, then the Makefile's own update-traffic to the revision that deploy made; then the same deploy, from the same gated state, with SCRIPTS that leave lesson-12.2.sh out.",
+          "marker": "make deploy-services moved documind-api's traffic to a revision no gate judged",
+          "cleared": "make deploy-services without lesson-12.2.sh left documind-api on the gated revision"
+        },
+        "live": null
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=ungated-api-release PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "documind-api's status.traffic, and this checkout's deploy/.candidate-revision and deploy/.previous-revision",
+        "finds": "a serving revision this checkout neither recorded as a candidate nor rolled back to: make deploy-services, make up or a hand update-traffic put it live",
+        "pages": null
+      },
+      "lever": "Deploy the other services with SCRIPTS that leave out commands/lesson-12.2.sh (make deploy-services SCRIPTS=commands/lesson-12.8.sh, for example), and change the API only through make release-candidate, make eval-live API=<the candidate's tag URL> and make promote. The kit does not gate make deploy-services itself.",
+      "lessons": ["0.3", "11.1", "11.2"],
+      "cost": "Rs 0 (offline only: on a lane the drill would be the hazard itself)",
+      "evidence": [
+        ["Makefile", "@if echo \"$(SCRIPTS)\" | grep -q lesson-12.2.sh; then"],
+        ["Makefile", "--to-revisions $$REV=100"],
+        ["Makefile", "$(MAKE) drift secrets build-access build deploy-services"]
+      ]
+    },
+    {
+      "id": "switch-rides-into-candidate",
+      "title": "A switch set on one candidate rides into the next",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "Environment variables merge across revisions: gcloud run services update --update-env-vars keeps every variable already on the template. A switch set on a candidate (lesson 2.5's QUERY_REWRITE=on, lesson 11.6's SPEND_PCT=85) and not taken off is on the next candidate too, make release-candidate's and make candidate's included, and the gate judges a revision with a setting nobody asked for.",
+      "why_no_eval": "The gate judges what the candidate does, not where its settings came from: a switch that rode in looks like part of the release.",
+      "drill": {
+        "offline": {
+          "how": "A stand-in documind-api: lesson 2.5's tagged candidate with QUERY_REWRITE=on, left as it is, then make release-candidate; then 2.5's undo (--remove-env-vars) and make release-candidate again.",
+          "marker": "the new candidate carries QUERY_REWRITE=on, which nobody set on it",
+          "cleared": "after the undo, the next candidate differs from the serving revision in GIT_SHA alone"
+        },
+        "live": null
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=switch-rides-into-candidate PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "the revision the candidate tag names and the revision that serves (gcloud run revisions describe, both)",
+        "finds": "each variable on the candidate that differs from what serves, apart from those make candidate and make release-candidate set themselves",
+        "pages": null
+      },
+      "lever": "Take a candidate's switch off the template once it has been judged (lessons 2.5's and 11.6's undo: gcloud run services update ... --remove-env-vars NAME), and run the detector before make eval-live judges the next candidate. GIT_SHA and GENERATOR_LOCATION are guarded already: make release-candidate sets GIT_SHA, and make candidate removes GENERATOR_LOCATION when it is not given (F43).",
+      "lessons": ["2.5", "4.4", "11.2", "11.6"],
+      "cost": "Rs 0",
+      "evidence": [
+        ["Makefile", "# Env vars MERGE across revisions"],
+        ["Makefile", "--update-env-vars GIT_SHA=$(GIT_SHA)"],
+        ["Makefile", "--remove-env-vars GENERATOR_LOCATION"]
+      ]
+    },
+    {
+      "id": "rollback-keeps-template",
+      "title": "make rollback moves the traffic back, not the settings",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "make rollback moves documind-api's traffic to the revision that served before make promote. The service's template still holds the rolled-back revision's settings, so the next gcloud run services update or make release-candidate starts from them: lesson 11.3's mistyped GENERATOR_MODEL comes back on the next candidate.",
+      "why_no_eval": "The gate judges the next candidate, which fails again for what looks like a new reason; the serving revision passes because it never had the bad setting.",
+      "drill": {
+        "offline": {
+          "how": "A stand-in documind-api: make candidate GENERATOR_MODEL=gemini-3.6-flsh, make promote, make rollback, then make release-candidate; then lesson 11.3's repair (make candidate GENERATOR_MODEL=gemini-3.6-flash) before the release.",
+          "marker": "the next candidate inherits the rolled-back revision's GENERATOR_MODEL=gemini-3.6-flsh",
+          "cleared": "after the repair, the next candidate's GENERATOR_MODEL is the serving revision's"
+        },
+        "live": null
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=rollback-keeps-template PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "documind-api's template (spec.template) and its serving revision (gcloud run revisions describe), and this checkout's deploy/.candidate-revision and deploy/.previous-revision",
+        "finds": "settings on the template that the serving revision does not have, after make rollback or an update nobody moved the traffic to",
+        "pages": null
+      },
+      "lever": "Repair the template before the next release: put the setting right on a candidate (lesson 11.3: make candidate GENERATOR_MODEL=gemini-3.6-flash), gate it and promote it. A rollback buys time; the repair is a release.",
+      "lessons": ["11.3"],
+      "cost": "Rs 0",
+      "evidence": [
+        ["Makefile", "the fastest rollback there is, because that revision never went away"],
+        ["Makefile", "--to-revisions $$PREV=100"],
+        ["Makefile", "--update-env-vars GIT_SHA=$(GIT_SHA)"]
+      ]
+    },
+    {
+      "id": "tag-audience-401",
+      "title": "A token minted for the candidate's tag URL is refused on every row",
+      "signal": "loud",
+      "signal_by": "the gate itself: every row is a 401, so make eval-live fails",
+      "status": "guarded",
+      "symptom": "Called through its tag URL (https://candidate---documind-api-NUMBER.REGION.run.app) with an identity token whose audience is that tag URL, the API refuses every request with 401: it verifies bearer tokens against SELF_URL, the service's canonical URL. A gate run read 401 on all 64 rows (F42).",
+      "why_no_eval": "It is the eval that fails, for a reason that is not the candidate's: the rows never reach a model, so the gate reports a broken candidate instead of a wrong audience.",
+      "drill": {
+        "offline": null,
+        "live": {
+          "run": "lesson 11.2's pair on a candidate's tag URL: GET /version with a token minted for the tag URL (401), then with one minted for the service's canonical URL (200)",
+          "changes": "nothing",
+          "restores": "nothing to restore",
+          "cost": "Rs 0"
+        }
+      },
+      "detector": {
+        "kind": "log",
+        "run": "make gotcha-detect ID=tag-audience-401 PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "Cloud Run's request log for documind-api",
+        "finds": "401 answers on a tag URL of documind-api",
+        "pages": null,
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-api\" AND log_id(\"run.googleapis.com/requests\") AND httpRequest.status=401 AND httpRequest.requestUrl:\"---documind-api-\"",
+        "group_by": ["resource.labels.revision_name"]
+      },
+      "lever": "Mint for the canonical URL whichever URL you call (--audiences=https://documind-api-NUMBER.REGION.run.app). make eval-live and the CD workflow already do; a script of your own must do the same.",
+      "lessons": ["4.3", "4.4", "11.2"],
+      "cost": "Rs 0",
+      "evidence": [
+        ["Makefile", "a token minted for a candidate's tag URL (make candidate) was refused"],
+        ["shared/iap.py", "def bearer_email(headers, audience: str) -> str:"]
+      ]
+    },
+    {
+      "id": "looping-model-stopped",
+      "title": "A looping model is stopped quietly, with HTTP 200",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "A model that keeps asking for searches reaches CHAT_MAX_MODEL_CALLS, the turn's rupees or its deadline. The turn ends with HTTP 200 and \"I stopped this turn at one of its limits ...\", and the chat row says stopped_by. The cap holds the cost, but no alert policy reads stopped_by, so a prompt or a model that loops on one kind of question goes unnoticed.",
+      "why_no_eval": "Eval rows are questions someone wrote, and the agent answers them within its limits; the loop shows on a production question nobody wrote, and its answer is a polite 200.",
+      "drill": {
+        "offline": {
+          "how": "services/chat/limits.py's own Meter, at the defaults, against a model that asks for one more search on every call; then every alert policy and log metric in terraform/*.tf searched for one that reads stopped_by or the chat rows.",
+          "marker": "the turn stopped at a limit and answered HTTP 200, and no alert policy or log metric in terraform/ reads stopped_by",
+          "cleared": null
+        },
+        "live": {
+          "run": "make limits-drill STOP=model_calls PROJECT=documind-ai-YOUR-ID REGION=<region>",
+          "changes": "CHAT_MAX_MODEL_CALLS=1 on documind-chat for a minute or two: every chat turn stops meanwhile",
+          "restores": "limits-drill.sh's trap puts the variable back, and its second smoke must pass",
+          "cost": "Rs 0 offline; live, about eight chat turns (an estimate: under Rs 10)"
+        }
+      },
+      "detector": {
+        "kind": "log",
+        "run": "make gotcha-detect ID=looping-model-stopped PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "the chat rows in Cloud Logging",
+        "finds": "turns that stopped at a limit, by limit and brain",
+        "pages": null,
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-chat\" AND jsonPayload.event=\"chat\"",
+        "count_if": "jsonPayload.stopped_by",
+        "group_by": ["jsonPayload.stopped_by", "jsonPayload.brain"]
+      },
+      "lever": "Watch the field: the detector's count per day is the countermeasure until an alert policy reads the chat rows (the kit has none). A brain that loops on one kind of question gets a prompt or tool fix (lessons 5.5 and 5.7), judged on a candidate.",
+      "lessons": ["5.5", "5.7"],
+      "cost": "Rs 0 offline; live, about eight chat turns",
+      "evidence": [
+        ["services/chat/limits.py", "A tripped limit ends the turn with HTTP 200, STOP_ANSWER as the answer and limits.stopped_by naming the"],
+        ["services/chat/agent.py", "\"rag_cost_usd\": used[\"rag_cost_usd\"], \"stopped_by\": used[\"stopped_by\"],"],
+        ["commands/limits-drill.sh", "STOP=model_calls"]
+      ]
+    },
+    {
+      "id": "abandoned-call-bills",
+      "title": "A search the turn abandoned still runs, and rag-api bills it",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "A tool call past its budget is cut: the model reads a timeout and the turn moves on. A call that was already running goes on until RAG_TIMEOUT_S, rag-api answers it and writes its own row with its cost. The chat row names the call in tool_timeouts and leaves its cost out of rag_cost_usd, so the turn's rupees, and its Rs 5 cap, leave out a search the month is billed for.",
+      "why_no_eval": "An eval row records the answer and the turn's own figures; the orphaned call finishes later, on another service, after the row is written.",
+      "drill": {
+        "offline": {
+          "how": "services/chat/limits.py's own timed wrapper (timed_async, the ADK brain's) on one search that takes four seconds, cut at its one-second budget: the turn's wait, what the model reads, the chat's log line, and what may_commit() says when the search ends.",
+          "marker": "a running call cut at its budget ran to its end after the turn had let it go",
+          "cleared": null
+        },
+        "live": null
+      },
+      "detector": {
+        "kind": "log",
+        "run": "make gotcha-detect ID=abandoned-call-bills PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "the chat rows in Cloud Logging",
+        "finds": "turns that abandoned a call: each one a search rag-api may still have answered and billed",
+        "pages": null,
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-chat\" AND jsonPayload.event=\"chat\"",
+        "count_if": "jsonPayload.tool_timeouts",
+        "group_by": ["jsonPayload.brain"]
+      },
+      "lever": "Reconcile the month on rag-api's rows (make usage, tenant_daily), which hold every answer rag-api billed, never on the chat rows' rag_cost_usd: the turn's figure is a floor. The detector counts the turns that abandoned a call.",
+      "lessons": ["5.5", "11.5"],
+      "cost": "Rs 0",
+      "evidence": [
+        ["services/chat/limits.py", "one already running goes on until RAG_TIMEOUT_S, and rag-api still bills it on its own row"],
+        ["services/chat/limits.py", "async def timed_async(name: str, fn, /, **kwargs):"],
+        ["services/chat/limits.py", "abandoned. A call outside a timed wrapper (the direct brain, a notebook) is always delivered."]
+      ]
+    },
+    {
+      "id": "agent-spend-outside-the-month",
+      "title": "The agents' own model calls are missing from the month's spend",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "The chat row carries what the agent's own model calls cost (cost_usd). tenant_daily and make usage read rag-api's rows only, and rag-api alone adds to the budget breaker's month counter. An agent that reasons over many calls spends rupees that no report of the month shows and no breaker sees.",
+      "why_no_eval": "The eval scores answers, not the bill, and the spend reports reconcile to the paisa with the rows they read, so nothing looks wrong.",
+      "drill": {
+        "offline": {
+          "how": "One stand-in turn on the langchain brain, three model calls and one search, as the chat row and rag-api's row record it, put through the event lists terraform/sql/tenant_daily.sql and evals/usage_rows.py select, beside the files that write the breaker's month counter.",
+          "marker": "the agent's own model calls are in none of them: tenant_daily and make usage read rag-api's rows only, and rag-api alone adds to the breaker's counter",
+          "cleared": null
+        },
+        "live": null
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=agent-spend-outside-the-month PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "the chat rows and rag-api's query, stream and media rows in Cloud Logging",
+        "finds": "rupees on the chat rows, beside the rupees on rag-api's rows that the month's reports count",
+        "pages": null
+      },
+      "lever": "Add the chat rows' cost_usd when you read the month: the detector's figure, or a query of your own on the rows tenant_daily leaves out (terraform's log sink copies the chat rows into the same BigQuery table; their event is chat). Until a kit change counts them, the turn's own cap (CHAT_TURN_BUDGET_INR, Rs 5 a turn) is the only control on that spend.",
+      "lessons": ["5.5", "11.5", "11.6"],
+      "cost": "Rs 0",
+      "evidence": [
+        ["services/chat/agent.py", "make usage read rag-api's rows and not this one, so nothing is counted twice"],
+        ["terraform/sink.tf", "jsonPayload.event = \"chat\""],
+        ["services/chat/limits.py", "counter and the tenant_daily view still count rag-api's rows only"],
+        ["terraform/sql/tenant_daily.sql", "WHERE jsonPayload.event IN (\"query\", \"stream\", \"media\")"],
+        ["evals/usage_rows.py", "AND (jsonPayload.event=\"query\" OR jsonPayload.event=\"stream\" OR jsonPayload.event=\"media\")"]
+      ]
+    },
+    {
+      "id": "vector-search-fallback",
+      "title": "Vector Search fails and Firestore answers, silently",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "When the Vector Search query fails (an undeployed index, a wrong deployed index id, an endpoint it cannot reach), rag-api answers from Firestore's own vector index and logs one vector_search_fallback warning. Answers keep coming, with Firestore's latency and ranking, and no alert policy reads the line.",
+      "why_no_eval": "Firestore holds the same vectors, so the golden rows still pass; the gate cannot tell which store answered.",
+      "drill": {
+        "offline": null,
+        "live": {
+          "run": "lesson 2.4's drill: a candidate with VECTOR_DEPLOYED_INDEX_ID set to an index that does not exist, one question on its tag URL, then the undo",
+          "changes": "a no-traffic candidate of documind-api, removed by the drill's own undo",
+          "restores": "lesson 2.4's undo cell",
+          "cost": "about Rs 1: one answer"
+        }
+      },
+      "detector": {
+        "kind": "log",
+        "run": "make gotcha-detect ID=vector-search-fallback PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "rag-api's warnings in Cloud Logging",
+        "finds": "questions answered from Firestore because the Vector Search query failed, by tenant",
+        "pages": null,
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-api\" AND jsonPayload.event=\"vector_search_fallback\"",
+        "group_by": ["jsonPayload.tenant"]
+      },
+      "lever": "Read the line's error, then repair the index (make vector-status, make backfill-vectors) or the deployed index id the API carries. Until an alert policy reads the line, the detector is the watch.",
+      "lessons": ["2.4", "11.4"],
+      "cost": "Rs 0 to detect; about Rs 1 to drill",
+      "evidence": [
+        ["services/rag-api/retriever.py", "logging.warning(json.dumps({\"event\": \"vector_search_fallback\","]
+      ]
+    },
+    {
+      "id": "poison-upload",
+      "title": "A poison upload is quiet for an hour, then pages",
+      "signal": "loud",
+      "signal_by": "the alert policy Ingest dead-letter queue holds messages, once the twelfth delivery fails",
+      "status": "open",
+      "symptom": "An object the worker can never parse (make poison writes a zero-byte one) is refused with a 400 and an ingest_poison line. Pub/Sub retries it with backoff, twelve deliveries over about an hour, then moves it to the dead-letter topic, and only then does a policy page. Ingest failed never fires: a poison message is ingest_poison, not ingest_failed. The document is simply not there.",
+      "why_no_eval": "Eval rows ask about documents that were indexed; a document that never was is in no row.",
+      "drill": {
+        "offline": null,
+        "live": {
+          "run": "make poison TENANT=acme PROJECT=documind-ai-YOUR-ID, then make dlq PROJECT=documind-ai-YOUR-ID about an hour later",
+          "changes": "one zero-byte object in acme's uploads prefix, and its message in the dead-letter queue",
+          "restores": "remove the object and acknowledge the message, as the policy's documentation says",
+          "cost": "Rs 0"
+        }
+      },
+      "detector": {
+        "kind": "log",
+        "run": "make gotcha-detect ID=poison-upload PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "the ingest worker's lines in Cloud Logging",
+        "finds": "uploads the worker refused as poison, before the dead-letter policy pages on them",
+        "pages": "Ingest dead-letter queue holds messages",
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"documind-ingest\" AND jsonPayload.event=\"ingest_poison\"",
+        "group_by": ["jsonPayload.error"]
+      },
+      "lever": "make dlq shows the message (objectId, eventTime, deliveryAttempt). Fix or remove the object, then acknowledge the message: gcloud pubsub subscriptions pull ingest-dlq-sub --auto-ack --limit 1. The detector finds the poison an hour before the policy does.",
+      "lessons": ["1.5", "11.5"],
+      "cost": "Rs 0",
+      "evidence": [
+        ["services/ingest/main.py", "log.warning(json.dumps({\"event\": \"ingest_poison\", \"error\": str(e)[:200]}))"],
+        ["terraform/eventarc.tf", "max_delivery_attempts = 12"],
+        ["terraform/alerts.tf", "A poison object is ingest_poison, not this."]
+      ]
+    },
+    {
+      "id": "ci-promote-loses-previous",
+      "title": "After a CI promote, make rollback has nothing to return to",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "documind-cd.yml's promote job runs make promote on a runner: deploy/.previous-revision is written there, the name is printed in the job's log, and the runner is gone. In your checkout make rollback stops on the missing file, at the moment you need it; a file left by an older promote of your own would send the traffic to an older release.",
+      "why_no_eval": "The gate judges a release, not the way back from it.",
+      "drill": {
+        "offline": {
+          "how": "A stand-in documind-api: make release-candidate and make promote with the runner's own deploy/ files, then make rollback in this checkout's; then the name the promote printed written to this checkout's deploy/.previous-revision, and make rollback again.",
+          "marker": "make rollback stops in this checkout: the promote recorded the previous revision on the runner",
+          "cleared": "with the name from the promote job's log, make rollback returns the traffic to the revision before the promote"
+        },
+        "live": null
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=ci-promote-loses-previous PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "this checkout's deploy/.previous-revision and deploy/.candidate-revision, against documind-api's serving revision",
+        "finds": "no record, so make rollback refuses; or a record from an older promote than the one serving, so make rollback would return to an older release",
+        "pages": null
+      },
+      "lever": "Take the name from the promote job's log (\"serving before the flip: <revision>\") or from gcloud run revisions list, write it to deploy/.previous-revision, and make rollback works from this checkout; by hand, gcloud run services update-traffic documind-api --to-revisions <revision>=100.",
+      "lessons": ["11.1", "11.3"],
+      "cost": "Rs 0",
+      "evidence": [
+        [".github/workflows/documind-cd.yml", "make promote PROJECT=\"$PROJECT\" REGION=\"$REGION\""],
+        ["Makefile", "deploy/.previous-revision is missing - make promote records the revision it moved traffic off"]
+      ]
+    },
+    {
+      "id": "environment-without-reviewers",
+      "title": "A production environment nobody created lets promote run unapproved",
+      "signal": "silent",
+      "status": "open",
+      "symptom": "documind-cd.yml's promote job names environment: production. A repository with no such environment gets one, with no protection rule, the first time a job names it, so promote moves the traffic with nobody approving.",
+      "why_no_eval": "The gate ran and passed; the missing person is a repository setting that no row can see.",
+      "drill": {
+        "offline": null,
+        "live": {
+          "run": "make ci-vars PROJECT=documind-ai-YOUR-ID REGION=<region>, with gh installed, before the first dispatch",
+          "changes": "nothing: one GET of the repository's production environment",
+          "restores": "nothing to restore",
+          "cost": "Rs 0"
+        }
+      },
+      "detector": {
+        "kind": "check",
+        "run": "make gotcha-detect ID=environment-without-reviewers PROJECT=documind-ai-YOUR-ID REGION=<region>",
+        "reads": "the repository's production environment through gh, as make ci-vars reads it (commands/release.py)",
+        "finds": "no production environment, or one with no required reviewer",
+        "pages": null
+      },
+      "lever": "Create the environment with a required reviewer before the first dispatch: Settings > Environments > production > Required reviewers (on a private repository, required reviewers need a paid GitHub plan).",
+      "lessons": ["11.1"],
+      "cost": "Rs 0",
+      "evidence": [
+        [".github/workflows/documind-cd.yml", "environment: production"],
+        ["commands/release.py", "def production_environment(repo: str) -> tuple[str, str]:"]
+      ]
+    }
+  ]
+}

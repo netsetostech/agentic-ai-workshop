@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_9.4_Compare_Shutdown_WIX.html`, reviewed at blob `6279d8ef22f2b880414191dd9de3f5b9b4db124f`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_9.4_Compare_Shutdown_WIX.html`, reviewed at blob `1ea91312fa91d3a1ea242c8c3708b51d41943a03`. Learners read that page on the course site; this guide keeps its prose.
 
 The chapter ends with two questions a production team asks before it keeps a self-hosted model. Is the small model good enough, and at what price? And when the day is over, is the GPU really off? The kit answers the first with `make compare`, a table of four numbers a backend. It answers the second with `make off`, which lowers four floors to zero.
 

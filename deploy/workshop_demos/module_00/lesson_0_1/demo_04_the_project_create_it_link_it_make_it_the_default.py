@@ -25,10 +25,17 @@ RETRY_FAILED_STEP = False
 
 
 # Original CLI workflow for step_01_with_gcloud.
-COMMANDS_01 = """export BILLING=XXXXXX-XXXXXX-XXXXXX     # yours: the ACCOUNT_ID of the OPEN account in the list above
-export PROJECT=documind-ai-YOUR-ID      # yours: 6 to 30 characters, lower case, digits and hyphens, a letter first
-gcloud projects create "$PROJECT" --name="DocuMind lane" --set-as-default
+COMMANDS_01 = """: "${PROJECT:?set project in setup/config/settings.local.json first}"
+export BILLING="${BILLING:-$(gcloud billing accounts list --filter=open=true --format="value(name.basename())" | head -n 1)}"
+: "${BILLING:?no open billing account: export BILLING=XXXXXX-XXXXXX-XXXXXX, the ACCOUNT_ID of yours}"
+if gcloud projects describe "$PROJECT" >/dev/null 2>&1; then
+  echo "$PROJECT already exists: making it the default and linking billing"
+  gcloud config set project "$PROJECT"
+else
+  gcloud projects create "$PROJECT" --name="DocuMind lane" --set-as-default
+fi
 gcloud billing projects link "$PROJECT" --billing-account="$BILLING"
+
 
 """
 

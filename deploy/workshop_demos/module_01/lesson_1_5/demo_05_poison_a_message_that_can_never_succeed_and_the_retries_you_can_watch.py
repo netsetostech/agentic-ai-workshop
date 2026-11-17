@@ -3,8 +3,8 @@
 The first block uploads the empty PDF and waits for the worker's first refusal; it prints the validation error the worker logged. Leave a few minutes, then the second block lists every POST the subscription made and every refusal the worker logged since. Note the gaps between the timestamps.
 
 Run order inside this file:
-1. Do it: start the drill, then watch the first retries (source window 19)
-2. Do it: start the drill, then watch the first retries (source window 21)
+1. Do it: start the drill, then watch the first retries (source window 20)
+2. Do it: start the drill, then watch the first retries (source window 22)
 
 Prerequisites: demo_04_the_verdicts_the_http_code_rule_and_your_last_upload_s_request_log.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -77,8 +77,8 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_19', step_01_start_the_drill_then_watch_the_first_retri),
-        ('source_21', step_02_start_the_drill_then_watch_the_first_retri),
+        ('source_20', step_01_start_the_drill_then_watch_the_first_retri),
+        ('source_22', step_02_start_the_drill_then_watch_the_first_retri),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

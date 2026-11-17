@@ -5,7 +5,7 @@ The Budget API answers for the same budget. --billing-project makes the call cou
 Run order inside this file:
 1. Read it back with gcloud (source window 13)
 
-Prerequisites: demo_05_the_apis_40_services_in_two_calls.
+Prerequisites: demo_05_the_apis_41_services_in_three_calls.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
 The functions below contain the lesson examples in source order. Helpers
 supply configuration, authentication, state and CLI execution. See README.md

@@ -4,7 +4,7 @@
 <li><strong>Lesson 12.2's two logs.</strong> <code>~/poll172.log</code> holds the endpoint, which step 4 reads if <code>ENDPOINT</code> is not set. <code>~/tune172.log</code> holds the file the endpoint was tuned on, which the audit checks.</li>
 <li><strong>The judge's venv from lesson 4.2.</strong> <code>~/judge-venv</code>, with the Evaluation SDK and pandas. If it is gone, lesson 4.2's three lines make it again.</li>
 <li><strong>Two hours.</strong> Run steps 4 to 6 back to back, so that both revisions are measured in the same window and step 6's two hours of usage rows cover every run.</li>
-<li><strong>What the lesson changes.</strong> It makes a candidate revision with no traffic and removes its address at the end. It writes two reports in your home folder and one Experiments run, and leaves the usage rows of the answers. Nothing is promoted.</li>
+<li><strong>What the lesson changes.</strong> It makes two revisions with no traffic, the candidate and the untuned base, and removes their addresses at the end. It writes three reports in your home folder and one Experiments run, and leaves the usage rows of the answers. Nothing is promoted.</li>
 </ul></div>
 
 <!-- ============================ STEP 3 ============================ -->
@@ -85,7 +85,7 @@
 </ul></div>
 
 <!-- ============================ STEP 6 ============================ -->
-<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>The verdict and the delta</h3><p>The pairwise judge on every row, the usage rows by model, the decision, and the candidate's tag removed.</p></div></div>
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; Prove</span><h3>The verdict and the delta</h3><p>The pairwise judge on every row, the usage rows by model, the untuned base beside them, the decision, and the candidate's tag removed.</p></div></div>
 
 <h4>Definition</h4>
 <p>With <code>API_B</code>, the judge collects every golden row's answer from the live revision, then from the candidate. The candidate is judged and the live revision is the baseline:</p>
@@ -110,6 +110,28 @@
 <li><strong><code>make usage</code> names the endpoint <code>projects/NUMBER/loca</code>.</strong> The cell groups by the full path.</li>
 </ul></div>
 
+<h4>Compare the models: the untuned base</h4>
+<p>The gate and the judge set the tuned flash-lite against the live flash, so every difference mixes two changes: a smaller model, and the tuning on top of it. A third revision pulls them apart: <code>%%TUNE_BASE%%</code> as Google serves it, the base v2 was tuned from (<code>TUNE_BASE</code>, lesson 12.2), with every other setting the candidate's. Live against untuned is then the smaller model, and untuned against tuned is the tuning.</p>
+<p>The cell makes it with <code>gcloud</code>, not <code>make candidate</code>. That target would move the <code>candidate</code> tag to the new revision and record it in <code>.candidate-revision</code>: the tuned candidate would lose its address, and <code>make promote</code> would move traffic to the untuned model. A service update starts from the service's latest settings, which have been the candidate's since step 4, so with <code>--update-env-vars</code> the model is the one setting that changes. A model name is served on the global endpoint, as the live model is; only an endpoint path is served from its own location.</p>
+%%CELL_UNTUNED%%
+%%OUT_UNTUNED%%
+<p>Then the gate on it, and the three reports side by side: each judged rate, the rows passed, the generation time at p50 and p95 as the gate measures it, the model that answered each, and the rows each change moved.</p>
+%%CELL_GATE_UNTUNED%%
+%%OUT_GATE_UNTUNED%%
+%%CELL_COMPARE3%%
+%%OUT_COMPARE3%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>The untuned base passes every threshold too,</strong> on the stand-in. A tuned endpoint bills 1.5 times what its base does for the same tokens (step 3), so where the untuned base does as well, it is the cheaper of the two, and tuning has to earn its price against it, not only against flash.</li>
+<li><strong>Two comparisons, two causes.</strong> On the stand-in the untuned base misses the two rows the live revision misses, so the smaller model moved nothing. The tuning moved all three rows step 5 found: jn-06 gained its second figure, and jn-03 and jn-09 each lost one. That is step 5's reading of the joins, with the smaller model ruled out. On your lane, read each pair's rows on their own.</li>
+<li><strong>The generation times are your lane's.</strong> The gate reads <code>generate_ms</code> from the API's own clock on every answered row. A tuned endpoint is served from its own location and the untuned base from the global endpoint, so their times can differ for reasons beyond the tuning. The stand-in's times are made up, so the expected output leaves them out.</li>
+</ul></div>
+
+<p>Remove the untuned revision's address when you are done with it. The revision stays in the service's list, with no traffic, as the candidate's does after the next block.</p>
+%%CELL_UNTAG%%
+%%OUT_UNTAG%%
+
 <h4>The decision, and the candidate's tag</h4>
 <p>The decision is yours, and it reads the three results in order. The gate must pass. The judge says how often the tuned model gives the worse answer where the two differ. The delta says what that is worth at your volume. With a candidate that passes, there are three ways forward:</p>
 <ul>
@@ -123,3 +145,4 @@
 %%CELL_CLEANUP%%
 %%OUT_CLEANUP%%
 <p>The revision stays in the service's list, with no traffic and no URL. The tuned endpoint stays too, billed only when it answers.</p>
+<p>The cell's second half puts <code>documind-api</code>'s template back to what serves. Every update since step 4 wrote the template, the untuned base's last, and removing a tag moves no template. Lesson 12.4's <code>make prompt-candidate</code> changes only the prompt version and starts from the template. Without this half, its candidate would answer with the untuned model, and a promote would put that model live. Run it whichever way you go: after a promote, the template still holds the untuned base. The update moves no traffic, and lesson 11.7's detector checks the result.</p>

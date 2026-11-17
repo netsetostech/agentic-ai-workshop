@@ -47,7 +47,7 @@ EXCERPTS = {
                         block(TF, 'resource "google_pubsub_topic" "ingest" ', end="locals {")),
     "tf_subscription": ("terraform/eventarc.tf - the push subscription: the token, the policy, the ceiling",
                         block(TF, 'resource "google_pubsub_subscription" "ingest_push" ', end='resource "google_pubsub_subscription_iam_member" "dlq_subscriber"')),
-    "tf_dlq_sub": ("terraform/eventarc.tf - where the dead letters are read from", block(TF, "# Somewhere to read the poison from.", n=5)),
+    "tf_dlq_sub": ("terraform/eventarc.tf - where the dead letters are read from", block(TF, "# Somewhere to read the poison from.", n=9)),
     "push_head": ("services/ingest/main.py - push(): the envelope, the contract, and the 400", block(ING, '@app.post("/")', n=12)),
     "push_branches": ("services/ingest/main.py - push(): the acknowledged verdicts after a lost claim", block(ING, "        elif status_of(_db, doc.doc_key) == \"queued\":", n=9)),
     "push_tail": ("services/ingest/main.py - push(): the only 500", "    try:\n" + block(ING, "        return index_document(doc, msg, content)", n=3)),
@@ -62,7 +62,15 @@ EXCERPTS = {
     "claim_doc": ("services/ingest/idempotency.py - claim(): why a transaction", block(IDM, "def claim(", n=9)),
     "deploy_flags": ("commands/lesson-12.5.sh - the worker's own limits: one request per instance, 600 seconds, thirty instances", block("commands/lesson-12.5.sh", "gcloud run deploy documind-ingest \\", n=9)),
     "batch_timeout": ("terraform/batch.tf - two hours, and the claim carries the retry", block("terraform/batch.tf", "      max_retries     = 0", n=2)),
+    "lease": ("services/ingest/idempotency.py - the claim's lease: the ack deadline and a minute (13 October 2026)",
+              block(IDM, "# The claim's lease (13 October 2026", n=11)),
+    "push_lease": ("services/ingest/main.py - push(): a processing claim, asked for its lease",
+                   block(ING, '        elif status_of(_db, doc.doc_key) == "processing":', n=1) + "\n...\n"
+                   + block(ING, "            lease = retake_expired(", n=8)),
 }
+# the prose's numbers: a lease of the ack deadline and a minute, the batch job's of its timeout and a minute
+assert "LEASE_SECONDS = 600 + 60\nBATCH_LEASE_SECONDS = 7200 + 60\n" in (KIT / IDM).read_text(encoding="utf-8")
+assert EXCERPTS["push_lease"][1].rstrip().endswith('raise HTTPException(409, f"claim {lease[\'verdict\']}: Pub/Sub delivers it again")')
 
 
 fill = filler(EXCERPTS, window)
@@ -76,15 +84,19 @@ COMMON = [
 ]
 VERDICTS = {
     "indexed": {"steps": [["4", "The claim is taken, the pages counted, the document parsed, chunked, embedded, written staged, swapped, upserted, mirrored, recorded: lesson 1.4's seven records."], ["5", "200 {\"status\": \"indexed\"}: the message is acknowledged and destroyed. Log: ingest_ok."]], "end": "ok"},
-    "duplicate": {"steps": [["4", "The bytes hash to a doc_key whose claim is already processing or indexed: nothing is downloaded, nothing written."], ["5", "200 {\"status\": \"duplicate\"}: acknowledged. Log: ingest_duplicate. A 200 is a 200 whatever the body says."]], "end": "ok"},
+    "duplicate": {"steps": [["4", "The bytes hash to a doc_key whose claim is already indexed: nothing is parsed, nothing written."], ["5", "200 {\"status\": \"duplicate\"}: acknowledged. Log: ingest_duplicate. A 200 is a 200 whatever the body says."]], "end": "ok"},
+    "held": {"steps": [["4", "The bytes hash to a doc_key whose claim is processing, taken less than 660 s ago: another delivery may still be working on it. Nothing is parsed, nothing written. Log: ingest_duplicate, then ingest_claim_held with the claim's age and lease."], ["5", "409: not acknowledged. The subscription delivers it again on its backoff, to a claim that is indexed by then (a duplicate) or past its lease, which this delivery takes back (ingest_claim_retaken) and indexes."]], "end": "bad",
+             "note": "The lease is the clock here: 660 s from the claim. Every delivery inside it is nacked and comes back; the first after it finds the holder finished, or takes the claim back from a holder that was cut off. Nothing is lost, because nothing was acknowledged."},
     "stale": {"steps": [["4", "The ledger row for this object already names a newer generation: an older event, delivered late."], ["5", "200 {\"status\": \"stale\"}: acknowledged, nothing downloaded, nothing changed. Log: ingest_stale_event (lesson 1.7)."]], "end": "ok"},
     "queued": {"steps": [["4", "The PDF's page tree says more than 250 pages: no page goes to Document AI. Two records instead: ingest_batch/{doc_key} and the claim with status queued; the job is started if declared."], ["5", "200 {\"status\": \"queued_batch\"}: acknowledged. Log: ingest_queued_batch. The job indexes it with lane=\"batch\" and no deadline."]], "end": "ok"},
     "poison": {"steps": [["4", "Validation fails: a size of 0, or an object with no tenant prefix, or a name that escapes it. Log: ingest_poison, with the field named."], ["5", "400: not acknowledged. The subscription waits and delivers the same message again. The worker will refuse it the same way every time."]], "end": "bad", "clock": True},
     "failed": {"steps": [["4", "index_document() raises after Document AI, the embedding call or a store failed; the claim is released with the error. Log: ingest_failed."], ["5", "500: not acknowledged. The subscription retries; the next attempt finds the claim failed, takes it back and tries again. A transient cause clears; a permanent one reaches the ceiling."]], "end": "bad", "clock": True},
     "refused": {"steps": [["4", "Cloud Run has no warm instance and answers 429 before the worker sees the request: a corpus upload lands thirty objects against one request per instance."], ["5", "Not acknowledged, no worker log line at all. The subscription retries; by the second or third attempt an instance is up. This is why the ceiling is twelve."]], "end": "bad", "clock": True},
-    "timeout": {"steps": [["4", "The worker is still parsing when 600 s pass: the platform kills the request, and the code that releases the claim never runs. The claim stays processing."], ["5", "504: not acknowledged. The retry finds the claim taken and is acknowledged as a duplicate: every delivery reports success and the document is never indexed. The 250-page ceiling exists so that a push request never begins such a document."]], "end": "bad"},
+    "timeout": {"steps": [["4", "The worker is still parsing when 600 s pass: the platform kills the request, and the code that releases the claim never runs. The claim stays processing."], ["5", "504: not acknowledged. Retries inside the claim's 660 s lease are nacked with a 409; the first after it takes the claim back (ingest_claim_retaken) and starts again. A document that outruns the deadline every time spends its twelve attempts this way and lands on the dead-letter queue, where it pages. The 250-page ceiling exists so that a push request never begins such a document."]], "end": "bad",
+                "note": "Until 13 October 2026 each retry here was acknowledged as a duplicate, and the document was lost while every delivery reported success. The lease turns that into retries, and a document that can never finish into a dead letter; the defence is still not to start such a request, which is what the page ceiling in step 6 does."},
 }
 CLOCK = [(1, 0), (2, 10), (3, 30), (4, 70), (5, 150), (6, 310), (7, 630), (8, 1230), (9, 1830), (10, 2430), (11, 3030), (12, 3630)]
+assert all(v.get("note") for v in VERDICTS.values() if v["end"] != "ok" and not v.get("clock"))   # a red end says why
 
 JS = """<script>
 (function(){
@@ -109,7 +121,7 @@ JS = """<script>
         '<p class="dp-note">After the twelfth failed attempt the message is forwarded to documind-ingest-dlq and ingest-dlq-sub holds it: about an hour after the first. The waits double from the 10 s minimum to the 600 s maximum; Pub/Sub adds jitter, so your gaps are close to these, not equal to them.</p>';
     } else {
       clock.innerHTML = v.end === 'ok' ? '<p class="dp-note">Acknowledged on the first delivery: no clock runs. The message is gone; the records (or the log line) are what remain.</p>'
-                                       : '<p class="dp-note">No clock can help here: each retry is acknowledged as a duplicate. The defence is not to start such a request, which is what the page ceiling in step 6 does.</p>';
+                                       : '<p class="dp-note">' + esc(v.note) + '</p>';
     }
   }
   sel.addEventListener('change', render);

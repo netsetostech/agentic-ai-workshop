@@ -41,9 +41,13 @@ variable "gemini_quota_override" {
 
 # The one repository allowed to impersonate the deploy identity. Without this the
 # WIF provider trusts every repository on GitHub, which is the whole internet.
+# The default names the public kit; a learner's lane names their own fork, the
+# repository whose Actions deploy it (lesson 0.3: infrastructure.py prepare
+# --github-repository <you>/agents_workshop_learner, 13 October 2026), and the
+# numeric id below must be that repository's, so a stale name fails closed.
 variable "github_repository" {
   type        = string
-  default     = "netsetos/agentic-ai-weekend-gcp"
+  default     = "netsetos/agents_workshop_learner"
   description = "owner/repo permitted through Workload Identity Federation"
 }
 
@@ -74,7 +78,7 @@ variable "residency" {
 # worker stamps the pair on every chunk row and rag-api embeds every query with it. make deploy-services reads
 # the two outputs below into both services' environments (EMBEDDING_MODEL, EMBEDDING_VERSION), so a query
 # vector from one model against document vectors from another cannot happen by drift - a bump is a plan, an
-# apply, a rebuild and a reindex (make reembed, the strategy's next phase).
+# apply, a rebuild and a reindex (a re-embed target is the strategy's next phase, not in the kit yet: INDEXING.md).
 variable "embedding_model" {
   type    = string
   default = "text-embedding-005"

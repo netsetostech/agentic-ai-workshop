@@ -73,7 +73,7 @@ def step_01_what_pages_you_today(session):
     print("reads the dead-letter queue (ingest-dlq-sub): " + (", ".join(dlq) or "NOTHING - an upload the worker refused twelve times pages nobody"))
 
 # Original CLI workflow for step_02_plan_and_apply.
-COMMANDS_02 = """make plan PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ME"   # the flags you gave make up; the plan refuses to delete
+COMMANDS_02 = """make plan PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ME" DESK_JOB=true   # your last apply's switches: 10.4 added DESK_JOB=true (and GCHAT_DOOR=true if you turned the door on); the plan refuses to delete
 python commands/infrastructure.py apply --project "$PROJECT" --region "$REGION" --terraform-dir terraform   # make up's first line, alone
 
 """

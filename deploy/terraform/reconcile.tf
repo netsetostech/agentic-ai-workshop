@@ -58,6 +58,10 @@ resource "google_cloud_run_v2_job" "reconcile" {
           name  = "RESIDENCY"
           value = var.residency
         }
+        env {
+          name  = "VECTOR_INDEX_NAME" # a source the walk retires leaves the index too (13 October 2026), as batch.tf's job has it
+          value = google_vertex_ai_index.documind.id
+        }
       }
     }
   }

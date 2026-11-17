@@ -87,7 +87,7 @@ li{margin-bottom:6px;}
 /* code windows: the rounded shell and the scroller are two elements */
 .cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
 .ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
-.ch-bar span{overflow-wrap:anywhere;}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
 .cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 .cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
 .cp:active{transform:scale(.96);}
@@ -601,7 +601,7 @@ TIMESTAMP                 EVENT               GENERATION        LEDGER_GENERATIO
 <p>The tombstone: what <code>make retire</code> writes, what it holds against, and the one command that clears it.</p></div></div>
 
 <h4>Definition</h4>
-<p>A person retires a document with <code>make retire SOURCE=</code>. The reconcile CLI retires every current row of the source with the usual four fields and a thirty-day expiry, tells the managed mirror the version left, sets the ledger row to <code>withdrawn</code> with a timestamp, and refreshes the tenant's fingerprint so the answer cache follows. The object is not touched: it stays in the bucket on purpose, and the nightly walk reports it as "withdrawn, object kept". The tombstone holds against two things that would otherwise bring the document back: a redelivery of its event, and the same bytes uploaded again, both acknowledged as <code>ingest_withdrawn</code>. <code>make restore SOURCE=</code> is the way back: it moves the ledger row to <code>retired</code>, the state a lost event recovers from, and rewrites the object onto itself, which is a new generation and a new event; the worker then reactivates the rows inside the window, or re-ingests the bytes after it.</p>
+<p>A person retires a document with <code>make retire SOURCE=</code>. The reconcile CLI retires every current row of the source with the usual four fields and a thirty-day expiry, tells the managed mirror the version left, sets the ledger row to <code>withdrawn</code> with a timestamp, takes the retired ids out of the Vector Search index as the worker's swap does (13 October 2026; <code>VECTOR_INDEX_NAME</code>, which <code>make retire</code> reads from Terraform), and refreshes the tenant's fingerprint so the answer cache follows. The object is not touched: it stays in the bucket on purpose, and the nightly walk reports it as "withdrawn, object kept". The tombstone holds against two things that would otherwise bring the document back: a redelivery of its event, and the same bytes uploaded again, both acknowledged as <code>ingest_withdrawn</code>. <code>make restore SOURCE=</code> is the way back: it moves the ledger row to <code>retired</code>, the state a lost event recovers from, and rewrites the object onto itself, which is a new generation and a new event; the worker then reactivates the rows inside the window, or re-ingests the bytes after it.</p>
 
 <h4>The code</h4>
 <div class="cw"><div class="ch-bar"><span>services/ingest/idempotency.py - withdrawn(): the tombstone, asked twice</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">withdrawn</span>(db: firestore.Client, tenant_id: str, gcs_uri: str) -&gt; bool:
@@ -618,6 +618,7 @@ TIMESTAMP                 EVENT               GENERATION        LEDGER_GENERATIO
         mirror.retired(tenant, gone.get(<span class="st">&quot;retired_doc_keys&quot;</span>, []), <span class="st">&quot;withdrawn&quot;</span>)
         db.collection(<span class="st">&quot;sources&quot;</span>).document(source_id_for(tenant, name)).set(
             {<span class="st">&quot;status&quot;</span>: <span class="st">&quot;withdrawn&quot;</span>, <span class="st">&quot;withdrawn_at&quot;</span>: firestore.SERVER_TIMESTAMP}, merge=<span class="kw">True</span>)
+        remove_vectors(index_name, gone)
         fp = refresh_fingerprint(db, tenant, <span class="st">&quot;reconcile_withdrawn&quot;</span>)
         print(json.dumps({<span class="st">&quot;event&quot;</span>: <span class="st">&quot;reconcile_withdrawn&quot;</span>, <span class="st">&quot;gcs_uri&quot;</span>: uri, <span class="st">&quot;fingerprint&quot;</span>: fp, **gone,
                           <span class="st">&quot;note&quot;</span>: <span class="st">&quot;a tombstone: the object is kept and nothing automatic re-ingests it; make restore SOURCE= does&quot;</span>}))
@@ -658,6 +659,7 @@ TIMESTAMP                 EVENT               GENERATION        LEDGER_GENERATIO
 <div class="cw"><div class="ch-bar"><span>mk/lifecycle.mk - retire and restore, as make runs them</span><span class="ro">read only</span></div><pre tabindex="0">retire: guard-project
 	@test -n <span class="st">&quot;$(SOURCE)&quot;</span> || (echo <span class="st">&quot;SOURCE=&lt;tenant/name or gs://...&gt; is required&quot;</span>; exit <span class="nu">2</span>); \
 	PYTHONPATH=. MANAGED_MIRROR=$(MANAGED_MIRROR) RAG_LOCATION=$(RAG_LOCATION) AUDIT_BUCKET=$(PROJECT)-audit GOOGLE_CLOUD_PROJECT=$(PROJECT) \
+	  VECTOR_INDEX_NAME=$${VECTOR_INDEX_NAME:-$$(cd $(TF_DIR) &amp;&amp; terraform output -raw vector_index_name <span class="nu">2</span>&gt;/dev/null)} \
 	  $(PY) services/ingest/reconcile.py --project $(PROJECT) --retire <span class="st">&quot;$(SOURCE)&quot;</span> --apply
 
 restore: guard-project
@@ -714,7 +716,7 @@ rows = [r.to_dict() for r in db.collection("chunks").where("tenant_id", "==", "a
 print(len(rows), "rows | current:", sum(bool(r.get("current")) for r in rows), "| with expire_at:", sum(r.get("expire_at") is not None for r in rows), "| superseded_by:", {str(r.get("superseded_by")) for r in rows})
 PY</pre></div>
 
-<div class="cw"><div class="ch-bar"><span>expected (your keys, ids and fingerprint differ)</span><span class="ro">read only</span></div><pre tabindex="0">{"event": "reconcile_withdrawn", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/smoke_note_v1.md", "fingerprint": "7c2e91a4d05b3f68", "retired_doc_keys": ["acme_9c41d0e2b7f5..."], "retired_ids": ["acme:9c41d0e2b7f5...#0", "acme:9c41d0e2b7f5...#1", "acme:9c41d0e2b7f5...#2"], "retired_chunks": 3, "note": "a tombstone: the object is kept and nothing automatic re-ingests it; make restore SOURCE= does"}
+<div class="cw"><div class="ch-bar"><span>expected (your keys, ids and fingerprint differ)</span><span class="ro">read only</span></div><pre tabindex="0">{"event": "reconcile_withdrawn", "gcs_uri": "gs://documind-ai-YOUR-ID-uploads/acme/smoke_note_v1.md", "fingerprint": "7c2e91a4d05b3f68", "retired_doc_keys": ["acme_9c41d0e2b7f5..."], "retired_ids": ["acme:9c41d0e2b7f5...#0", "acme:9c41d0e2b7f5...#1", "acme:9c41d0e2b7f5...#2"], "retired_chunks": 3, "datapoints_removed": 3, "note": "a tombstone: the object is kept and nothing automatic re-ingests it; make restore SOURCE= does"}
 acme/smoke_note_v1.md withdrawn chunks 3
 fingerprint 7c2e91a4d05b3f68 | last event reconcile_withdrawn
 3 rows | current: 0 | with expire_at: 3 | superseded_by: {'None'}</pre></div>
@@ -962,7 +964,7 @@ acme/smoke_note_v1.md                        indexed    ...5302345678      3    
       retireCurrent(v.id); activate(v);
       S.ledger = 'indexed'; S.log = 'the worker: ingest_reactivated for ' + v.id + ' - its retired rows flipped back, embedded 0; the newer version retired in turn.'; }},
     retire: {ok: function(){ return !!current() && S.ledger === 'indexed'; }, run: function(){
-      retireCurrent(null); S.ledger = 'withdrawn'; S.log = 'make retire: reconcile_withdrawn - every current row retired with a 30-day expiry, the ledger row says withdrawn, the fingerprint moved. The object stays in the bucket.'; }},
+      retireCurrent(null); S.ledger = 'withdrawn'; S.log = 'make retire: reconcile_withdrawn - every current row retired with a 30-day expiry, the ledger row says withdrawn, the ids out of the index, the fingerprint moved. The object stays in the bucket.'; }},
     restore: {ok: function(){ return S.ledger === 'withdrawn'; }, run: function(){
       var v = retirable()[retirable().length - 1]; S.ledger = 'retired';
       if (v){ retireCurrent(v.id); activate(v); S.ledger = 'indexed';

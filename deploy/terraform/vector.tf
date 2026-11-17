@@ -20,6 +20,7 @@ resource "google_vertex_ai_index" "documind" {
       dimensions                  = 768
       approximate_neighbors_count = 150
       distance_measure_type       = "DOT_PRODUCT_DISTANCE"
+      shard_size                  = "SHARD_SIZE_SMALL" # a new index's; an existing index keeps its own (ignore_changes)
       algorithm_config {
         tree_ah_config {
           leaf_node_embedding_count    = 500
@@ -33,6 +34,18 @@ resource "google_vertex_ai_index" "documind" {
   # upsert_datapoints call is accepted and applied at the next batch job, so an
   # uploaded document is simply absent for hours and nothing reports an error.
   index_update_method = "STREAM_UPDATE"
+
+  # SMALL, stated (8 October 2026). Until then the index named no shard size, the API chose
+  # one, and the machine the deployed index bills by the hour followed it: e2-standard-2 on
+  # SMALL, e2-standard-16 on MEDIUM (the map below). A shard size is fixed when an index is
+  # created: changing it replaces the index, and infrastructure.py's plan check refuses that
+  # replacement, which would stop make plan and make up on every lane whose index the API
+  # sized. So the size counts at creation and is ignored after it: a new lane's index is
+  # SMALL, and an existing index keeps the size it has, and its machine. Moving an existing
+  # lane to SMALL is a deliberate replacement, never an incidental one.
+  lifecycle {
+    ignore_changes = [metadata[0].config[0].shard_size]
+  }
 }
 
 resource "google_vertex_ai_index_endpoint" "documind" {

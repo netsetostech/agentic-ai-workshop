@@ -103,7 +103,7 @@ src = {p: (KIT / p).read_text(encoding="utf-8") for p in (CB, DT, CFG, ALERTS, O
 MK = src["Makefile"] + "".join(p.read_text(encoding="utf-8") for p in sorted((KIT / "mk").glob("*.mk")))
 flat = lambda s: re.sub(r"\s+", " ", s)  # noqa: E731
 flatc = lambda s: flat(re.sub(r"\n\s*#\s*", " ", s))  # noqa: E731
-recipe = lambda name: MK[MK.index(f"\n{name}: guard-project\n") + 1:].split("\n\n", 1)[0]  # noqa: E731
+recipe = lambda name: MK[re.search(rf"\n{re.escape(name)}: guard-project[^\n]*\n", MK).start() + 1:].split("\n\n", 1)[0]  # noqa: E731
 COMPARE, OFF = recipe("compare"), recipe("off")
 assert "the same golden rows, retrieval once through the one retrieve(), every backend answering from the same context through the gateway." in flatc(MK)
 assert "The four numbers, and the SLM's rupees are a RATE." in flatc(MK) and "--rows $${ROWS:-20}" in COMPARE

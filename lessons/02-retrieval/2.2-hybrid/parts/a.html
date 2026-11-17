@@ -10,7 +10,7 @@
 <div class="toc"><div class="toc-title">On this page</div>
 <ol>
 <li><a href="#s1">What a second leg adds, and how two lists become one</a></li>
-<li><a href="#s2">The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</a></li>
+<li><a href="#s2">The words: vector, leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</a></li>
 <li><a href="#setup">Before you run anything: set up the shell</a></li>
 <li><a href="#s3">The lane runs dense, and two sparse rulers over its own rows</a></li>
 <li><a href="#s4">Three ways through the index: dense, sparse only, fused</a></li>
@@ -22,16 +22,79 @@
 </ol></div>
 
 <div class="box box-teal"><div class="box-title">In this lesson</div>
-<p>You will learn what the sparse leg of hybrid retrieval is made of, why two ranked lists are merged by position with Reciprocal Rank Fusion rather than by score, and why a sparse leg is only as good as its weights. Then you will prove it on your lane: rank acme's rows with the index's ruler and the ablation's, ask the index dense, sparse-only and fused, reproduce the fused order with <code>rrf_fuse()</code>, run <code>make ablate</code>, and judge <code>RETRIEVAL_MODE=hybrid</code> on a candidate revision before it serves anyone.</p></div>
+<p>You will learn what a dense and a sparse vector each hold and how each scores a match, what the sparse leg of hybrid retrieval is made of, why two ranked lists are merged by position with Reciprocal Rank Fusion rather than by score, and why a sparse leg is only as good as its weights. Then you will prove it on your lane: rank acme's rows with the index's ruler and the ablation's, ask the index dense, sparse-only and fused, reproduce the fused order with <code>rrf_fuse()</code>, run <code>make ablate</code>, and judge <code>RETRIEVAL_MODE=hybrid</code> on a candidate revision before it serves anyone.</p></div>
 
 <!-- ============================ STEP 1 ============================ -->
 <div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What a second leg adds, and how two lists become one</h3><p>Meaning and spellings are found by different rulers, fused by rank, and only as good as their weights.</p></div></div>
 
-<p><strong>Retrieval finds evidence two ways, and each is blind where the other sees.</strong> The dense leg turns the question and every chunk into 768 numbers from a model that has read a great deal of text, so "quit" lands near "resign" and a question about senior staff finds a clause about grade E3. It is weak exactly where a token means nothing outside this corpus: an invoice number, a clause code, a product name is just a rare string to it. The sparse leg counts the words themselves. "INV-2026-0412" matches "INV-2026-0412" and nothing else, and it will never know that "quit" and "resign" are the same request. Hybrid retrieval runs both legs and merges the two ranked lists into one pool.</p>
+<p><strong>Retrieval finds evidence two ways, and each is blind where the other sees.</strong> A <em>dense vector</em> is 768 numbers that an embedding model, text-embedding-005 on your lane, computes for a text. Every slot is filled and no slot stands for a word: together the numbers place the text by what it means, so texts that mean the same thing land close together, and "If I quit my job" lands near a clause about resignation although the two share no word. A <em>sparse vector</em> has one slot per word. The kit's has %%SPARSE_DIMS%% slots, each word hashed to one of them, and a chunk fills only as many as it has distinct words: NP-03, the notice-period clause, fills %%DV_NP03_SLOTS%% and leaves every other slot at zero. It records which words a text uses and nothing about what they mean, so "NP-03" matches "NP-03" exactly and "quit" never matches "resignation". Where a token means nothing outside this corpus, a clause code, a product name, one invoice number among many, the dense leg has little to go on and the sparse leg is at its best. Hybrid retrieval runs both legs and merges the two ranked lists into one pool.</p>
 
-<p><strong>The merge goes by rank, not by score.</strong> A dense distance and a sparse dot product live on different scales, so adding them would let one leg drown the other. Reciprocal Rank Fusion ignores the scores: each list gives an id 1 / (k + rank) points, the dense list's points are multiplied by alpha and the sparse list's by 1 - alpha, the points are summed and the ids sorted. With k at 60, being first rather than second is worth a little; being on a list rather than absent is worth a lot. The kit's <code>rrf_fuse()</code>, the ablation's <code>rrf()</code> and the index's <code>rrf_ranking_alpha</code> are three spellings of this one rule, and the API sends alpha 0.7.</p>
+<h4>First, the intuition: a help desk with four answers</h4>
+<p>Before acme's corpus, a desk small enough to see every word. It holds four answers, lettered A to D. Each button asks one question and runs the whole of hybrid retrieval in three panels: the sparse leg counts the question's words in each answer, the dense leg drops the question on a map of meaning and takes the nearest answers, and Reciprocal Rank Fusion merges the two ranked lists by position. The slider sets alpha, how much the merge trusts the dense list; try it on the order number.</p>
 
-<p><strong>A sparse leg is only as good as its weights.</strong> The index's sparse leg weights a word by how often it appears in the chunk, 1 for the first time and 0.5 for each repeat, and every word counts: "the" as much as "invoice". A long Act page with sixty occurrences of "the" and "of" therefore outscores the one invoice that carries the number you asked for. The ablation's sparse leg is BM25, which does two more things: it weights a word by how rare it is across the corpus, so "inv-2026-0412" counts and "the" barely does, and it discounts long chunks. On acme's corpus that is the difference between finding the invoice first and finding it around rank one thousand. This is the finding steps 3 and 4 confirm on your lane, and it is why the question "is hybrid better?" has to be answered as "which hybrid, and measured how".</p>
+<div class="diagram hd" id="hdesk">
+<div class="dg-title">A help desk with four answers - word matching, meaning, and the merge</div>
+<div class="hd-controls" role="group" aria-label="Pick a question">%%HD_BUTTONS%%<button type="button" class="hd-btn" id="hd-replay">&#8635; Replay</button></div>
+<p class="hd-q" id="hd-q"></p>
+<div class="hd-toks" id="hd-toks"></div>
+<div class="hd-panels">
+<div class="hd-panel">
+<h5>1 &middot; Sparse: does the answer contain the question's words?</h5>
+<div id="hd-docs"></div>
+<p class="hd-list" id="hd-splist"></p>
+</div>
+<div class="hd-panel">
+<h5>2 &middot; Dense: does the answer mean the same thing?</h5>
+<svg id="hd-map" viewBox="0 0 320 228" role="img" aria-label="A map of meaning: the four answers as dots, the question as a pin that moves to its nearest answers"></svg>
+<p class="hd-list" id="hd-dnlist"></p>
+</div>
+<div class="hd-panel hd-wide">
+<h5>3 &middot; RRF: merge the two lists by position</h5>
+<p class="hd-rule">points = 1000 &divide; (60 + rank), the rule's 1 &divide; (60 + rank) scaled to read easily, and none when a list does not have the answer. Total = alpha &times; dense points + (1 &minus; alpha) &times; sparse points.</p>
+<label class="hd-alpha">alpha, the trust in the dense list: <span id="hd-alpha-v">0.7</span><input type="range" id="hd-alpha" min="0" max="1" step="0.1" value="0.7"></label>
+<div class="hd-rrf" id="hd-rrf"></div>
+<p class="hd-list" id="hd-fused"></p>
+</div>
+</div>
+<p class="hd-verdict" id="hd-verdict" aria-live="polite"></p>
+<p class="dg-cap">A toy for intuition: four answers, word matching that counts each shared word once, and a two-number map whose positions are made up. A real dense vector has 768 numbers, and the kit's sparse leg weights its words. The merge is the kit's rule, <code>rrf_fuse()</code>'s alpha / (k + rank) with k = 60, at the API's alpha of 0.7; every number in the three panels is computed and checked when the page is built.</p>
+</div>
+
+<h4>Then on acme's documents: the same three situations, measured</h4>
+<p>The same three situations on acme's corpus, with the kit's real arithmetic: the clause code NP-03 plays the order number, "If I quit my job" the money-back question, and the invoice the refund for a ticket. Each button animates both legs. On the left, the sparse vectors: the chunk's words above the line at the slots the kit hashes them to, taller for a word the chunk repeats, the question's words below it, and a teal mark wherever the two share a word; the score is the sum of those shared weights. On the right, the dense side sketched as a flat map of meaning, where the question lands near what it means. Replay runs it again.</p>
+
+<div class="diagram dv" id="dvs">
+<div class="dg-title">Sparse and dense, side by side - which words a text uses, and what it means</div>
+<div class="dv-controls" role="group" aria-label="Pick a question">%%DV_BUTTONS%%<button type="button" class="dv-btn" id="dv-replay">&#8635; Replay</button></div>
+<p class="dv-q" id="dv-q"></p>
+<div class="dv-toks" id="dv-toks"></div>
+<div class="dv-panels">
+<div class="dv-panel">
+<h5>Sparse: which words, %%SPARSE_DIMS%% slots</h5>
+<svg id="dv-sp" viewBox="0 0 320 132" role="img" aria-label="The slot line: the chunk's words above it, the question's words below it, shared words marked"></svg>
+<p class="dv-key"><span class="dv-sw dv-sw-doc"></span>chunk's words <span class="dv-sw dv-sw-q"></span>question's words <span class="dv-sw dv-sw-hit"></span>shared</p>
+<p class="dv-math" id="dv-math" aria-live="polite"></p>
+<div id="dv-sprank"></div>
+</div>
+<div class="dv-panel">
+<h5>Dense: what it means, 768 numbers</h5>
+<svg id="dv-dn" viewBox="0 0 320 200" role="img" aria-label="A flat sketch of meaning space: chunks as dots, the question as a pin that moves to its neighbourhood"></svg>
+<p class="dv-key">A flat sketch: the positions are illustrative, the real space has 768 dimensions.</p>
+<div id="dv-dnrank"></div>
+</div>
+</div>
+<p class="dv-verdict" id="dv-verdict" aria-live="polite"></p>
+<p class="dg-cap">Computed when this page was built by the kit's own code: the words, their slots and weights by <code>shared/sparse_encoder.py</code>, each score as the index scores a sparse vector, and each rank among the %%CHUNKS%% chunks of acme's %%DOCS%% markdown mirrors, by the index's ruler and by BM25, as in the fusion bench below. The dense rank of the invoice is step 4's run on the lane; step 4 measures the other two once <code>Q</code> and <code>ANCHOR</code> are exported as the panel shows.</p>
+</div>
+
+<div class="analogy"><div class="analogy-icon">&#128205;</div><div>
+<p><strong>A map pin and a book index.</strong> A dense vector is a pin on a map of meaning: "quit my job" and "the resignation is acknowledged" are pins in the same neighbourhood, and the search is simply the nearest pins. A sparse vector is the index at the back of a book: look up NP-03 and you get exactly the pages that print NP-03; look up "quit" and you get nothing, because the book says "resignation". Each finds what the other misses, which is why the lane can ask both.</p></div></div>
+
+<p><strong>How each one scores a match.</strong> The dense leg scores closeness: the question's 768 numbers against a chunk's, one dot product, high when the two mean the same thing. The sparse leg multiplies the weights of the words the question and the chunk share and adds them up. "What does clause NP-03 say?" shares one word with the clause, <code>np-03</code>, so it scores 1 &times; 1.0 = 1.0; "If I quit my job, how long must I keep working?" shares none and scores 0, and no weighting can rescue a zero.</p>
+
+<p><strong>The merge goes by rank, not by score.</strong> A dense distance and a sparse dot product live on different scales, so adding them would let one leg drown the other. Reciprocal Rank Fusion ignores the scores: each list gives an id 1 / (k + rank) points, the dense list's points are multiplied by alpha and the sparse list's by 1 - alpha, the points are summed and the ids sorted. With k at 60, being first rather than second is worth a little; being on a list rather than absent is worth a lot. The help desk's third panel does this arithmetic: for "Refund for a cancelled ticket", answer C was third in the dense list but second in the sparse one, so it passes D, which only the dense list had. For the order number it shows the rule's limit: the merge cannot read the text, so when the dense list is guessing, alpha decides. The kit's <code>rrf_fuse()</code>, the ablation's <code>rrf()</code> and the index's <code>rrf_ranking_alpha</code> are three spellings of this one rule, and the API sends alpha 0.7.</p>
+
+<p><strong>A sparse leg is only as good as its weights.</strong> The index's sparse leg weights a word by how often it appears in the chunk, 1 for the first time and 0.5 for each repeat, and every word counts: "the" as much as "invoice". A long Act page with sixty occurrences of "the" and "of" therefore outscores the one invoice that carries the number you asked for, and pages full of "clause" and "does" outscore NP-03 itself for "What does clause NP-03 say?". The ablation's sparse leg is BM25, which does two more things: it weights a word by how rare it is across the corpus, so "inv-2026-0412" and "np-03" count and "the" barely does, and it discounts long chunks. On acme's corpus that is the difference between first and %%DV_INV_TF%% for the invoice, and between first and %%DV_CODE_TF%% for the clause: the numbers on the buttons above. This is the finding steps 3 and 4 confirm on your lane, and it is why the question "is hybrid better?" has to be answered as "which hybrid, and measured how".</p>
 
 <div class="analogy"><div class="analogy-icon">&#128218;</div><div>
 <p><strong>Two clerks and a chair.</strong> A records room with two clerks. The first has read every file and brings the pages that mean what you asked. The second works from a concordance and brings every page that carries your exact words, and if you let him count every "the", he brings the longest pages first. The chair never compares the clerks' confidence. She takes each clerk's ranked stack, gives a page 1 / (60 + position) points for where it sits in each stack, trusts the first clerk 70 to 30, and reads the totals. A page both clerks brought rises. A page only the second clerk brought, at 30 percent, cannot outscore anything in the first clerk's top twenty, and that arithmetic is in step 5.</p></div></div>
@@ -57,11 +120,13 @@
 <p>It has no dense leg of its own, because that needs the model and your lane; step 4 gives you the list to paste. Until then, list 1 is leg B, which makes the RRF table a demonstration of the rule on two rankers that disagree, not of what the API fuses. Move alpha from 0.7 towards 0 on the invoice question and watch which ruler's first choice wins the fused top: that is the whole meaning of alpha.</p></div>
 
 <!-- ============================ STEP 2 ============================ -->
-<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</h3><p>Twelve words, each with the value it takes on your lane.</p></div></div>
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: vector, leg, TF, IDF, BM25, RRF, alpha, k, arm, recall@k, MRR, p95, ceiling</h3><p>Fourteen words, each with the value it takes on your lane.</p></div></div>
 
 <div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
 <thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
 <tbody>
+<tr><td><strong>Dense vector</strong></td><td data-label="Meaning">The 768 numbers an embedding model computes for a text. Every slot is filled and none stands for a word; texts that mean the same thing get nearby vectors.</td><td data-label="On your lane">text-embedding-005, once per chunk at ingestion and once per question; step 1's right panel sketches it.</td></tr>
+<tr><td><strong>Sparse vector</strong></td><td data-label="Meaning">One slot per word and almost all of them zero: the kit hashes each word to one of %%SPARSE_DIMS%% slots and stores its TF weight there.</td><td data-label="On your lane">NP-03 fills %%DV_NP03_SLOTS%% slots; step 1's left panel draws them and step 3 computes them.</td></tr>
 <tr><td><strong>Dense leg</strong></td><td data-label="Meaning"><code>find_neighbors()</code> with the question's 768-number vector under the query profile; the index compares by dot product with every datapoint's dense vector.</td><td data-label="On your lane">Step 4's first list; the API's whole pool while <code>RETRIEVAL_MODE</code> is dense.</td></tr>
 <tr><td><strong>Sparse leg, the index's</strong></td><td data-label="Meaning">The hashed word-count vector on every datapoint (lesson 1.3), scored by dot product with the question's. No rarity weight, no length discount.</td><td data-label="On your lane">Step 4's alpha-0 list; step 3's first ruler.</td></tr>
 <tr><td><strong>TF weight</strong></td><td data-label="Meaning">1 + 0.5 (n - 1) for a word seen n times in a text; every word counts, including "the".</td><td data-label="On your lane"><code>sparse_encode()</code>, run in step 3.</td></tr>

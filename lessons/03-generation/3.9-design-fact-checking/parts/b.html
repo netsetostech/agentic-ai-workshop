@@ -1,0 +1,99 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Dimension 1 &middot; Architecture</span><h3>Architecture: the path a claim takes, station by station</h3><p>Six stations, each the kit's own; why each one is there rather than its alternative; and the one check the request path lacks, run offline.</p></div></div>
+
+<h4>Definition</h4>
+<p>The design is one small service, the fact desk, and every station it calls is already in the kit. A claim arrives for one tenant, and the desk calls rag-api's <code>/v1/passages</code> with its own identity. That identity needs what the MCP server's account has today: <code>roles/run.invoker</code> on documind-api, which the loop in <code>commands/lesson-12.2.sh</code> grants, and a place on each tenant's roster, which <code>make roster</code> writes. A 2 draws this path; it also says why each station is there rather than the obvious alternative, with reasons that belong to this workload:</p>
+<ul>
+<li><strong>The door, rather than rules of the desk's own.</strong> The law's %%N_CLASSES%% classes are decided once, in front of every route into rag-api that takes a question. A desk with its own list would drift from the Desk's. A hit on <code>/v1/passages</code> comes back as <code>passages: []</code> with the law's reply in <code>answer</code>, so the desk can tell a claim handed to a person from an empty pool.</li>
+<li><strong><code>/v1/passages</code>, rather than <code>/v1/query</code>.</strong> One retrieval, used twice: the generator reads the passages, and the quote check reads them again, in full. A <code>Citation</code> carries a quote of at most 500 characters; a passage carries its whole chunk, which is what a quote has to be found in. An empty pool refuses before any generation is paid for. And retrieval keeps every rule rag-api keeps: the roster, the filters, the backend the tenant's data_region allows, the version rule, the rerank. The kit built this route for exactly this caller, one that writes its own answer.</li>
+<li><strong>The generator's contract, rather than free text.</strong> <code>answerable</code> is a field the model fills, not a reading of its prose; each citation is a number resolved against the passages the model saw; each carries the words it relied on. The desk keeps <code>SYSTEM</code> as it is, so its answers are the lane's answers.</li>
+<li><strong>The quote check, rather than trusting the quote.</strong> <code>resolve()</code> copies the model's quote as it came, and rule 5 is a request in the prompt that nothing on the request path enforces. <code>quote_holds()</code> is the kit's own rule, written for the tuning set: the helpdesk style of <code>make_trainset.py</code> drops every teacher pair whose quote does not hold in its chunk. It costs nothing, so it runs on every claim.</li>
+<li><strong>A sampled judge, beside the path, rather than none or a judge on it.</strong> The computed checks cannot see an answer that says more than its passage; the judge can, and explains. It reads one standing verdict in twenty, after the fact, because each claim it reads is %%N_METRICS_WORD%% autorater calls, and it never decides, because a model's score is not a verdict (lesson 4.2). It sends the cited passages to Vertex AI Evaluation in %%JUDGE_REGION%%, so the design samples only tenants whose data_region is <code>any</code>: the caution the kit itself takes before a Google Chat door may carry an <code>in</code> tenant's quotes (step 4).</li>
+<li><strong>A verdict row of the desk's own.</strong> One row per claim in <code>usage_row()</code>'s shape, with the verdict and any quote that failed beside it. No row the kit writes carries a verdict, and step 5 shows what that costs the alerts.</li>
+</ul>
+
+<h4>The code</h4>
+@@door_paths@@
+@@passages_route@@
+@@passages_tool@@
+@@system_rules@@
+@@model_draft@@
+@@resolve_quote@@
+@@draft_trim@@
+@@quote_holds@@
+@@judge_role@@
+
+<h4>Do it: the quote check on the handbook, offline</h4>
+<p>The cell cuts the handbook with the kit's chunker, takes NP-03, the notice-period clause, and holds six quotes against it with <code>quote_holds()</code>: the sentence as written, a sentence that crosses a line break, the same sentence with revision 2's figure, a paraphrase, the whole clause, and the whole clause as <code>_draft()</code> trims an over-long quote. Each line prints both halves of the rule and the kit's verdict.</p>
+%%CELL_QUOTES%%
+%%OUT_QUOTES%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two quotes held and four did not, each of the four for its own reason, and <code>resolve()</code> would have passed all six. Revision 2's figure is the dangerous one: a fluent sentence, one number off, that a reader would believe; it fails because the passage the model read says 60. The paraphrase is true and still fails, which is the design's choice: a verdict stands on the passage's words, not on the model's. The whole clause is in the passage and fails rule 5's %%QUOTE_WORDS%% words. The trimmed one fails twice, and the second reason matters: the three dots <code>_draft()</code> puts on an over-long quote are in no passage, so an answer the generator had to repair is held for a person by construction.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Dimension 1 &middot; Architecture</span><h3>Architecture: three designs rejected, and the number that would change each</h3><p>A judge-only verifier, a cached long context, an agent with web search: each rejected with the kit's own numbers, each with the threshold that would bring it back.</p></div></div>
+
+<h4>Definition</h4>
+<p>A list of what was built is a description; a list of what was not built, and why, is a decision record. The rubric asks for at least three rejected options, and its 3 asks for more than a reason: the threshold at which the decision flips, stated so that someone could check it. Here are the three designs a fact desk is most often built as, each rejected on a number the kit holds.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Rejected design</th><th>Why not, from the kit</th><th>What would change the decision</th></tr></thead>
+<tbody>
+<tr><td><strong>A judge-only verifier</strong>: the model answers, a judge scores the answer, and the score is the verdict</td><td data-label="Why not, from the kit">A judge is a model reading a template. The kit's first two judged runs scored the lane 0.25 grounded for reasons that were all about the judge's inputs (<code>judge.py</code>, lesson 4.2). Every claim would be %%N_METRICS_WORD%% autorater calls: Rs %%JUDGE_RS%% a claim at the ceiling, Rs %%JUDGE_ALL_100K%% a month at 100k claims, where reading one claim in twenty costs Rs %%JUDGE_20TH_100K%%. And the half of the check that is deterministic, the quote, is free.</td><td data-label="What would change the decision">The judge agreeing with people as well as a second person does, on the rows lesson 4.5 has people label. Until it does, it advises.</td></tr>
+<tr><td><strong>Long context with an explicit cache</strong>: the tenant's whole corpus cached, and every claim read against all of it</td><td data-label="Why not, from the kit">Every claim reads the whole corpus at a tenth of the input rate, and the cache bills storage by the hour, $%%STORE_PER_M%% per million tokens an hour at Google's list price. Even against the retrieval path at its ceiling, its most expensive case, a cached corpus is cheaper only below %%CACHE_1K%% tokens at 1k claims a month, %%CACHE_10K%% at 10k and %%CACHE_100K%% at 100k. acme's corpus is %%ACME_TOKENS%% tokens and zeta's %%ZETA_TOKENS%%. No cache can be made below %%MIN_CACHE%% tokens (lesson 6.2), and a cache belongs to one model and one corpus fingerprint: every reindex leaves it stale until <code>make cache</code> packs it again.</td><td data-label="What would change the decision">A tenant whose whole corpus sits under the bound at its own volume, with the bound computed from its measured tokens a claim (step 6) instead of the ceiling. globex's %%GLOBEX_TOKENS%% tokens cross it at about %%GLOBEX_CROSS%% claims a month against the ceiling; its measured average decides whether they cross at all.</td></tr>
+<tr><td><strong>An agent with web search</strong>: the model searches the web and checks the claim against what it finds</td><td data-label="Why not, from the kit">The verdict would cite pages the tenant never published, which the eval's citation check fails by construction: every citation must name the tenant's own, current documents. The claim's words would leave for a search service the tenancy model does not cover, and %%POLICY_IN%%'s data_region is <code>in</code>: its text stays on the kit's own rows. The kit has no web-search tool, and where a door of its own would carry an <code>in</code> tenant's answers and quotes off its rows, into the company's Google Chat, the kit refuses until the company has agreed.</td><td data-label="What would change the decision">A tenant whose data_region is <code>any</code> (%%POLICY_ANY%% on the demo lane), whose agreement is on record as the Google Chat door requires, and whose claims are about public facts rather than its own documents. That is a different product, a research desk, and not this one.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The code</h4>
+@@judge_context@@
+@@cache_floor@@
+@@tenancy_rule@@
+@@roster_policies@@
+@@gchat_residency@@
+
+<h4>Do it: the three thresholds, from the kit's files</h4>
+<p>The cell rebuilds a claim's budget with the kit's own function, reads the cache's floor and its read rate from the kit, measures each tenant's corpus with the kit's estimate, reads the policies <code>make roster</code> writes, and prices the judge on every claim. Four prices come from Google's pages, dated in the cell: the cache's storage, the embedding, the ranking query and the judge's default autorater.</p>
+%%CELL_OPTIONS%%
+%%OUT_OPTIONS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The cache lost on the two large corpora at every scale, by a margin no likely price change closes: acme's corpus is %%ACME_X%% times the bound at 100k claims, Rs %%ACME_STORE%% a month just to keep cached, and Rs %%ACME_READ%% a claim to read. globex is the honest exception, small enough to cross at a few thousand claims a month if the retrieval path really sent its ceiling every time, which is why the line is a threshold and not a verdict. The floor bites the other way: the pack <code>make cache</code> builds for globex, its synthetic documents, is %%PACK_GLOBEX%% tokens by the estimate, so the %%MIN_CACHE%%-token floor alone rules out a cache of that pack. The policy lines are the kit's own data, and the judge line is the price of making the adviser the decider. Each rejection is now a sentence someone can check.</p></div>
+
+<div class="box box-teal"><div class="box-title">A 3 sounds like this</div>
+<p>"We retrieve instead of caching each tenant's corpus, because a cached corpus costs more per claim above %%CACHE_100K%% tokens at 100k claims a month, and acme's is %%ACME_TOKENS%%. globex is under that line; if its measured tokens a claim put its corpus under the bound at its own volume, we would cache globex and keep retrieving for the others."</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Dimension 2 &middot; Failure modes</span><h3>Failure modes: four the kit reproduces, and which ones the alerts see</h3><p>Each failure has a lesson that forces it; the alerts catch one of the four, partly, and the desk's own row is what would catch the rest.</p></div></div>
+
+<h4>Definition</h4>
+<p>A 2 documents four failure modes with real symptoms, each reproduced by a script. Every one below has a lesson that forces it, two of them on a candidate revision that takes no traffic. The 3 is the column after the symptom: what <code>terraform/alerts.tf</code> would catch, what it would not, and what the design does about the second group.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Failure</th><th>Reproduced by</th><th>The symptom</th><th>What alerts.tf catches</th><th>What the design does</th></tr></thead>
+<tbody>
+<tr><td><strong>The ranker silent</strong>: a degraded order</td><td data-label="Reproduced by">Lesson 3.7, step 6: <code>RERANK_TIMEOUT_S=0.001</code> on a candidate</td><td data-label="The symptom">Passages in retrieval order; <code>rerank_fallback 1</code> in the stages and on the row; one <code>rerank_fallback</code> line in the log</td><td data-label="What alerts.tf catches">Nothing: no policy reads it. The row counts it and the BigQuery view sums it</td><td data-label="What the design does">A log-based metric over the passages rows' <code>rerank_fallback</code>, alerted as a share, in the shape of the unanswerable rate</td></tr>
+<tr><td><strong>The index unreachable</strong>: the Firestore rung</td><td data-label="Reproduced by">Lesson 2.4, step 5: a candidate whose deployed index name is wrong</td><td data-label="The symptom"><code>vector_search_fallback</code> in the log; <code>vector_chunks 0</code> under <code>retrieval_backend vector</code>; passages from Firestore's own index, under the same predicates</td><td data-label="What alerts.tf catches">Only latency, and only if the rung is slow: p95 above %%SLO_S%% s for %%SLO_MIN%% minutes. <code>make smoke</code> refuses it, but a smoke is a script someone has to run</td><td data-label="What the design does">The smoke on a schedule, and the same metric shape over <code>vector_chunks 0</code></td></tr>
+<tr><td><strong>Refusals</strong>: the files are silent</td><td data-label="Reproduced by">Lesson 3.5, step 5: globex's missing policy, acme's FY2024, a filter nothing matches</td><td data-label="The symptom"><code>answerable: false</code> and <code>unanswerable_flag 1</code></td><td data-label="What alerts.tf catches">The unanswerable rate, above %%UNANS_PCT%% percent for %%UNANS_MIN%% minutes for a tenant, on query and stream rows. It never sees the desk's: a passages row is in neither its numerator nor its denominator, and a stream row says answerable unless the pool was empty</td><td data-label="What the design does">The verdict row carries the outcome, and a pair of metrics over it gives the desk its own refusal rate, built the way <code>alerts.tf</code> builds the unanswerable one</td></tr>
+<tr><td><strong>A quote the passage does not hold</strong></td><td data-label="Reproduced by">Lesson 3.6: a quote the cited passage does not contain, flagged by run_eval's quote-support measure; offline, step 3 above</td><td data-label="The symptom">A verdict that reads true and rests on words the passage does not hold</td><td data-label="What alerts.tf catches">Nothing. The live eval prints quote support as information, not a threshold, and measures it against the tenant's whole corpus</td><td data-label="What the design does">The check runs on every claim at Rs 0 and holds the verdict; the held share is a metric like the others</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p><strong>So the monitoring catches one of the four, and that one only in part.</strong> The rest are counted on rows nobody alerts on, or not counted at all, which is what the design's verdict row and its metrics are for. Two facts behind the table matter beyond this desk. First, <code>terraform/quota.tf</code> names %%N_NAMED%% alerts as intents, and only two are declared, both in <code>alerts.tf</code>: %%UNDECLARED%% are declared by nothing. Second, no policy counts documind-api's own errors. A reply the generator cannot parse is a 502, never a refusal (lesson 3.5): each one leaves a <code>generation_unparsed</code> line and no usage row, and no policy reads either. <code>burn_rate</code>, one of the three undeclared alerts, is the one that would have seen a run of them.</p>
+
+<p><strong>A rate needs claims to be a rate.</strong> The unanswerable rate is judged over windows of %%UNANS_MIN%% minutes. At 1k claims a month one such window holds %%WINDOW_1K%% claims on average, at 10k it holds %%WINDOW_10K%%, and at 100k about %%WINDOW_100K%%. A desk at the bottom of the range alerts on counts over a day; one at the top can alert on a share over half an hour.</p>
+
+<h4>The code</h4>
+@@unanswerable_metric@@
+@@stream_verdict@@
+@@api_latency@@
+@@quota_alerts@@
+@@quote_support@@
+
+<h4>Do it: the alerts the kit declares, against the ones it names</h4>
+<p>The cell reads every Terraform file in the kit, lists the alert policies each declares, holds <code>quota.tf</code>'s named alerts against them, and prints what the unanswerable rate's denominator counts.</p>
+%%CELL_ALERTS%%
+%%OUT_ALERTS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The kit declares its alerts in two files, and the list in <code>quota.tf</code> is older than both: two of its five names became policies, and three are still only names. The denominator line is the whole of failure mode 3 in one filter: the rate counts <code>query</code> and <code>stream</code> rows, so a desk built on <code>/v1/passages</code> refuses invisibly, and every claim the door hands to a person is just as invisible. A 3 on this dimension is that sentence, with the metric that closes the gap beside it.</p></div>

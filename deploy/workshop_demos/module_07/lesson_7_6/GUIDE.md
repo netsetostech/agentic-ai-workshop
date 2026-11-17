@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_7.6_Studio_Voice_WIX.html`, reviewed at blob `fbbf9c146875e365f93128d312d1b7bed2f13340`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_7.6_Studio_Voice_WIX.html`, reviewed at blob `ba21c999b8339bfae6615ea64e70b4510c937b85`. Learners read that page on the course site; this guide keeps its prose.
 
 The UI has three media features. The Studio turns a prompt into an image through the API, which checks, spends and records it. The chat can read each answer aloud, and it can take a question from the microphone. All three are in the kit already: this lesson exercises them and reads what each one leaves behind.
 
@@ -170,15 +170,15 @@ Two requests the door refuses, then lesson 7.5's video, put straight into the bu
 
 The door signs a PUT for one bare filename, under the caller's tenant, bound to one of seven content types:
 
-The cell asks for two URLs the door should refuse: a zip, and a name that is a path into globex. Then it asks for one for the video, PUTs the MP4's bytes to it, and waits for the worker's line about those bytes. It finds the line by the bytes' own SHA-256, the worker's claim key.
+The cell asks for two URLs the door should refuse: a zip, and a name that is a path into globex. Then it asks for one for the video under a name of its own, PUTs the MP4's bytes to it, and waits for the worker's line about those bytes. It finds the line by the bytes' own SHA-256, the worker's claim key, and removes the copy at the end.
 
 #### Do it
 
 - Two refusals, from the route's own checks: the content type is not one of the seven, and the name is not bare. The object's name is the tenant's prefix plus exactly the filename given, so the door refuses a slash or `..` before it signs anything.
 
-- The URL was a PUT into acme's prefix of the uploads bucket, bound to `video/mp4` and 15 minutes. The PUT went straight to the bucket, without passing through Cloud Run.
+- The URL was a PUT into acme's prefix of the uploads bucket, bound to `video/mp4` and 15 minutes. The PUT went straight to the bucket, without passing through Cloud Run. It went under `townhall_door.mp4`, not the video's own name: lesson 7.5's object holds that name, and a signed URL is authorised as its signer, `documind-api-sa`, which may create an object and never replace one (`objectCreator`, in `storage.tf`). A PUT over 7.5's object is a 403.
 
-- The worker took the bucket's event and acknowledged the bytes as a duplicate. Its claim key is the bytes' hash, and lesson 7.5 indexed these bytes already. A new video would be described the way 7.5 showed.
+- The worker took the bucket's event and acknowledged the bytes as a duplicate. Its claim key is the bytes' hash, and lesson 7.5 indexed these bytes already. A new video would be described the way 7.5 showed. The copy is then removed: no ledger row names it, and the bucket notifies only a finalized object, so the removal reaches no one.
 
 No page of the UI uses this door (step 7).
 

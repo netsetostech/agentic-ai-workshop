@@ -124,6 +124,11 @@ assert "print(json.dumps({\"event\": \"reconcile_withdrawn\", \"gcs_uri\": uri, 
 # 6. ablate.py's docstring is behind its golden set and its arms: 43 rows and one managed arm (the build counts 47, and there are two)
 assert "# the 43 anchored rows, four arms (~3 min)" in src[ABL] and "--arms all   # the four and the managed arm (P9.6: needs the mirror)" in src[ABL]
 assert 'ARM_KEYS = ("dense5", "dense20", "dense50", "hybrid", "rag_engine", "vertex_search")' in src[ABL]
+# 7. a store that ranks no document: the arm takes the kit's k nearest, as the API's Firestore rung does, and counts the row
+VS_ARM = src[ABL].split("    def vertex_search(", 1)[1].split("    def rerank(", 1)[0]
+assert "        if not ranked:\n            self.store_empty = getattr(self, \"store_empty\", set()) | {(tenant, question)}\n            return self.dense(question, tenant, k)" in VS_ARM
+RET_SRC = (KIT / "services/rag-api/retriever.py").read_text(encoding="utf-8")
+assert '    if not ranked:\n        logging.warning(json.dumps({"event": "vertex_search_fallback", "tenant": tenant_id, "error": "the store ranked no document",' in RET_SRC
 # what the page says of the scoring: the anchor is matched on the source's path and the text, the reranker is the fast one
 assert 'return (chunk.get("source_uri", "") + " " + chunk.get("text", "")).lower()' in src[ABL] and 'model="semantic-ranker-fast-004"' in src[ABL]
 assert "CHUNK_SIZE, CHUNK_OVERLAP = 512, 100" in src[MANAGED]
@@ -435,8 +440,12 @@ for arm in ("dense 20 -> rerank 5   (the lane)", "dense 50 -> rerank 5", "hybrid
     assert (ARMS[arm].group("depth"), ARMS[arm].group("r5")) == ("1.00", "0.94"), ARMS[arm].group(0)
     tail_ = abl.split(ARMS[arm].group(0), 1)[1].splitlines()[1:5]
     assert [l.endswith("ranked out (in the candidates, not the five)") for l in tail_] == [True, True, True, False], (arm, tail_)
-assert ARMS["dense 5, no reranker"].group("r5") == "0.94" and "not retrieved at depth 0" in A4
-assert "vector_distance_threshold=0.5" in src[ABL] and "max_extractive_segment_count=3" in src[ABL]
+assert ARMS["dense 5, no reranker"].group("r5") == "0.94" and "not retrieved at depth 0" not in A4, A4
+RAG_TAIL = abl.split(ARMS["rag_engine 20 -> rerank 5  (4.3's corpus, P9.4)"].group(0), 1)[1].split("\nvertex_search ", 1)[0]
+assert "not retrieved at depth 1" in RAG_TAIL, RAG_TAIL                       # RAG Engine kept one context inside the threshold
+VS_TAIL = abl.split(ARMS["vertex_search 20 -> rerank 5  (4.4's data store, R4)"].group(0), 1)[1].split("\n\n", 1)[0]
+assert re.search(r"\n       the store ranked no document for 1 of 4\d rows: the kit's nearest rows answered them, as the API does\n", VS_TAIL), VS_TAIL
+assert "vector_distance_threshold=0.5" in src[ABL] and 'return [c for c in self.dense(question, tenant, 3 * k) if c.get("doc_key") in ranked][:k]' in src[ABL]
 
 # ---- steps 5 and 6: the four events on zeta's handbook, each by the kit's own path, then fresh154
 with socket.socket() as s_:

@@ -28,6 +28,10 @@ AUDIT_ACTIONS = {
     # The DocuMind Desk (workshop lesson 5.6): the case queue (shared/cases.py, its actor a case reference and never an
     # email), the roles that read it (shared/roles.py), and the routed Desk's refusals.
     "desk.route_denied", "case.open", "case.update", "case.close", "role.grant", "role.revoke",
+    # A person in the loop (workshop lesson 5.8): a withdrawal a model asked for, paused for a second person's decision
+    # (shared/approvals.py; the actor is the person who acted, as role.grant's is), and the withdrawal the operator
+    # then ran (services/ingest/reconcile.py --approved, make withdraw-run). make retire from the shell writes none.
+    "approval.request", "approval.approve", "approval.reject", "doc.withdraw",
 }
 
 _bucket = None

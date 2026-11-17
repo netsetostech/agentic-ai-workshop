@@ -159,6 +159,7 @@ API_FAMILY = {
                          "language": "Cloud Natural Language", "translate": "Cloud Translation", "speech": "Speech-to-Text",
                          "texttospeech": "Text-to-Speech", "dlp": "Sensitive Data Protection (DLP)", "modelarmor": "Model Armor"},
     "Identity and security": {"iap": "Identity-Aware Proxy", "iamcredentials": "IAM Service Account Credentials",
+                              "sts": "Security Token Service (keyless CI, lesson 11.1)",
                               "secretmanager": "Secret Manager", "orgpolicy": "Organization Policy"},
     "Operations": {"logging": "Cloud Logging", "monitoring": "Cloud Monitoring", "cloudtrace": "Cloud Trace"},
     "Billing and the project itself": {"billingbudgets": "Cloud Billing Budget", "cloudbilling": "Cloud Billing",
@@ -309,6 +310,7 @@ EXCERPTS = {
                 block("Makefile", 'echo ">> Delete the throwaway project to stop all billing:"', n=2)),
 }
 assert "min_replica_count = 1" in EXCERPTS["vector"][1] and "SHARD_SIZE_MEDIUM = \"e2-standard-16\"" in EXCERPTS["vector"][1]
+assert standing_cost.NEW_SHARD == "SHARD_SIZE_SMALL"          # step 8 and the proof box: a new lane's index is created small
 assert "processing_units = 100" in EXCERPTS["spanner"][1] and 'tier              = "db-f1-micro"' in EXCERPTS["cloudsql"][1]
 assert "it bills by the hour while it exists" in EXCERPTS["spanner"][1] and "price this on the" in EXCERPTS["spanner"][1]
 assert "node_count     = 1" in EXCERPTS["gke"][1] and "min_instances = 2" in EXCERPTS["connector"][1]

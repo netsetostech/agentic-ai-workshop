@@ -1,0 +1,90 @@
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The deployed UI</span><h3>The UI and the ledger: where a change lands on your lane</h3><p>The Documents page as yourself, the same ledger through the API as the UI's account, then the three records the caches compare.</p></div></div>
+
+<p>A change ends in the ledger, so read the ledger first, where an operator would. The UI's address is built from your project number, as the setup block built <code>API</code>:</p>
+
+%%CELL_UI%%
+%%OUT_UI%%
+
+<p>Open it signed in to Google as yourself and choose <strong>Documents</strong>. The <strong>Versions</strong> table is the ledger: one row per source, with its status, its chunks, what its last change cost (reused, embedded, retired), the embedding it was made with, when it landed and where it is held. The caption above it prints the count of current versions, the corpus fingerprint, the last change and the tenant's data_region. Your email maps to acme, so these are acme's rows.</p>
+
+<p>The same rows come from the API. <code>GET /v1/sources</code> is the versions view <code>main.py</code> serves. The shell calls it as <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on all three tenants, so the call could name any of them. The UI asked as you, and only acme was yours. One ledger, two callers:</p>
+
+%%CELL_SOURCES%%
+%%OUT_SOURCES%%
+
+<p><code>any</code> is acme's data_region, set by <code>make roster</code>, and it is why the managed stores hold acme's copies. The handbook row's last three counts are what its last change cost: an undo shows %%N_HB%% reused and 0 embedded, and a re-issue like revision 2 shows %%REUSED%% and %%EMBEDDED%%. Then the three records that decide whether a cache may be used. Firestore holds them, and the cell reads each one directly:</p>
+
+%%CELL_FS%%
+%%OUT_FS%%
+
+<p><code>ledger/acme</code> is what the worker writes after every change. <code>tenant_caches/acme</code> exists only if <code>make cache</code> packed a context cache, and it is current only while its fingerprint is the ledger's. Answer-cache entries exist only on a revision with <code>SEMANTIC_CACHE=on</code>, and only the ones under the current fingerprint can be served. On a lane deployed with the defaults, expect no context cache and no entries: both caches are things a design turns on, and step 4 says why each follows the ledger the way it does.</p>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Dimension 1 &middot; Architecture</span><h3>Architecture: the path a change takes, station by station</h3><p>The stations, each the kit's own; why each one is there rather than its obvious alternative; and the re-issue run offline.</p></div></div>
+
+<h4>Definition</h4>
+<p>The design is the kit's ingestion path with its freshness parts, and nothing new on the path itself. A 2 draws it, as the panel does. It also says why each station is there rather than its alternative, with reasons that belong to this workload:</p>
+<ul>
+<li><strong>A notification into a push subscription, rather than a trigger straight to the worker.</strong> The bucket publishes <code>%%EVENT_TYPE%%</code> into <code>%%TOPIC%%</code>, and <code>%%SUB%%</code> delivers each event with an OIDC token minted as the worker's own account. It gives the worker %%ACK%% s to answer, retries with backoff from %%MIN_BACKOFF%% s to %%MAX_BACKOFF%% s, and after %%ATTEMPTS%% deliveries parks the message on <code>%%DLQ_TOPIC%%</code>. The retries, the ceiling and the dead-letter queue belong to the subscription, so the design gets them without writing them. The one thing it does not publish is a delete.</li>
+<li><strong>A guard before a claim, rather than trusting the order of delivery.</strong> Push delivery is at-least-once and not in order. <code>stale_generation()</code> refuses an event older than the ledger's generation before a byte is fetched, and the bytes are fetched by generation, never as whatever the object holds now. Then <code>claim()</code> lets exactly one worker process a version, inside a transaction, because duplicates arrive at the same moment, and the claim holds for a lease, so a worker cut off halfway cannot keep it for ever (step 6).</li>
+<li><strong>Sections and a carry-over, rather than re-embedding the document.</strong> A handbook is cut one chunk per <code>## </code> heading, so a chunk keeps its hash when a paragraph above it changes, and the carry-over reuses every vector whose hash the previous version holds. Revision 2 embeds %%EMBEDDED_W%% chunks of %%N_HB%%.</li>
+<li><strong>A staged swap, rather than writing the new rows live.</strong> The new rows land invisible, then one pass flips them current and retires the old. The retriever keeps only the newest version per source, which covers the moment between two batches of a long document. A reader sees one version, never two and never none.</li>
+<li><strong>Retire, rather than delete.</strong> A retired row keeps its vector for %%RETENTION%% days, the undo window, and the Firestore TTL policy is the only deleter. Step 5 holds this choice against its threshold.</li>
+<li><strong>A fingerprint the caches compare, rather than caches that are flushed.</strong> <code>refresh_fingerprint()</code> hashes the tenant's current <code>doc_key</code>s after every change. The context cache is attached only while it was packed under the same fingerprint, and the answer cache serves an entry only if it was answered under it (and for the same filters, <code>top_k</code> and prompt version, within %%TTL_H%% hours). A change makes every older entry a miss without a scan; an undo makes them valid again.</li>
+<li><strong>A nightly walk, rather than trusting every event.</strong> <code>reconcile.py</code> compares the bucket's current generations with the ledger and the claims. It retires what is gone, re-ingests what changed by rewriting the object onto itself, and ends on one number, drift. It is the backstop for every event the path missed, and it runs only on a lane that declares it.</li>
+</ul>
+
+<h4>The code</h4>
+@@notification@@
+@@guard@@
+@@claim@@
+@@chunker@@
+@@carry@@
+@@swap@@
+@@fingerprint@@
+@@caches@@
+@@walk_tf@@
+
+<h4>Do it: the re-issue, offline</h4>
+<p>The cell cuts version 1 and revision 2 of the handbook with <code>shared/documind_corpus.py</code>, the notebooks' twin of the worker's chunker, which mints the same chunk texts and hashes. It applies the carry-over's rule: a chunk is reused when its hash is held. Then it cuts the same two texts as whole-document windows, the way the worker cut a handbook before 12 September 2026.</p>
+%%CELL_REISSUE%%
+%%OUT_REISSUE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>By section, revision 2 costs %%EMBEDDED_W%% chunks and %%CHARS%% characters. One is the preamble, because revision 2 opens with a new title and an effective date; the other is NP-03, the clause that changed. As whole-document windows, the lines inserted at the top moved every window: %%WIN_REUSED_W%% of %%WIN_N%% reused, %%WIN_CHARS%% characters sent. Those are the numbers the kit's own comment records, reproduced. Everything after the carry-over, the swap, the index, the stores, BigQuery, the ledger and the fingerprint, is the panel's stations 5 to 10, and the panel's counts come from the same functions on a stand-in store: %%EDIT_WRITES%% Firestore writes for this one edit.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Dimension 1 &middot; Architecture</span><h3>Architecture: three designs the kit rejected, and the number that would change each</h3><p>Each one is recorded, with its date, in the kit's own comments; each comes with the threshold that would bring it back.</p></div></div>
+
+<h4>Definition</h4>
+<p>A list of what was built is a description; a list of what was not built, and why, is a decision record. The rubric's 3 asks for more than a reason: the number at which the decision would flip, stated so that someone could check it. The three below are not invented for this page. Each one is in a kit comment with its date, written when the option was tried or weighed and set aside.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Rejected design</th><th>Why not, from the kit</th><th>What would change the decision</th></tr></thead>
+<tbody>
+<tr><td><strong>Whole-document windows</strong>: every document cut into fixed windows from top to bottom (<code>main.py</code>, 12 September 2026)</td><td data-label="Why not, from the kit">Tried and measured. One line inserted at the top of the handbook moved every window, and a re-issue that changed one clause reused none of its 92 windows; by section it reuses 281 of 283. Reproduced on this page: %%WIN_CHARS%% characters to embed against %%CHARS%%, Rs %%WIN_RS%% against Rs %%SEC_RS%% for the same edit.</td><td data-label="What would change the decision">Edits that rewrite a document from the top, where no chunker reuses anything. The kit meters it on every <code>ingest_ok</code>, as <code>documind/ingest_embedded</code> beside <code>documind/ingest_reused</code>. While a month of edits embeds a small share of each document's chunks, sections win. If embedded came close to chunks on most edits, the chunker would stop mattering for cost, and retrieval quality alone would decide.</td></tr>
+<tr><td><strong>Delete on update</strong>: a re-issue deletes the old version's rows (<code>idempotency.py</code>, the ledger, 11 September 2026)</td><td data-label="Why not, from the kit">A deleted version leaves no trail of what was current when, and comes back only as a fresh ingest: parsed again, and every chunk the current version does not share embedded again. The ledger retires instead: a flag, never a delete, so the audit story survives and a bad re-index is undone by uploading the previous bytes again, with nothing re-embedded. The price is the window's storage: the handbook's %%N_HB%% retired rows hold at least %%HB_MB%% MB with their vector-index entries, Rs %%KEEP_RS%% for %%RETENTION%% days at lesson 8.3's Firestore price.</td><td data-label="What would change the decision">An obligation to erase superseded text sooner than the kit can. <code>retention_days</code> goes no lower than %%RET_MIN%% day (the variable's own validation), and the TTL policy deletes within about a day after the stamp. A takedown that must be gone within hours needs a delete on retire, and gives up the free undo for that document. Anything slower is a shorter window, one variable, not a different design.</td></tr>
+<tr><td><strong>A second ingestion path for repairs</strong>: the walk writing rows itself (<code>reconcile.py</code>, 11 September 2026)</td><td data-label="Why not, from the kit">The walk repairs by rewriting the object onto itself: a new generation fires the same event the worker already handles. So every repair passes the same guard, claim, carry-over, swap, mirror and fingerprint as an upload. A second path would be a second copy of each of them, free to drift from the first.</td><td data-label="What would change the decision">A repair too large for the push lane. Rewritten all at once, %%IN_FLIGHT%% documents in flight and %%ATTEMPTS%% deliveries clear a burst only while it fits inside the %%DLQ_BOUND%% s of backoff between them (lesson 8.3's bound): %%REWRITE_1%% rewrites at 1 s a document, %%REWRITE_10%% at 10 s. Past that the tail reaches the DLQ, and a repair belongs on the batch lane the kit already has, the same <code>index_document()</code> with no request deadline.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>The code</h4>
+@@rej_windows@@
+@@rej_delete@@
+@@rej_retention@@
+@@rej_path@@
+
+<p>The kit records two more, without a date. An earlier draft of <code>eventarc.tf</code> declared an Eventarc trigger, which delivered CloudEvents straight to the service, around the subscription's token, its retry ceiling and its DLQ; the worker, which parses a Pub/Sub envelope, answered 400. And <code>vector.tf</code> says why the index is <code>STREAM_UPDATE</code>: with <code>BATCH_UPDATE</code>, an uploaded document is simply absent for hours and nothing reports an error. Neither carries a date, so neither is one of the three, but both are the kit's own reasons.</p>
+@@undated@@
+
+<h4>Do it: the three thresholds, from the kit's files</h4>
+<p>The cell prices the same edit cut both ways at lesson 8.3's embedding price, reads the retention window and its floor from the Makefile and <code>variables.tf</code>, and reads the push lane's limits from <code>eventarc.tf</code> and the worker's deploy script to compute the rewrite bound.</p>
+%%CELL_THRESH%%
+%%OUT_THRESH%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Each rejection is now a sentence someone can check. For a one-clause edit, whole-document windows cost %%WIN_TIMES%% times as much to embed as sections, and the meter that would say otherwise is already on the lane. The retention window cannot be set to zero, so the only change that brings delete-on-update back is an erasure deadline under a day. And the one-path repair holds until a night's rewrites outgrow the push lane's dead-letter bound; past it, the kit's own batch lane is the second path, already built.</p></div>
+
+<div class="box box-teal"><div class="box-title">A 3 sounds like this</div>
+<p>"We retire instead of deleting, because an undo inside %%RETENTION%% days embeds nothing and keeps the trail, for about Rs %%KEEP_RS%% of storage per retired handbook. We would delete on retire only for a takedown that must be gone inside a day, the floor of <code>retention_days</code>. And we repair through the push lane until a night's repairs pass %%REWRITE_1%% documents at a second each; past that, they go to the batch lane."</p></div>

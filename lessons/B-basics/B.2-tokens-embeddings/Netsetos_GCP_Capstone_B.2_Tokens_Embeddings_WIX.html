@@ -87,7 +87,7 @@ li{margin-bottom:6px;}
 /* code windows: the rounded shell and the scroller are two elements */
 .cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
 .ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
-.ch-bar span{overflow-wrap:anywhere;}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
 .cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 .cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
 .cp:active{transform:scale(.96);}
@@ -577,7 +577,7 @@ a lakh such questions as input: Rs 140.25</pre></div>
 <p><code>count_tokens</code> runs the model's own tokenizer on a text and returns the number, without generating anything, and Google's page for it says there is no charge for using it. For the Gemini 3 family the call goes to the <code>global</code> location, where the kit's generation client lives. The API packs prompts by the estimate, but <code>context_budget.py</code> was written so that the model's counter can be handed in instead, and lesson 3.4 does exactly that to show where the estimate drifts. This cell counts three texts: the golden question, which is this lesson's proof, the same question in Hindi, and the handbook's sentence with an amount in lakh notation. Each line carries the length, the API's estimate, the model's count, and the rupee line on that count, with step 5's prices and step 5's arithmetic.</p>
 
 <h4>The code</h4>
-<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - the generation client, on the global location</span><span class="ro">read only</span></div><pre tabindex="0">_client = genai.Client(enterprise=<span class="kw">True</span>, project=settings.project_id, location=<span class="st">&quot;global&quot;</span>)  <span class="cm"># generation runs on the global endpoint (Gemini 3.x)</span></pre></div>
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - the generation client, on the global location</span><span class="ro">read only</span></div><pre tabindex="0">_client = genai.Client(enterprise=<span class="kw">True</span>, project=settings.project_id, location=<span class="st">&quot;global&quot;</span>, http_options=RETRY)  <span class="cm"># generation runs on the global endpoint (Gemini 3.x)</span></pre></div>
 
 <div class="cw"><div class="ch-bar"><span>services/rag-api/context_budget.py - the module&#x27;s promise: a real counter can replace the estimate</span><span class="ro">read only</span></div><pre tabindex="0">Pure Python: no cloud calls. `count_fn` <span class="kw">is</span> injected so the API can <span class="kw">pass</span>
 `client.models.count_tokens` <span class="kw">and</span> tests can <span class="kw">pass</span> a fake.</pre></div>
@@ -681,8 +681,10 @@ reworded  IT-SEC-04 0.0000  EXP-12 0.0550  PR-05 0.0000   shared with IT-SEC-04:
 <div class="cw"><div class="ch-bar"><span>services/rag-api/retriever.py - the Firestore rung: nearest by cosine distance, turned back into a similarity</span><span class="ro">read only</span></div><pre tabindex="0">    hits = (query
             .find_nearest(<span class="st">&quot;embedding&quot;</span>, Vector(vec),
                           distance_measure=DistanceMeasure.COSINE,
-                          limit=top_k,
+                          limit=top_k <span class="kw">if</span> current_only <span class="kw">else</span> min(<span class="nu">4</span> * top_k, <span class="nu">1000</span>),
                           distance_result_field=<span class="st">&quot;d&quot;</span>).get())
+    <span class="kw">if</span> <span class="kw">not</span> current_only:
+        hits = [h <span class="kw">for</span> h <span class="kw">in</span> hits <span class="kw">if</span> h.to_dict().get(<span class="st">&quot;current&quot;</span>) <span class="kw">is</span> <span class="kw">not</span> <span class="kw">False</span>][:top_k]
     out = []
     <span class="kw">for</span> h <span class="kw">in</span> hits:
         d = h.to_dict()

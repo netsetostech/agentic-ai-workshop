@@ -78,9 +78,11 @@ for fact in ('database_version    = "POSTGRES_16"', 'tier              = "db-f1-
     assert fact in tf_src, fact
 assert "authorized_networks {" not in tf_src
 deploy_sh = (KIT / "commands/lesson-12.8.sh").read_text(encoding="utf-8")
-assert re.search(r"gcloud run jobs create documind-checkpoint-setup \\\n(.*\n)*?.*--command=python --args=migrate.py \|\| echo \"job exists - continuing\"", deploy_sh)
+# The job is deployed (created or updated to this commit's image) before every run, since 21 October 2026: the box
+# "What the kit does not do yet" no longer lists "the setup job keeps its first image".
+assert re.search(r"gcloud run jobs deploy documind-checkpoint-setup \\\n(.*\n)*?.*--command=python --args=migrate.py\n", deploy_sh)
 assert "gcloud run jobs execute documind-checkpoint-setup" in deploy_sh
-assert not re.search(r"jobs (update|deploy) documind-checkpoint-setup", deploy_sh)                      # the job keeps its first image
+assert not re.search(r"jobs create documind-checkpoint-setup", deploy_sh)
 reqs_txt = (KIT / "services/chat/requirements.txt").read_text(encoding="utf-8")
 assert re.search(r"^google-adk==2\.8\.0$", reqs_txt, re.M) and "sqlalchemy" not in reqs_txt.lower()         # no db extra, no SQLAlchemy
 assert "DatabaseSessionService on the same Cloud SQL when CHECKPOINT_DSN is set" in br_src                  # what brains.py's docstring says

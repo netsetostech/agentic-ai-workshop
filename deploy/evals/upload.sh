@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Push the corpus to the uploads bucket, one prefix per tenant.
 #
-# The prefix IS the tenancy boundary as far as ingestion is concerned: Eventarc fires on
-# object.finalized, and services/ingest reads the tenant from the object path. Put a file
+# The prefix IS the tenancy boundary as far as ingestion is concerned: the bucket's Pub/Sub
+# notification (terraform/eventarc.tf) fires on OBJECT_FINALIZE, the push subscription calls
+# services/ingest, and the worker reads the tenant from the object path. Put a file
 # under the wrong prefix and it is ingested as the wrong tenant - which is precisely what
 # golden.jsonl's isolation rows are there to catch.
 #
@@ -49,9 +50,9 @@ for dir in "${CORPUS}"/*/; do
 done
 
 echo
-echo "Uploaded. Eventarc should now be enqueuing one ingest job per object;"
-echo "watch the DLQ if nothing lands:"
-echo "  gcloud pubsub subscriptions pull ingest-dlq-sub --auto-ack --limit=10"
+echo "Uploaded. The bucket's notification now pushes one message per object to the worker;"
+echo "if nothing lands, peek at the dead letters without acknowledging them (a pull --auto-ack would delete them):"
+echo "  make dlq"
 echo
 echo "The two binary assets are NOT here - manifest.json lists what to supply:"
 grep -A1 '"supplied_by": "owner"' "${HERE}/manifest.json" | grep '"note"' \

@@ -1,0 +1,199 @@
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; REST</span><h3>Your two services, as Cloud Run's API returns them</h3><p>Where each service's traffic is held, its newest revision, and its template against the revision that answers: the state the live drills start from.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>gcloud run services describe --format=json</code> prints what Cloud Run's Admin API v1 returns for a service, and step 5's stand-in is shaped like it. The cell asks the API directly, as you, with your gcloud access token: first documind-chat, then documind-api. For each service it prints three things:</p>
+<ul>
+<li>the newest revision;</li>
+<li>every traffic entry, and whether it follows the latest revision or names one;</li>
+<li>the variables on the template that the serving revision does not have.</li>
+</ul>
+<p>In the console, Cloud Run lists each service's revisions with the share of the traffic each one takes.</p>
+
+<h4>Do it: the two services, before the drills</h4>
+%%CELL_REST%%
+%%OUT_REST%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the two services against what the drills need.</p>
+<ul>
+<li><strong>Expect documind-chat to follow its latest revision</strong>, so that a change to it serves at once, with its template matching the revision that answers. Its cap should read unset, so the default of %%CAP_DEFAULT%% in <code>limits.py</code> applies. That is the state both live drills require, and the state they must leave.</li>
+<li><strong>Expect documind-api to be held by name</strong>, on the revision that <code>make deploy-services</code>, <code>make promote</code> or <code>make rollback</code> put there. A candidate waiting for the gate shows as a tagged entry at 0%, its template ahead of the serving revision.</li>
+</ul>
+<p>If documind-chat reads <code>held by name</code>, both live drills refuse to start. Read the template line first: moving the traffic with <code>gcloud run services update-traffic documind-chat --to-latest</code>, the lever of pinned traffic, serves whatever the newest revision carries.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Live drills</span><h3>The two drills on your lane</h3><p>Pinned traffic, then a routine deploy that drops a hotfix, each on documind-chat and each putting it back; then the chat's smoke.</p></div></div>
+
+<h4>Definition</h4>
+<p>The live drills are step 5's two functions with a lane under them: gcloud and make found on your PATH, and <code>/health</code> read as <code>make limits</code> reads it, as documind-ui-sa. Each one refuses before it changes anything when documind-chat's traffic does not follow its latest revision. Each one puts every setting back from a <code>finally</code> block, so a failure halfway restores the chat too. If the restore itself fails, it prints the two gcloud lines that finish the job.</p>
+@@restore@@
+
+<h4>Do it: pinned traffic, on your lane</h4>
+<p>documind-chat changes for a few minutes: two new revisions, four <code>/health</code> reads, and no model call.</p>
+%%CELL_PINNED_LIVE%%
+%%OUT_PINNED_LIVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The recording shows the lines step 5 printed, on your lane:</p>
+<ul>
+<li>the serving revision, and <code>/health</code> at %%CAP_DEFAULT%%;</li>
+<li>the traffic held by name, and the cap of 3 by hand;</li>
+<li>the new revision at 0%, with <code>/health</code> still at %%CAP_DEFAULT%%, the detector's two lines, and <code>REPRODUCED</code>;</li>
+<li>the lever, <code>/health</code> at 3, and <code>CLEARED</code>;</li>
+<li>the restore: the variable removed (it was unset before), the chat on its latest revision, and <code>/health</code> at %%CAP_DEFAULT%%.</li>
+</ul>
+<p>That is the first half of the proof: a live drill reproduced its gotcha and left the chat as it was.</p></div>
+
+<h4>Before the second drill: four refusals</h4>
+<p>The second drill runs a routine deploy, so it checks more before it changes anything.</p>
+@@deploy_pre@@
+<ul>
+<li><strong>The traffic must follow the latest revision</strong>, as for the first drill.</li>
+<li><strong>Nothing else may be on the chat that the deploy would change.</strong> The drill's routine deploy would drop that too, and the lane would not be as it was. If you ran lesson 6.7, its <code>LESSON113_RESTART</code> is still on documind-chat: the drill stops and prints the gcloud line that removes it.</li>
+<li><strong>Your checkout must be at the commit the chat's image was built from</strong>, because the routine deploy rebuilds the image from your checkout. If it is not, the drill stops and names two ways out: check out that commit, or redeploy the chat from your checkout first. Redeploying is the safer of the two, because an older commit may predate <code>commands/gotchas.py</code> itself: <code>make deploy-services SCRIPTS=commands/lesson-12.8.sh PROJECT="$PROJECT" REGION="$REGION" ADMIN_EMAILS="$ME"</code>, about four minutes.</li>
+<li><strong><code>ADMIN_EMAILS</code> must be yours.</strong> <code>make deploy-services</code> ends with <code>make operators</code>, which grants token minting to each address in it.</li>
+</ul>
+
+<h4>Do it: a routine deploy drops a hotfix, on your lane</h4>
+<p>Most of its time is the chat's image build, about four minutes. No model call.</p>
+%%CELL_DROP_LIVE%%
+%%OUT_DROP_LIVE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>It opened as step 5's drill did:</strong> the image's tag, nothing the next deploy would change, and <code>/health</code> at %%CAP_DEFAULT%%.</li>
+<li><strong>The cap of 8 by hand</strong> served (<code>/health</code> at 8), and the detector named the drop before the deploy.</li>
+<li><strong>The routine deploy ran</strong>, with make's own output: the chat's image built from your checkout, and the service deployed from its script's list. After it the variable was gone and <code>/health</code> said %%CAP_DEFAULT%%: <code>REPRODUCED</code>.</li>
+<li><strong>The lever is a change to your fork</strong>, so on a lane the drill names it instead of running it. The restore found nothing left to remove.</li>
+</ul>
+<p>That is the second half of the proof.</p></div>
+
+<h4>Do it: the chat, on every brain</h4>
+%%CELL_SMOKE%%
+%%OUT_SMOKE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>[PASS] health</code> shows the limits documind-chat publishes now: <code>limits=%%CAP_DEFAULT%% calls</code> again. Each brain answered the same question with citations, within its limits, and each brain's line prints what its turn cost. The outsider got 403 from the roster. <code>%%N_SMOKE%% passed, 0 failed</code> closes the proof: the chat answers as it did before the drills.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Detectors</span><h3>The detectors: what your lane shows now</h3><p>Every detector on your lane, reading only, and how to read what they find.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make gotcha-detect</code> runs every detector, or one with <code>ID=</code>. It only reads:</p>
+<ul>
+<li><strong>Cloud Run:</strong> <code>gcloud run services describe</code> and <code>gcloud run revisions describe</code>.</li>
+<li><strong>Cloud Logging:</strong> <code>gcloud logging read</code>, over the last %%HOURS%% hours. <code>HOURS=</code> changes the window.</li>
+<li><strong>Your checkout:</strong> <code>deploy/.candidate-revision</code> and <code>deploy/.previous-revision</code>.</li>
+<li><strong>GitHub:</strong> for the production environment, one GET through gh, as <code>make ci-vars</code> makes it.</li>
+</ul>
+<p>Each detector ends with <code>FOUND</code>, <code>nothing found</code>, or <code>nothing this checkout can tell</code>. A read that fails prints <code>STOPPED</code>, and the others still run. The command exits 1 when anything was found, and 2 when a read failed and nothing was found.</p>
+
+<h4>Do it: every detector</h4>
+%%CELL_DETECT%%
+%%OUT_DETECT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read it in three groups.</p>
+<ul>
+<li><strong>The lane as the drills left it.</strong> pinned-traffic lists documind-chat as following its latest revision. deploy-drops-hotfix finds nothing the next deploy would change on documind-chat: no cap left behind.</li>
+<li><strong>What every lane shows.</strong> deploy-drops-hotfix is <code>FOUND</code> on documind-admin and documind-ui: both carry your <code>ADMIN_EMAILS</code>, and a <code>make deploy-services</code> without it would write the placeholder back. The admin console would then answer you <code>403 - Admins only</code>, and the UI would stop treating you as an admin, so pass <code>ADMIN_EMAILS</code> on every deploy. agent-spend-outside-the-month counts rupees on the chat rows, from the smoke's own turns, that no report of the month includes.</li>
+<li><strong>What depends on your history.</strong> The release detectors read the revision files in your checkout. A checkout that never recorded a candidate cannot tell how the API's revision reached the traffic, and says so. With no <code>deploy/.previous-revision</code>, ci-promote-loses-previous is <code>FOUND</code>, because <code>make rollback</code> would refuse in this checkout. The log reads count only what happened in the window.</li>
+</ul></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>The release no gate judged, loud against silent, and what the kit does not do yet</h3><p>The hazard a routine deploy carries, the registry sorted the way the capstone asks, a gotcha with no detector, and the gaps.</p></div></div>
+
+<h4>The release no gate judged</h4>
+<p>This is the hazard in step 1's red box. <code>make up</code> runs <code>make deploy-services</code>, whose default <code>SCRIPTS</code> include <code>lesson-12.2.sh</code>, the API's deploy. After it the recipe moves documind-api's traffic to the revision it just made, by name (step 4). Lesson 11.2's gate runs on a candidate, and <code>make deploy-services</code> makes none.</p>
+@@up@@
+%%CELL_UNGATED%%
+%%OUT_UNGATED%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<ul>
+<li><strong>After a gated release and <code>make promote</code></strong>, a routine deploy from a newer checkout moved documind-api to a revision no gate judged, carrying the new checkout's <code>GIT_SHA</code>.</li>
+<li><strong>The detector named it:</strong> a serving revision that this checkout neither recorded as a candidate nor rolled back to.</li>
+<li><strong>The same deploy without the API's script</strong> left documind-api on the gated revision.</li>
+</ul>
+<p>The kit does not gate <code>make deploy-services</code> itself. To change the API, go through <code>make release-candidate</code>, <code>make eval-live API=</code> with the candidate's tag URL, and <code>make promote</code>. To deploy anything else, leave <code>lesson-12.2.sh</code> out of <code>SCRIPTS</code>.</p></div>
+
+<h4>Loud against silent: what pages, and what you watch instead</h4>
+<p>The capstone's failure-modes question, in lesson 11.8, asks for more than reproduced failures. It asks which of them your monitoring would catch, which it would not, and what you did about the second group. Here is that answer for the kit's own %%N_GOTCHAS%%, read from the registry.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Gotcha</th><th>What pages or goes red</th><th>What you watch instead</th></tr></thead>
+<tbody>
+%%SORT_ROWS%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p>One gotcha has an alert policy, and it pages only once %%N_DELIVERIES%% deliveries have failed, about an hour after the upload. Its detector finds the same poison upload as soon as the worker refuses it.</p>
+
+<h4>Change it: a gotcha with no detector</h4>
+<p>Add an entry whose drill and check <code>commands/gotchas.py</code> does not run, and the registry refuses to load: <code>make gotchas</code>, every drill and every detector stop with exit 2 and name the problems. <code>commands/tests/test_gotchas.py</code> holds the same rule, in <code>test_a_detector_that_does_not_exist_is_refused</code>, one of its %%N_TESTS%% tests. The kit's dry-run workflow runs that file on every push, so a pull request that adds such an entry goes red. The cell copies pinned-traffic as made-up-gotcha, runs the registry, and puts the file back.</p>
+%%CELL_CHANGE%%
+%%OUT_CHANGE%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The two problems are the two halves of an entry the code does not back: an offline drill nobody wrote, and a check nobody wrote. A detector that names an alert policy terraform does not declare, or a log event no service writes, fails the same way in the kit's tests (<code>kit_problems()</code>). <code>git checkout</code> put the file back, and the registry lists %%N_GOTCHAS%% again.</p></div>
+
+<h4>Why the registry looks like this</h4>
+<ul>
+<li><strong>Evidence, word for word.</strong> Each drill checks the kit lines it rests on before it runs. If the kit changes so that the drill stops reproducing its gotcha, the drill exits 1, and the tests stay red until the entry moves to fixed and names the test that proves the fix. The registry cannot go stale quietly.</li>
+<li><strong>Offline first.</strong> The %%N_OFFLINE%% offline drills cost nothing and need no lane, so the kit's tests run every one of them on every push. A lane is for the two drills only a lane can prove.</li>
+<li><strong>A live drill puts the lane back.</strong> It refuses a chat whose traffic is held, refuses a deploy that would change anything else, and restores from a <code>finally</code> block. If even the restore fails, it prints the lines that finish it.</li>
+<li><strong>Detectors only read.</strong> A check you run before every deploy has to be safe to run at any time.</li>
+</ul>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Step</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td>The registry, the deploy reader, every offline drill, the Change-it</td><td data-label="Costs">nothing leaves your machine</td><td data-label="On your lane">free</td></tr>
+<tr><td>Your two services, through the API</td><td data-label="Costs">two service reads and two revision reads</td><td data-label="On your lane">free</td></tr>
+<tr><td>Pinned traffic, on your lane</td><td data-label="Costs">two revisions of documind-chat and four <code>/health</code> reads; no model call</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td>A deploy drops a hotfix, on your lane</td><td data-label="Costs">two revisions of documind-chat, and one Cloud Build of its image, about four minutes; no model call</td><td data-label="On your lane">Rs 0 in model calls, plus the build</td></tr>
+<tr><td><code>make smoke-chat</code></td><td data-label="Costs">one question per brain; each agent turn stops calling the model at Rs %%TURN_INR%%, and the direct brain's one answer costs at most Rs %%RS_ANSWER_MAX%%</td><td data-label="On your lane">about Rs 5</td></tr>
+<tr><td><code>make gotcha-detect</code></td><td data-label="Costs">describe and logging reads, and one GET through gh</td><td data-label="On your lane">free</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<p>Each point is read from the kit, and the build asserts each one it can, so this box changes when the kit does.</p>
+<ul>
+<li><strong>It does not gate <code>make deploy-services</code> or <code>make up</code>.</strong> The lever is how you deploy: <code>SCRIPTS</code> without <code>lesson-12.2.sh</code>. The cohort plan fixes the hazard after 6 December.</li>
+<li><strong>No alert policy reads the chat rows.</strong> A turn stopped at a limit, a search the turn gave up on, and the agents' own spend show only to the detectors. No policy reads <code>vector_search_fallback</code> either.</li>
+<li><strong>A routine deploy keeps no setting made by hand.</strong> A fork that needs one carries it in its deploy, reviewed like any change.</li>
+<li><strong>Not yet run against a real lane, by the kit's own account:</strong> the live drills, the detectors' reads, and the field names in tag-audience-401's log filter. That GitHub creates an unprotected production environment the first time a job names it is unverified too. The author's run settles the first three.</li>
+<li><strong>Not registered yet:</strong> gotchas that need kit work first. The plan lists them for after 6 December, among them ADK sessions held in one worker's memory, an interrupt dropped on a paused thread, a trace id Cloud Run may rewrite, A2A tasks held in one instance's memory, breakers and rate windows counted per worker, and a resumed node that reruns from its first line.</li>
+</ul></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each in a step above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The registry holds its own rules</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>%%N_GOTCHAS%% gotchas in ops/gotchas.json</code></td></tr>
+<tr><td>2</td><td data-label="Claim">Every routine deploy replaces a service's whole environment</td><td data-label="The check">step 4</td><td data-label="Pass looks like">%%N_SCRIPTS%% lines of <code>--set-env-vars</code>; <code>CHAT_MAX_MODEL_CALLS in it: False</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Every offline drill reproduces its gotcha</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>%%N_OFFLINE%% of %%N_OFFLINE%% offline drills reproduced their gotcha</code></td></tr>
+<tr><td>4</td><td data-label="Claim">The chat starts on its latest revision</td><td data-label="The check">step 6</td><td data-label="Pass looks like">documind-chat <code>follows the latest revision</code>; its cap <code>unset</code></td></tr>
+<tr><td>5</td><td data-label="Claim">Pinned traffic, reproduced and cleared on your lane</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>REPRODUCED</code>, <code>CLEARED</code>, then <code>restored: CHAT_MAX_MODEL_CALLS unset, traffic on the latest revision; /health: max_model_calls %%CAP_DEFAULT%%</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A routine deploy drops a hotfix on your lane</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>CHAT_MAX_MODEL_CALLS gone; /health: max_model_calls %%CAP_DEFAULT%%</code>, <code>REPRODUCED</code>, then <code>restored: ...</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The chat answers as before</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>limits=%%CAP_DEFAULT%% calls</code>; <code>%%N_SMOKE%% passed, 0 failed</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The lane as the drills left it</td><td data-label="The check">step 8</td><td data-label="Pass looks like">documind-chat <code>follows its latest revision</code>; <code>nothing the next make deploy-services would change</code> on documind-chat</td></tr>
+<tr><td>9</td><td data-label="Claim">The release no gate judged</td><td data-label="The check">step 9</td><td data-label="Pass looks like"><code>REPRODUCED: make deploy-services moved documind-api's traffic to a revision no gate judged</code>, then <code>CLEARED</code></td></tr>
+<tr><td>10</td><td data-label="Claim">A gotcha with no detector is refused</td><td data-label="The check">step 9</td><td data-label="Pass looks like"><code>STOP: gotchas.json breaks its rules: made-up-gotcha: ...</code>, then <code>exit 2</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Here is what this lesson left on your lane:</p>
+<ul>
+<li><strong>documind-chat has new revisions</strong>, the drills' and their restores'. It serves from the last one with the settings it had before: no <code>CHAT_MAX_MODEL_CALLS</code>, and its traffic on its latest revision.</li>
+<li><strong>The chat's image was rebuilt from the same commit</strong>, and the routine deploy ran the rest of its script again: the invoker bindings, the checkpoint migration job, IAP on the service, and <code>make operators</code>' token grants for your address. Every routine deploy of the chat runs the same steps.</li>
+<li><strong><code>make smoke-chat</code> asked %%N_BRAINS%% questions</strong> in a session of its own: chat rows, rag-api's rows, the month's counter, and checkpoints.</li>
+<li><strong>Nothing else moved.</strong> The drills deployed the chat alone, so documind-api never left its revision, and your clone's <code>ops/gotchas.json</code> is as it was.</li>
+</ul>
+<p>Lesson 11.8 completes the independent capstone and hands the lane over, and its failure-modes question is the one this lesson's table answers.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 11 Project &middot; Lesson 11.7 Reproduce the agent failures production shows and no eval row does &middot; v5.0</p><p>Next: Lesson 11.8 Complete the independent capstone and operational handover.</p></div>

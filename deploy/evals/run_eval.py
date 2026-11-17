@@ -27,11 +27,12 @@ It checks the golden set itself:
                   decision to this lesson: 12.5 mints chunk ids as {tenant}:{sha256}#{i}, which
                   contains neither the document slug nor the clause id, so the runner
                   matches each anchor against filename + text joined together.
-                  NOTE the scope: this runs OFFLINE, over the corpus. The live half does
-                  not score must_retrieve at all - /v1/query returns citations, not the
-                  raw retrieved set, so recall cannot be measured from outside the
-                  service. Scoring it live needs a debug field on the response; until
-                  that exists, saying so here is better than implying coverage.
+                  NOTE the scope: this runs OFFLINE, over the corpus. /v1/query returns
+                  citations, not the raw retrieved set, so the live half does not score
+                  must_retrieve by default. DOCUMIND_EVAL_PASSAGES=1 reads each answerable
+                  row's pool again from /v1/passages (workshop lesson 10.4: the same
+                  retrieval and rerank, no model call) and prints must_retrieve_recall
+                  beside quote_passage_rate - both [info], neither a threshold.
     coverage      the isolation and refusal rows still exist. Deleting a failing test
                   is the other common way a suite rots, and it looks like a green build.
 
@@ -70,6 +71,15 @@ every citation must name the row's tenant, its own document and a CURRENT versio
 media_kind_rate is a threshold, required.json names the rows that must exist and individually
 pass, and the run refuses to start under IAP without the outsider's token. --report writes every
 row's verdict, latency, stages and cache_hit to a JSON file: what the demo shows is that file.
+
+8 October 2026 - the rows keep what was said. --report's records carry each answer (its first 600
+characters) and its citations, as `cites`, so a failing row can be read without asking again.
+row_verdict() is live()'s judgment of one row as a function of the reply alone, for the instruments
+that judge answers outside the gate (the prompt bench); live() keeps its own inline copy, because
+lessons quote it line by line, and tests/test_eval_rows.py holds the two equal. DOCUMIND_EVAL_PASSAGES=1
+reads each answerable row's pool again (passage_checks()): every quote looked for in the passage it
+cites, every must_retrieve anchor in the pool. An environment switch, not a flag, because lessons
+quote main() and the eval-live recipe whole; with it off, every line printed is what it was.
 """
 from __future__ import annotations
 
@@ -109,6 +119,13 @@ STAGES = ("retrieve_ms", "rerank_ms", "generate_ms")
 TEXT_FILES = (".md", ".txt")
 
 
+def _text(path: str) -> str:
+    """A text file's contents, the file closed again: open().read() left each one to the garbage collector, a
+    ResourceWarning per corpus file wherever warnings show (13 October 2026)."""
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
 def load_corpus() -> dict[str, dict[str, str]]:
     """{tenant: {path_relative_to_corpus: text}}. Text is lower-cased once.
 
@@ -126,7 +143,7 @@ def load_corpus() -> dict[str, dict[str, str]]:
         for fn in sorted(os.listdir(d)):
             p = os.path.join(d, fn)
             if os.path.isfile(p) and fn.endswith(TEXT_FILES):
-                out[tenant][fn] = open(p, encoding="utf-8").read()
+                out[tenant][fn] = _text(p)
     return out
 
 
@@ -135,8 +152,7 @@ def load_demo() -> str:
     must_not_contain must live in, or the row asserts a staleness nothing could produce."""
     if not os.path.isdir(DEMO):
         return ""
-    return "\n".join(open(os.path.join(DEMO, fn), encoding="utf-8").read()
-                     for fn in sorted(os.listdir(DEMO)) if fn.endswith(TEXT_FILES)).lower()
+    return "\n".join(_text(os.path.join(DEMO, fn)) for fn in sorted(os.listdir(DEMO)) if fn.endswith(TEXT_FILES)).lower()
 
 
 def load_golden() -> list[dict]:
@@ -149,10 +165,10 @@ def haystack(corpus: dict, tenant: str) -> str:
     be a document slug (hr_policy_2026 - only in the path) or a clause id (EXP-12 - only
     in the text).
 
-    The same rule WOULD run over chunk_id + source_uri + text on a real retrieval, which
-    is the decision evals/README.md asked 12.7 to make. It does not run live today:
-    /v1/query returns citations, not the retrieved set, so recall is not observable from
-    outside the service. Saying that here beats implying a coverage that does not exist."""
+    The same rule runs over chunk_id + source_uri + text on a real retrieval, which is the
+    decision evals/README.md asked 12.7 to make: anchors_found(), over the pool /v1/passages
+    returns, when DOCUMIND_EVAL_PASSAGES=1. /v1/query returns citations, not the retrieved
+    set, so without the switch recall is not observed from outside the service."""
     docs = corpus.get(tenant, {})
     return "\n".join(f"{name}\n{text}" for name, text in docs.items()).lower()
 
@@ -380,15 +396,21 @@ def _ask_once(api_url: str, question: str, tenant: str, email: str, token: str |
         return 0, {"error": type(e).__name__}, int((time.time() - t0) * 1000)
 
 
+RETRY_AFTER_429_S = 30   # the Retry-After rag-api's main.py sends with a model 429
+
+
 def ask(api_url: str, question: str, tenant: str, email: str, token: str | None, retries: int = 1):
     """POST /v1/query. Returns (status, body, latency_ms). AUTH_MODE=dev accepts x-user-email; under IAP the
     identity comes from the assertion and the header is ignored. A 5xx, a timeout or a transport error is retried
-    ONCE after two seconds and then counted: one retry separates a blip from an outage, more would hide one."""
+    ONCE after two seconds and then counted: one retry separates a blip from an outage, more would hide one. A 429 is
+    the one 4xx retried, once, after the Retry-After the API sends with it: the model's shared capacity said "not
+    now", not "never". Before the API answered a model 429 as a 429 it arrived here as a 500 and got this same retry
+    (21 October 2026)."""
     status, body, ms = _ask_once(api_url, question, tenant, email, token)
     for _ in range(retries):
-        if status == 200 or 400 <= status < 500:
+        if status == 200 or (400 <= status < 500 and status != 429):
             break
-        time.sleep(2)
+        time.sleep(RETRY_AFTER_429_S if status == 429 else 2)
         status, body, ms = _ask_once(api_url, question, tenant, email, token)
     return status, body, ms
 
@@ -406,6 +428,43 @@ def fetch_current_shas(api_url: str, tenant: str, token: str | None) -> set[str]
     except Exception:  # noqa: BLE001
         return None
     return {str(s.get("doc_key") or "").split("_", 1)[-1] for s in rows if s.get("status") == "indexed"}
+
+
+MEDIA_KINDS = {".png": "figure", ".jpg": "figure", ".jpeg": "figure", ".mp4": "segment", ".mp3": "segment"}   # the worker's MEDIA_TYPES
+
+
+def fetch_media_names(api_url: str, tenant: str, token: str | None) -> dict[str, set[str]] | None:
+    """{kind: {file names}} of the tenant's CURRENT media versions, from GET /v1/sources: a picture is a figure, a video
+    or an audio file is segments. None when the endpoint is unavailable - then every media row is asked for its kind."""
+    req = urllib.request.Request(f"{api_url.rstrip('/')}/v1/sources?tenant_id={tenant}")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            rows = json.loads(r.read()).get("sources") or []
+    except Exception:  # noqa: BLE001
+        return None
+    out: dict[str, set[str]] = {}
+    for s in rows:
+        name = str(s.get("name") or "").rsplit("/", 1)[-1]
+        kind = MEDIA_KINDS.get(os.path.splitext(name)[1].lower())
+        if kind and s.get("status") == "indexed":
+            out.setdefault(kind, set()).add(name)
+    return out
+
+
+def as_media_stands(row: dict, media: dict[str, set[str]] | None) -> dict:
+    """The row as the live gate asks it today. A row that wants a figure or a segment keeps must_cite_kind only while
+    the tenant holds a current file of that kind named after one of its must_retrieve documents (annual_report_2026_
+    fig3.png for annual_report_2026, townhall_2026_q1.mp4 for townhall_2026_q1). Until then it is judged as the text
+    lookup it is - the words and the citations - and marked media_absent. Before lesson 7.5 builds the town hall's
+    video, mm-03 asked for a segment that could not exist yet and kept every full gate red (22 October 2026)."""
+    want = row.get("must_cite_kind")
+    if not want or media is None:
+        return row
+    if any(n.startswith(doc) for doc in row.get("must_retrieve", []) for n in media.get(want, ())):
+        return row
+    return {**{k: v for k, v in row.items() if k != "must_cite_kind"}, "media_absent": want}
 
 
 def load_manifest_objects() -> dict[str, set[str]]:
@@ -513,6 +572,12 @@ def live(api_url: str, source: str | None = None, report: str | None = None, gol
     manifest = load_manifest_objects()
     text_of = {t: re.sub(r"\s+", " ", haystack(corpus, t)) for t in corpus}   # for quote support
     current: dict[str, set[str] | None] = {}
+    media = {t: fetch_media_names(api_url, t, token) for t in sorted({r["tenant"] for r in golden if r.get("must_cite_kind")})}
+    golden = [as_media_stands(r, media.get(r["tenant"])) for r in golden]
+    for r in golden:
+        if r.get("media_absent"):
+            print(f"  [info] {r['id']}: no {r['media_absent']} file of {', '.join(r['must_retrieve'])} indexed for {r['tenant']}"
+                  f" yet: judged as a text lookup, the {r['media_absent']} citation not asked (make media builds it)")
 
     # EVERY row is sent, not just the answerable ones.
     #
@@ -555,6 +620,10 @@ def live(api_url: str, source: str | None = None, report: str | None = None, gol
         rec.update({"answerable": body["answerable"], "confidence": body["confidence"], "citations": len(body["citations"]),
                     "api_latency_ms": body.get("latency_ms"), "stages": body.get("stages") or {},
                     "cache_hit": body.get("cache_hit", "none"), "model": body.get("model"), "backend": body.get("backend")})
+        # What was said, so a failing row can be read from the report without asking again (W2-A). `citations` stays
+        # the count it always was; `cites` is the list, without media_url, a signed link that expires.
+        rec["answer"] = body["answer"][:600]
+        rec["cites"] = [{k: c.get(k) for k in ("chunk_id", "source_uri", "page", "kind", "quote", "score")} for c in body["citations"]]
         text = normalise(body["answer"])
 
         # must_not_contain is checked on EVERY 200, whatever the row's shape. A leak in a
@@ -619,6 +688,10 @@ def live(api_url: str, source: str | None = None, report: str | None = None, gol
             required_failed.append(f"{row['id']}: {rec['why'] or 'failed'}")
         records.append(rec)
 
+    # DOCUMIND_EVAL_PASSAGES=1: each answerable row's pool read again, its quotes and anchors looked for in it. Off by
+    # default, and an environment switch rather than a flag: main() and the eval-live recipe stay as lessons quote them.
+    pq = passage_checks(api_url, golden, records, member, token) if os.environ.get("DOCUMIND_EVAL_PASSAGES") == "1" else None
+
     n = len(answerable_rows)
     u = len(unanswerable_rows)
     iso_rate, iso_bad = check_isolation(api_url, golden, token, outsider_token)
@@ -649,6 +722,8 @@ def live(api_url: str, source: str | None = None, report: str | None = None, gol
     if quote_rows:
         print(f"  [info] {'quote_support_rate':21} {quote_ok / quote_rows:6.1%}  (quoted words found in the tenant's corpus text; "
               f"not a threshold - a Doc AI extraction and a pypdf mirror hyphenate differently)")
+    for line in passage_info(pq) if pq else ():
+        print(line)
     skipped = [t for t, v in current.items() if v is None]
     if skipped:
         print(f"  [info] version check skipped for {', '.join(sorted(skipped))}: GET /v1/sources was unavailable")
@@ -690,7 +765,8 @@ def live(api_url: str, source: str | None = None, report: str | None = None, gol
                        "judged": sorted(judged), "failed": sorted(missed), "leaks": leaks, "stale": stale,
                        "isolation": iso_bad, "required_failed": required_failed,
                        "quote_support_rate": (quote_ok / quote_rows) if quote_rows else None,
-                       "version_check_skipped": sorted(skipped), "records": records}, f, indent=1)
+                       "version_check_skipped": sorted(skipped), "records": records,
+                       **({"passage_checks": pq} if pq else {})}, f, indent=1)
         print(f"  report: {report}")
     # A must_not_contain hit is not in the thresholds, on purpose - see
     # check_isolation. It is still printed, and it is still a stop-everything.
@@ -709,6 +785,201 @@ def live(api_url: str, source: str | None = None, report: str | None = None, gol
         return 1
     print("  All thresholds met.")
     return 0
+
+
+def row_verdict(row: dict, status: int, body, current: set[str] | None = None,
+                manifest: dict[str, set[str]] | None = None, corpus_text: str = "") -> dict:
+    """live()'s judgment of one row, as a function of the reply alone (W2-A): the rule for every instrument that judges
+    answers outside the gate - the prompt bench asks generate() itself, and must score a row exactly as the gate would.
+
+    live() keeps its own copy of the rule, inline, because lessons quote its lines verbatim and a quoted line cannot
+    move; tests/test_eval_rows.py holds the two equal over every golden row and every kind of reply. The inputs are what
+    live() holds at that point: `current` the tenant's current shas (fetch_current_shas(); None skips the version
+    check), `manifest` load_manifest_objects(), `corpus_text` the tenant's haystack() with its whitespace collapsed.
+
+    Returns the record's outcome, pass and why, and the facts the rates count: answered (an answerable row the API
+    answered), refused (an unanswerable row it refused), cited, valid (every citation the tenant's own and current;
+    False when it answered without one), supported (quote support, when cited), kind_ok (when the row asks for a media
+    kind), contained (every must_contain figure, when answered), and the leaks and stale lines live() lists. A fact
+    that does not apply to the row is None."""
+    v = {"outcome": "ok", "pass": False, "why": "", "answered": False, "refused": False, "cited": False, "valid": None,
+         "supported": None, "kind_ok": None, "contained": None, "leaks": [], "stale": []}
+    if status != 200:
+        error = body.get("error") if isinstance(body, dict) else None
+        v["outcome"] = "denied" if status in (401, 403) else "error"
+        v["why"] = f"HTTP {status}" + (f" {error}" if error else "")
+        return v
+    problem = validate_body(body)
+    if problem:
+        v["outcome"], v["why"] = "malformed", problem
+        return v
+    text = normalise(body["answer"])
+    for never in row.get("must_not_contain", []):
+        if contains(text, never):
+            v["stale" if row["shape"] == "version" else "leaks"].append(f"{row['id']}: answer contained {never!r}")
+            v["why"] = f"answer contained {never!r}"
+    if not row["answerable"]:
+        if body["answerable"]:
+            v["why"] = "answered, should refuse"
+        else:
+            v["refused"], v["pass"] = True, not v["why"]
+        return v
+    if not body["answerable"]:
+        v["why"] = "refused"
+        return v
+    v["answered"], v["cited"], v["valid"] = True, bool(body["citations"]), False
+    if v["cited"]:
+        v["valid"], v["supported"], why = judge_citations(row, body["citations"], current, manifest or {}, corpus_text)
+        if not v["valid"]:
+            v["why"] = "; ".join(why)
+    else:
+        v["why"] = "answered without a citation"
+    want = row.get("must_cite_kind")
+    if want:
+        v["kind_ok"] = want in {c.get("kind", "text") for c in body["citations"]}
+        if not v["kind_ok"]:
+            v["why"] = f"cited no {want}"
+    v["contained"] = all(contains(text, w) for w in row.get("must_contain", []))
+    if not v["contained"]:
+        v["why"] = f"answered without {row.get('must_contain')}"
+    v["pass"] = v["contained"] and v["valid"] and v["kind_ok"] is not False and not v["why"].startswith("answer contained")
+    return v
+
+
+QUOTE_VERDICTS = ("own", "elsewhere", "absent", "substituted", "unread")   # quote_check()'s five, one per citation
+
+
+def passages(api_url: str, question: str, tenant: str, email: str, token: str | None, top_k: int = 6,
+             retries: int = 1) -> list[dict] | None:
+    """POST /v1/passages (W2-A), the route shared/documind_tools.retrieve(passages=True) calls (workshop lesson 10.4):
+    the same door, identity, roster, retrieval and rerank as /v1/query, then the pool itself - each chunk's id, source,
+    page, kind and full text - and no model call. The body is ask()'s, top_k 6 included (the one knob retrieve() and
+    rerank() read), so this is the pool the row's answer was drawn from; the headers are ask()'s too. A 5xx, a timeout
+    or a transport error is asked once more after two seconds, as ask() does; a 4xx is an answer.
+
+    Returns the passages, or None when there is no pool to read: an error, a body that is not the route's, or the
+    Desk's door answering in the route's place (passages [] beside an answer). None leaves the row's quotes unread and
+    its anchors out of the recall: a pool that could not be read is not a pool that missed."""
+    data = json.dumps({"query": question, "tenant_id": tenant, "top_k": top_k}).encode()
+    for attempt in range(1 + retries):
+        if attempt:
+            time.sleep(2)
+        req = urllib.request.Request(f"{api_url.rstrip('/')}/v1/passages", data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("x-user-email", email)
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                got = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:
+                return None
+            continue
+        except Exception:  # noqa: BLE001 - a timeout, a reset, a body that is not JSON: asked once more
+            continue
+        pool = got.get("passages") if isinstance(got, dict) else None
+        if not isinstance(pool, list) or (not pool and got.get("answer")):
+            return None
+        return [p for p in pool if isinstance(p, dict)]
+    return None
+
+
+def quote_check(citation: dict, pool: list[dict] | None) -> str:
+    """One verdict per citation, from QUOTE_VERDICTS, against the pool its row's question retrieves (passages()):
+
+        own          the quoted words are in the passage the citation names (its chunk_id)
+        elsewhere    not there, but in another passage of the pool: real words under the wrong [Source N]
+        absent       in no passage of the pool: words the model wrote, not words it read
+        substituted  the model gave no quote, or cited the source only as an [N] in its prose, so resolve()
+                     (shared/documind_schemas.py, which rag-api's generator calls) put the chunk's first 500 characters
+                     in its place: nothing was quoted, nothing is supported
+        unread       the passage the citation names is not in the pool read back, or no pool was read: not judged
+
+    The match is judge_citations()'s - whitespace collapsed, case folded, a substring - against one passage instead of
+    the tenant's whole corpus. The "..." that _draft() (services/rag-api/generator.py) appends when it cuts an
+    over-long quote to the contract's 200 characters is not the document's, so a trailing "..." is dropped first. A
+    model that quotes the whole of a chunk shorter than 200 characters reads as substituted: from outside, the two are
+    the same string."""
+    def flat(s):
+        return re.sub(r"\s+", " ", s or "").strip().lower()
+
+    pool = [p for p in pool or [] if isinstance(p, dict)]
+    own = next((p for p in pool if p.get("chunk_id") and p.get("chunk_id") == citation.get("chunk_id")), None)
+    if own is None:
+        return "unread"
+    quote, text = citation.get("quote") or "", own.get("text") or ""
+    if flat(quote) == flat(text[:500]):
+        return "substituted"
+    words = flat(quote)
+    if words.endswith("..."):
+        words = words[:-3].rstrip()
+    if not words:
+        return "absent"
+    if words in flat(text):
+        return "own"
+    if any(words in flat(p.get("text")) for p in pool if p is not own):
+        return "elsewhere"
+    return "absent"
+
+
+def anchors_found(row: dict, pool: list[dict] | None) -> dict[str, bool] | None:
+    """{anchor: in the pool?} for each of the row's must_retrieve anchors: check_anchors()'s matching rule on a real
+    retrieval, as haystack() describes it - chunk_id, source_uri and text joined and lower-cased, so a document slug
+    (hr_policy_2026) is found in the source and a clause id (EXP-12) in the text. None when no pool was read."""
+    if pool is None:
+        return None
+    hay = "\n".join(f"{p.get('chunk_id') or ''}\n{p.get('source_uri') or ''}\n{p.get('text') or ''}"
+                    for p in pool if isinstance(p, dict)).lower()
+    return {a: a.lower() in hay for a in row.get("must_retrieve", [])}
+
+
+def passage_checks(api_url: str, golden: list[dict], records: list[dict], email: str, token: str | None) -> dict:
+    """DOCUMIND_EVAL_PASSAGES=1, once live() has asked every row: each answerable row that came back well-formed -
+    answered or refused, so recall is not measured only where the model answered - has its pool read again
+    (passages()), each of its citations checked against that pool (quote_check(), as `check` on the record's cites)
+    and each must_retrieve anchor looked for in it (anchors_found(), the record's `anchors`; `pool` is the pool's size,
+    None when it could not be read). quote_passage_rate counts the answered rows' citations - the rows
+    quote_support_rate reads - whose passage was read; must_retrieve_recall counts every read row's anchors. One
+    embedding and one rerank a row and no model call: the route bills no tokens."""
+    by_id = {r["id"]: r for r in golden}
+    quotes = dict.fromkeys(QUOTE_VERDICTS, 0)
+    rows = unread = found = asked = 0
+    for rec in records:
+        row = by_id.get(rec["id"])
+        if row is None or not row["answerable"] or rec["outcome"] != "ok":
+            continue
+        pool = passages(api_url, row["question"], row["tenant"], email, token)
+        rows += 1
+        unread += pool is None
+        rec["pool"] = None if pool is None else len(pool)
+        for c in rec.get("cites", []):
+            c["check"] = quote_check(c, pool)
+            if rec.get("answerable"):
+                quotes[c["check"]] += 1
+        rec["anchors"] = anchors_found(row, pool)
+        if rec["anchors"] is not None:
+            found += sum(rec["anchors"].values())
+            asked += len(rec["anchors"])
+    read = sum(quotes.values()) - quotes["unread"]
+    return {"rows": rows, "unread_rows": unread, "quotes": quotes,
+            "quote_passage_rate": quotes["own"] / read if read else None,
+            "anchors_found": found, "anchors": asked, "must_retrieve_recall": found / asked if asked else None}
+
+
+def passage_info(pq: dict) -> list[str]:
+    """passage_checks()'s two [info] lines, printed under quote_support_rate: what was read, never a threshold."""
+    def rate(v):
+        return "   n/a" if v is None else f"{v:6.1%}"
+
+    q = pq["quotes"]
+    lost = f"; {pq['unread_rows']} pool(s) could not be read" if pq["unread_rows"] else ""
+    return [f"  [info] {'quote_passage_rate':21} {rate(pq['quote_passage_rate'])}  ({q['own']} of {sum(q.values()) - q['unread']} "
+            f"answered rows' quotes in the passage they cite; elsewhere {q['elsewhere']}, absent {q['absent']}, "
+            f"substituted {q['substituted']}, unread {q['unread']}; not a threshold)",
+            f"  [info] {'must_retrieve_recall':21} {rate(pq['must_retrieve_recall'])}  ({pq['anchors_found']} of {pq['anchors']} "
+            f"anchors in the pool /v1/passages returned, over {pq['rows'] - pq['unread_rows']} answerable rows{lost}; "
+            f"not a threshold)"]
 
 
 def main() -> int:

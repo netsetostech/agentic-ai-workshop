@@ -87,7 +87,7 @@ li{margin-bottom:6px;}
 /* code windows: the rounded shell and the scroller are two elements */
 .cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
 .ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
-.ch-bar span{overflow-wrap:anywhere;}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
 .cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
 .cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
 .cp:active{transform:scale(.96);}
@@ -257,9 +257,9 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 
 <p><strong>Expose.</strong> An MCP server offers tools: named operations, each with a description and an input schema. FastMCP builds all three from an ordinary Python function. The name is the function's own, or the one given. The description is the docstring's first line. The schema comes from the signature, with each argument's line taken from the docstring's Args. The kit's server, <code>services/mcp/server.py</code>, exposes four tools: <code>retrieve</code>, <code>list_documents</code>, <code>corpus_stats</code> and <code>calculate_processing_cost</code>. Each is one of the lane's own operations. <code>retrieve</code> calls the one <code>retrieve()</code> the chat brains call, and the server keeps no index of its own.</p>
 
-<p><strong>Discover.</strong> A client asks <code>tools/list</code> and receives those declarations. A model reads them the way it read the kit's tool definitions in lesson 5.7: the description says when to use a tool, and the schema says what to send. The protocol is JSON-RPC 2.0 over HTTP. The kit's server is stateless, so a single POST to <code>/mcp</code> is enough, and the server answers as a server-sent event.</p>
+<p><strong>Discover.</strong> A client asks <code>tools/list</code> and receives those declarations. A model reads them the way it read the kit's tool definitions in lesson 5.1: the description says when to use a tool, and the schema says what to send. The protocol is JSON-RPC 2.0 over HTTP. The kit's server is stateless, so a single POST to <code>/mcp</code> is enough, and the server answers as a server-sent event.</p>
 
-<p><strong>Invoke.</strong> <code>tools/call</code> names a tool and its arguments. The server runs it and returns the result as data, or a tool error with a message the caller can act on. The kit's server checks three things, in order. First the arguments. Then who is calling, from a bearer token minted for the server's own address. Then which tenant, from the roster. The <code>tenant</code> argument only chooses among rosters the caller is already on. The cost tool asks none of this, because it touches no tenant's data.</p>
+<p><strong>Invoke.</strong> <code>tools/call</code> names a tool and its arguments. The server runs it and returns the result as data, or a tool error with a message the caller can act on. One request runs one tool, so a model that asks for two searches in one message, as lesson 5.1's scripted model did, has its client send two <code>tools/call</code> requests. The server answers each on its own and numbers nothing: a chunk both searches find comes back in both results, and numbering it once, as the chat service's ledger does, is the client's job. The kit's server checks three things, in order. First the arguments. Then who is calling, from a bearer token minted for the server's own address. Then which tenant, from the roster. The <code>tenant</code> argument only chooses among rosters the caller is already on. The cost tool asks none of this, because it touches no tenant's data.</p>
 
 <p><strong>Where the checks are not.</strong> Listing needs no identity. Anyone who can reach the server can read its four declarations. On Cloud Run, IAM decides who can reach it, and that is lesson 5.3.</p>
 
@@ -275,7 +275,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
 <b class="h">Arguments</b><div class="pc-in" id="mc-args"></div>
 <b class="h">The request</b><div class="rpc" id="mc-rpc"></div>
 <b class="h">The server answers</b><div class="ans" id="mc-ans" aria-live="polite"></div></div>
-<p class="dg-cap">Every answer was returned by the kit's own <code>server.py</code>, run on localhost at build time with the token check, the roster, rag-api and Firestore stood in. The stand-ins hold each document under the class lesson 10.4's relabel gave it. So <code>statute</code> keeps the Act's passages, and <code>form</code>, a listed type that is no class, empties the pool.</p>
+<p class="dg-cap">Every answer was returned by the kit's own <code>server.py</code>, run on localhost at build time with the token check, the roster, rag-api and Firestore stood in. The stand-ins hold each document under the class the relabel gives it, which the box before step 3 runs on your lane. So <code>statute</code> keeps the Act's passages, and <code>form</code>, a listed type that is no class, empties the pool.</p>
 </div>
 
 <div class="box box-amber"><div class="box-title">What the panel is not</div>
@@ -378,7 +378,26 @@ make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</p
 <p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head; step 3 makes the difference visible.</p></div>
 
 <div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
-<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>API</code> and <code>tok</code>. You need fastmcp 3.4.7 in the operator venv, and the first cell installs it. Step 4 starts the kit's server on port 8121 of your machine, as a background process that uses your credentials. It reads the roster from Firestore and asks rag-api as <code>documind-ui-sa</code>. Step 6 stops it. Nothing on your lane changes.</p></div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>API</code> and <code>tok</code>. You need fastmcp 3.4.7 in the operator venv, and the first cell installs it. Step 4 starts the kit's server on port 8121 of your machine, as a background process that uses your credentials. It reads the roster from Firestore and asks rag-api as <code>documind-ui-sa</code>. Step 6 stops it. The box below gives acme's stored rows their classes for this lesson, and its last cell, when you finish, puts them back; nothing else on your lane changes.</p></div>
+
+<div class="box box-amber"><div class="box-title">Before step 3: give acme's documents their classes</div>
+<p>Step 1's panel and the last point of step 7 are about <code>doc_type</code> filters, and a filter finds a row by its class. On your lane every text row still carries <code>unknown</code>, the label the worker writes, so a class filter finds nothing (lesson 2.1). <code>make doc-types SEED=manifest</code> writes acme's doc_type registry from the kit's <code>evals/manifest.json</code>: each document's class, pinned to the version it was reviewed at. Then it prints the view, one line per document, and the relabel's plan. <code>APPLY=1</code> carries out the plan. It moves the stored rows to their classes in Firestore, Vector Search, Vertex AI Search and BigQuery, and expires acme's answer cache. Nothing is uploaded again, and no row is embedded again unless its vector is not the declared model's. The relabel needs the index's name, which the first line reads off your lane. Lesson 10.4 teaches the registry and the relabel in full.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (acme's registry from the manifest, then its stored rows relabelled: a few minutes)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export VECTOR_INDEX_NAME="$(gcloud ai indexes list --region="$REGION" --project="$PROJECT" \
+  --filter='displayName=documind-chunks' --format='value(name)')"; echo "index: $VECTOR_INDEX_NAME"     # the index the relabel re-upserts, read off your lane
+make doc-types PROJECT="$PROJECT" TENANT=acme SEED=manifest   # the registry from the manifest, the view, the plan
+make doc-types PROJECT="$PROJECT" TENANT=acme APPLY=1         # the plan applied, store by store</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author's run; your versions, chunk counts and unregistered uploads are your lane's)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/doc_types.txt]</pre></div>
+
+<p>If <code>make</code> stops with error 3, BigQuery deferred a statement for rows still in its streaming buffer. The other stores are relabelled, and the same line run again later finishes it. Lesson 5.5 expects every text row <code>unknown</code> again, so the last cell puts the rows back when you finish this lesson. It keeps the registry.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"># when you finish the lesson: acme's rows back to what the worker wrote, as lesson 5.5 expects; the registry stays
+export VECTOR_INDEX_NAME="$(gcloud ai indexes list --region="$REGION" --project="$PROJECT" \
+  --filter='displayName=documind-chunks' --format='value(name)')"
+make doc-types PROJECT="$PROJECT" TENANT=acme RESET=1 APPLY=1</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author's run, at the end of the lesson)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/doc_types_reset.txt]</pre></div>
+
+</div>
 
 <!-- ============================ STEP 3 ============================ -->
 <div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; Expose</span><h3>Expose: what the server declares</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_05/lesson_5_2/demo_03_expose_what_the_server_declares.py" target="_blank" rel="noopener"><code>demo_03_expose_what_the_server_declares.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
@@ -616,6 +635,7 @@ PY</pre></div>
 <tr><td>Start the server</td><td data-label="Costs">two tokens, and a roster read per call</td><td data-label="On your lane">free</td></tr>
 <tr><td>Discover</td><td data-label="Costs">one request to your own machine</td><td data-label="On your lane">free</td></tr>
 <tr><td>Invoke</td><td data-label="Costs">one rag-api answer; the three refusals stop before rag-api</td><td data-label="On your lane">under a rupee</td></tr>
+<tr><td>The classes, and putting them back</td><td data-label="Costs">writes to acme's stored rows, twice: Firestore, Vector Search, Vertex AI Search and BigQuery</td><td data-label="On your lane">writes only, no model call</td></tr>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
 <div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
@@ -624,7 +644,7 @@ PY</pre></div>
 <li><strong>Anyone who can reach the server can list its tools.</strong> <code>tools/list</code> needs no identity, because the check is inside each tool. On Cloud Run, IAM decides who can reach the server, and that is lesson 5.3.</li>
 <li><strong>The server has no sign-in of its own.</strong> A caller must bring a Google ID token minted for the server's address. An unauthenticated call is a tool error, not an HTTP 401, so an MCP client that signs in through the protocol's own flow never gets the prompt to.</li>
 <li><strong>A refused call leaves no audit line.</strong> The <code>mcp_call</code> line is written only after the checks pass. A call refused for its tenant, its token or its arguments leaves no row naming the caller and the tenant.</li>
-<li><strong><code>retrieve</code> offers filters the corpus cannot honour.</strong> Its <code>doc_type</code> list names eight types, and six of them are classes from lesson 10.4's registry, which your registered documents now carry. <code>form</code> and <code>research_paper</code> are not classes, so no row carries them, and either one empties the pool. <code>transcript</code> is a class, but the list leaves it out, so the server refuses it. A class filter also skips every text upload still stamped <code>unknown</code>: an object the manifest does not name, and a new version nobody has re-pinned. The chat service's <code>retrieve</code>, which lesson 5.5 tested, still offers <code>form</code> and <code>research_paper</code> too.</li>
+<li><strong><code>retrieve</code> offers filters the corpus cannot honour.</strong> Its <code>doc_type</code> list names eight types, and six of them are classes of the kit's doc_type registry, which the box before step 3 gave your registered documents. <code>form</code> and <code>research_paper</code> are not classes, so no row carries them, and either one empties the pool. <code>transcript</code> is a class, but the list leaves it out, so the server refuses it. A class filter also skips every text upload still stamped <code>unknown</code>: an object the manifest does not name, and a new version nobody has re-pinned. The chat service's <code>retrieve</code>, which lesson 5.5 tests, still offers <code>form</code> and <code>research_paper</code> too.</li>
 </ul></div>
 
 <!-- ============================ STEP 8 ============================ -->
@@ -644,7 +664,7 @@ PY</pre></div>
 </tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
 
 <div class="box box-teal"><div class="box-title">What changed on your lane</div>
-<p>Nothing on your lane. Your machine ran the kit's server for a few minutes and stopped it, and <code>/tmp/mcp121.log</code> holds its log. rag-api's log has one more row, with the brain <code>mcp</code>. Lesson 5.3 deploys the same server behind Cloud Run and checks who may reach it.</p></div>
+<p>acme has a doc_type registry, written from the kit's manifest with you as <code>set_by</code>, and it stays. Its stored rows carried their classes for the lesson, and the last cell of the box before step 3 put them back to what the worker wrote, <code>unknown</code> for text, in Firestore, Vector Search, Vertex AI Search and BigQuery, as lesson 5.5 expects. Each relabel expired acme's answer cache. Your machine ran the kit's server for a few minutes and stopped it, and <code>/tmp/mcp121.log</code> holds its log. rag-api's log has one more row, with the brain <code>mcp</code>. Lesson 5.3 deploys the same server behind Cloud Run and checks who may reach it.</p></div>
 
 </div>
 

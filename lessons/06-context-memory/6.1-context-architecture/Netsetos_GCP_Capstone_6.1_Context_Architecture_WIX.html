@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Lesson 6.1 Assemble the context: what rides every model call - the system prompt, the tool declarations, the thread, the question and the tool results, each in tokens and rupees | Netsetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+/* ---------- 0. config: every size the tiers change lives here ---------- */
+:root{
+  color-scheme:light;
+  --navy:#0f1729;--teal:#0d9488;--teal-dark:#065f46;--teal-light:#f0fdfa;--cyan:#0891b2;--slate:#334155;--slate-light:#94a3b8;--bg:#fafaf9;--card:#fff;--border:#e7e5e4;--code-bg:#0f172a;--code-text:#e2e8f0;
+  --font:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --display:'Playfair Display',Georgia,serif;
+  --measure:720px;--pad-x:32px;--pad-top:40px;--pad-bottom:80px;
+  --body-size:18px;--body-lh:1.65;--list-size:17px;--h2-size:26px;--h3-size:18px;--hero-lede:16.5px;--small-size:14px;--chip-size:12px;--kicker-size:10.5px;
+  --code-size:14px;--code-lh:1.5;--code-pad:16px 18px;--inline-code:14px;
+  --card-pad:18px 22px;--gap:14px;--step-size:48px;
+  --w-media:840px;--media-gutter:24px;--touch:0px;--hint-clear:36px;--footer-bottom:28px;
+  --cd-cols:minmax(0,1fr) 28px minmax(0,1.3fr) 28px minmax(0,1fr);--arrow-top:28px;
+  --band-cols:repeat(auto-fit,minmax(170px,1fr));--fs-cols:minmax(0,1.5fr) minmax(0,1fr);
+  --exercise-cols:repeat(auto-fill,minmax(280px,1fr));--table-size:12.5px;
+}
+/* ---------- 0b. global discipline (every width) ---------- */
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:transparent;-webkit-text-size-adjust:100%;max-width:100%;}
+body{font-family:var(--font);background:transparent;color:var(--slate);font-size:var(--body-size);line-height:var(--body-lh);max-width:100%;overflow-x:clip;display:flow-root;}
+@supports not (overflow:clip){body{overflow-x:hidden;}}
+img,svg,video,canvas{max-width:100%;height:auto;}
+iframe{max-width:100%;}
+table{max-width:100%;}
+code:not(pre code){overflow-wrap:anywhere;}
+a{overflow-wrap:break-word;color:var(--teal);}
+h2,h3{scroll-margin-top:24px;text-wrap:balance;}
+p,li{text-wrap:pretty;}
+:focus-visible{outline:3px solid var(--cyan);outline-offset:2px;border-radius:5px;}
+pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+/* ---------- 0c. the two-width breakout: no media query, vw is the embed ---------- */
+.content > .cw,.content > .tw,.content > .diagram{width:min(100vw - 2 * var(--media-gutter),var(--w-media));margin-inline:calc(50% - min(50vw - var(--media-gutter),var(--w-media) / 2));}
+/* ---------- components ---------- */
+.hero{background:linear-gradient(135deg,#042f2e,#065f46 30%,#0d9488 50%,var(--navy));padding:60px var(--pad-x) 56px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-40%;right:-15%;width:500px;height:500px;background:radial-gradient(circle,rgba(13,148,136,.22),transparent 70%);border-radius:50%;animation:float 8s ease-in-out infinite;}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-25px)}}
+.hero-inner{max-width:min(100%,var(--measure));margin:0 auto;position:relative;z-index:1;}
+.hero-crumb{color:#5eead4;font-size:var(--chip-size);font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;}
+.hero h1{font-family:var(--display);color:#fff;font-size:clamp(26px,5vw,40px);line-height:1.18;margin-bottom:14px;}
+.hero h1 span{background:linear-gradient(90deg,#2dd4bf,#5eead4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{color:#cbd5e1;font-size:var(--hero-lede);line-height:1.75;max-width:66ch;}
+.hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+.hero-chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 14px;font-size:var(--chip-size);color:#e2e8f0;}
+.content{max-width:min(100%,var(--measure));margin:0 auto;padding:var(--pad-top) max(var(--pad-x),env(safe-area-inset-right)) var(--pad-bottom) max(var(--pad-x),env(safe-area-inset-left));}
+h2{font-family:var(--display);font-size:var(--h2-size);color:var(--navy);margin:52px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--teal);}
+h3{font-size:var(--h3-size);color:var(--navy);margin:28px 0 10px;font-weight:700;}
+h4{font-size:var(--list-size);color:var(--navy);margin:22px 0 8px;font-weight:700;}
+p{margin-bottom:14px;}
+strong{color:var(--navy);}
+code:not(pre code){font-family:var(--mono);font-size:var(--inline-code);background:var(--teal-light);padding:2px 6px;border-radius:4px;color:var(--teal);}
+ol,ul{margin:0 0 14px;padding-left:22px;font-size:var(--list-size);}
+li{margin-bottom:6px;}
+.kicker{display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:4px;}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);margin:0 0 10px;}
+.toc-title{font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px;}
+.toc ol{margin:0;padding-left:22px;font-size:var(--small-size);}
+.toc a{color:var(--navy);text-decoration:none;display:inline-block;min-height:var(--touch);line-height:1.5;padding:4px 0;}
+.step{display:flex;gap:14px;margin:44px 0 10px;align-items:center;}
+.step-n{min-width:var(--step-size);width:var(--step-size);height:var(--step-size);background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--h3-size);flex-shrink:0;box-shadow:0 4px 14px rgba(13,148,136,.3);}
+.step h3{margin:0;font-size:var(--h2-size);font-family:var(--display);}
+.step p{margin:2px 0 0;font-size:var(--small-size);color:var(--slate-light);}
+.box{border-radius:12px;padding:var(--card-pad);margin:20px 0;font-size:var(--small-size);line-height:1.7;}
+.box-title{font-weight:700;margin-bottom:6px;}
+.box-teal{background:var(--teal-light);border-left:4px solid var(--teal);}.box-teal .box-title{color:#134e4a;}
+.box-amber{background:#fffbeb;border-left:4px solid #f59e0b;}.box-amber .box-title{color:#92400e;}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444;}.box-red .box-title{color:#991b1b;}
+.box p{margin:0 0 8px;font-size:var(--small-size);}
+.box ul,.box ol{margin:6px 0 0;padding-left:18px;font-size:var(--small-size);}
+.analogy{display:flex;gap:14px;padding:var(--card-pad);background:linear-gradient(135deg,#f0fdfa,#ccfbf1);border:1px solid #99f6e4;border-radius:14px;margin:20px 0;font-size:var(--small-size);}
+.analogy-icon{font-size:28px;flex-shrink:0;}
+.analogy p{margin:0 0 6px;line-height:1.65;color:#134e4a;font-size:var(--small-size);}
+.analogy strong{color:#065f46;}
+.wjh{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:12px;padding:var(--card-pad);margin:18px 0;font-size:var(--small-size);line-height:1.7;}
+.wjh-title{font-weight:700;color:#166534;margin-bottom:6px;}
+.wjh p{margin:0 0 6px;font-size:var(--small-size);}
+/* code windows: the rounded shell and the scroller are two elements */
+.cw{position:relative;margin:18px 0;border-radius:12px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg);}
+.ch-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1e293b;padding:7px 14px;font-family:var(--mono);font-size:var(--chip-size);color:var(--slate-light);}
+.ch-bar span{overflow-wrap:anywhere;min-width:0;}.ch-bar .ro{flex:0 0 auto;white-space:nowrap;overflow-wrap:normal;}
+.cp{background:0;border:1px solid #475569;color:#94a3b8;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:var(--chip-size);cursor:pointer;min-height:max(34px,var(--touch));min-width:max(34px,var(--touch));-webkit-tap-highlight-color:transparent;flex-shrink:0;}
+.cp.copied{background:var(--teal-dark);border-color:var(--teal);color:#fff;}
+.cp:active{transform:scale(.96);}
+.cw pre{background:var(--code-bg);color:var(--code-text);padding:var(--code-pad);font-family:var(--mono);font-size:var(--code-size);line-height:var(--code-lh);margin:0;}
+.cw.is-scroll > pre{padding-bottom:var(--hint-clear);}
+.scroll-hint{position:absolute;right:10px;bottom:8px;z-index:2;pointer-events:none;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;background:rgba(15,23,41,.86);color:#a5f3fc;padding:3px 8px;border-radius:20px;opacity:0;transition:opacity .3s;}
+.is-scroll > .scroll-hint{opacity:1;}
+.is-scroll.scrolled > .scroll-hint{opacity:0;}
+.kw{color:#c084fc;}.fn{color:#67e8f9;}.st{color:#86efac;}.cm{color:#94a3b8;font-style:italic;}.nu{color:#93c5fd;}
+/* tables: a scroll wrapper on wide screens, cards on phones */
+.tw{position:relative;margin:20px 0;}
+.tw-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;border-radius:12px;border:1px solid var(--border);background:var(--card);}
+.tw.is-scroll .tw-scroll{padding-bottom:var(--hint-clear);}
+.comp-table{width:100%;border-collapse:collapse;font-size:var(--table-size);}
+.comp-table thead{background:var(--navy);color:#fff;}
+.comp-table th,.comp-table td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;}
+.comp-table tbody tr:nth-child(even){background:var(--teal-light);}
+.comp-table tbody td{border-bottom:1px solid var(--border);}
+.comp-table code:not(pre code){font-size:var(--table-size);padding:1px 5px;}
+/* diagrams: DOM boxes, so they re-stack on a phone instead of shrinking */
+.diagram{background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:var(--card-pad);margin:24px 0;}
+.dg-title{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:1.2px;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:12px;}
+.dg-cap{font-size:var(--small-size);color:var(--slate);margin:12px 0 0;line-height:1.6;}
+.cd{display:grid;grid-template-columns:var(--cd-cols);gap:var(--gap);align-items:start;}
+.lane{display:flex;flex-direction:column;gap:8px;}
+.lane-h{font-size:var(--kicker-size);font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:1px;font-family:var(--mono);}
+.node{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.node b{display:block;color:var(--navy);font-family:var(--mono);font-size:var(--small-size);}
+.node.code{border-color:#99f6e4;background:var(--teal-light);}
+.node.hub{border:2px solid var(--teal);background:var(--card);box-shadow:0 6px 18px rgba(13,148,136,.15);}
+.node.job{border-style:dashed;}
+.cd-arrow{display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;padding-top:var(--arrow-top);}
+.cd-wide{grid-column:1 / -1;}
+.band{display:grid;grid-template-columns:var(--band-cols);gap:8px;}
+.down{display:flex;justify-content:center;color:var(--teal);font-size:24px;font-weight:700;margin:6px 0;}
+.spine{display:flex;flex-direction:column;gap:8px;}
+.fs{display:grid;grid-template-columns:var(--fs-cols);gap:8px;align-items:start;}
+.fs-main{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;}
+.fs-n{flex:0 0 auto;width:28px;height:28px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--mono);font-size:var(--small-size);}
+.fs-branch{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:var(--small-size);line-height:1.5;color:#78350f;}
+.fs-branch b{color:#92400e;}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:var(--small-size);margin-top:12px;}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--border);background:var(--card);}
+.legend .l-code::before{background:var(--teal-light);border-color:#99f6e4;}
+.legend .l-job::before{border-style:dashed;}
+.legend .l-branch::before{background:#fffbeb;border-color:#fde68a;}
+/* quiz */
+.quiz{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:var(--card-pad);margin:18px 0;}
+.quiz-q{font-weight:700;color:var(--navy);margin-bottom:10px;font-size:var(--list-size);}
+.quiz-opts{display:grid;gap:8px;}
+.quiz-opt{text-align:left;font:inherit;font-size:var(--small-size);line-height:1.45;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--slate);cursor:pointer;min-height:var(--touch);}
+.quiz-opt:active{transform:scale(.99);}
+.quiz-opt.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+.quiz-opt.no{background:#fee2e2;border-color:#ef4444;color:#991b1b;}
+.quiz-opt:disabled{cursor:default;}
+.quiz-fb{margin-top:10px;font-size:var(--small-size);color:var(--teal-dark);line-height:1.6;}
+/* exercises */
+.exercise-grid{display:grid;grid-template-columns:var(--exercise-cols);gap:var(--gap);margin:18px 0;}
+.exercise-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:var(--card-pad);}
+.exercise-diff{font-size:var(--kicker-size);font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:8px;}
+.d-easy{background:#d1fae5;color:#065f46;}.d-med{background:#fef3c7;color:#92400e;}.d-hard{background:#fce7f3;color:#9d174d;}
+.exercise-card h4{margin:0 0 6px;font-size:var(--small-size);}
+.exercise-card p{font-size:var(--small-size);margin:0;}
+.footer{text-align:center;padding:28px var(--pad-x) var(--footer-bottom);color:var(--slate-light);font-size:var(--chip-size);border-top:1px solid var(--border);margin-top:36px;}
+/* ---------- 1. the phone tier: same names, phone values, then structure only ---------- */
+@media (max-width: 640px){
+  :root{--measure:100%;--pad-x:14px;--pad-top:22px;--pad-bottom:34px;
+    --body-size:17px;--body-lh:1.68;--list-size:16px;--h2-size:20px;--h3-size:16px;--hero-lede:15px;--small-size:14px;--chip-size:12.5px;--kicker-size:11px;
+    --code-size:13px;--code-lh:1.55;--code-pad:12px 13px;--inline-code:13.5px;
+    --card-pad:14px 15px;--gap:12px;--step-size:40px;
+    --w-media:100vw;--media-gutter:0px;--touch:44px;--hint-clear:36px;--footer-bottom:104px;
+    --cd-cols:minmax(0,1fr);--arrow-top:0px;--band-cols:minmax(0,1fr);--fs-cols:minmax(0,1fr);--exercise-cols:minmax(0,1fr);--table-size:13px;}
+  *{min-width:0;}
+  .hero::before{display:none;}
+  .hero h1{font-size:clamp(21px,6.3vw,26px);line-height:1.22;}
+  .hero p{max-width:100%;}
+  .step{flex-direction:column;align-items:flex-start;gap:8px;}
+  .cd-arrow{transform:rotate(90deg);}
+  .cd-wide{grid-column:auto;}
+  .tw-scroll{overflow:visible;border:0;border-radius:0;background:transparent;}
+  .comp-table,.comp-table thead,.comp-table tbody,.comp-table tr,.comp-table th,.comp-table td{display:block;}
+  .comp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+  .comp-table tbody tr{border:1px solid var(--border);border-radius:10px;margin:0 0 10px;background:var(--card);padding:4px 0;}
+  .comp-table tbody tr:nth-child(even){background:var(--card);}
+  .comp-table tbody td{border-bottom:1px dashed var(--border);}
+  .comp-table tbody td:last-child{border-bottom:0;}
+  .comp-table tbody td::before{content:attr(data-label);display:block;font-family:var(--mono);font-size:var(--kicker-size);font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#0e7490;margin-bottom:3px;}
+  .comp-table tbody td:first-child::before{display:none;}
+  .comp-table tbody td:first-child{font-weight:700;color:var(--navy);}
+  input,select,textarea{font-size:16px;}
+}
+/* mobile-patch-v1 - small phones: config nudges only, no new structure */
+@media (max-width: 380px){
+  :root{--pad-x:11px;--h2-size:18.5px;--code-size:12.5px;--code-pad:10px 11px;--step-size:36px;--table-size:12.5px;}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+/* hover only where a real pointer exists: a tapped option must not latch */
+@media (hover:hover) and (pointer:fine){
+  .cp:hover{background:#334155;color:#e2e8f0;}
+  .quiz-opt:hover:not(:disabled){background:var(--teal-light);border-color:var(--teal);}
+  .exercise-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .toc a:hover{text-decoration:underline;}
+}
+@media (hover:none){
+  button,summary,a,.quiz-opt{-webkit-tap-highlight-color:rgba(13,148,136,.18);}
+}
+@media (forced-colors: active){
+  .hero h1 span{-webkit-text-fill-color:currentColor;background:none;color:CanvasText;}
+  .cp,.node,.quiz-opt,.exercise-card,.fs-main,.fs-branch{border:1px solid CanvasText;}
+}
+@media print{
+  .scroll-hint,.cp,.toc{display:none!important;}
+  .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .content{max-width:100%;padding:0;}
+  pre{white-space:pre-wrap;word-break:break-word;font-size:9px;}
+  .node,.quiz,.exercise-card,.comp-table tr,.fs,.box,.wjh{break-inside:avoid;}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:8px;color:#555;}
+}
+/* the embed never shows its own vertical scrollbar: the host sizes the frame from the height handshake, and if it does not, the content still scrolls by wheel and touch without a bar */
+html,body{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none;}
+.ro{font-family:var(--mono);font-size:var(--chip-size);color:#fcd34d;border:1px dashed #475569;padding:3px 10px;border-radius:5px;white-space:nowrap;}
+/* one turn by source: the six sources wear six slots of the validated categorical palette in an order whose every touching pair passes (CVD 17.6, normal 29.0 on white); rag-api's own call is two greys */
+.cx{--k-system:#1baf7a;--k-tools:#4a3aa7;--k-thread:#e87ba4;--k-question:#008300;--k-calls:#2a78d6;--k-results:#eb6834;--k-ragfix:#c3c2b7;--k-chunks:#898781;--k-grid:#e7e5e4;}
+.cx-ctl{display:flex;flex-wrap:wrap;gap:8px 18px;margin:0 0 10px;}
+.cx-grp{min-width:0;}
+.cx-grp b{display:block;font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:.8px;text-transform:uppercase;color:var(--slate);margin:0 0 4px;}
+.cx-seg{display:flex;flex-wrap:wrap;gap:4px;}
+.cx-seg button{font:inherit;font-size:13px;line-height:1.2;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--navy);min-height:max(44px,var(--touch));cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.cx-seg button[aria-pressed="true"]{border:2px solid var(--teal);background:var(--teal-light);font-weight:700;}
+.cx-seg button:disabled{opacity:.45;cursor:not-allowed;}
+.cx-seg button:active,button.cx-row:active{transform:scale(.98);}
+.cx-chart{background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px 12px;min-width:0;}
+.cx-legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;line-height:1.4;color:var(--slate);margin:0 0 8px;}
+.cx-legend span{display:inline-flex;align-items:center;gap:6px;}
+.cx-key{display:inline-block;width:12px;height:12px;border-radius:3px;flex:none;}
+.k-system{background:var(--k-system);}.k-tools{background:var(--k-tools);}.k-thread{background:var(--k-thread);}.k-question{background:var(--k-question);}
+.k-calls{background:var(--k-calls);}.k-results{background:var(--k-results);}.k-ragfix{background:var(--k-ragfix);}.k-chunks{background:var(--k-chunks);}
+.cx-row{display:grid;grid-template-columns:9.5em minmax(0,1fr);gap:4px 10px;align-items:center;width:100%;font:inherit;font-size:12.5px;line-height:1.35;text-align:left;color:var(--navy);background:none;border:1px solid transparent;border-radius:8px;padding:6px;margin:0 0 2px;min-height:max(44px,var(--touch));cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.cx-row[aria-pressed="true"]{border-color:var(--teal);background:var(--teal-light);}
+.cx-row.cx-static{cursor:default;}
+.cx-l{min-width:0;overflow-wrap:anywhere;}
+.cx-l b{display:block;font-size:12.5px;}
+.cx-l span{display:block;font-family:var(--mono);font-size:11.5px;color:var(--slate);}
+.cx-track{display:block;min-width:0;padding:4px 0;border-right:1px solid var(--k-grid);background-image:linear-gradient(to right,var(--k-grid) 1px,transparent 1px);}
+.cx-bar{display:flex;gap:2px;height:18px;max-width:100%;}
+.cx-bar i{display:block;height:100%;min-width:3px;flex-basis:0;}
+.cx-bar i:last-child{border-radius:0 4px 4px 0;}
+.cx-none{display:block;font-size:12.5px;color:var(--slate);padding:2px 0;}
+.cx-axis{display:grid;grid-template-columns:9.5em minmax(0,1fr);gap:0 10px;padding:0 7px;font-family:var(--mono);font-size:11px;color:var(--slate);}
+.cx-ticks{position:relative;height:1.5em;min-width:0;}
+.cx-ticks span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;}
+.cx-ticks span:first-child{transform:none;}
+.cx-ticks span:last-child{transform:translateX(-100%);}
+.cx-detail{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin:10px 0 0;font-size:var(--small-size);line-height:1.55;color:var(--slate);min-width:0;overflow-wrap:anywhere;}
+.cx-detail h5{font-size:var(--small-size);color:var(--navy);margin:0 0 6px;}
+.cx-detail p{font-size:var(--small-size);margin:6px 0 0;}
+.cx-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:2px 12px;font-size:12.5px;}
+.cx-list li{display:contents;}
+.cx-list span{min-width:0;}
+.cx-list .v{font-family:var(--mono);text-align:right;white-space:nowrap;}
+.cx-list .nm{display:inline-flex;align-items:center;gap:6px;}
+.cx-note{font-size:var(--small-size);line-height:1.55;color:var(--slate);margin:10px 0 0;}
+.cx-tot{margin:10px 0 0;}
+.cx-tot table{width:100%;border-collapse:collapse;font-size:12.5px;color:var(--slate);}
+.cx-tot th,.cx-tot td{padding:4px 6px;border-top:1px solid var(--border);text-align:left;vertical-align:top;}
+.cx-tot th{font-family:var(--mono);font-size:var(--kicker-size);letter-spacing:.8px;text-transform:uppercase;color:var(--slate);border-top:0;}
+.cx-tot td.v,.cx-tot th.v{font-family:var(--mono);text-align:right;white-space:nowrap;}
+.cx-tot small{display:block;font-size:11.5px;color:var(--slate);}
+.cx-tot tr.sum td{color:var(--navy);font-weight:700;}
+.cx-tot tr.sum small{font-weight:400;}
+@media (hover:hover) and (pointer:fine){.cx-seg button:hover:not(:disabled),button.cx-row:hover{border-color:var(--teal);}}
+/* on a phone the row's label takes its own line and the bar the full width beneath it */
+@media (max-width: 640px){.cx-row{grid-template-columns:minmax(0,1fr);}.cx-axis{grid-template-columns:minmax(0,1fr);}.cx-axis > span:first-child{display:none;}.cx-list{grid-template-columns:minmax(0,1fr) auto auto;}.cx-list .pc{display:none;}}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 6 &middot; Context and memory &middot; Lesson 6.1</div>
+<h1>Assemble the context: <span>what rides every model call</span></h1>
+<p>A model keeps nothing between calls. Each time a chat brain calls Gemini it sends the whole context again: the system prompt, the tool declarations, the thread so far and the question, and from the second call on the model's own calls and what the tools gave back. This lesson takes one turn apart, source by source, on each of DocuMind's five brains, and prices every source in rupees. Then it moves one setting, TOP_K, to see which part of the bill moves with it. You run it offline first, for Rs 0, then on your lane, where the model's own counter counts each source.</p>
+<div class="hero-chips"><div class="hero-chip">six sources a call</div><div class="hero-chip">prompt and declarations: 96% of call 1</div><div class="hero-chip">a model call inside the search</div><div class="hero-chip">TOP_K: the Change-it</div><div class="hero-chip">count_tokens: not billed</div><div class="hero-chip">OFFLINE=1: Rs 0</div><div class="hero-chip">turn 3: the thread rides too</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">What rides every model call</a></li>
+<li><a href="#s2">The words: context, source, system prompt, tool declaration, thread, question, the model's calls, tool result, rag-api's own call, estimate, count_tokens, residual, TOP_K, list price</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">The UI: one number for the whole turn</a></li>
+<li><a href="#s4">The kit: where each brain assembles its call</a></li>
+<li><a href="#s5">Offline: one turn split by source, for Rs 0</a></li>
+<li><a href="#s6">On your lane: the model's own counter, and the probe</a></li>
+<li><a href="#s7">Five brains, one question, on your lane</a></li>
+<li><a href="#s8">Change it: TOP_K, and which part of the bill moves</a></li>
+<li><a href="#s9">The thread rides every call too</a></li>
+<li><a href="#s10">Why the split is measured this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s11">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what a brain sends its model on each call of a turn, source by source, and what each source costs. Then you will prove it on your lane: one turn on each brain split into its system prompt, tool declarations, thread, question and tool results, with their tokens and rupees, and one setting moved to see which part of the bill moves with it.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>What rides every model call</h3><p>A model keeps nothing between calls, so each call carries the whole context, and each token of it is billed on every call it rides.</p></div></div>
+
+<p><strong>A model keeps nothing between calls.</strong> Gemini answers each request from what that request carries, and from nothing else. A chat brain's turn is usually two calls. In the first the model asks for a search; in the second it answers from what came back. So the second call has to carry everything the first did, plus the search. A request has three fields, and the kit's command, <code>make context-sources</code>, splits them into six sources. The system instruction is the <em>system prompt</em>. The declared functions are the <em>tool declarations</em>. The contents, the conversation as a list of turns, are the <em>thread so far</em>, the <em>question</em>, <em>the model's calls</em> earlier in this turn, and the <em>tool results</em> those calls brought back.</p>
+
+<p><strong>Every token is billed on every call it rides.</strong> gemini-3.6-flash costs $1.50 per million input tokens: Rs 0.1275 a thousand, at the kit's Rs 85 to the dollar (<code>shared/prices.py</code>). The system prompt, the declarations, the thread and the question ride every call of the turn. The model's calls and the tool results ride every call after the search. A long system prompt or a long list of tools is paid for twice in a two-call turn, and up to 12 times in a turn that runs to the chat service's cap.</p>
+
+<p><strong>The brains assemble the request differently.</strong> LangChain's <code>create_agent</code> and the hand-built LangGraph node send the same request, token for token. ADK adds a line of its own to the system prompt and declares the same two tools in a longer form. The Desk's statute agent, the one lesson 10.5 runs, brings its own prompt and 4 tools. The direct brain makes no model call of its own: rag-api's answer is the turn.</p>
+
+<p><strong>The search has a model call inside it.</strong> A chat brain's <code>retrieve</code> asks rag-api's <code>/v1/query</code>. rag-api packs the top_k chunks into a prompt of its own and answers with its own model call; lesson 3.4 shows how it packs that prompt. rag-api bills the call on its own usage row, and the turn's Meter charges it to the turn. What comes back to the chat model as its tool result is not the chunks. It is the citations rag-api's answer chose, each a quote of one clause. The Desk's search asks <code>/v1/passages</code> instead, which returns each passage's whole text and makes no model call.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128222;</div><div>
+<p><strong>A trunk call to a consultant who keeps no notes.</strong> You pay by the minute, and the consultant forgets everything when the line drops. So every call starts the same way. You read out the standing instructions, the list of errands you can run for him, what was said on every earlier call, and today's question. When he asks for a record, you hang up, send a runner to the record room and call again: the whole file once more, and now the runner's slip as well. The record keeper is paid by the page he reads, and his slip carries only the lines he chose to quote. Ask him to read three files instead of five and his fee drops, but the slip you read out on the next call changes little. Ask the record room for photocopies of whole files instead, and every file it reads is one more thing to read out on the next call.</p>
+<p>The consultant is the model and each call is a model call. The standing instructions are the system prompt, the errands are the tool declarations, the earlier calls are the thread and this turn's own requests, and the slip is the tool result. The record keeper is rag-api, whose own model call reads top_k chunks and quotes the clauses its answer chose. The photocopies are the Desk's <code>/v1/passages</code>.</p></div></div>
+
+<h4>One turn, by source: every brain, every source, in tokens and rupees</h4>
+<p>Pick a brain, a TOP_K and a turn. Each bar is one model call, split by source and drawn to one scale; the grey bar is rag-api's own call inside the search. Pick a bar to list its sources, with each one's tokens, its share of the call and its rupees. Under it is the turn by source, as the command prints it.</p>
+
+<div class="diagram cx" id="cx">
+<div class="dg-title">One turn by source: make context-sources OFFLINE=1, on every brain, when this page was built</div>
+<div class="cx-ctl">
+<div class="cx-grp"><b>Brain</b><div class="cx-seg" id="cx-brain"></div></div>
+<div class="cx-grp"><b>TOP_K</b><div class="cx-seg" id="cx-topk"></div></div>
+<div class="cx-grp"><b>Turn</b><div class="cx-seg" id="cx-turn"></div></div>
+</div>
+<div class="cx-chart">
+<div class="cx-legend"><span><i class="cx-key k-system"></i>system prompt</span><span><i class="cx-key k-tools"></i>tool declarations</span><span><i class="cx-key k-thread"></i>thread so far</span><span><i class="cx-key k-question"></i>question</span><span><i class="cx-key k-calls"></i>the model's calls</span><span><i class="cx-key k-results"></i>tool results</span><span><i class="cx-key k-chunks"></i>rag-api: the chunks it packed</span><span><i class="cx-key k-ragfix"></i>rag-api: its prompt and the question</span></div>
+<div id="cx-rows"></div>
+<div class="cx-axis" id="cx-axis" aria-hidden="true"></div>
+</div>
+<div class="cx-detail" id="cx-detail" aria-live="polite"></div>
+<p class="cx-note" id="cx-note"></p>
+<div class="cx-tot" id="cx-tot"></div>
+<p class="dg-cap">Computed when this page was built: the kit's own command, <code>context_sources.py --offline --json</code>, run 16 times on the kit you clone, once for each brain, TOP_K and turn the buttons offer. The brain, its adapter, its tools and its limits ran as they run on your lane. A script answered at the google-genai boundary in the model's place, and the search was the Rs 0 lane's, over the kit's own corpus. Every count is an estimate, a quarter of the characters each part carries (rag-api's own estimator), so the sources add up exactly; on your lane the model's own counter counts them (step 6). The rupees are list price on those estimates. Offline, nothing is billed.</p>
+</div>
+
+<p><strong>The fixed price of asking.</strong> On a fresh turn, the LangGraph brain's first call is 361 tokens, and 346 of them (96%) are the system prompt and the tool declarations; the question is 15. The second call carries all of that again, plus the model's own call (21 tokens) and the search's result: 1,143 tokens, 67% of them tool results. Over the turn the declarations cost Rs 0.0612, 16 times what the question costs, because they are longer and ride both calls. On the statute desk, the prompt and its 4 declarations are 98% of call 1.</p>
+
+<p><strong>The search holds the biggest call.</strong> Inside the search, rag-api's own prompt is 1,957 tokens: its system prompt 105, the 5 chunks it packed 1,834, the question 18. That is more than both of the chat model's calls together, 1,504. The turn costs Rs 0.5018: Rs 0.2370 for the chat model's two calls and Rs 0.2648 for rag-api's answer. The direct brain pays the second alone, Rs 0.2648. The Desk pays no rag-api call at all, but its tool results are whole passages: 1,939 tokens, and Rs 0.5147 for the turn.</p>
+
+<p><strong>TOP_K, offline.</strong> Set TOP_K to 3 and two things shrink. rag-api packs three chunks instead of five, 1,095 tokens in. The tool results drop from 761 to 435 tokens. The system prompt, the declarations and the question do not move. Offline, the search returns all of the top_k passages, as if rag-api had cited every one. On your lane it returns only the citations rag-api's answer chose, so there TOP_K mostly moves the grey bar, not the orange one. Step 8 measures the difference. The Desk's passages move on both.</p>
+
+<div class="box box-amber"><div class="box-title">What the widget is not</div>
+<p>It is not your lane. The script does not think, so no call carries thinking tokens, and nothing was cached. Its tool results are the Rs 0 lane's citations: every one of the top_k passages, each quoted to up to 500 characters, where rag-api's are the clauses its answer chose, at most twenty-five words each, or a passage's first 500 characters for a source the answer cited only in its prose. And every count is an estimate. Step 6 runs the same turn on your lane, where each call's tokens are its own usage and each source is counted by the model's <code>count_tokens</code>.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: context, source, system prompt, tool declaration, thread, question, the model's calls, tool result, rag-api's own call, estimate, count_tokens, residual, TOP_K, list price</h3><p>Fourteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Context</strong></td><td data-label="Meaning">Everything one model call is sent: the system instruction, the tool declarations and the contents. The model reads nothing else.</td><td data-label="On your lane">sent whole, on each call of a turn</td></tr>
+<tr><td><strong>Source</strong></td><td data-label="Meaning">One of the six parts <code>make context-sources</code> splits a call into, by where it sits in the request.</td><td data-label="On your lane">system prompt, tool declarations, thread so far, question, the model's calls, tool results</td></tr>
+<tr><td><strong>System prompt</strong></td><td data-label="Meaning">The instructions, in the request's <code>system_instruction</code>. No checkpoint stores it: the brain puts it in front of every call.</td><td data-label="On your lane"><code>brains.SYSTEM</code>, 426 characters; ADK adds a line; the Desk has its own</td></tr>
+<tr><td><strong>Tool declaration</strong></td><td data-label="Meaning">A tool's name, its description and its parameters, as the brain's adapter serialises them for the model.</td><td data-label="On your lane">2 for the chat brains, 4 for the statute desk</td></tr>
+<tr><td><strong>Thread so far</strong></td><td data-label="Meaning">The earlier turns of the conversation: their questions, the model's calls, the results and the answers.</td><td data-label="On your lane">empty in a new session; <code>TURNS=3</code> fills it</td></tr>
+<tr><td><strong>Question</strong></td><td data-label="Meaning">This turn's message from the person.</td><td data-label="On your lane">the command's default: <em>After how many years of continuous service is gratuity payable?</em></td></tr>
+<tr><td><strong>The model's calls</strong></td><td data-label="Meaning">The function calls the model made earlier in this turn. Each later call sends them back.</td><td data-label="On your lane"><code>retrieve(query=...)</code></td></tr>
+<tr><td><strong>Tool result</strong></td><td data-label="Meaning">What a tool returned to the model, sent with every call after it.</td><td data-label="On your lane">a chat brain's search: the citations rag-api's answer chose; the Desk's: each passage's whole text</td></tr>
+<tr><td><strong>rag-api's own call</strong></td><td data-label="Meaning">The model call inside a chat brain's search: rag-api's prompt with the chunks it packed, and its answer. rag-api bills it on its row; the turn's Meter charges it to the turn.</td><td data-label="On your lane">at most <code>max_context_tokens</code> 8,000 in</td></tr>
+<tr><td><strong>Estimate</strong></td><td data-label="Meaning">A quarter of the characters, at least one token: rag-api's own <code>estimate_tokens</code>, which <code>OFFLINE=1</code> uses for every count.</td><td data-label="On your lane">offline only</td></tr>
+<tr><td><strong>count_tokens</strong></td><td data-label="Meaning">The model's own counter: the tokens a request would bill, counted without generating anything. It is not billed.</td><td data-label="On your lane">on location global, a few requests per call</td></tr>
+<tr><td><strong>Residual</strong></td><td data-label="Meaning">What a call billed, its <code>prompt_token_count</code>, less what was counted for it, source by source.</td><td data-label="On your lane">0 offline; on your lane, what <code>count_tokens</code> did not count</td></tr>
+<tr><td><strong>TOP_K</strong></td><td data-label="Meaning">The <code>top_k</code> the command sends with every search, whatever the model asked for. The declaration does not change.</td><td data-label="On your lane">1 to 20; the declaration's default is 5</td></tr>
+<tr><td><strong>List price</strong></td><td data-label="Meaning">Tokens at the model's standard rate in <code>shared/prices.py</code>, at Rs 85 to the dollar; a cached token at a tenth of the input rate.</td><td data-label="On your lane">flash: $1.50 in, $7.50 out, per million</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the model is billed per call, not per turn. A source that rides every call is paid for on every call, so the same thousand tokens cost twice as much in a turn that calls the model twice.</p>
+<h3 id="setup">Before you run anything: set up the shell</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>First-time IDE setup: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/setup/README.md" target="_blank" rel="noopener">interpreter, configuration and authentication</a>.</li><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/setup/prepare.py" target="_blank" rel="noopener"><code>setup/prepare.py</code></a>.</li><li>At lesson end: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/setup/restore_settings.py" target="_blank" rel="noopener"><code>setup/restore_settings.py</code></a>.</li><li>At lesson end, run <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/setup/finish.py" target="_blank" rel="noopener"><code>setup/finish.py</code></a> to execute all remaining restoration steps.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+
+<p>You need three things open: the DocuMind UI at <code>https://documind-ui-NUMBER.REGION.run.app</code> signed in as a roster member, the operator shell you set up in Module 0 (the <code>rag-shell-venv</code> environment, the kit at <code>$DEMO_ROOT</code> as a clone of the public learner repository, and the restart helper), and a Python cell in that same shell or in Colab with <code>google-cloud-firestore</code> installed and Application Default Credentials. Every command on this page is one you run; every output shown is what the lane prints. Where a value belongs to your lane (a project number, a hash), it is written as <code>NUMBER</code> or shortened with <code>...</code>.</p>
+
+<p>Set up the shell once per session. The block below works on any machine with <code>git</code> and <code>gcloud</code> signed in. The first time, it clones the kit from the public learner repository, <code>netsetos/agents_workshop_learner</code>, into <code>~/deploy_module_rag</code>; every session after, it pulls the latest kit. Then it reads your project from the gcloud configuration (so there is nothing to type), moves into the kit, builds the API URL from the project number, and defines two small functions that mint identity tokens. The last line proves the API answers.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, once per session</span><button class="cp" type="button">copy</button></div><pre tabindex="0">export DEMO_ROOT="${DEMO_ROOT:-$HOME/deploy_module_rag}" KIT_REPO=https://github.com/netsetos/agents_workshop_learner.git
+if [ ! -d "$DEMO_ROOT" ]; then git clone -q "$KIT_REPO" "$DEMO_ROOT"      <span class="cm"># a new machine: the kit is one clone</span>
+elif [ ! -d "$DEMO_ROOT/.git" ]; then                                     <span class="cm"># a kit copied file by file: keep a copy, make it a clone</span>
+  tar -czf "$DEMO_ROOT-before-git.tgz" --exclude=.terraform -C "$(dirname "$DEMO_ROOT")" "$(basename "$DEMO_ROOT")" \
+  &amp;&amp; git -C "$DEMO_ROOT" init -q &amp;&amp; git -C "$DEMO_ROOT" remote add origin "$KIT_REPO" \
+  &amp;&amp; git -C "$DEMO_ROOT" fetch -q origin main &amp;&amp; git -C "$DEMO_ROOT" checkout -q -f -B main --track origin/main
+else git -C "$DEMO_ROOT" pull -q --ff-only; fi                             <span class="cm"># every session after: the latest kit</span>
+cd "$DEMO_ROOT" &amp;&amp; git log -1 --format='kit %h, %cd' --date=short
+source "$HOME/rag-shell-venv/bin/activate"   # Module 0's venv: pip and make then use its python; the prompt gains (rag-shell-venv)
+export PROJECT="$(gcloud config get-value project 2&gt;/dev/null)" REGION=asia-south1 TENANT=acme
+export ME="$(gcloud config get-value account 2&gt;/dev/null)"
+export NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+python -m pip install -q google-cloud-firestore   <span class="cm"># Module 0's full install covers this; harmless if already present</span>
+python - &lt;&lt;'PY'   <span class="cm"># Python's own sign-in (ADC), which make and the Python cells use: one Firestore read, no retries</span>
+import os, warnings; warnings.filterwarnings("ignore")
+from google.cloud import firestore
+try: firestore.Client(project=os.environ["PROJECT"]).document("tenant_settings/acme").get(retry=None, timeout=15); print("adc ok")
+except Exception as e: print(f"adc NOT ok ({str(e)[:90]}) - run: gcloud auth application-default login --no-launch-browser")
+PY
+export API="https://documind-api-$NUMBER.$REGION.run.app"
+tok()  { gcloud auth print-identity-token --include-email --audiences="$1" \
+         --impersonate-service-account="documind-ui-sa@$PROJECT.iam.gserviceaccount.com"; }
+otok() { gcloud auth print-identity-token --include-email --audiences="$API" \
+         --impersonate-service-account="documind-outsider-sa@$PROJECT.iam.gserviceaccount.com"; }
+echo "PROJECT=$PROJECT ME=$ME API=$API"; pwd
+curl -s "$API/health" -H "Authorization: Bearer $(tok "$API")"</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">kit COMMIT, YYYY-MM-DD
+adc ok
+PROJECT=your-project-id ME=you@your-company.com API=https://documind-api-NUMBER.asia-south1.run.app
+/home/you/deploy_module_rag
+{"status":"ok"}</pre></div>
+
+<div class="box box-amber"><div class="box-title">If a line fails</div>
+<p><code>PROJECT=</code> empty means gcloud has no default project on this machine: run <code>gcloud config set project YOUR-PROJECT-ID</code> with your real id, then the block again. <code>ME=</code> empty means gcloud is not signed in: <code>gcloud auth login</code> first. A <code>ModuleNotFoundError: No module named 'google'</code> from any <code>make</code> target or Python cell, or an <code>externally-managed-environment</code> error from the pip line, means this shell is not inside the venv: the prompt should start with <code>(rag-shell-venv)</code>, so run the <code>source</code> line of the block again. If that line says the file is missing, the environment was never made on this machine: Module 0's install is <code>python -m pip install -r shared/requirements.txt -r services/ingest/requirements.txt -r services/rag-api/requirements.txt -r services/mcp/requirements.txt</code>, run inside <code>rag-shell-venv</code>; the setup block installs the one package this lesson needs. <code>adc NOT ok</code> means Python's own sign-in, Application Default Credentials, cannot read Firestore. The Python cells and every <code>make</code> target that reads Firestore use it, and gcloud's sign-in does not cover it. <code>Reauthentication is needed</code> in the message means the credentials file is there but your organisation's session rules have expired it; a <code>make</code> target reports the same as <code>RetryError: Timeout of 60.0s exceeded</code> after a minute of retries. <code>insufficient authentication scopes</code> or <code>credentials were not found</code> means there is no file, and Python fell back to the machine's own service-account token, which covers the bucket but not Firestore. Either way, run <code>gcloud auth application-default login --no-launch-browser</code>, open the link it prints, sign in as the account you use on this lane, paste the code back, and run the block again. A fresh workstation instance (the hostname changes) needs this again, as it needs the venv again. If <code>gcloud</code> itself asks you to reauthenticate, run <code>gcloud auth login</code>: the two sign-ins are separate, and each can expire on its own. <code>git clone</code> failing means this machine cannot reach GitHub. <code>git pull</code> refusing with <em>Your local changes would be overwritten</em> means a kit file was edited on this machine: <code>git -C "$DEMO_ROOT" status</code> names it, and <code>git -C "$DEMO_ROOT" stash</code> sets the edit aside. On a machine where Module 0 copied the kit file by file, the first run keeps that copy as <code>~/deploy_module_rag-before-git.tgz</code> and turns the folder into a clone; untracked files, <code>.terraform</code> and saved <code>.tfvars</code> stay where they are. If your kit lives somewhere else, set <code>DEMO_ROOT</code> before the block. A <code>403</code> from <code>print-identity-token</code> means your account lacks the Service Account Token Creator role on the two accounts; Module 0 granted it to the operator. If your machine has the restart helper from Module 0 (<code>commands/session-restart.sh</code> in the kit), <code>source</code> it and run <code>rag_resume</code> in place of the <code>export PROJECT</code> and <code>export ME</code> lines: it restores the same values from your saved session and also sets <code>API_URL</code>, which you then copy into <code>API</code>.</p></div>
+
+<h4>Three kinds of code window on this page</h4>
+<p>Every window has a label. A label that starts with <strong>bash</strong> is a block to paste into the operator shell, whole, and press Enter; the Python cells are wrapped in <code>python - &lt;&lt;'PY' ... PY</code> so they paste into the same shell like any other command (in Colab, paste only the lines between the two <code>PY</code> markers). A label that names a file, or says <em>expected</em> or <em>log</em>, is text to read: it is the kit's own code or the output you should see, and it has no copy button.</p>
+
+<h4>make, or the command it runs</h4>
+<p>Every <code>make</code> target on these pages is a short entry in one of the kit's <code>mk/*.mk</code> files; this lesson's, <code>context-sources</code>, is in <code>mk/memory.mk</code>. The entry runs a script under <code>commands/</code> or the kit's own Python, and you can run that directly: the same code, the same output, no make. <code>PROJECT</code> comes from the setup block above.</p>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>make</th><th>The same without make</th></tr></thead>
+<tbody>
+<tr><td><code>make ingest-one FILE=&hellip; TENANT=acme</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; bash commands/ingest-one.sh</code></td></tr>
+<tr><td><code>make poison</code> / <code>make dlq</code></td><td data-label="Without make"><code>TENANT=acme bash commands/poison.sh</code> / the <code>gcloud pubsub subscriptions pull ingest-dlq-sub</code> line in lesson 1.5</td></tr>
+<tr><td><code>make reindex FILE=&hellip; NAME=&hellip;</code></td><td data-label="Without make"><code>TENANT=acme FILE=&hellip; NAME=&hellip; bash commands/reindex.sh</code></td></tr>
+<tr><td><code>make roster MEMBERS=&hellip;</code></td><td data-label="Without make"><code>python commands/lane.py roster --tenant acme --members &hellip;</code> (<code>--dry-run</code> prints the plan)</td></tr>
+<tr><td><code>make tenant-backend TENANT=acme RETRIEVAL_BACKEND=vector</code></td><td data-label="Without make"><code>python commands/lane.py tenant-backend acme vector</code></td></tr>
+<tr><td><code>make sources</code> / <code>make queued</code></td><td data-label="Without make"><code>python commands/lane.py sources --tenant acme</code> / <code>python commands/lane.py queued</code></td></tr>
+<tr><td><code>make backfill-vectors TENANT_ONLY=acme</code></td><td data-label="Without make"><code>python commands/lane.py backfill-vectors --tenant acme</code> (the plan; <code>--apply</code> repairs)</td></tr>
+<tr><td><code>make vector-status</code> / <code>make wait-vectors WANT=n</code></td><td data-label="Without make"><code>python commands/lane.py vector-status</code> / <code>WANT=n bash commands/wait-vectors.sh</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>Which store answers acme? Pin it to the kit's own index for this lesson</h4>
+<p>DocuMind can answer a tenant's questions from four stores: its own Vector Search index (the ANN tier), the Firestore rung beneath it, or two managed mirrors, Vertex AI RAG Engine and Vertex AI Search. <code>make up</code> pins acme to RAG Engine and zeta to Vertex AI Search so every store the course teaches is exercised. A managed store holds the text of every current version, but not the kit's addresses: its citations come back with ids like <code>acme:acme_497809ff...#rag-532341da71fe</code>, a <code>page</code> of <code>null</code> even for a PDF, and <code>stages.retrieval_backend: rag_engine</code>. This lesson reads what a search hands the chat model, so point acme at the kit's own index for the duration, whose citations carry the kit's chunk ids and pages as the offline runs' do, and put the pin back at the end. Module 2 compares the four stores; Module 7 studies the mirrors.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell now, before the lesson's first step</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># for this lesson: acme answers from the kit's Vector Search index</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=vector</pre></div>
+<div class="cw"><div class="ch-bar"><span>expected</span><span class="ro">read only</span></div><pre tabindex="0">acme: retrieval_backend=vector</pre></div>
+
+<p>The pin back is a separate window on purpose: pasted together with the line above, it would put acme straight back on RAG Engine before the lesson began. Leave it until the lesson's last step is done.</p>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell when you finish the lesson, not now</span><button class="cp" type="button">copy</button></div><pre tabindex="0"><span class="cm"># when you finish the lesson: back to the managed store make up chose</span>
+make tenant-backend PROJECT=$PROJECT TENANT=acme RETRIEVAL_BACKEND=rag_engine</pre></div>
+
+<p>How to tell which store answered any call: read <code>stages.retrieval_backend</code> on the response and <code>stages.vector_chunks</code> beside it. With the pin on <code>vector</code>, the backend says <code>vector</code> and <code>vector_chunks</code> equals the pool. The stamp behind that count, <code>found_by</code>, sits on each chunk inside the API and is not a field of a citation; lesson 2.3 shows how to join it to one. The chunk ids are the kit's <code>tenant:sha256#position</code> form with the page on every PDF citation.</p>
+
+<div class="box box-amber"><div class="box-title">Two identities you will use</div>
+<p>Calls from the shell impersonate <code>documind-ui-sa</code>, the UI's own account, which <code>make roster</code> put on the three golden tenants (acme, zeta, globex). That is why a shell call can name any of the three. <code>otok</code> mints a token for <code>documind-outsider-sa</code>, an account IAM admits into the service and no roster lists. Tokens last about an hour; the functions mint a fresh one on every call. Your browser session is different: IAP signs you in as yourself, and the roster maps your email to exactly one tenant. Keep the two apart in your head: step 3 asks in the browser as you, and every lane run from step 6 on searches as <code>documind-ui-sa</code>.</p></div>
+
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code> and <code>REGION</code> from the setup block, and acme pinned to the kit's own index with the setup section's <code>make tenant-backend</code> line. Step 3 asks two questions in the DocuMind UI's chat, which lesson 5.1's step 3 deployed. <code>make context-sources</code> runs in <code>~/graph-venv</code>, lesson 5.4's venv with the chat image's pins. Its first run makes the venv if it is missing and installs <code>services/chat/requirements.txt</code> into it, which takes a few minutes. Step 5, and the first cells of steps 8 and 9, run offline for Rs 0. Steps 6 to 9 run real turns on your lane, a few rupees each, and each output's last lines price yours. Nothing is configured. The Desk's run in step 7 searches the classes <code>statute</code> and <code>guidance</code>, which acme's rows carry only once lesson 10.4's doc_type registry has pinned them.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; The UI</span><h3>The UI: one number for the whole turn</h3><p>The chat page's caption gives the turn's bill as one figure. Nothing on the page says what the figure bought.</p></div></div>
+
+<h4>Definition</h4>
+<p>On an agent brain, the DocuMind UI's chat page writes a caption under each answer: the brain, the tools it called, the time it took and the rupees. The rupees are the limits the chat service returns with the turn: its Meter's model calls and rag-api's answers, at list price, rounded to two places. That is the whole turn's bill in one number. It does not say how much went on the system prompt, the declarations or the search. It cannot show the thread either, though every later turn in the session carries it.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/frontend/chat.py - the caption under an agent brain&#x27;s answer: the turn&#x27;s limits, its rupees among them</span><span class="ro">read only</span></div><pre tabindex="0">            lim = body.get(<span class="st">&quot;limits&quot;</span>) <span class="kw">or</span> {}          <span class="cm"># the turn&#x27;s own bill and limits (workshop lesson 5.5)</span>
+            st.caption(f<span class="st">&quot;brain: {body.get(&#x27;brain&#x27;)} · tools: {&#x27;, &#x27;.join(body.get(&#x27;tool_calls&#x27;) or []) or &#x27;none&#x27;}&quot;</span>
+                       + (f<span class="st">&quot; · refused: {&#x27;, &#x27;.join(body[&#x27;refusals&#x27;])}&quot;</span> <span class="kw">if</span> body.get(<span class="st">&quot;refusals&quot;</span>) <span class="kw">else</span> <span class="st">&quot;&quot;</span>)
+                       + f<span class="st">&quot; · {body.get(&#x27;latency_ms&#x27;, 0)} ms&quot;</span>
+                       + (f<span class="st">&quot; · Rs {lim[&#x27;cost_inr&#x27;]:.2f}&quot;</span> <span class="kw">if</span> lim.get(<span class="st">&quot;cost_inr&quot;</span>) <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">else</span> <span class="st">&quot;&quot;</span>)
+                       + (f<span class="st">&quot; · stopped: {lim[&#x27;stopped_by&#x27;]}&quot;</span> <span class="kw">if</span> lim.get(<span class="st">&quot;stopped_by&quot;</span>) <span class="kw">else</span> <span class="st">&quot;&quot;</span>))</pre></div>
+
+
+<h4>Do it: in the browser</h4>
+<p>Open the DocuMind UI in a new browser tab, so the chat starts a new session, and go to the chat page. Choose the brain <code>langgraph</code> and ask: <em>After how many years of continuous service is gratuity payable?</em> Read the caption under the answer. Then ask the same question again, in the same tab, and read the second caption.</p>
+<div class="cw"><div class="ch-bar"><span>expected shape (chat.py&#x27;s caption: your milliseconds and rupees are yours)</span><span class="ro">read only</span></div><pre tabindex="0">brain: langgraph · tools: retrieve · NNNN ms · Rs N.NN      (the first answer)
+brain: langgraph · tools: retrieve · NNNN ms · Rs N.NN      (the same question, asked again)</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Two turns, two numbers. The second turn carried the first one whole, as its thread: the first question, the model's call, the citations and the answer, on each of its own calls. The caption has no way to show that, or what any rupee of either figure bought. Do not read much into the difference between the two figures: each includes an answer of rag-api's, which varies from one ask to the next, and the caption rounds to two places. If a caption says <code>tools: none</code>, the model answered from the thread without searching, and that turn paid for no rag-api answer. The rest of this lesson takes a turn apart by source.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit</span><h3>The kit: where each brain assembles its call</h3><p>One prompt and two tools, put in front of the model three ways; the Desk's own prompt and tools; and a brain that makes no call at all.</p></div></div>
+
+<h4>Definition</h4>
+<p>The chat brains share one prompt, <code>brains.SYSTEM</code>, and one tool list, <code>retrieve</code> and <code>calculate_processing_cost</code>. Each puts them in front of the model its own way. LangChain's <code>create_agent</code> takes the prompt as <code>system_prompt</code> and sends it with every model call. The hand-built LangGraph brain binds the tools to its model once. Then its node builds each call's message list itself: the prompt first, then the conversation from the checkpoint, which never stores the prompt. ADK's <code>LlmAgent</code> takes the prompt as its <code>instruction</code>. ADK then adds a line of its own naming the agent, and declares each tool with <code>parametersJsonSchema</code>, titles and defaults included.</p>
+<p>A tool's declaration is made from its name, its docstring and its arguments: the model reads the docstring as the tool's description. What the search hands back is the adapter's projection of rag-api's answer: the citations, <code>answerable</code> and <code>confidence</code>, and nothing of rag-api's own answer text. The Desk's statute agent has its own prompt and 4 tools: <code>retrieve</code>, <code>gratuity_estimate</code>, <code>statutory_deadline</code>, <code>threshold_check</code>. Its <code>retrieve</code> asks <code>/v1/passages</code> with top_k 5 and gives the model every passage's whole text. The direct brain calls no model of its own: one search, and rag-api's answer is the turn.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>services/chat/brains.py - SYSTEM: the chat brains&#x27; own prompt, 426 characters</span><span class="ro">read only</span></div><pre tabindex="0">SYSTEM = (
+    <span class="st">&quot;You are DocuMind AI, a document intelligence assistant. &quot;</span>
+    <span class="st">&quot;Use the tools for document questions. When estimating costs, search first so the page &quot;</span>
+    <span class="st">&quot;count is real rather than guessed. If a tool refuses, say so plainly and explain what &quot;</span>
+    <span class="st">&quot;approval is needed - never claim the action was taken.&quot;</span>
+    <span class="st">&quot; Search for every document question, a follow-up too, and cite each passage you use as [n],&quot;</span>
+    <span class="st">&quot; with the n it carries in this turn&#x27;s search results.&quot;</span>
+)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/brains.py - where each brain puts it: create_agent&#x27;s system_prompt, the LangGraph node&#x27;s own list, ADK&#x27;s instruction</span><span class="ro">read only</span></div><pre tabindex="0">        self.agent = create_agent(model=llm <span class="kw">or</span> build_llm(), tools=TOOLS, system_prompt=SYSTEM,
+                                  middleware=[limits.TurnLimitsMiddleware(), _guard_middleware()],
+                                  checkpointer=checkpointer)
+...
+        model = (llm <span class="kw">or</span> build_llm()).bind_tools(TOOLS)
+...
+            <span class="cm"># The system prompt is prepended per call, never stored - the checkpoint holds the</span>
+            <span class="cm"># conversation, not the instructions, so a prompt change applies to old threads too.</span>
+            <span class="kw">try</span>:
+                msg = model.invoke([SystemMessage(content=SYSTEM)] + state[<span class="st">&quot;messages&quot;</span>], **limits.call_settings(meter))
+...
+        root = LlmAgent(name=<span class="st">&quot;documind_adk&quot;</span>, model=model, instruction=SYSTEM,
+                        tools=[FunctionTool(limits.timed_adk(f)) <span class="kw">for</span> f <span class="kw">in</span> for_adk()],</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/tools.py - retrieve: the name, the docstring and three arguments become the declaration the model reads</span><span class="ro">read only</span></div><pre tabindex="0">@tool
+<span class="kw">def</span> <span class="fn">retrieve</span>(query: str, doc_type: str = <span class="st">&quot;all&quot;</span>, top_k: int = <span class="nu">5</span>,
+             runtime: ToolRuntime = <span class="kw">None</span>) -&gt; dict:
+    <span class="st">&quot;&quot;&quot;Retrieve grounded passages from DocuMind&#x27;s corpus.
+
+    Args:
+        query: The question, in natural language
+        doc_type: Filter by type (policy, contract, invoice, form, research_paper, all)
+        top_k: How many passages to return
+    &quot;&quot;&quot;</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/tools.py - search(): what a chat brain&#x27;s tool result carries back to the model</span><span class="ro">read only</span></div><pre tabindex="0">    citations = answer.get(<span class="st">&quot;citations&quot;</span>, [])
+    out = {
+        <span class="st">&quot;citations&quot;</span>: [
+            <span class="cm"># Widened for lesson 9.6. A projection is a SILENT filter: name five</span>
+            <span class="cm"># keys here and a media citation arrives as plain text with no</span>
+            <span class="cm"># thumbnail and no timestamp, with nothing raised and nothing logged.</span>
+            {k: c[k] <span class="kw">for</span> k <span class="kw">in</span> (<span class="st">&quot;chunk_id&quot;</span>, <span class="st">&quot;source_uri&quot;</span>, <span class="st">&quot;page&quot;</span>, <span class="st">&quot;quote&quot;</span>, <span class="st">&quot;score&quot;</span>,
+                               <span class="st">&quot;kind&quot;</span>, <span class="st">&quot;media_url&quot;</span>, <span class="st">&quot;start&quot;</span>, <span class="st">&quot;end&quot;</span>) <span class="kw">if</span> k <span class="kw">in</span> c}
+            <span class="kw">for</span> c <span class="kw">in</span> citations
+        ],
+        <span class="st">&quot;answerable&quot;</span>: answer.get(<span class="st">&quot;answerable&quot;</span>, <span class="kw">False</span>),
+        <span class="st">&quot;confidence&quot;</span>: answer.get(<span class="st">&quot;confidence&quot;</span>, <span class="st">&quot;low&quot;</span>),
+    }</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/desk_agent.py - the Desk&#x27;s search: /v1/passages, top_k 5, and each passage&#x27;s whole text in the result</span><span class="ro">read only</span></div><pre tabindex="0">TOP_K = <span class="nu">5</span>
+...
+    r = documind_tools.retrieve(text, tenant_id=ctx[<span class="st">&quot;tenant&quot;</span>], top_k=TOP_K, doc_type=list(classes),
+                                assertion=ctx.get(<span class="st">&quot;assertion&quot;</span>) <span class="kw">or</span> <span class="kw">None</span>, brain=<span class="st">&quot;desk&quot;</span>, passages=<span class="kw">True</span>)
+...
+            out.append({<span class="st">&quot;n&quot;</span>: n, <span class="st">&quot;source&quot;</span>: str(p.get(<span class="st">&quot;source_uri&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>).rsplit(<span class="st">&quot;/&quot;</span>, <span class="nu">1</span>)[-<span class="nu">1</span>],
+                        <span class="st">&quot;doc_type&quot;</span>: p.get(<span class="st">&quot;doc_type&quot;</span>), <span class="st">&quot;section&quot;</span>: p.get(<span class="st">&quot;section&quot;</span>), <span class="st">&quot;text&quot;</span>: p[<span class="st">&quot;text&quot;</span>]})</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/brains.py - the direct brain: one retrieve, and rag-api&#x27;s answer is the turn&#x27;s whole cost</span><span class="ro">read only</span></div><pre tabindex="0">        r = documind_tools.retrieve(question, tenant_id=context.get(<span class="st">&quot;tenant_id&quot;</span>, <span class="st">&quot;&quot;</span>), top_k=<span class="nu">5</span>,
+                                    assertion=context.get(<span class="st">&quot;assertion&quot;</span>) <span class="kw">or</span> <span class="kw">None</span>, brain=<span class="st">&quot;direct&quot;</span>)
+        meter = limits.meter_of(context)
+        meter.charge_rag(r.get(<span class="st">&quot;usage&quot;</span>))       <span class="cm"># no model call of its own on the lane: rag-api&#x27;s answer is the cost</span></pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What this means for the bill</div>
+<p>The system prompt and the declarations are written once in the kit and sent on every call of every turn, so they are the first thing to look at when a brain's calls cost more than you expect. ADK's two extra pieces, its line and its longer declarations, ride every one of its calls. The projection decides what a chat brain's tool result weighs: a few citations, each a short quote, never the chunks rag-api read. The Desk's tool results are the chunks themselves. The direct brain skips the chat model's loop altogether, and the agent brains must beat it to justify the calls they add (lesson 5.7).</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 3 &middot; Offline</span><h3>Offline: one turn split by source, for Rs 0</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/demo_05_offline_one_turn_split_by_source_for_rs_0.py" target="_blank" rel="noopener"><code>demo_05_offline_one_turn_split_by_source_for_rs_0.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The kit's command reads each call where the adapter hands it to google-genai, splits it at the turn's question, and counts each part.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>make context-sources</code> runs one turn on a brain, built as <code>services/chat</code> builds it, with its thread kept on your machine (an <code>InMemorySaver</code>, or ADK's in-memory sessions), so your lane's threads are never read or written. For the run it wraps google-genai's two <code>generate_content</code> methods: the one LangChain's <code>ChatGoogleGenerativeAI</code> calls and the async one ADK's <code>Gemini</code> calls. So it reads what each adapter handed the SDK: the system instruction, the declarations and the contents. <code>label()</code> splits the contents at the turn's question. Before it is the thread; after it, a model content is the model's calls and a function response is a tool result.</p>
+<p><code>OFFLINE=1</code> puts a script in the model's place at that boundary. The script asks for a search for the question, then answers from the first passage found. The brain, its adapter, its tools and its limits run as they run on your lane. The search is the Rs 0 lane's <code>retrieve</code> over the kit's corpus, with no network and no credential. rag-api's own call inside it is estimated from <code>generator.py</code>'s prompt: its <code>SYSTEM</code>, the chunks <code>pack_chunks</code> fits in what is left of <code>max_context_tokens</code>, and the question. Every count is rag-api's own estimator, so each call's sources add up to exactly what the script reports it was sent.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>mk/memory.mk - context-sources: the project&#x27;s number for RAG_API_URL, documind-ui-sa, and the command in ~/graph-venv</span><span class="ro">read only</span></div><pre tabindex="0">context-sources: $(<span class="kw">if</span> $(OFFLINE),,guard-project)
+	@<span class="kw">if</span> [ -z <span class="st">&quot;$(OFFLINE)&quot;</span> ]; then NUMBER=$$(gcloud projects describe $(PROJECT) --format=<span class="st">&#x27;value(projectNumber)&#x27;</span>) || exit <span class="nu">1</span>; \
+	  export GOOGLE_CLOUD_PROJECT=$(PROJECT) RAG_API_URL=https://documind-api-$$NUMBER.$(REGION).run.app \
+	    DOCUMIND_IMPERSONATE_SA=documind-ui-sa@$(PROJECT).iam.gserviceaccount.com; fi; \
+	  Q=<span class="st">&quot;$(Q)&quot;</span>; PY=$(PY) bash commands/graph-venv.sh commands/context_sources.py $(<span class="kw">if</span> $(OFFLINE),--offline,) \
+	  $(<span class="kw">if</span> $(BRAIN),--brain <span class="st">&quot;$(BRAIN)&quot;</span>,) $(<span class="kw">if</span> $(DESK),--desk <span class="st">&quot;$(DESK)&quot;</span>,) $(<span class="kw">if</span> $(TURNS),--turns <span class="st">&quot;$(TURNS)&quot;</span>,) \
+	  $(<span class="kw">if</span> $(TOP_K),--top-k <span class="st">&quot;$(TOP_K)&quot;</span>,) $${Q:+--question <span class="st">&quot;$$Q&quot;</span>} --tenant <span class="st">&quot;$(TENANT)&quot;</span> $(<span class="kw">if</span> $(JSON),--json,)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - Calls: every generate_content call, read where the adapter hands it to google-genai</span><span class="ro">read only</span></div><pre tabindex="0">        real_sync, real_async = gm.Models.generate_content, gm.AsyncModels.generate_content
+        calls = self
+
+        <span class="kw">def</span> <span class="fn">generate_content</span>(self_, *, model, contents, config=<span class="kw">None</span>):
+            entry = calls._record(model, contents, config)
+            <span class="kw">try</span>:
+                got = calls.script(entry[<span class="st">&quot;request&quot;</span>]) <span class="kw">if</span> calls.script <span class="kw">else</span> real_sync(self_, model=model, contents=contents,
+                                                                                   config=config)
+            <span class="kw">except</span> Exception <span class="kw">as</span> exc:              <span class="cm"># noqa: BLE001 - noted on the call, then raised as it was</span>
+                entry[<span class="st">&quot;error&quot;</span>] = describe(exc)
+                <span class="kw">raise</span>
+            <span class="kw">return</span> calls._answered(entry, got)
+...
+        gm.Models.generate_content, gm.AsyncModels.generate_content = generate_content, agenerate_content</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - _record(): the system instruction, the declarations and the contents the call was handed</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">_record</span>(self, model, contents, config) -&gt; dict:
+        <span class="kw">from</span> google.genai <span class="kw">import</span> _transformers <span class="kw">as</span> t
+        <span class="kw">from</span> google.genai <span class="kw">import</span> types
+        <span class="kw">if</span> <span class="kw">not</span> (isinstance(contents, list) <span class="kw">and</span> all(isinstance(c, types.Content) <span class="kw">for</span> c <span class="kw">in</span> contents)):
+            contents = t.t_contents(contents)
+        system = getattr(config, <span class="st">&quot;system_instruction&quot;</span>, <span class="kw">None</span>)
+        tools = getattr(config, <span class="st">&quot;tools&quot;</span>, <span class="kw">None</span>)
+        raw = {<span class="st">&quot;model&quot;</span>: model, <span class="st">&quot;contents&quot;</span>: copy.deepcopy(list(contents)), <span class="st">&quot;system&quot;</span>: copy.deepcopy(system),
+               <span class="st">&quot;tools&quot;</span>: copy.deepcopy(list(tools)) <span class="kw">if</span> tools <span class="kw">else</span> <span class="kw">None</span>}
+        entry = {<span class="st">&quot;n&quot;</span>: len(self.made) + <span class="nu">1</span>, <span class="st">&quot;turn&quot;</span>: self.turn, <span class="st">&quot;model&quot;</span>: model, <span class="st">&quot;raw&quot;</span>: raw,
+                 <span class="st">&quot;request&quot;</span>: plain_request(model, raw[<span class="st">&quot;contents&quot;</span>], system, tools)}
+        self.made.append(entry)
+        <span class="kw">return</span> entry</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - label(): each content&#x27;s source, split at the turn&#x27;s question</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">label</span>(contents: list[dict], question: str | <span class="kw">None</span> = <span class="kw">None</span>) -&gt; list[str]:
+    <span class="st">&quot;&quot;&quot;Each content&#x27;s source, one label a content: thread before the question, the question, then the model&#x27;s calls,
+    tool results, or other.&quot;&quot;&quot;</span>
+    qi = question_index(contents, question)
+    out = []
+    <span class="kw">for</span> i, c <span class="kw">in</span> enumerate(contents):
+        <span class="kw">if</span> i &lt; qi:
+            out.append(<span class="st">&quot;thread&quot;</span>)
+        <span class="kw">elif</span> i == qi:
+            out.append(<span class="st">&quot;question&quot;</span>)
+        <span class="kw">elif</span> c[<span class="st">&quot;role&quot;</span>] == <span class="st">&quot;model&quot;</span>:
+            out.append(<span class="st">&quot;calls&quot;</span>)
+        <span class="kw">elif</span> any(<span class="st">&quot;function_response&quot;</span> <span class="kw">in</span> p <span class="kw">for</span> p <span class="kw">in</span> c[<span class="st">&quot;parts&quot;</span>]):
+            out.append(<span class="st">&quot;results&quot;</span>)
+        <span class="kw">else</span>:
+            out.append(<span class="st">&quot;other&quot;</span>)
+    <span class="kw">return</span> out</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - OFFLINE=1&#x27;s count: rag-api&#x27;s own estimator, a quarter of the characters</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">tokens</span>(text: str) -&gt; int:
+    <span class="st">&quot;&quot;&quot;OFFLINE=1&#x27;s count of one part: rag-api&#x27;s own estimator (a quarter of the characters, at least 1), and nothing
+    for an empty part.&quot;&quot;&quot;</span>
+    <span class="kw">return</span> context_budget().estimate_tokens(text) <span class="kw">if</span> text <span class="kw">else</span> <span class="nu">0</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - rag_prompt(): rag-api&#x27;s own prompt inside a search, estimated from generator.py</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">rag_prompt</span>(query: str, chunks: list[dict]) -&gt; dict:
+    <span class="st">&quot;&quot;&quot;rag-api&#x27;s own prompt for a search over these chunks (each with its text, source_uri and page or page_start), as
+    generator.generate() builds it: SYSTEM (and the dated rule when a packed chunk carries a date), the chunks
+    pack_chunks fits in what _budget() leaves of max_context_tokens, the question. Each part estimated as rag-api
+    estimates it; tokens_in is their sum.&quot;&quot;&quot;</span>
+    cb, k = context_budget(), rag_constants()
+    fixed = f<span class="st">&quot;{k[&#x27;SYSTEM&#x27;]}{k[&#x27;DATED_RULE&#x27;]}\n\nContext:\n\n\nQuestion: {query}&quot;</span>
+    room = cb.TokenBudget.fit(k[<span class="st">&quot;max_context_tokens&quot;</span>], fixed, cb.estimate_tokens, answer=k[<span class="st">&quot;max_answer_tokens&quot;</span>]).chunks
+    context, packed, dropped = cb.pack_chunks(list(chunks), room, cb.estimate_tokens)
+    rule = k[<span class="st">&quot;DATED_RULE&quot;</span>] <span class="kw">if</span> any(c.get(<span class="st">&quot;effective_from&quot;</span>) <span class="kw">for</span> c <span class="kw">in</span> packed) <span class="kw">else</span> <span class="st">&quot;&quot;</span>
+    split = {<span class="st">&quot;system&quot;</span>: tokens(k[<span class="st">&quot;SYSTEM&quot;</span>] + rule), <span class="st">&quot;chunks&quot;</span>: tokens(f<span class="st">&quot;\n\nContext:\n{context}&quot;</span>),
+             <span class="st">&quot;question&quot;</span>: tokens(f<span class="st">&quot;\n\nQuestion: {query}&quot;</span>)}
+    <span class="kw">return</span> {**split, <span class="st">&quot;tokens_in&quot;</span>: sum(split.values()), <span class="st">&quot;packed&quot;</span>: len(packed), <span class="st">&quot;dropped&quot;</span>: len(dropped)}</pre></div>
+
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (a scripted model and the kit&#x27;s corpus on your machine: no network, Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make context-sources OFFLINE=1 BRAIN=langgraph</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the command, run on the kit when this page was built: a scripted model, Rs 0; your offline run prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">context sources: one turn on brain langgraph, tenant acme, a fresh thread; each search sends the model's top_k, or tools.py's default of 5
+  OFFLINE=1: a scripted model at the google-genai boundary (the brain, its adapter, tools and limits run
+  as on the lane) and the Rs 0 lane's retrieve over evals/corpus: no network, no credential, nothing
+  billed. Tokens are estimated: a quarter of the characters each part carries (rag-api's estimator,
+  context_budget.estimate_tokens), so the residual is 0. On your lane count_tokens counts each source.
+question: After how many years of continuous service is gratuity payable?
+  sent with every call: a system prompt of 426 characters, the brain's own
+  and 2 tool declarations (retrieve, calculate_processing_cost), each with its parameters
+
+model call 1 of 2 (gemini-3.6-flash): in 361, out 21: Rs 0.0594
+  system prompt           106   29.4%
+  tool declarations       240   66.5%
+  thread so far             0  
+  question                 15    4.2%
+  the model's calls         0  
+  tool results              0  
+  residual                  0           offline the script's input is the sum of its parts
+  -&gt; retrieve(query="After how many years of continuous service is gratuity payable?")
+     search: top_k 5; 5 citations back, 2,004 characters
+     inside it, rag-api's own call (estimated: generator.py's prompt): system 105, 5 chunks 1,834, question 18; in 1,957, out 24: Rs 0.2648
+model call 2 of 2 (gemini-3.6-flash): in 1,143, out 50: Rs 0.1776
+  system prompt           106    9.3%
+  tool declarations       240   21.0%
+  thread so far             0  
+  question                 15    1.3%
+  the model's calls        21    1.8%
+  tool results            761   66.6%
+  residual                  0           offline the script's input is the sum of its parts
+  -&gt; no tool: the answer
+
+the turn by source: 2 model calls; the system prompt, the declarations, the thread and the question go with every one
+                       tokens        Rs
+  system prompt           212    0.0270  106 in each of 2 calls
+  tool declarations       480    0.0612  240 in each of 2 calls
+  thread so far             0    0.0000
+  question                 30    0.0038  15 in each of 2 calls
+  the model's calls        21    0.0027  from call 2 on
+  tool results            761    0.0970  from call 2 on
+  residual                  0    0.0000
+  input                 1,504    0.1918
+  cached                    0    0.0000  a cached token bills at a tenth of the input price
+  output                   71    0.0453  thinking included
+  the model calls                0.2370  the turn's Meter (limits.py) charged Rs 0.2370 for 2 calls
+  rag-api, inside                0.2648  1 answer of its own, estimated; the Meter charged Rs 0.2648
+  the turn                       0.5018  at list price (shared/prices.py, USD_INR 85); offline, nothing is billed
+
+answer: (offline, scripted) The first passage says: "Payment of Gratuity.- (1) Gratuity shall be payable to an employee on the termination of his employmen...</pre></div>
+
+<p>The same without make: <code>bash commands/graph-venv.sh commands/context_sources.py --offline --brain langgraph</code>. The first run makes <code>~/graph-venv</code> if it is missing and installs the chat image's pins into it; pip's notices may print before the output.</p>
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The header names what rides every call: a system prompt of 426 characters, the brain's own, and two declarations, each with its <code>parameters</code>. Model call 1 is 361 tokens: the system prompt 106, the declarations 240 and the question 15, and nothing else yet. It asked for <code>retrieve</code>. Under it is the search: top_k 5, 5 citations back in 2,004 characters, and inside it rag-api's own call, 1,957 tokens in.</p>
+<p>Model call 2 is 1,143 tokens: the same three sources again, the model's call (21) and the tool results (761). The residual is 0 on both calls, because offline the script's input is the sum of its parts. Then comes the turn by source: each source's tokens over both calls, its rupees, and how it rode, <code>106 in each of 2 calls</code> for the system prompt and <code>from call 2 on</code> for the results. The model calls cost Rs 0.2370, and the line says the turn's Meter charged the same: the command prices each call as <code>limits.py</code> does. rag-api's answer adds Rs 0.2648, estimated. The turn is Rs 0.5018 at list price, and offline nothing is billed.</p></div>
+
+<p>The kit holds this for every brain. Its test reads every captured call and checks that each content has one source and that the sources add up to what the call was sent. CI's chat-pins step runs the file on every push, and the file has 25 tests in all.</p>
+<div class="cw"><div class="ch-bar"><span>commands/tests/test_context_sources.py - every call&#x27;s sources sum to what the call was sent, each content once</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">test_each_calls_sources_sum_to_what_it_was_sent</span>(self):
+        <span class="kw">for</span> name, (calls, _, _) <span class="kw">in</span> self.runs.items():
+            rec = self.recs[name]
+            measured = [c <span class="kw">for</span> c <span class="kw">in</span> calls.made <span class="kw">if</span> c[<span class="st">&quot;turn&quot;</span>] == rec[<span class="st">&quot;turns&quot;</span>]]
+            self.assertEqual(len(measured), len(rec[<span class="st">&quot;calls&quot;</span>]), name)
+            <span class="kw">for</span> c, row <span class="kw">in</span> zip(measured, rec[<span class="st">&quot;calls&quot;</span>]):
+                labels = cs.label(c[<span class="st">&quot;request&quot;</span>][<span class="st">&quot;contents&quot;</span>], cs.QUESTION)
+                self.assertEqual(len(labels), len(c[<span class="st">&quot;request&quot;</span>][<span class="st">&quot;contents&quot;</span>]), name)    <span class="cm"># each content, one source</span>
+                self.assertEqual(sum(row[<span class="st">&quot;sources&quot;</span>].values()), c[<span class="st">&quot;usage&quot;</span>][<span class="st">&quot;input&quot;</span>], name)
+                self.assertEqual(c[<span class="st">&quot;usage&quot;</span>][<span class="st">&quot;input&quot;</span>], cs.request_tokens(c[<span class="st">&quot;request&quot;</span>]), name)
+                self.assertEqual(row[<span class="st">&quot;residual&quot;</span>], <span class="nu">0</span>, name)
+                self.assertEqual(row[<span class="st">&quot;sources&quot;</span>][<span class="st">&quot;other&quot;</span>], <span class="nu">0</span>, name)
+            <span class="kw">if</span> rec[<span class="st">&quot;calls&quot;</span>]:
+                self.assertEqual(rec[<span class="st">&quot;calls&quot;</span>][<span class="nu">0</span>][<span class="st">&quot;asked&quot;</span>], [{<span class="st">&quot;name&quot;</span>: <span class="st">&quot;retrieve&quot;</span>, <span class="st">&quot;args&quot;</span>: {<span class="st">&quot;query&quot;</span>: cs.QUESTION}}], name)
+                self.assertEqual(rec[<span class="st">&quot;calls&quot;</span>][-<span class="nu">1</span>][<span class="st">&quot;asked&quot;</span>], [], name)
+                first, last = rec[<span class="st">&quot;calls&quot;</span>][<span class="nu">0</span>][<span class="st">&quot;sources&quot;</span>], rec[<span class="st">&quot;calls&quot;</span>][-<span class="nu">1</span>][<span class="st">&quot;sources&quot;</span>]
+                self.assertEqual((first[<span class="st">&quot;calls&quot;</span>], first[<span class="st">&quot;results&quot;</span>]), (<span class="nu">0</span>, <span class="nu">0</span>), name)      <span class="cm"># nothing returned yet</span>
+                self.assertGreater(last[<span class="st">&quot;results&quot;</span>], <span class="nu">0</span>, name)</pre></div>
+
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; The counter</span><h3>On your lane: the model's own counter, and the probe</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/demo_06_on_your_lane_the_model_s_own_counter_and_the_probe.py" target="_blank" rel="noopener"><code>demo_06_on_your_lane_the_model_s_own_counter_and_the_probe.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>A real turn, each call's tokens from its usage, and each source counted by <code>count_tokens</code> in context. The probe at the end says whether the counter took every field.</p></div></div>
+
+<h4>Definition</h4>
+<p>Without <code>OFFLINE</code>, the turn is real. Gemini answers on location global through the brain's own model. Each search goes to your lane's rag-api as <code>documind-ui-sa</code>: the make target sets <code>RAG_API_URL</code> from your project's number, and <code>DOCUMIND_IMPERSONATE_SA</code>. The turn runs under the chat service's limits, 12 calls, Rs 5 and 100 s. Each call's tokens are its own <code>usage_metadata</code>: input, cached, output and thinking. Thinking is billed as output, and a cached token at a tenth of the input rate.</p>
+<p>Then the command counts each source with the model's own <code>count_tokens</code> on location global, which is not billed. A piece counted on its own need not add up to its share of a request, so the command counts in context. It counts the question alone, then with the thread before it, with the system instruction, with the declarations, and then with each later content in turn. Each source's tokens are what adding it added, so the sources sum to the request's count. The residual is what the call billed less that count. A field <code>count_tokens</code> refuses, or accepts and counts as nothing, is estimated instead, marked <code>~</code>, and named in the probe at the end of the output.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - on your lane: the model&#x27;s own count_tokens, each source added in turn</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">count_tokens_on</span>(client, model: str):
+    <span class="st">&quot;&quot;&quot;The live count: the model&#x27;s own count_tokens, with the system instruction and the declarations in its config.&quot;&quot;&quot;</span>
+    <span class="kw">from</span> google.genai <span class="kw">import</span> types
+
+    <span class="kw">def</span> <span class="fn">count</span>(contents: list, system=<span class="kw">None</span>, tools=<span class="kw">None</span>) -&gt; int:
+        config = types.CountTokensConfig(system_instruction=system, tools=tools) <span class="kw">if</span> (system <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">or</span> tools) <span class="kw">else</span> <span class="kw">None</span>
+        <span class="kw">return</span> client.models.count_tokens(model=model, contents=contents, config=config).total_tokens
+    <span class="kw">return</span> count
+
+
+<span class="kw">def</span> <span class="fn">counted_pieces</span>(raw: dict, req: dict, labels: list[str], counter: Counter) -&gt; tuple[list, dict]:
+    <span class="st">&quot;&quot;&quot;One request&#x27;s sources counted in context: [(source, tokens, counted?, content index or None)] in the order they
+    were added - the question alone, then the thread before it, the system instruction, the declarations, then each
+    content after the question - and the probe: what count_tokens did with the system instruction and the
+    declarations. A piece&#x27;s tokens are what adding it added, so the pieces sum to the request&#x27;s count.&quot;&quot;&quot;</span>
+...
+    <span class="kw">if</span> system <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> req[<span class="st">&quot;system&quot;</span>]:
+        got, err = ask(kept, system)
+        <span class="kw">if</span> err <span class="kw">is</span> <span class="kw">None</span> <span class="kw">and</span> got &gt; at:
+            probe[<span class="st">&quot;system&quot;</span>] = f<span class="st">&quot;honoured: +{got - at:,}&quot;</span>
+            pieces.append((<span class="st">&quot;system&quot;</span>, got - at, <span class="kw">True</span>, <span class="kw">None</span>))
+            at = got
+        <span class="kw">else</span>:
+            probe[<span class="st">&quot;system&quot;</span>] = f<span class="st">&quot;refused: {describe(err)}&quot;</span> <span class="kw">if</span> err <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">else</span> <span class="st">&quot;accepted, but counted as nothing&quot;</span>
+            pieces.append((<span class="st">&quot;system&quot;</span>, est_s, <span class="kw">False</span>, <span class="kw">None</span>))
+            system = <span class="kw">None</span></pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/chat/limits.py and shared/prices.py - what a call bills: thinking is output, a cached token a tenth</span><span class="ro">read only</span></div><pre tabindex="0"><span class="kw">def</span> <span class="fn">usage_of</span>(message) -&gt; tuple:
+    <span class="st">&quot;&quot;&quot;(tokens_in, tokens_out, cached) from a LangChain AIMessage: output counts thinking, cache_read is in input.&quot;&quot;&quot;</span>
+    u = getattr(message, <span class="st">&quot;usage_metadata&quot;</span>, <span class="kw">None</span>) <span class="kw">or</span> {}
+    cached = (u.get(<span class="st">&quot;input_token_details&quot;</span>) <span class="kw">or</span> {}).get(<span class="st">&quot;cache_read&quot;</span>) <span class="kw">or</span> <span class="nu">0</span>
+    <span class="kw">return</span> u.get(<span class="st">&quot;input_tokens&quot;</span>) <span class="kw">or</span> <span class="nu">0</span>, u.get(<span class="st">&quot;output_tokens&quot;</span>) <span class="kw">or</span> <span class="nu">0</span>, cached
+...
+    usd_in, usd_out = PRICES.get(model <span class="kw">or</span> DEFAULT_MODEL, PRICES[DEFAULT_MODEL])
+    billable_in = max(tokens_in - cached_tokens, <span class="nu">0</span>)
+    <span class="kw">return</span> (billable_in * usd_in + cached_tokens * usd_in * <span class="nu">0.10</span> + tokens_out * usd_out) / <span class="nu">1_000_000</span></pre></div>
+
+
+<h4>Do it: the probe</h4>
+<p>Whether <code>count_tokens</code> on location global takes the declarations and the system instruction at all was not known when the kit was written. The probe settles it before any count on this page is trusted, for both forms of declaration: LangChain's <code>parameters</code> on the LangGraph brain, and ADK's <code>parametersJsonSchema</code>. The cell prints only each run's probe. Step 7 shows the whole of each run.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (two real turns on your lane, a few rupees; only each run&#x27;s probe is printed)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">for b in langgraph adk; do
+  echo "== BRAIN=$b"; make context-sources PROJECT=$PROJECT BRAIN=$b | sed -n '/^probe (/,$p'
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane, batch 1: the probe at the end of each run; your counts are yours)</span><span class="ro">read only</span></div><pre tabindex="0">== BRAIN=langgraph
+[awaiting the author's run: data/probe_langgraph.txt]
+== BRAIN=adk
+[awaiting the author's run: data/probe_adk.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>system_instruction: honoured: +N</code> means adding the system prompt raised the count by N, so the endpoint counts it. <code>tools: honoured: +N</code> means the same for the declarations, in the form this brain's adapter sends. Either line could instead say <code>refused: ...</code> or <code>accepted, but counted as nothing</code>. Then that source is estimated and marked <code>~</code> in the breakdown, and the residual shows how far off the estimate is. <code>contents: counted</code> means every content after the question was counted in context, including the model's function call and its result.</p>
+<p>The last line compares call 1's count with its bill. A residual of a few tokens at most says <code>count_tokens</code> and the bill agree on what the call carried. Call 2's residual is in its own lines of the full output (step 7). If it is larger than call 1's, something rode call 2 that the counter did not count. A thought signature is one candidate: Gemini 3 attaches one to the function call it makes, the adapter sends it back on the next call, and the offline estimate counts nothing for it. The same line ends with the number of <code>count_tokens</code> requests the run made, none of them billed.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 4 &middot; Five brains</span><h3>Five brains, one question, on your lane</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/demo_07_five_brains_one_question_on_your_lane.py" target="_blank" rel="noopener"><code>demo_07_five_brains_one_question_on_your_lane.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>The same question through each brain: what each one sends, what its search hands back, and what the turn costs.</p></div></div>
+
+<h4>Definition</h4>
+<p>One real turn on each brain, with the same question each time. What differs is the request each brain assembles and what its search hands back. On the chat brains the tool result is the citations rag-api's answer chose. Inside each search the command prints rag-api's own call from the usage rag-api returns: its tokens in, cached and out, and its rupees. On your lane that call is not split into its prompt, its chunks and the question; lesson 3.4 measures rag-api's prompt. The Desk's search is <code>/v1/passages</code>, with no model call inside. The direct brain makes no call of its own, so its output is the search and rag-api's call alone.</p>
+<p>The Desk searches the classes <code>statute</code> and <code>guidance</code>, and a row on your lane is <code>unknown</code> until lesson 10.4's doc_type registry pins its class. Before that, the statute desk's searches find no passage. Its tool results are then empty lists, and the model may search again in other words before it says the passages do not answer.</p>
+
+<h4>Do it</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (one real turn on each brain, a few rupees each)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">for b in langchain langgraph adk direct desk; do
+  echo "== BRAIN=$b"; make context-sources PROJECT=$PROJECT BRAIN=$b
+done</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected == BRAIN=langchain (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_langchain.txt]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected == BRAIN=langgraph (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_langgraph.txt]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected == BRAIN=adk (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_adk.txt]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected == BRAIN=direct (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_direct.txt]</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected == BRAIN=desk (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_desk.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read the five outputs side by side, a source at a time.</p>
+<p><strong>The fixed parts.</strong> The system prompt and the declarations count the same on every call of a turn, and the same for langchain and langgraph. ADK's are larger: its system prompt carries the framework's line, and its declarations are JSON Schema with titles and defaults. Offline the estimate put ADK's at 120 and 341 tokens to LangChain's 106 and 240. Your counts are the model's own.</p>
+<p><strong>The tool results.</strong> On the chat brains they are the clauses rag-api's answer cited, a short quote each unless the answer cited a source only in its prose, so they usually weigh less than offline, where every passage came back with up to 500 characters. On the Desk, when its search finds passages, they come back whole, and they are the largest source of any call that carries them.</p>
+<p><strong>The output.</strong> Thinking is output, billed at the output rate. The LangChain and LangGraph brains run their model with thinking low (<code>shared/profile.py</code>), and so does the Desk's agent. ADK's brain sets no thinking level, so its calls may think more.</p>
+<p><strong>The search's own call.</strong> On the chat brains and the direct brain, rag-api's answer is the line under the search, and its rupees are on the turn's bill as rag-api's. On the direct brain it is the whole bill.</p>
+<p><strong>The Meter.</strong> The model calls' rupees equal what the turn's <code>limits.Meter</code> charged. The chat service charges the same Meter on <code>/v1/chat</code>, and its total is step 3's caption.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; Change it</span><h3>Change it: TOP_K, and which part of the bill moves</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/demo_08_change_it_top_k_and_which_part_of_the_bill_moves.py" target="_blank" rel="noopener"><code>demo_08_change_it_top_k_and_which_part_of_the_bill_moves.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Three passages instead of five, offline and on your lane, on a chat brain and on the Desk.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>TOP_K=K</code> makes the command send <code>top_k</code> K with every search of the run, whatever the model asked for. <code>retrieve</code>'s declaration, and its default of 5, do not change, so the request the model reads is the same. What moves depends on what a search returns. Offline, the Rs 0 lane's search returns every one of the top_k passages, so the tool results shrink with TOP_K, and rag-api's estimated prompt packs three chunks instead of five.</p>
+<p>On your lane, a chat brain's search is rag-api's <code>/v1/query</code>. rag-api packs top_k chunks into its own prompt and answers. <code>resolve()</code> then builds one citation for each source the answer cited, and for no other, with the quote the answer gave: rule 5 of rag-api's prompt keeps it to the clause that answers, at most twenty-five words. A source the answer cites only as an <code>[N]</code> in its prose comes with no quote, so its citation carries the passage's first 500 characters. The chat model's tool result is those citations. So on your lane TOP_K moves rag-api's own prompt, and rag-api's share of the turn's bill. It moves the tool results only as far as the answer's choice of clauses changes. The Desk's <code>/v1/passages</code> returns all of its top_k passages, whole, so TOP_K moves the Desk's tool results on both lanes.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - Searches: TOP_K is sent with every search, whatever top_k the model asked</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">__call__</span>(self, query, tenant_id=<span class="st">&quot;&quot;</span>, top_k=<span class="nu">5</span>, doc_type=<span class="kw">None</span>, assertion=<span class="kw">None</span>, brain=<span class="kw">None</span>, passages=<span class="kw">False</span>):
+        sent = self.top_k <span class="kw">or</span> top_k
+        r = self.inner(query, tenant_id=tenant_id, top_k=sent, doc_type=doc_type, assertion=assertion, brain=brain,
+                       passages=passages)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/generator.py - rag-api&#x27;s own call: the packed chunks in its prompt, a quote of one clause, and resolve() against what it packed</span><span class="ro">read only</span></div><pre tabindex="0">SYSTEM = <span class="st">&quot;&quot;&quot;You are DocuMind, a retrieval-grounded assistant.
+Rules:
+1. Answer ONLY from the numbered context below. Never invent sources.
+2. Cite using [N] where N is the chunk number. Multiple chunks: [1,2].
+3. If the context does not contain the answer, set answerable=false and say so.
+4. Keep answers under 300 words unless asked for more.
+5. A quote is the clause that answers - at most twenty-five words, never a whole section.
+&quot;&quot;&quot;</span>
+...
+    context, packed = _pack(query, chunks)
+    prompt = f<span class="st">&quot;{SYSTEM}{_dated_rule(packed)}\n\nContext:\n{context}\n\nQuestion: {query}&quot;</span>
+...
+    ans = resolve(draft, packed)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>shared/documind_schemas.py - resolve(): a citation for each source the answer cited, and no other</span><span class="ro">read only</span></div><pre tabindex="0">    cits: List[Citation] = []
+    seen = set()
+
+    <span class="kw">def</span> <span class="fn">cite</span>(n: int, quote: str) -&gt; <span class="kw">None</span>:
+        c = packed[n - <span class="nu">1</span>]
+        chunk_id = str(c.get(<span class="st">&quot;chunk_id&quot;</span>) <span class="kw">or</span> c.get(<span class="st">&quot;id&quot;</span>) <span class="kw">or</span> <span class="st">&quot;&quot;</span>)
+        <span class="kw">if</span> chunk_id <span class="kw">in</span> seen:
+            <span class="kw">return</span>
+        seen.add(chunk_id)
+        cits.append(Citation(
+...
+            quote=(quote <span class="kw">or</span> c.get(<span class="st">&quot;text&quot;</span>, <span class="st">&quot;&quot;</span>))[:<span class="nu">500</span>],
+...
+    <span class="kw">for</span> d <span class="kw">in</span> draft.citations:
+        <span class="kw">if</span> <span class="nu">1</span> &lt;= d.source &lt;= len(packed):
+            cite(d.source, d.quote)
+    <span class="kw">for</span> n <span class="kw">in</span> cited_numbers(draft.answer):
+        <span class="kw">if</span> <span class="nu">1</span> &lt;= n &lt;= len(packed):
+            cite(n, <span class="st">&quot;&quot;</span>)</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>commands/tests/test_context_sources.py - offline, TOP_K=3 moves the tool results and nothing else</span><span class="ro">read only</span></div><pre tabindex="0">    <span class="kw">def</span> <span class="fn">test_top_k_moves_the_tool_results_and_nothing_else</span>(self):
+        <span class="kw">for</span> base, changed <span class="kw">in</span> ((<span class="st">&quot;langgraph&quot;</span>, <span class="st">&quot;langgraph-k3&quot;</span>), (<span class="st">&quot;desk&quot;</span>, <span class="st">&quot;desk-k3&quot;</span>)):
+            a, b = self.recs[base], self.recs[changed]
+            self.assertEqual(len(a[<span class="st">&quot;calls&quot;</span>]), len(b[<span class="st">&quot;calls&quot;</span>]), base)
+            <span class="kw">for</span> x, y <span class="kw">in</span> zip(a[<span class="st">&quot;calls&quot;</span>], b[<span class="st">&quot;calls&quot;</span>]):
+                <span class="kw">for</span> s <span class="kw">in</span> cs.SOURCES:
+                    <span class="kw">if</span> s != <span class="st">&quot;results&quot;</span>:
+                        self.assertEqual(x[<span class="st">&quot;sources&quot;</span>][s], y[<span class="st">&quot;sources&quot;</span>][s], (base, s))
+            self.assertLess(b[<span class="st">&quot;totals&quot;</span>][<span class="st">&quot;tokens&quot;</span>][<span class="st">&quot;results&quot;</span>], a[<span class="st">&quot;totals&quot;</span>][<span class="st">&quot;tokens&quot;</span>][<span class="st">&quot;results&quot;</span>], base)
+            self.assertEqual([(s[<span class="st">&quot;top_k&quot;</span>], s[<span class="st">&quot;sent&quot;</span>], s[<span class="st">&quot;found&quot;</span>]) <span class="kw">for</span> s <span class="kw">in</span> b[<span class="st">&quot;searches&quot;</span>]], [(<span class="nu">5</span>, <span class="nu">3</span>, <span class="nu">3</span>)], base)
+            self.assertEqual([(s[<span class="st">&quot;top_k&quot;</span>], s[<span class="st">&quot;sent&quot;</span>], s[<span class="st">&quot;found&quot;</span>]) <span class="kw">for</span> s <span class="kw">in</span> a[<span class="st">&quot;searches&quot;</span>]], [(<span class="nu">5</span>, <span class="nu">5</span>, <span class="nu">5</span>)], base)
+        k3 = self.recs[<span class="st">&quot;langgraph-k3&quot;</span>][<span class="st">&quot;searches&quot;</span>][<span class="nu">0</span>][<span class="st">&quot;rag&quot;</span>][<span class="st">&quot;prompt&quot;</span>]
+        k5 = self.recs[<span class="st">&quot;langgraph&quot;</span>][<span class="st">&quot;searches&quot;</span>][<span class="nu">0</span>][<span class="st">&quot;rag&quot;</span>][<span class="st">&quot;prompt&quot;</span>]
+        self.assertEqual((k5[<span class="st">&quot;packed&quot;</span>], k3[<span class="st">&quot;packed&quot;</span>]), (<span class="nu">5</span>, <span class="nu">3</span>))              <span class="cm"># rag-api&#x27;s own prompt moves too</span>
+        self.assertLess(k3[<span class="st">&quot;chunks&quot;</span>], k5[<span class="st">&quot;chunks&quot;</span>])
+        self.assertEqual(k3[<span class="st">&quot;system&quot;</span>], k5[<span class="st">&quot;system&quot;</span>])</pre></div>
+
+
+<h4>Do it: offline, the two records side by side</h4>
+<p><code>make context-sources</code> prints its breakdown; with <code>JSON=1</code> it prints the turn as one record instead, the command's <code>--json</code>. Write one record with TOP_K unset and one with TOP_K 3, then compare them source by source.</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (two offline turns, written as records: Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make context-sources OFFLINE=1 BRAIN=langgraph JSON=1 &gt; ~/cs_default.json
+make context-sources OFFLINE=1 BRAIN=langgraph TOP_K=3 JSON=1 &gt; ~/cs_top3.json</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (reads the two records; no network)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">python - &lt;&lt;'PY'
+import json, os, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+NAMES = {"system": "system prompt", "tools": "tool declarations", "thread": "thread so far", "question": "question",
+         "calls": "the model's calls", "results": "tool results"}
+
+
+def load(name):
+    """One record, as context_sources.py --json printed it."""
+    with open(os.path.expanduser(f"~/{name}.json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def rag(rec):
+    """rag-api's own calls inside the turn's searches: their tokens in, and the chunks packed when the record knows."""
+    calls = [s["rag"] for s in rec["searches"] if s.get("rag")]
+    packed = [r["prompt"]["packed"] for r in calls if r.get("prompt")]
+    return sum(int(r["tokens_in"] or 0) for r in calls), (sum(packed) if packed else None)
+
+
+a, b = load("cs_default"), load("cs_top3")
+print(f"{'':20}{'TOP_K unset':&gt;12}{'TOP_K=3':&gt;10}")
+for key, name in NAMES.items():
+    x, y = a["totals"]["tokens"][key], b["totals"]["tokens"][key]
+    print(f"{name:20}{x:&gt;12,}{y:&gt;10,}" + ("   moved" if x != y else ""))
+(ra, ka), (rb, kb) = rag(a), rag(b)
+print(f"{'rag-api, inside':20}{ra:&gt;12,}{rb:&gt;10,}   moved" + (f": {ka} chunks packed, then {kb}" if ka is not None else ""))
+print(f"{'the model calls, Rs':20}{a['totals']['model_inr']:&gt;12.4f}{b['totals']['model_inr']:&gt;10.4f}")
+print(f"{'rag-api, Rs':20}{a['totals']['rag_inr']:&gt;12.4f}{b['totals']['rag_inr']:&gt;10.4f}")
+print(f"{'the turn, Rs':20}{a['totals']['turn_inr']:&gt;12.4f}{b['totals']['turn_inr']:&gt;10.4f}")
+PY</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the cell, run on the two records the command wrote when this page was built)</span><span class="ro">read only</span></div><pre tabindex="0">                     TOP_K unset   TOP_K=3
+system prompt                212       212
+tool declarations            480       480
+thread so far                  0         0
+question                      30        30
+the model's calls             21        21
+tool results                 761       435   moved
+rag-api, inside            1,957     1,095   moved: 5 chunks packed, then 3
+the model calls, Rs       0.2370    0.1955
+rag-api, Rs               0.2648    0.1549
+the turn, Rs              0.5018    0.3504</pre></div>
+
+<p>Offline, exactly the two lines the kit's test pins moved: the tool results, from 761 tokens to 435, and rag-api's own prompt. The search's citations went from 2,004 characters to 1,087. The turn went from Rs 0.5018 to Rs 0.3504: Rs 0.2370 to Rs 0.1955 for the model calls, and Rs 0.2648 to Rs 0.1549 for rag-api.</p>
+
+<h4>Do it: on your lane, a chat brain and the Desk</h4>
+<p>Compare this one with step 7's <code>langgraph</code> output:</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (one real turn, every search sent top_k 3)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make context-sources PROJECT=$PROJECT BRAIN=langgraph TOP_K=3</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_langgraph_topk3.txt]</pre></div>
+
+<p>And this one with step 7's <code>desk</code> output:</p>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (one real turn on the statute desk, top_k 3)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make context-sources PROJECT=$PROJECT BRAIN=desk TOP_K=3</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_desk_topk3.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Read three lines in each pair. The search line says <code>top_k 3 (TOP_K; 5 asked)</code>, and how many citations or passages came back, in how many characters. Under it, rag-api's own call: on <code>langgraph</code> its tokens in should drop by about the two chunks it no longer packs. Then the tool results in the second call. On <code>langgraph</code> they are the clauses rag-api's answer chose from what it packed. If the answer cited the same clauses from three chunks as from five, the tool results barely move. On the Desk every passage comes back whole, so the tool results drop by about the two passages it no longer returns.</p>
+<p>The setting that looks like a knob on the chat model's context is, on your lane, mostly a knob on rag-api's. Offline it looked like the chat model's because the Rs 0 lane hands back all of its top_k passages. When a number you measured offline moves differently on your lane, look first at what the lane's search returns.</p></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 4 &middot; The thread</span><h3>The thread rides every call too</h3><!-- IDE-DEMO-LINKS --><div class="box" style="overflow-wrap:anywhere"><p><b>Run in your IDE</b> · The filename number is this HTML section number. Run the functions in their listed order; do not repeat the terminal cells as well.</p><ul><li>Run here: <a href="https://github.com/netsetos/agents_workshop_learner/blob/main/workshop_demos/module_06/lesson_6_1/demo_09_the_thread_rides_every_call_too.py" target="_blank" rel="noopener"><code>demo_09_the_thread_rides_every_call_too.py</code></a>.</li></ul></div><!-- /IDE-DEMO-LINKS -->
+<p>Three turns on one local thread, the third one measured: the earlier turns ride both of its calls, untrimmed.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>TURNS=3</code> asks two earlier questions on the same thread first: <em>How many days of earned leave can I carry forward?</em>, then <em>Is gratuity payable to a contract employee?</em> The thread lives in the command's own <code>InMemorySaver</code>, or for ADK in its in-memory session service, never in your lane's checkpoint database. The third turn is the one measured. Everything the first two left in the thread rides both of its calls: two questions, the model's calls and their citations, and two answers. Nothing trims it, and rag-api's own <code>TokenBudget</code> says as much in a comment: the chat brains resend whole threads. The direct brain and the Desk keep no thread, and the command refuses <code>TURNS</code> for them: <code>refused: direct keeps no thread (brains.DirectBrain answers one retrieve), so its turns are all first turns: leave TURNS out</code>.</p>
+
+<h4>The code</h4>
+<div class="cw"><div class="ch-bar"><span>commands/context_sources.py - TURNS: the earlier questions, asked first on one local thread</span><span class="ro">read only</span></div><pre tabindex="0">QUESTION = <span class="st">&quot;After how many years of continuous service is gratuity payable?&quot;</span>
+<span class="cm"># TURNS=2 or 3 asks these first, on the same thread: a handbook question and a follow-up on gratuity, both answered</span>
+<span class="cm"># from acme&#x27;s corpus offline.</span>
+EARLIER = (<span class="st">&quot;How many days of earned leave can I carry forward?&quot;</span>, <span class="st">&quot;Is gratuity payable to a contract employee?&quot;</span>)
+...
+    b = brains.build(brain, InMemorySaver())
+    config = {<span class="st">&quot;configurable&quot;</span>: {<span class="st">&quot;thread_id&quot;</span>: f<span class="st">&quot;{tenant}:{user}:context-sources&quot;</span>}}
+    out = []
+    <span class="kw">for</span> i, question <span class="kw">in</span> enumerate(questions, <span class="nu">1</span>):
+        calls.turn = i
+        meter = limits.Meter(model=brains.MODEL)
+        got = b.answer(question, config=config, context={<span class="st">&quot;tenant_id&quot;</span>: tenant, <span class="st">&quot;user_id&quot;</span>: user, <span class="st">&quot;assertion&quot;</span>: <span class="st">&quot;&quot;</span>,
+                                                          <span class="st">&quot;brain&quot;</span>: brain, <span class="st">&quot;meter&quot;</span>: meter})
+        out.append({<span class="st">&quot;meter&quot;</span>: meter, <span class="st">&quot;answer&quot;</span>: got[<span class="st">&quot;answer&quot;</span>]})</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>services/rag-api/context_budget.py - TokenBudget&#x27;s history line: the chat brains resend the whole thread</span><span class="ro">read only</span></div><pre tabindex="0">    history: int = <span class="nu">2_000</span>        <span class="cm"># earlier turns: 0 in fit(); documind-chat&#x27;s agents resend whole threads, untrimmed</span></pre></div>
+
+
+<h4>Do it: offline</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (three offline turns on one local thread: Rs 0)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make context-sources OFFLINE=1 BRAIN=langchain TURNS=3</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the command, run on the kit when this page was built: a scripted model, Rs 0; your offline run prints the same)</span><span class="ro">read only</span></div><pre tabindex="0">context sources: one turn on brain langchain, tenant acme, turn 3 of one thread, after 2 earlier questions; each search sends the model's top_k, or tools.py's default of 5
+  OFFLINE=1: a scripted model at the google-genai boundary (the brain, its adapter, tools and limits run
+  as on the lane) and the Rs 0 lane's retrieve over evals/corpus: no network, no credential, nothing
+  billed. Tokens are estimated: a quarter of the characters each part carries (rag-api's estimator,
+  context_budget.estimate_tokens), so the residual is 0. On your lane count_tokens counts each source.
+question: After how many years of continuous service is gratuity payable?
+  sent with every call: a system prompt of 426 characters, the brain's own
+  and 2 tool declarations (retrieve, calculate_processing_cost), each with its parameters
+  the 2 earlier turns, not measured: 4 model calls and 2 searches, Rs 1.0857
+
+model call 1 of 2 (gemini-3.6-flash): in 1,812, out 21: Rs 0.2444
+  system prompt           106    5.8%
+  tool declarations       240   13.2%
+  thread so far         1,451   80.1%
+  question                 15    0.8%
+  the model's calls         0  
+  tool results              0  
+  residual                  0           offline the script's input is the sum of its parts
+  -&gt; retrieve(query="After how many years of continuous service is gratuity payable?")
+     search: top_k 5; 5 citations back, 2,004 characters
+     inside it, rag-api's own call (estimated: generator.py's prompt): system 105, 5 chunks 1,834, question 18; in 1,957, out 24: Rs 0.2648
+model call 2 of 2 (gemini-3.6-flash): in 2,594, out 50: Rs 0.3626
+  system prompt           106    4.1%
+  tool declarations       240    9.3%
+  thread so far         1,451   55.9%
+  question                 15    0.6%
+  the model's calls        21    0.8%
+  tool results            761   29.3%
+  residual                  0           offline the script's input is the sum of its parts
+  -&gt; no tool: the answer
+
+the turn by source: 2 model calls; the system prompt, the declarations, the thread and the question go with every one
+                       tokens        Rs
+  system prompt           212    0.0270  106 in each of 2 calls
+  tool declarations       480    0.0612  240 in each of 2 calls
+  thread so far         2,902    0.3700  1,451 in each of 2 calls
+  question                 30    0.0038  15 in each of 2 calls
+  the model's calls        21    0.0027  from call 2 on
+  tool results            761    0.0970  from call 2 on
+  residual                  0    0.0000
+  input                 4,406    0.5618
+  cached                    0    0.0000  a cached token bills at a tenth of the input price
+  output                   71    0.0453  thinking included
+  the model calls                0.6070  the turn's Meter (limits.py) charged Rs 0.6070 for 2 calls
+  rag-api, inside                0.2648  1 answer of its own, estimated; the Meter charged Rs 0.2648
+  the turn                       0.8718  at list price (shared/prices.py, USD_INR 85); offline, nothing is billed
+
+answer: (offline, scripted) The first passage says: "Payment of Gratuity.- (1) Gratuity shall be payable to an employee on the termination of his employmen...</pre></div>
+
+<p>The thread is 1,451 tokens on each call, 80% of call 1's 1,812. Over the turn it is 2,902 tokens and Rs 0.3700, more than everything else the two calls carried together. Every other source is the fresh turn's, token for token. The two earlier turns cost Rs 1.0857 on their own (4 model calls and 2 searches), and this one Rs 0.8718. TOP_K reaches the earlier turns' searches too: with TOP_K 3 the same thread is 909 tokens, as the widget in step 1 shows.</p>
+
+<h4>Do it: on your lane</h4>
+<div class="cw"><div class="ch-bar"><span>bash &mdash; run in the operator shell, in the kit (three real turns on one local thread, the last measured)</span><button class="cp" type="button">copy</button></div><pre tabindex="0">make context-sources PROJECT=$PROJECT BRAIN=langchain TURNS=3</pre></div>
+
+<div class="cw"><div class="ch-bar"><span>expected (the author&#x27;s lane: your tokens, rupees and answers are yours)</span><span class="ro">read only</span></div><pre tabindex="0">[awaiting the author's run: data/lane_langchain_turns3.txt]</pre></div>
+
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Compare it with step 7's <code>langchain</code> run. The system prompt, the declarations and the question count as they did there. The thread is the new line, with the same count in each call. Any cached tokens on these calls are what each call's own usage reported as cached, billed at a tenth of the input rate, and the <code>cached</code> line prices them. Every turn adds its question, its calls, its citations and its answer to the thread, so the thread is the one source that grows with the conversation and never shrinks. Lesson 6.2 compares DocuMind's two caches. Lesson 6.9 budgets the thread: windowing, compaction and what a turn may write.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why the split is measured this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own comments, then the bill and the gaps.</p></div></div>
+
+<p><strong>At the SDK boundary, not in the framework.</strong> Every brain's model call passes through one of two google-genai methods, so one wrapper reads all of them. What it reads is what the adapter actually sent: ADK's extra line, its JSON Schema declarations, LangChain's conversion of the tools. The frameworks' own message objects would show none of the three.</p>
+<p><strong>Counted in context, not piece by piece.</strong> On your lane each source is what adding it to the request added, so the sources sum to the request's own count, and the residual against the bill shows what the counter missed. A field the counter will not take is estimated and marked, never quietly dropped.</p>
+<p><strong>rag-api's estimator offline.</strong> <code>OFFLINE=1</code> counts with <code>estimate_tokens</code>, the same rule <code>pack_chunks</code> budgets rag-api's prompt with (lesson 3.4), so the offline split adds up exactly and agrees with rag-api's own packing.</p>
+<p><strong>A local thread, never a lane thread.</strong> <code>TURNS</code> asks its earlier questions on a thread of the command's own. A lane run writes no thread and no chat row; rag-api logs each search as it logs any.</p>
+<p><strong>TOP_K at the search, not in the declaration.</strong> The model reads the same request either way, so whatever the bill does, the search did it.</p>
+
+<h4>What it costs</h4>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Run</th><th>Costs</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><code>OFFLINE=1</code>, any brain, and the two records</td><td data-label="Costs">nothing: a script and the kit's corpus on your machine</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td>One turn on a chat brain</td><td data-label="Costs">the chat model's calls and one rag-api answer, at list price</td><td data-label="On your lane">a few rupees at most; the output's last lines price yours</td></tr>
+<tr><td>One turn on the direct brain</td><td data-label="Costs">one rag-api answer</td><td data-label="On your lane">the <code>rag-api, inside</code> line</td></tr>
+<tr><td>One turn on the Desk</td><td data-label="Costs">the agent's calls; <code>/v1/passages</code> bills nothing</td><td data-label="On your lane">the model calls' line</td></tr>
+<tr><td><code>count_tokens</code></td><td data-label="Costs">a few requests per call, not billed</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td><code>TURNS=3</code></td><td data-label="Costs">three turns, the third measured</td><td data-label="On your lane">the earlier turns' line plus the turn's</td></tr>
+<tr><td>Step 3's two questions in the UI</td><td data-label="Costs">two turns on the chat service</td><td data-label="On your lane">the captions</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<h4>What the kit does not do yet</h4>
+<ul>
+<li><strong>No split on the chat row.</strong> <code>agent.py</code> logs a turn's <code>tokens_in</code> and its cost, never what they were spent on. The split exists only when you run this command.</li>
+<li><strong>No trimming of the thread.</strong> Every turn resends all the earlier ones (step 9). Lesson 6.9 budgets it.</li>
+<li><strong>No cache under the chat brains' calls.</strong> rag-api's tenant cache (lesson 6.2) sits on rag-api's prompt. The chat brains' fixed parts, a few hundred tokens, are far below the 4,096 tokens an explicit context cache needs on the Gemini 3 family (<code>cache_manager.py</code>).</li>
+<li><strong>Only a local thread.</strong> The command measures a turn it runs itself; it cannot split a turn a person had in the UI. <code>make thread</code> (lesson 6.8) reads those back from the lane.</li>
+<li><strong>The Desk needs lesson 10.4's registry on the lane.</strong> Until acme's rows carry their classes, the statute desk finds nothing to read.</li>
+<li><strong>Offline, a thought signature counts as nothing.</strong> The script sends none, and the estimate copies none; only your lane's residual can show what one adds.</li>
+</ul>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Eleven checks, each one block above, each with the value that proves it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The UI gives one number for the whole turn</td><td data-label="The check">step 3, the captions</td><td data-label="Pass looks like"><code>Rs N.NN</code> under each answer, nothing by source</td></tr>
+<tr><td>2</td><td data-label="Claim">The fixed parts ride every call</td><td data-label="The check">step 5, the turn by source</td><td data-label="Pass looks like"><code>106 in each of 2 calls</code> and <code>240 in each of 2 calls</code></td></tr>
+<tr><td>3</td><td data-label="Claim">Each call's sources add up to what it was sent</td><td data-label="The check">step 5, both calls</td><td data-label="Pass looks like">residual <code>0</code>, offline</td></tr>
+<tr><td>4</td><td data-label="Claim">The counter takes the system prompt and the declarations</td><td data-label="The check">step 6, the probe</td><td data-label="Pass looks like"><code>honoured: +N</code> for both, on both brains</td></tr>
+<tr><td>5</td><td data-label="Claim">The count is the bill</td><td data-label="The check">step 6, call 1's request</td><td data-label="Pass looks like">a residual of a few tokens at most</td></tr>
+<tr><td>6</td><td data-label="Claim">Each brain assembles its own request</td><td data-label="The check">step 7, the headers</td><td data-label="Pass looks like">ADK: the framework's line and <code>parametersJsonSchema</code>; the Desk: 4 declarations; direct: <code>no model call of the chat's own</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The turn's rupees are the Meter's</td><td data-label="The check">step 7, any brain</td><td data-label="Pass looks like"><code>the model calls</code> and <code>the turn's Meter (limits.py) charged</code> the same rupees</td></tr>
+<tr><td>8</td><td data-label="Claim">Offline, TOP_K moves the tool results and rag-api's prompt, and nothing else</td><td data-label="The check">step 8, the two records</td><td data-label="Pass looks like">two lines marked <code>moved</code>, and <code>5 chunks packed, then 3</code></td></tr>
+<tr><td>9</td><td data-label="Claim">On your lane, TOP_K moves rag-api's prompt more than the tool results</td><td data-label="The check">step 8, langgraph against step 7</td><td data-label="Pass looks like">rag-api's <code>in</code> down by about two chunks; the tool results close to step 7's</td></tr>
+<tr><td>10</td><td data-label="Claim">The Desk's tool results move with TOP_K on your lane</td><td data-label="The check">step 8, the Desk against step 7</td><td data-label="Pass looks like"><code>3 passages back</code>, and smaller tool results</td></tr>
+<tr><td>11</td><td data-label="Claim">The thread rides both calls of a later turn</td><td data-label="The check">step 9, on your lane</td><td data-label="Pass looks like"><code>thread so far</code> with the same count in each of 2 calls</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing is configured. rag-api's log has a usage row for each search your lane runs made: event <code>query</code> for the chat brains and the direct brain, each with the brain's name, and event <code>passages</code>, with no tokens and no cost, for the Desk. <code>TURNS=3</code> added the searches of its two earlier turns. <code>make context-sources</code> wrote no thread and no chat row: its threads lived in its own process. Step 3's two questions are one session in your chat service's checkpointer, with two chat rows and a rag-api row for each search they made. <code>~/graph-venv</code> has the chat image's pins, and your home folder has <code>~/cs_default.json</code> and <code>~/cs_top3.json</code> from step 8. Put acme's pin back now, with the setup section's pin-back window. Lesson 6.2 compares the two caches DocuMind has: a cached prefix the model still reads, and a stored answer the model never sees.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 6 Context and memory &middot; Lesson 6.1 Assemble the context: what rides every model call &middot; v5.0</p><p>Next: Lesson 6.2 Compare context caching and answer caching.</p></div>
+
+<script>
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* copy buttons */
+  Array.prototype.forEach.call(document.querySelectorAll('.cp'), function(btn){
+    btn.addEventListener('click', function(){
+      var cw = btn.closest('.cw'), pre = cw && cw.querySelector('pre');
+      if(!pre) return;
+      var text = pre.innerText;
+      function done(){ btn.textContent = 'copied'; btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('copied'); }, reduce ? 1 : 1400); }
+      function fallback(){ var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){} document.body.removeChild(ta); }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); }
+      else fallback();
+    });
+  });
+
+  /* quizzes: one answer per question, announced */
+  Array.prototype.forEach.call(document.querySelectorAll('.quiz'), function(q){
+    var opts = q.querySelectorAll('.quiz-opt'), fb = q.querySelector('.quiz-fb'), answered = false;
+    Array.prototype.forEach.call(opts, function(opt){
+      opt.addEventListener('click', function(){
+        if(answered) return; answered = true;
+        var ok = opt.getAttribute('data-ok') === '1';
+        opt.classList.add(ok ? 'ok' : 'no');
+        Array.prototype.forEach.call(opts, function(o){ if(o.getAttribute('data-ok') === '1') o.classList.add('ok'); o.disabled = true; });
+        fb.textContent = (ok ? 'Correct. ' : 'Not quite. ') + (opt.getAttribute('data-fb') || '');
+      });
+    });
+  });
+
+  /* SWIPE hints: only on real overflow, retired once used */
+  var boxes = document.querySelectorAll('.cw, .tw');
+  function wire(box){
+    var sc = box.classList.contains('cw') ? box.querySelector('pre') : box.querySelector('.tw-scroll');
+    if(!sc) return;
+    box._sync = function(){ box.classList.remove('is-scroll', 'scrolled');
+      if(sc.scrollWidth - sc.clientWidth > 12) box.classList.add('is-scroll'); };
+    sc.addEventListener('scroll', function(){ box.classList.add('scrolled'); }, {passive:true});
+    box._sync();
+  }
+  Array.prototype.forEach.call(boxes, wire);
+  function resync(){ Array.prototype.forEach.call(boxes, function(b){ if(b._sync) b._sync(); }); }
+
+  /* the host scrolls; the embed cannot. Anchors and keyboard focus ask it to. */
+  function hostScrollTo(el){
+    if(!el || self === top) return;
+    try{ parent.postMessage({type:'netsetos-scroll-to', top: el.getBoundingClientRect().top + (window.pageYOffset || 0)}, '*'); }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if(!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if(el) setTimeout(function(){ hostScrollTo(el); }, 30);
+  }, true);
+  document.addEventListener('focusin', function(e){
+    if(e.target && e.target.getBoundingClientRect && e.target !== document.body) hostScrollTo(e.target);
+  }, true);
+
+  /* auto-height handshake: measure the body box, overshoot, debounce, post to the host */
+  var lastH = 0, lastW = window.innerWidth;
+  function post(h){ if(self !== top){ try{ parent.postMessage({type:'netsetos-embed-height', height:h}, '*'); }catch(e){} } }
+  function ph(){
+    var b = document.body, cs = getComputedStyle(b);
+    var h = Math.ceil(b.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0)) + 4;
+    if(!(h > 0) || Math.abs(h - lastH) < 2) return;
+    lastH = h; post(h);
+  }
+  window.addEventListener('load', function(){ resync(); ph(); });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth !== lastW){ lastW = window.innerWidth; resync(); }   /* the Android URL bar fires resize with no width change */
+    ph();
+  }, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(function(){ resync(); ph(); }, 260); });
+  document.addEventListener('click', function(){ setTimeout(ph, 140); }, true);
+  if(window.ResizeObserver) new ResizeObserver(ph).observe(document.body); else setInterval(ph, 1500);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resync(); ph(); });
+  [120, 400, 1000, 2500].forEach(function(t){ setTimeout(ph, t); });
+  if(document.readyState !== 'loading') ph(); else document.addEventListener('DOMContentLoaded', ph);
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var D = {"sources":[{"key":"system","name":"system prompt"},{"key":"tools","name":"tool declarations"},{"key":"thread","name":"thread so far"},{"key":"question","name":"question"},{"key":"calls","name":"the model's calls"},{"key":"results","name":"tool results"}],"order":["langchain","langgraph","adk","direct","desk"],"start":{"brain":"langgraph","topk":5,"turns":1},"brains":{"langchain":{"thread":true,"why":""},"langgraph":{"thread":true,"why":""},"adk":{"thread":true,"why":""},"direct":{"thread":false,"why":"direct keeps no thread (brains.DirectBrain answers one retrieve), so its turns are all first turns: leave TURNS out"},"desk":{"thread":false,"why":"desk keeps no thread (desk_agent: checkpointer=False), so its turns are all first turns: leave TURNS out"}},"scale":3000,"ticks":3,"runs":{"langchain|5|1":{"calls":[{"n":1,"in":361,"out":21,"s":[106,240,0,15,0,0],"rs_s":[0.013515,0.0306,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.059415,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":1143,"out":50,"s":[106,240,0,15,21,761],"rs_s":[0.013515,0.0306,0.0,0.001913,0.002678,0.097027],"rs_out":0.031875,"rs":0.177608,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":5,"asked":5,"found":5,"chars":2004,"kind":"citations"},"rag":{"in":1957,"out":24,"parts":[105,1834,18],"packed":5,"rs":0.264818},"tot":{"s":[212,480,0,30,21,761],"rs_s":[0.02703,0.0612,0.0,0.003825,0.002678,0.097027],"rides":["106 in each of 2 calls","240 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":1504,"output":71,"rs_out":0.045262,"model":0.237023,"ragrs":0.264818,"turn":0.50184},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"LangChain's create_agent sends brains.SYSTEM and the two tools as langchain-google-genai serialises them, on every call. The hand-built LangGraph brain sends the same request, token for token."},"langchain|5|3":{"calls":[{"n":1,"in":1812,"out":21,"s":[106,240,1451,15,0,0],"rs_s":[0.013515,0.0306,0.185003,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.244418,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":2594,"out":50,"s":[106,240,1451,15,21,761],"rs_s":[0.013515,0.0306,0.185003,0.001913,0.002678,0.097027],"rs_out":0.031875,"rs":0.36261,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":5,"asked":5,"found":5,"chars":2004,"kind":"citations"},"rag":{"in":1957,"out":24,"parts":[105,1834,18],"packed":5,"rs":0.264818},"tot":{"s":[212,480,2902,30,21,761],"rs_s":[0.02703,0.0612,0.370005,0.003825,0.002678,0.097027],"rides":["106 in each of 2 calls","240 in each of 2 calls","1,451 in each of 2 calls","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":4406,"output":71,"rs_out":0.045262,"model":0.607028,"ragrs":0.264818,"turn":0.871845},"earlier":{"turns":2,"calls":4,"searches":2,"rs":1.085662},"note":"LangChain's create_agent sends brains.SYSTEM and the two tools as langchain-google-genai serialises them, on every call. The hand-built LangGraph brain sends the same request, token for token. Turn 3 of one thread: the two earlier questions, the model's calls, their results and answers ride every call as the thread. TOP_K reaches every search of the run, the earlier turns' too, so at 3 the thread is smaller as well."},"langchain|3|1":{"calls":[{"n":1,"in":361,"out":21,"s":[106,240,0,15,0,0],"rs_s":[0.013515,0.0306,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.059415,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":817,"out":50,"s":[106,240,0,15,21,435],"rs_s":[0.013515,0.0306,0.0,0.001913,0.002678,0.055462],"rs_out":0.031875,"rs":0.136042,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":3,"asked":5,"found":3,"chars":1087,"kind":"citations"},"rag":{"in":1095,"out":24,"parts":[105,972,18],"packed":3,"rs":0.154912},"tot":{"s":[212,480,0,30,21,435],"rs_s":[0.02703,0.0612,0.0,0.003825,0.002678,0.055462],"rides":["106 in each of 2 calls","240 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":1178,"output":71,"rs_out":0.045262,"model":0.195457,"ragrs":0.154912,"turn":0.35037},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"LangChain's create_agent sends brains.SYSTEM and the two tools as langchain-google-genai serialises them, on every call. The hand-built LangGraph brain sends the same request, token for token. Offline, the search returns every one of the top_k passages, as if rag-api had cited all it packed, so the tool results shrink here. On your lane a chat brain's search returns only the citations rag-api's answer chose: TOP_K moves rag-api's grey bar more than the orange (step 8)."},"langchain|3|3":{"calls":[{"n":1,"in":1270,"out":21,"s":[106,240,909,15,0,0],"rs_s":[0.013515,0.0306,0.115897,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.175313,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":1726,"out":50,"s":[106,240,909,15,21,435],"rs_s":[0.013515,0.0306,0.115897,0.001913,0.002678,0.055462],"rs_out":0.031875,"rs":0.25194,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":3,"asked":5,"found":3,"chars":1087,"kind":"citations"},"rag":{"in":1095,"out":24,"parts":[105,972,18],"packed":3,"rs":0.154912},"tot":{"s":[212,480,1818,30,21,435],"rs_s":[0.02703,0.0612,0.231795,0.003825,0.002678,0.055462],"rides":["106 in each of 2 calls","240 in each of 2 calls","909 in each of 2 calls","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":2996,"output":71,"rs_out":0.045262,"model":0.427253,"ragrs":0.154912,"turn":0.582165},"earlier":{"turns":2,"calls":4,"searches":2,"rs":0.740648},"note":"LangChain's create_agent sends brains.SYSTEM and the two tools as langchain-google-genai serialises them, on every call. The hand-built LangGraph brain sends the same request, token for token. Offline, the search returns every one of the top_k passages, as if rag-api had cited all it packed, so the tool results shrink here. On your lane a chat brain's search returns only the citations rag-api's answer chose: TOP_K moves rag-api's grey bar more than the orange (step 8). Turn 3 of one thread: the two earlier questions, the model's calls, their results and answers ride every call as the thread. TOP_K reaches every search of the run, the earlier turns' too, so at 3 the thread is smaller as well."},"langgraph|5|1":{"calls":[{"n":1,"in":361,"out":21,"s":[106,240,0,15,0,0],"rs_s":[0.013515,0.0306,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.059415,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":1143,"out":50,"s":[106,240,0,15,21,761],"rs_s":[0.013515,0.0306,0.0,0.001913,0.002678,0.097027],"rs_out":0.031875,"rs":0.177608,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":5,"asked":5,"found":5,"chars":2004,"kind":"citations"},"rag":{"in":1957,"out":24,"parts":[105,1834,18],"packed":5,"rs":0.264818},"tot":{"s":[212,480,0,30,21,761],"rs_s":[0.02703,0.0612,0.0,0.003825,0.002678,0.097027],"rides":["106 in each of 2 calls","240 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":1504,"output":71,"rs_out":0.045262,"model":0.237023,"ragrs":0.264818,"turn":0.50184},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"The hand-built LangGraph node puts brains.SYSTEM in front of the thread on every call, and its model is bound to the same two tools: the same request as LangChain's, token for token."},"langgraph|5|3":{"calls":[{"n":1,"in":1812,"out":21,"s":[106,240,1451,15,0,0],"rs_s":[0.013515,0.0306,0.185003,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.244418,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":2594,"out":50,"s":[106,240,1451,15,21,761],"rs_s":[0.013515,0.0306,0.185003,0.001913,0.002678,0.097027],"rs_out":0.031875,"rs":0.36261,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":5,"asked":5,"found":5,"chars":2004,"kind":"citations"},"rag":{"in":1957,"out":24,"parts":[105,1834,18],"packed":5,"rs":0.264818},"tot":{"s":[212,480,2902,30,21,761],"rs_s":[0.02703,0.0612,0.370005,0.003825,0.002678,0.097027],"rides":["106 in each of 2 calls","240 in each of 2 calls","1,451 in each of 2 calls","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":4406,"output":71,"rs_out":0.045262,"model":0.607028,"ragrs":0.264818,"turn":0.871845},"earlier":{"turns":2,"calls":4,"searches":2,"rs":1.085662},"note":"The hand-built LangGraph node puts brains.SYSTEM in front of the thread on every call, and its model is bound to the same two tools: the same request as LangChain's, token for token. Turn 3 of one thread: the two earlier questions, the model's calls, their results and answers ride every call as the thread. TOP_K reaches every search of the run, the earlier turns' too, so at 3 the thread is smaller as well."},"langgraph|3|1":{"calls":[{"n":1,"in":361,"out":21,"s":[106,240,0,15,0,0],"rs_s":[0.013515,0.0306,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.059415,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":817,"out":50,"s":[106,240,0,15,21,435],"rs_s":[0.013515,0.0306,0.0,0.001913,0.002678,0.055462],"rs_out":0.031875,"rs":0.136042,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":3,"asked":5,"found":3,"chars":1087,"kind":"citations"},"rag":{"in":1095,"out":24,"parts":[105,972,18],"packed":3,"rs":0.154912},"tot":{"s":[212,480,0,30,21,435],"rs_s":[0.02703,0.0612,0.0,0.003825,0.002678,0.055462],"rides":["106 in each of 2 calls","240 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":1178,"output":71,"rs_out":0.045262,"model":0.195457,"ragrs":0.154912,"turn":0.35037},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"The hand-built LangGraph node puts brains.SYSTEM in front of the thread on every call, and its model is bound to the same two tools: the same request as LangChain's, token for token. Offline, the search returns every one of the top_k passages, as if rag-api had cited all it packed, so the tool results shrink here. On your lane a chat brain's search returns only the citations rag-api's answer chose: TOP_K moves rag-api's grey bar more than the orange (step 8)."},"langgraph|3|3":{"calls":[{"n":1,"in":1270,"out":21,"s":[106,240,909,15,0,0],"rs_s":[0.013515,0.0306,0.115897,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.175313,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":1726,"out":50,"s":[106,240,909,15,21,435],"rs_s":[0.013515,0.0306,0.115897,0.001913,0.002678,0.055462],"rs_out":0.031875,"rs":0.25194,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":3,"asked":5,"found":3,"chars":1087,"kind":"citations"},"rag":{"in":1095,"out":24,"parts":[105,972,18],"packed":3,"rs":0.154912},"tot":{"s":[212,480,1818,30,21,435],"rs_s":[0.02703,0.0612,0.231795,0.003825,0.002678,0.055462],"rides":["106 in each of 2 calls","240 in each of 2 calls","909 in each of 2 calls","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":2996,"output":71,"rs_out":0.045262,"model":0.427253,"ragrs":0.154912,"turn":0.582165},"earlier":{"turns":2,"calls":4,"searches":2,"rs":0.740648},"note":"The hand-built LangGraph node puts brains.SYSTEM in front of the thread on every call, and its model is bound to the same two tools: the same request as LangChain's, token for token. Offline, the search returns every one of the top_k passages, as if rag-api had cited all it packed, so the tool results shrink here. On your lane a chat brain's search returns only the citations rag-api's answer chose: TOP_K moves rag-api's grey bar more than the orange (step 8). Turn 3 of one thread: the two earlier questions, the model's calls, their results and answers ride every call as the thread. TOP_K reaches every search of the run, the earlier turns' too, so at 3 the thread is smaller as well."},"adk|5|1":{"calls":[{"n":1,"in":476,"out":21,"s":[120,341,0,15,0,0],"rs_s":[0.0153,0.043478,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.074078,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":1258,"out":50,"s":[120,341,0,15,21,761],"rs_s":[0.0153,0.043478,0.0,0.001913,0.002678,0.097027],"rs_out":0.031875,"rs":0.19227,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":5,"asked":5,"found":5,"chars":2004,"kind":"citations"},"rag":{"in":1957,"out":24,"parts":[105,1834,18],"packed":5,"rs":0.264818},"tot":{"s":[240,682,0,30,21,761],"rs_s":[0.0306,0.086955,0.0,0.003825,0.002678,0.097027],"rides":["120 in each of 2 calls","341 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":1734,"output":71,"rs_out":0.045262,"model":0.266348,"ragrs":0.264818,"turn":0.531165},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"ADK sends brains.SYSTEM and then a line of its own, 'You are an agent. Your internal name is \"documind_adk\".', and declares the same two tools as parametersJsonSchema, with titles and defaults: more tokens on every call for the same tools."},"adk|5|3":{"calls":[{"n":1,"in":1927,"out":21,"s":[120,341,1451,15,0,0],"rs_s":[0.0153,0.043478,0.185003,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.25908,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":2709,"out":50,"s":[120,341,1451,15,21,761],"rs_s":[0.0153,0.043478,0.185003,0.001913,0.002678,0.097027],"rs_out":0.031875,"rs":0.377272,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":5,"asked":5,"found":5,"chars":2004,"kind":"citations"},"rag":{"in":1957,"out":24,"parts":[105,1834,18],"packed":5,"rs":0.264818},"tot":{"s":[240,682,2902,30,21,761],"rs_s":[0.0306,0.086955,0.370005,0.003825,0.002678,0.097027],"rides":["120 in each of 2 calls","341 in each of 2 calls","1,451 in each of 2 calls","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":4636,"output":71,"rs_out":0.045262,"model":0.636352,"ragrs":0.264818,"turn":0.90117},"earlier":{"turns":2,"calls":4,"searches":2,"rs":1.144312},"note":"ADK sends brains.SYSTEM and then a line of its own, 'You are an agent. Your internal name is \"documind_adk\".', and declares the same two tools as parametersJsonSchema, with titles and defaults: more tokens on every call for the same tools. Turn 3 of one thread: the two earlier questions, the model's calls, their results and answers ride every call as the thread. TOP_K reaches every search of the run, the earlier turns' too, so at 3 the thread is smaller as well."},"adk|3|1":{"calls":[{"n":1,"in":476,"out":21,"s":[120,341,0,15,0,0],"rs_s":[0.0153,0.043478,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.074078,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":932,"out":50,"s":[120,341,0,15,21,435],"rs_s":[0.0153,0.043478,0.0,0.001913,0.002678,0.055462],"rs_out":0.031875,"rs":0.150705,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":3,"asked":5,"found":3,"chars":1087,"kind":"citations"},"rag":{"in":1095,"out":24,"parts":[105,972,18],"packed":3,"rs":0.154912},"tot":{"s":[240,682,0,30,21,435],"rs_s":[0.0306,0.086955,0.0,0.003825,0.002678,0.055462],"rides":["120 in each of 2 calls","341 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":1408,"output":71,"rs_out":0.045262,"model":0.224782,"ragrs":0.154912,"turn":0.379695},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"ADK sends brains.SYSTEM and then a line of its own, 'You are an agent. Your internal name is \"documind_adk\".', and declares the same two tools as parametersJsonSchema, with titles and defaults: more tokens on every call for the same tools. Offline, the search returns every one of the top_k passages, as if rag-api had cited all it packed, so the tool results shrink here. On your lane a chat brain's search returns only the citations rag-api's answer chose: TOP_K moves rag-api's grey bar more than the orange (step 8)."},"adk|3|3":{"calls":[{"n":1,"in":1385,"out":21,"s":[120,341,909,15,0,0],"rs_s":[0.0153,0.043478,0.115897,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.189975,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":1841,"out":50,"s":[120,341,909,15,21,435],"rs_s":[0.0153,0.043478,0.115897,0.001913,0.002678,0.055462],"rs_out":0.031875,"rs":0.266603,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":3,"asked":5,"found":3,"chars":1087,"kind":"citations"},"rag":{"in":1095,"out":24,"parts":[105,972,18],"packed":3,"rs":0.154912},"tot":{"s":[240,682,1818,30,21,435],"rs_s":[0.0306,0.086955,0.231795,0.003825,0.002678,0.055462],"rides":["120 in each of 2 calls","341 in each of 2 calls","909 in each of 2 calls","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":3226,"output":71,"rs_out":0.045262,"model":0.456578,"ragrs":0.154912,"turn":0.61149},"earlier":{"turns":2,"calls":4,"searches":2,"rs":0.799297},"note":"ADK sends brains.SYSTEM and then a line of its own, 'You are an agent. Your internal name is \"documind_adk\".', and declares the same two tools as parametersJsonSchema, with titles and defaults: more tokens on every call for the same tools. Offline, the search returns every one of the top_k passages, as if rag-api had cited all it packed, so the tool results shrink here. On your lane a chat brain's search returns only the citations rag-api's answer chose: TOP_K moves rag-api's grey bar more than the orange (step 8). Turn 3 of one thread: the two earlier questions, the model's calls, their results and answers ride every call as the thread. TOP_K reaches every search of the run, the earlier turns' too, so at 3 the thread is smaller as well."},"direct|5|1":{"calls":[],"search":{"sent":5,"asked":5,"found":5,"chars":2004,"kind":"citations"},"rag":{"in":1957,"out":24,"parts":[105,1834,18],"packed":5,"rs":0.264818},"tot":{"s":[0,0,0,0,0,0],"rs_s":[0,0,0,0,0,0],"rides":["not in this turn","not in this turn","not in this turn","not in this turn","not in this turn","not in this turn"],"input":0,"output":0,"rs_out":0,"model":0,"ragrs":0.264818,"turn":0.264818},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"No model call of the chat's own: one retrieve, and rag-api's grounded answer is the turn (brains.DirectBrain). Everything the turn pays for rides rag-api's own call. Turn 3 is off for this brain: make context-sources answers TURNS=3 with \"refused: direct keeps no thread (brains.DirectBrain answers one retrieve), so its turns are all first turns: leave TURNS out\"."},"direct|3|1":{"calls":[],"search":{"sent":3,"asked":5,"found":3,"chars":1087,"kind":"citations"},"rag":{"in":1095,"out":24,"parts":[105,972,18],"packed":3,"rs":0.154912},"tot":{"s":[0,0,0,0,0,0],"rs_s":[0,0,0,0,0,0],"rides":["not in this turn","not in this turn","not in this turn","not in this turn","not in this turn","not in this turn"],"input":0,"output":0,"rs_out":0,"model":0,"ragrs":0.154912,"turn":0.154912},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"No model call of the chat's own: one retrieve, and rag-api's grounded answer is the turn (brains.DirectBrain). Everything the turn pays for rides rag-api's own call. Turn 3 is off for this brain: make context-sources answers TURNS=3 with \"refused: direct keeps no thread (brains.DirectBrain answers one retrieve), so its turns are all first turns: leave TURNS out\". TOP_K moves the one thing the direct brain pays for: the chunks rag-api packs."},"desk|5|1":{"calls":[{"n":1,"in":861,"out":21,"s":[240,606,0,15,0,0],"rs_s":[0.0306,0.077265,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.123165,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":2821,"out":50,"s":[240,606,0,15,21,1939],"rs_s":[0.0306,0.077265,0.0,0.001913,0.002678,0.247223],"rs_out":0.031875,"rs":0.391553,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":5,"asked":5,"found":5,"chars":7067,"kind":"passages"},"rag":null,"tot":{"s":[480,1212,0,30,21,1939],"rs_s":[0.0612,0.15453,0.0,0.003825,0.002678,0.247223],"rides":["240 in each of 2 calls","606 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":3682,"output":71,"rs_out":0.045262,"model":0.514718,"ragrs":0.0,"turn":0.514718},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"The statute desk's own prompt and 4 tools. Its search is /v1/passages: every passage's whole text and no model call inside, so the passages themselves are the tool results. Turn 3 is off for this brain: make context-sources answers TURNS=3 with \"refused: desk keeps no thread (desk_agent: checkpointer=False), so its turns are all first turns: leave TURNS out\"."},"desk|3|1":{"calls":[{"n":1,"in":861,"out":21,"s":[240,606,0,15,0,0],"rs_s":[0.0306,0.077265,0.0,0.001913,0.0,0.0],"rs_out":0.013388,"rs":0.123165,"asked":"It asked for retrieve(query=\"After how many years of continuous service is gratuity payable?\")."},{"n":2,"in":1919,"out":50,"s":[240,606,0,15,21,1037],"rs_s":[0.0306,0.077265,0.0,0.001913,0.002678,0.132218],"rs_out":0.031875,"rs":0.276548,"asked":"It asked for no tool: this call wrote the answer."}],"search":{"sent":3,"asked":5,"found":3,"chars":3723,"kind":"passages"},"rag":null,"tot":{"s":[480,1212,0,30,21,1037],"rs_s":[0.0612,0.15453,0.0,0.003825,0.002678,0.132218],"rides":["240 in each of 2 calls","606 in each of 2 calls","not in this turn","15 in each of 2 calls","from call 2 on","from call 2 on"],"input":2780,"output":71,"rs_out":0.045262,"model":0.399713,"ragrs":0.0,"turn":0.399713},"earlier":{"turns":0,"calls":0,"searches":0,"rs":0},"note":"The statute desk's own prompt and 4 tools. Its search is /v1/passages: every passage's whole text and no model call inside, so the passages themselves are the tool results. Turn 3 is off for this brain: make context-sources answers TURNS=3 with \"refused: desk keeps no thread (desk_agent: checkpointer=False), so its turns are all first turns: leave TURNS out\". /v1/passages returns all of its top_k passages, whole, so TOP_K moves the Desk's tool results on your lane too."}}};
+var root = document.getElementById('cx'); if (!root) return;
+var st = {brain: D.start.brain, topk: D.start.topk, turns: D.start.turns, sel: -1};
+function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function num(x){ return Math.round(x).toLocaleString('en-US'); }
+function rs(x){ return 'Rs ' + x.toFixed(4); }
+function pct(a, b){ return b ? (100 * a / b).toFixed(1) + '%' : ''; }
+function run(){ return D.runs[st.brain + '|' + st.topk + '|' + (D.brains[st.brain].thread ? st.turns : 1)]; }
+function seg(id, items, now, pick, off){
+var box = document.getElementById(id); box.textContent = '';
+items.forEach(function(it){
+var b = el('button', '', it[1]); b.type = 'button';
+b.setAttribute('aria-pressed', now === it[0] ? 'true' : 'false');
+var why = off ? off(it[0]) : '';
+if (why) { b.disabled = true; b.title = why; b.setAttribute('aria-pressed', 'false'); }
+b.addEventListener('click', function(){ pick(it[0]); st.sel = -1; draw(); });
+box.appendChild(b); }); }
+function bar(parts, total){
+var w = el('span', 'cx-bar'); w.style.width = (100 * total / D.scale) + '%';
+parts.forEach(function(p){ if (!p[1]) return; var s = el('i', 'k-' + p[0]); s.style.flexGrow = p[1];
+s.title = p[2] + ': ' + num(p[1]) + ' tokens'; w.appendChild(s); });
+return w; }
+function row(i, name, n, money, b, aria){
+var r = el('button', 'cx-row'); r.type = 'button';
+r.setAttribute('aria-pressed', st.sel === i ? 'true' : 'false'); r.setAttribute('aria-label', aria);
+var l = el('span', 'cx-l'); l.appendChild(el('b', '', name)); l.appendChild(el('span', '', num(n) + ' tokens in'));
+l.appendChild(el('span', '', rs(money)));
+var t = el('span', 'cx-track'); t.style.backgroundSize = (100 / D.ticks) + '% 100%'; t.appendChild(b);
+r.appendChild(l); r.appendChild(t);
+r.addEventListener('click', function(){ st.sel = i; draw(); });
+return r; }
+function key(cls, text){ var s = el('span', 'nm'); s.appendChild(el('i', 'cx-key ' + cls)); s.appendChild(document.createTextNode(text)); return s; }
+function li(list, cls, name, n, of, money){
+var x = el('li'); x.appendChild(key(cls, name)); x.appendChild(el('span', 'v', num(n)));
+x.appendChild(el('span', 'v pc', pct(n, of))); x.appendChild(el('span', 'v', money == null ? '' : rs(money))); list.appendChild(x); }
+function detail(c){
+var box = document.getElementById('cx-detail'); box.textContent = '';
+var n = c.calls.length;
+if (st.sel < n) {
+var k = c.calls[st.sel];
+box.appendChild(el('h5', '', 'Model call ' + k.n + ' of ' + n + ': ' + num(k.in) + ' tokens in, ' + num(k.out) + ' out: ' + rs(k.rs)));
+var ul = el('ul', 'cx-list');
+D.sources.forEach(function(s, j){ if (k.s[j]) li(ul, 'k-' + s.key, s.name, k.s[j], k.in, k.rs_s[j]); });
+var o = el('li'); o.appendChild(el('span', '', 'output, at the output price')); o.appendChild(el('span', 'v', num(k.out)));
+o.appendChild(el('span', 'v pc', '')); o.appendChild(el('span', 'v', rs(k.rs_out))); ul.appendChild(o);
+box.appendChild(ul);
+box.appendChild(el('p', '', k.asked));
+return; }
+if (c.rag) {
+box.appendChild(el('h5', '', "rag-api's own call, inside the search: " + num(c.rag.in) + ' tokens in, ' + num(c.rag.out) + ' out: ' + rs(c.rag.rs)));
+var ur = el('ul', 'cx-list');
+li(ur, 'k-ragfix', 'its system prompt', c.rag.parts[0], c.rag.in, null);
+li(ur, 'k-chunks', 'the ' + c.rag.packed + ' chunks it packed', c.rag.parts[1], c.rag.in, null);
+li(ur, 'k-ragfix', 'the question', c.rag.parts[2], c.rag.in, null);
+box.appendChild(ur);
+box.appendChild(el('p', '', 'Estimated from generator.py\'s prompt, as rag-api packs it. The search sent top_k ' + c.search.sent
++ '; ' + c.search.found + ' ' + c.search.kind + ' came back, ' + num(c.search.chars) + ' characters: '
++ (n ? 'the tool result model call ' + n + ' reads.' : 'rag-api\'s answer is the turn.')));
+} }
+function totals(c){
+var box = document.getElementById('cx-tot'); box.textContent = '';
+var t = el('table'), h = el('tr');
+['The turn by source', 'Tokens', 'Rs'].forEach(function(x, j){ h.appendChild(el('th', j ? 'v' : '', x)); });
+var hd = el('thead'); hd.appendChild(h); t.appendChild(hd);
+var tb = el('tbody');
+function add(name, sub, n, money, cls){
+var r = el('tr', cls || ''), a = el('td'); a.appendChild(document.createTextNode(name));
+if (sub) a.appendChild(el('small', '', sub));
+r.appendChild(a); r.appendChild(el('td', 'v', n == null ? '' : num(n))); r.appendChild(el('td', 'v', money == null ? '' : rs(money)));
+tb.appendChild(r); }
+if (c.calls.length) {
+D.sources.forEach(function(s, j){ add(s.name, c.tot.rides[j], c.tot.s[j], c.tot.rs_s[j]); });
+add('output', 'what the model wrote, at the output price', c.tot.output, c.tot.rs_out);
+add('the model calls', c.calls.length + ' calls: the Meter charged the same', null, c.tot.model, 'sum'); }
+if (c.rag) add('rag-api, inside the search', 'its own answer, estimated', c.rag.in, c.tot.ragrs, 'sum');
+else add('rag-api, inside the search', '/v1/passages: no model call', null, 0, 'sum');
+if (c.earlier.turns) add('the ' + c.earlier.turns + ' earlier turns', c.earlier.calls + ' model calls and ' + c.earlier.searches + ' searches, not measured', null, c.earlier.rs);
+add('the turn', 'at list price; offline, nothing is billed', null, c.tot.turn, 'sum');
+t.appendChild(tb); box.appendChild(t); }
+function draw(){
+var c = run(), B = D.brains;
+seg('cx-brain', D.order.map(function(b){ return [b, b]; }), st.brain, function(v){ st.brain = v; });
+seg('cx-topk', [[5, '5, the default'], [3, '3']], st.topk, function(v){ st.topk = v; });
+seg('cx-turn', [[1, 'a fresh thread'], [3, 'turn 3 of one']], B[st.brain].thread ? st.turns : 1, function(v){ st.turns = v; },
+function(v){ return (v === 3 && !B[st.brain].thread) ? B[st.brain].why : ''; });
+var n = c.calls.length;
+if (st.sel < 0 || st.sel > n || (st.sel === n && !c.rag)) st.sel = n ? n - 1 : 0;
+var rows = document.getElementById('cx-rows'); rows.textContent = '';
+c.calls.forEach(function(k, i){
+var parts = D.sources.map(function(s, j){ return [s.key, k.s[j], s.name]; });
+rows.appendChild(row(i, 'Model call ' + k.n, k.in, k.rs, bar(parts, k.in),
+'Model call ' + k.n + ' of ' + n + ': ' + num(k.in) + ' tokens in, ' + rs(k.rs) + '. Show its sources.')); });
+if (c.rag) rows.appendChild(row(n, "rag-api's own call", c.rag.in, c.rag.rs,
+bar([['ragfix', c.rag.parts[0], 'its system prompt'], ['chunks', c.rag.parts[1], 'the chunks it packed'], ['ragfix', c.rag.parts[2], 'the question']], c.rag.in),
+"rag-api's own call, inside the search: " + num(c.rag.in) + ' tokens in, ' + rs(c.rag.rs) + '. Show its parts.'));
+else { var r = el('div', 'cx-row cx-static'); r.appendChild(el('span', 'cx-l', 'Inside the search')); r.appendChild(el('span', 'cx-none', '/v1/passages: every passage\'s whole text, and no model call')); rows.appendChild(r); }
+var ax = document.getElementById('cx-axis'); ax.textContent = '';
+ax.appendChild(el('span', '', 'tokens in'));
+var tk = el('span', 'cx-ticks');
+for (var i = 0; i <= D.ticks; i++) { var s = el('span', '', num(i * D.scale / D.ticks)); s.style.left = (100 * i / D.ticks) + '%'; tk.appendChild(s); }
+ax.appendChild(tk);
+detail(c); totals(c);
+document.getElementById('cx-note').textContent = c.note; }
+draw();
+})();
+</script>
+</body>
+</html>

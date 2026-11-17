@@ -13,7 +13,10 @@ Build-time proof: the model-facing schema the page's cell prints (read from the 
 learner's machine) equals LangChain's own tool_call_schema for every tool; _summary() and DirectBrain.answer() are
 executed on stand-ins for the widget's traces; the cost tool is the kit's own. The cells run against stand-ins: the
 retrieve cell against a local stub of rag-api, the chat cells against a local stub of the chat service, the rows
-cell against a fake gcloud.
+cell against a fake gcloud. Step 7's offline cell (two retrieve calls in one model message) runs here on the kit's
+own LangChain brain, with the chat image's pins, against a stand-in rag-api; the same turn runs through the LangGraph
+and ADK brains too, and each must run the two searches at once and number the chunk both return once. Its optional
+live cell (one Gemini call) is the author's recorded run (RUN_LIST.md).
 """
 import ast
 import html
@@ -61,6 +64,7 @@ setup = setup_section()
 
 # ------------------------------------------------------------------ verbatim excerpts
 DT, CT, BR, AG = "shared/documind_tools.py", "services/chat/tools.py", "services/chat/brains.py", "services/chat/agent.py"
+LM = "services/chat/limits.py"
 EXCERPTS = {
     "one": ("shared/documind_tools.py - retrieve(): THE single retrieval entry point, and failures returned as data",
             block(DT, "def retrieve(query: str, tenant_id: str, top_k: int = 5,", n=3) + "\n...\n"
@@ -70,7 +74,7 @@ EXCERPTS = {
                 block(CT, "@tool", n=10) + "\n...\n" + block(CT, "    tenant_id = _ctx(runtime, \"tenant_id\")", n=5) + "\n\n\n"
                 + block(CT, "def search(", n=2) + "\n...\n" + block(CT, "        answer = documind_tools.retrieve(", n=4) + "\n...\n"
                 + block(CT, "    # A call cut at its budget (limits.timed_tool_call)", n=4) + "\n...\n"
-                + block(CT, "    if cited is not None and delivered:", n=3)),
+                + block(CT, "    if cited is not None and delivered:", n=4)),
     "summary": ("services/chat/brains.py - _summary() and _turn(): the same four keys from every brain, for this turn",
                 block(BR, "def _summary(messages", end="# -----")),
     "direct": ("services/chat/brains.py - DirectBrain: no loop, one retrieve(), rag-api's own answer",
@@ -79,6 +83,10 @@ EXCERPTS = {
                 block(AG, "class ChatRequest(BaseModel):", n=11)),
     "turn": ("services/chat/agent.py - the tenant looked up, then carried in the runtime context",
              block(AG, "        tenant_id = tenant_for(user[\"email\"])", n=1) + "\n...\n" + block(AG, "    out = brain.answer(", n=5)),
+    "ledger": ("services/chat/tools.py - _number(): one ledger for the turn, under a lock, so a chunk two searches find keeps one number",
+               block(CT, "_LEDGER = threading.Lock()", end="@tool")),
+    "pool": ("services/chat/limits.py - the pool every tool call runs in, sized for calls side by side, and each call waited on for its budget",
+             block(LM, "# The pool timed tool calls run in.", n=7) + "\n...\n" + block(LM, "    future = TOOL_POOL.submit(ctx.run, handler, request)", n=3)),
 }
 assert EXCERPTS["one"][1].count("return {\"error\": \"document retrieval is unavailable\",") == 1
 assert "runtime: ToolRuntime = None) -> dict:" in EXCERPTS["adapter"][1] and "documind_tools.retrieve(" in EXCERPTS["adapter"][1]
@@ -91,6 +99,10 @@ assert 'ctx = {**context, "cited": []}' in EXCERPTS["summary"][1] and "limits.me
 assert EXCERPTS["direct"][1].rstrip().endswith('"citations": r["citations"]}')
 assert "brain: Optional[Literal[\"langchain\", \"langgraph\", \"adk\", \"direct\"]] = None" in EXCERPTS["request"][1]
 assert 'context={"tenant_id": tenant_id, "user_id": user["email"],' in EXCERPTS["turn"][1]
+LEDGER_X, POOL_X = EXCERPTS["ledger"][1], EXCERPTS["pool"][1]
+assert LEDGER_X.startswith("_LEDGER = threading.Lock()      # ToolNode runs one model message's calls in parallel threads")
+assert "    with _LEDGER:" in LEDGER_X and LEDGER_X.rstrip().endswith('            c["n"] = known["n"]') and 'known = {**c, "n": len(ledger) + 1}' in LEDGER_X
+assert "a turn can run a few calls side by side" in POOL_X and POOL_X.rstrip().endswith("        return future.result(timeout=budget)")
 fill = filler(EXCERPTS, window)
 
 # ------------------------------------------------------------------ the kit's facts the page states
@@ -128,6 +140,15 @@ assert "GCHAT_DOOR ?= false" in (KIT / "mk/agents.mk").read_text(encoding="utf-8
 mk = (KIT / "Makefile").read_text(encoding="utf-8")
 assert "commands/lesson-12.4.sh commands/lesson-12.8.sh" in mk and re.search(r"^REGION\s+\?= us-central1$", mk, re.M)
 assert "DOCUMIND_CHAT_URL=https://documind-chat-$$NUMBER.$(REGION).run.app" in mk
+# step 7's two searches in one message: each agent brain's tool seam, timed per call (the build runs all three below)
+assert "return limits.timed_tool_call(request, handler)" in br_src and "middleware=[limits.TurnLimitsMiddleware(), _guard_middleware()]," in br_src
+assert 'g.add_node("tools", ToolNode(TOOLS, wrap_tool_call=limits.timed_tool_call))' in br_src
+assert "tools=[FunctionTool(limits.timed_adk(f)) for f in for_adk()]," in br_src
+assert "        _number(out[\"citations\"], cited)" in ct_src and ct_src.count("_number(") == 2      # the one ledger, written in search() only
+assert 'MODEL = os.environ.get("CHAT_MODEL", "gemini-3.6-flash")' in br_src and "CHAT_MODEL" not in chat_sh   # the live cell's model
+assert 'return ChatGoogleGenerativeAI(model=os.environ.get("CHAT_MODEL", "gemini-3.6-flash"),' in (KIT / "shared/profile.py").read_text(encoding="utf-8")
+reqs = dict(re.findall(r"^([a-z-]+)==([\d.]+)$", (KIT / "services/chat/requirements.txt").read_text(encoding="utf-8"), re.M))
+PINS = {k: reqs[k] for k in ("langchain", "langchain-core", "langgraph", "requests", "google-auth", "google-genai", "langchain-google-genai")}
 
 # the chat tools, imported the way the service imports them, for the model-facing schemas
 sys.path[:0] = [str(KIT), str(KIT / "services/chat")]
@@ -249,9 +270,128 @@ print("  RAG_API_URL", env.get("RAG_API_URL"), "| SELF_URL", env.get("SELF_URL")
 WHERE_ONE = "; ".join(WHERE_PY.splitlines())
 assert "'" not in WHERE_ONE                            # it goes inside single quotes on the page
 
+# step 7: two retrieve calls in one model message - the venv, the offline turn, and one optional Gemini call
+VENV = ("[ -x ~/graph-venv/bin/python ] || python -m venv ~/graph-venv   # lesson 5.4's venv, made here if it is missing\n"
+        "~/graph-venv/bin/pip install -q " + " ".join(f'"{k}=={v}"' for k, v in list(PINS.items())[:4]) + " \\\n"
+        "  " + " ".join(f'"{k}=={v}"' for k, v in list(PINS.items())[4:]) + "   # the chat image's pins\n"
+        "~/graph-venv/bin/python -c 'import langchain, langgraph; print(\"graph-venv ok: langchain\", langchain.__version__)'")
 
-def heredoc(body: str, prefix: str = "") -> str:
-    return f"{prefix}python - <<'PY'\n{body}\nPY"
+Q_TWO = "How long is my notice period, and how much earned leave is encashed when I leave?"
+PARALLEL_PY = """import json, sys, threading, time, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+sys.path[:0] = [".", "services/chat"]
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
+import shared.documind_tools as dt
+import brains
+ASK = ["notice period", "earned leave encashed on exit"]             # the two searches, in the order the model asks
+TAKES = {"notice period": 1.5, "earned leave encashed on exit": 1.0}  # how long the stand-in takes over each, in seconds
+FINDS = {"notice period": ["NP-03", "PB-02", "LV-07"], "earned leave encashed on exit": ["LV-07", "LV-01"]}
+LOG = {}
+class RagApi(BaseHTTPRequestHandler):
+    \"\"\"A stand-in rag-api: each search takes its time, and both answers hold LV-07, the handbook's leave on exit.\"\"\"
+    def log_message(self, *a):
+        \"\"\"Print nothing for each request.\"\"\"
+    def do_POST(self):
+        \"\"\"Answer one /v1/query after the search's time, noting when it arrived and when it was answered.\"\"\"
+        q = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["query"]
+        came = time.monotonic()
+        time.sleep(TAKES[q])
+        cites = [{"chunk_id": f"acme:hr_policy_2026#{c}", "source_uri": "gs://bucket/acme/hr_policy_2026.md", "quote": c}
+                 for c in FINDS[q]]
+        body = json.dumps({"answer": "(rag-api's own answer)", "citations": cites, "answerable": True,
+                           "confidence": "high"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        LOG[q] = (came, time.monotonic())
+srv = ThreadingHTTPServer(("127.0.0.1", 0), RagApi)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+dt.RAG_API_URL, dt._id_token = f"http://127.0.0.1:{srv.server_address[1]}", lambda aud: "TOKEN"   # no lane, no token
+class Scripted(FakeMessagesListChatModel):
+    \"\"\"A model that says what it is told: two searches in one message, then the answer.\"\"\"
+    def bind_tools(self, tools, **kw):
+        \"\"\"Keep the script: the brain binds the kit's two tools, which a script never reads.\"\"\"
+        return self
+script = [AIMessage("", tool_calls=[{"name": "retrieve", "args": {"query": q}, "id": f"call{i}"} for i, q in enumerate(ASK, 1)]),
+          AIMessage("Sixty days [3]; at most 45 days of earned leave are encashed [1].")]
+brain = brains.LangChainBrain(InMemorySaver(), llm=Scripted(responses=script))
+cfg = {"configurable": {"thread_id": "acme:you:lesson101-two"}}
+out = brain.answer("%s",
+                   config=cfg, context={"tenant_id": "acme", "brain": "langchain"})
+srv.shutdown()
+t0 = min(came for came, _ in LOG.values())
+print(f"  one model message asked for {len(ASK)} searches; the stand-in rag-api's log:")
+for q in ASK:
+    print(f"    {q!r:33} arrived at {LOG[q][0] - t0:.1f} s, answered at {LOG[q][1] - t0:.1f} s")
+both = max(came for came, _ in LOG.values()) < min(done for _, done in LOG.values())
+print(f"  at once: {both} (both arrived before either was answered); {max(done for _, done in LOG.values()) - t0:.1f} s for the two,"
+      f" where one after the other takes {sum(TAKES.values()):.1f} s")
+print("  what the model read, one result for each call:")
+results = {m.tool_call_id: json.loads(m.content) for m in brain.agent.get_state(cfg).values["messages"]
+           if isinstance(m, ToolMessage)}
+for i, q in enumerate(ASK, 1):
+    print(f"    {q!r:33} " + "  ".join(f"[{c['n']}] {c['chunk_id'].split('#')[1]}" for c in results[f"call{i}"]["citations"]))
+print(f"  tool_calls {out['tool_calls']}; the turn's citations: "
+      + ", ".join(f"[{c['n']}] {c['chunk_id'].split('#')[1]}" for c in out["citations"]))
+print(f"  the answer: {out['answer']}")""" % Q_TWO
+TAKES = {"notice period": 1.5, "earned leave encashed on exit": 1.0}
+assert 'TAKES = {"notice period": 1.5, "earned leave encashed on exit": 1.0}' in PARALLEL_PY        # the times the page's prose names
+
+# build-only: the same turn through the ADK brain (google-adk is in the chat image, not in the learner's ~/graph-venv yet)
+ADK_PY = PARALLEL_PY.split("class Scripted(")[0] + """import logging
+logging.disable(logging.CRITICAL)                 # ADK's notices about a scripted model's missing token counts
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_response import LlmResponse
+from google.genai import types as gt
+class AdkScript(BaseLlm):
+    \"\"\"The same script, as ADK's model: two function calls in one response, then the answer.\"\"\"
+    model: str = "script"
+    turns: list = []
+    sent: list = []
+    async def generate_content_async(self, llm_request, stream=False):
+        \"\"\"Answer with the next scripted response, keeping what ADK sent.\"\"\"
+        self.sent.append(llm_request)
+        yield self.turns.pop(0)
+calls = [gt.Part(function_call=gt.FunctionCall(name="retrieve", args={"query": q})) for q in ASK]
+model = AdkScript(turns=[LlmResponse(content=gt.Content(role="model", parts=calls)),
+                         LlmResponse(content=gt.Content(role="model", parts=[gt.Part(text="Sixty days [3]; at most 45 days of earned leave are encashed [1].")]))], sent=[])
+brain = brains.AdkBrain(None)
+brain.runner.agent.model = model
+out = brain.answer("%s", config={"configurable": {"thread_id": "acme:you:lesson101-two"}},
+                   context={"tenant_id": "acme", "user_id": "you", "assertion": "", "brain": "adk"})
+srv.shutdown()
+t0 = min(came for came, _ in LOG.values())
+for q in ASK:
+    print(f"    {q!r:33} arrived at {LOG[q][0] - t0:.1f} s, answered at {LOG[q][1] - t0:.1f} s")
+print("  at once:", max(came for came, _ in LOG.values()) < min(done for _, done in LOG.values()))
+read = [p.function_response.response for c in model.sent[-1].contents for p in c.parts or [] if p.function_response]
+for q, r in zip(ASK, read):
+    print(f"    {q!r:33} " + "  ".join(f"[{c['n']}] {c['chunk_id'].split('#')[1]}" for c in r["citations"]))
+print(f"  tool_calls {out['tool_calls']}; the turn's citations: " + ", ".join(f"[{c['n']}] {c['chunk_id'].split('#')[1]}" for c in out["citations"]))""" % Q_TWO
+
+LIVE_PY = """import sys, warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+sys.path[:0] = [".", "services/chat"]
+from langchain_core.messages import HumanMessage, SystemMessage
+import brains, limits, tools
+from shared import prices
+from shared.profile import build_llm
+llm = build_llm().bind_tools(tools.TOOLS)         # the brains' model, gemini-3.6-flash on global, with the kit's two tools
+msg = llm.invoke([SystemMessage(content=brains.SYSTEM),
+                  HumanMessage(content="%s")])
+print(f"  {brains.MODEL}'s first message: {len(msg.tool_calls)} tool call(s)")
+for c in msg.tool_calls:
+    print(f"    {c['name']}(" + ", ".join(f"{k}={v!r}" for k, v in c["args"].items()) + ")")
+tin, tout, _ = limits.usage_of(msg)               # output counts the thinking tokens
+print(f"  {tin} tokens in, {tout} out: Rs {prices.inr(prices.usd(brains.MODEL, tin, tout)):.2f}")""" % Q_TWO
+
+
+def heredoc(body: str, prefix: str = "", python: str = "python") -> str:
+    return f"{prefix}{python} - <<'PY'\n{body}\nPY"
 
 
 CELLS = {
@@ -268,6 +408,9 @@ CELLS = {
     "loop": (f'chat10 langchain "{Q_GRAT}"\n'
              f'chat10 langchain "{Q_COST}"\n'
              f'chat10 direct "{Q_COST}"'),
+    "venv": VENV,
+    "parallel": heredoc(PARALLEL_PY, python="~/graph-venv/bin/python"),
+    "live": heredoc(LIVE_PY, 'GOOGLE_CLOUD_PROJECT="$PROJECT" ', python="~/graph-venv/bin/python"),
     "rows": heredoc(ROWS_PY),
 }
 assert "; " in CELLS["where"] and "import json, sys; s = json.load(sys.stdin)" in CELLS["where"]
@@ -299,6 +442,7 @@ assert OUT["contract"].rstrip("\n").endswith(f"  'express' refused: {TIER}"), OU
 CITES = [{"chunk_id": f"acme:{'a' * 8}#{i}", "source_uri": "gs://documind-ai-YOUR-ID-uploads/acme/payment_of_gratuity_act_1972.pdf", "page": 3,
           "quote": "...", "score": round(0.94 - 0.07 * i, 2)} for i in range(5)]
 GRAT = "Gratuity is payable on termination after not less than five years of continuous service [1]."
+CITED = CITES[:1]     # /v1/query returns the passages its answer cites (documind_schemas.to_answer): GRAT cites [1]
 REQS = []
 
 
@@ -308,7 +452,7 @@ class Api(BaseHTTPRequestHandler):
 
     def do_POST(self):
         REQS.append(json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)))))
-        data = json.dumps({"answer": GRAT, "citations": CITES, "confidence": "high", "answerable": True, "model": "gemini-3.6-flash",
+        data = json.dumps({"answer": GRAT, "citations": CITED, "confidence": "high", "answerable": True, "model": "gemini-3.6-flash",
                            "backend": "vertex", "tokens_in": 1790, "tokens_out": 96, "latency_ms": 2600, "cache_hit": "none"}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -337,19 +481,19 @@ LIM["tool_budgets_s"] = {"retrieve": LANE_RAG_TIMEOUT_S + 5, "calculate_processi
 assert '"limits": limits.published()}' in ag_src and 'TIMEOUTS = {"retrieve": documind_tools.RAG_TIMEOUT_S + 5, "calculate_processing_cost": 10}' in ct_src
 HEALTH = {"status": "ok", "profile": "gcp", "brains": ["langchain", "langgraph", "adk", "direct"], "default_brain": "langchain", "limits": LIM}
 DIRECT_COST = "The documents give no per-page price for processing the handbook; the April invoice bills priority processing at Rs 12.00 a unit [1]."
-# an agent brain's citations, numbered from 1 for its turn by the kit's own tools._number(); the cost turn's search found three
+# an agent brain's citations, numbered from 1 for its turn by the kit's own tools._number(): what each search's rag-api answer cited
 NUMBERED = {}
-for key, k in (("policy", 5), ("cost", 3)):
+for key, k in (("policy", 1), ("cost", 1)):
     NUMBERED[key] = []
     chat_tools._number([dict(c) for c in CITES[:k]], NUMBERED[key])
     assert [c["n"] for c in NUMBERED[key]] == list(range(1, k + 1))
-PLAN = {("direct", Q_GRAT): {"answer": GRAT, "tool_calls": ["retrieve"], "refusals": [], "citations": CITES, "latency_ms": 3180},
+PLAN = {("direct", Q_GRAT): {"answer": GRAT, "tool_calls": ["retrieve"], "refusals": [], "citations": CITED, "latency_ms": 3180},
         ("langchain", Q_GRAT): {**SUMMARIES["policy"], "citations": NUMBERED["policy"],
                                 "answer": "After five years of continuous service, under the Payment of Gratuity Act, 1972 [1].", "latency_ms": 7240},
         ("langchain", Q_COST): {**SUMMARIES["cost"], "citations": NUMBERED["cost"],
                                 "answer": f"The handbook has 283 pages [1]. At the priority tier (USD {COST['rate_per_page']} a page) they cost USD {COST['cost_usd']}, about Rs {COST['cost_inr']:,.2f}.",
                                 "latency_ms": 11350},
-        ("direct", Q_COST): {"answer": DIRECT_COST, "tool_calls": ["retrieve"], "refusals": [], "citations": CITES[:3], "latency_ms": 3420}}
+        ("direct", Q_COST): {"answer": DIRECT_COST, "tool_calls": ["retrieve"], "refusals": [], "citations": CITES[:1], "latency_ms": 3420}}
 
 
 class Chat(BaseHTTPRequestHandler):
@@ -374,7 +518,54 @@ OUT["direct"] = ask("direct", Q_GRAT)
 OUT["loop"] = ask("langchain", Q_GRAT) + ask("langchain", Q_COST) + ask("direct", Q_COST)
 chat.shutdown()
 assert "tool_calls ['retrieve']" in OUT["direct"] and " n " not in OUT["direct"] and "['retrieve', 'calculate_processing_cost']" in OUT["loop"]
-assert "citations 5 n [1, 2, 3, 4, 5]" in OUT["loop"] and "citations 3 n [1, 2, 3]" in OUT["loop"], OUT["loop"]   # each turn from 1
+assert OUT["loop"].count("citations 1 n [1] ") == 2, OUT["loop"]   # each turn numbered from 1
+
+# step 7's two searches in one message: the page's offline cell on the kit's LangChain brain, the same turn on the
+# LangGraph brain (the cell with its graph) and on the ADK brain. Every brain must start both searches before either is
+# answered, take about the slower one's time, and number LV-07, which both searches return, once.
+TIMES = re.compile(r"arrived at (\d+\.\d) s, answered at (\d+\.\d) s")
+
+
+def two_searches(raw: str, brain: str) -> str:
+    """The cell's output with its times checked against the stand-in's and printed as the stand-in sets them (a loaded
+    build machine adds a few hundredths); the numbering checked as the kit's ledger gives it."""
+    got = TIMES.findall(raw)
+    assert len(got) == 2, (brain, raw)
+    for (came, done), q in zip(got, ("notice period", "earned leave encashed on exit")):
+        assert float(came) <= 0.3 and abs(float(done) - TAKES[q]) <= 0.4, (brain, raw)
+    assert "at once: True" in raw, (brain, raw)
+    assert "'notice period'                   [3] NP-03  [4] PB-02  [1] LV-07" in raw, (brain, raw)
+    assert "'earned leave encashed on exit'   [1] LV-07  [2] LV-01" in raw, (brain, raw)
+    assert "tool_calls ['retrieve', 'retrieve']; the turn's citations: [1] LV-07, [2] LV-01, [3] NP-03, [4] PB-02" in raw, (brain, raw)
+    fixed = iter(f"arrived at 0.0 s, answered at {TAKES[q]:.1f} s" for q in ("notice period", "earned leave encashed on exit"))
+    out = TIMES.sub(lambda m: next(fixed), raw)
+    m = re.search(r"; (\d+\.\d) s for the two,", out)
+    if m:
+        assert max(TAKES.values()) <= float(m.group(1)) <= max(TAKES.values()) + 0.5, (brain, raw)
+        out = out.replace(m.group(0), f"; {max(TAKES.values()):.1f} s for the two,")
+    return out
+
+
+OUT["parallel"] = two_searches(run_cell(PARALLEL_PY, cwd=KIT), "langchain")
+assert OUT["parallel"].endswith("  the answer: Sixty days [3]; at most 45 days of earned leave are encashed [1].\n"), OUT["parallel"]
+assert "at once: True (both arrived before either was answered); 1.5 s for the two, where one after the other takes 2.5 s" in OUT["parallel"]
+GRAPH_PY = PARALLEL_PY.replace("brains.LangChainBrain(", "brains.LangGraphBrain(").replace("brain.agent.get_state", "brain.graph.get_state")
+assert GRAPH_PY.count("LangGraphBrain(") == 1 and "brain.graph.get_state" in GRAPH_PY
+assert two_searches(run_cell(GRAPH_PY, cwd=KIT), "langgraph") == OUT["parallel"]          # the hand-built graph's ToolNode
+two_searches(run_cell(ADK_PY, cwd=KIT), "adk")                                            # ADK's concurrent function calls
+OUT["venv"] = f"graph-venv ok: langchain {PINS['langchain']}\n"
+OUT["live"] = pb.recorded(LESSON, "parallel_live.txt")                                   # the author's run (RUN_LIST.md)
+# the live cell itself, run here with a scripted model in build_llm()'s place: it prints what the page says it prints
+FAKE_LLM = ("import shared.profile as _profile\n"
+            "from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel as _Fake\n"
+            "from langchain_core.messages import AIMessage as _AI\n"
+            "_Fake.bind_tools = lambda self, tools, **kw: self\n"
+            "_profile.build_llm = lambda: _Fake(responses=[_AI('', tool_calls=[{'name': 'retrieve', 'args': {'query': q}, 'id': q}\n"
+            "    for q in ('notice period', 'earned leave encashment on exit')], usage_metadata={'input_tokens': 400, 'output_tokens': 200,\n"
+            "    'total_tokens': 600})])\n")
+DRY = run_cell(LIVE_PY, FAKE_LLM, cwd=KIT)
+assert DRY == ("  gemini-3.6-flash's first message: 2 tool call(s)\n    retrieve(query='notice period')\n"
+               "    retrieve(query='earned leave encashment on exit')\n  400 tokens in, 200 out: Rs 0.18\n"), DRY
 
 # the rows: rag-api's usage rows (one per retrieve) and the chat service's turn rows, as the kit writes them
 FAKE_BQ = types.ModuleType("google.cloud.bigquery")
@@ -429,10 +620,10 @@ OUT["deploy"] = (">> commands/lesson-12.8.sh (DEPLOY block)\n"
                  f"Updated IAM policy for service [documind-chat].   (seven times, one per account: {', '.join(INVOKERS[:3])},\n"
                  f"   {', '.join(INVOKERS[3:6])},\n   {', '.join(INVOKERS[6:-1])})\n"
                  f"{NOT_BOUND}\n"
-                 "... job exists - continuing   (or: Job [documind-checkpoint-setup] has successfully been created.)\n"
+                 "Job [documind-checkpoint-setup] has successfully been deployed.\n"
                  "Execution [documind-checkpoint-setup-xxxxx] has successfully completed.\n...\n"
                  ">> you@example.com may mint tokens as documind-ui-sa\n>> you@example.com may mint tokens as documind-outsider-sa\n")
-assert 'echo ">> $$who may mint tokens as $$sa"' in mk and '|| echo "job exists - continuing"' in dep
+assert 'echo ">> $$who may mint tokens as $$sa"' in mk and "gcloud run jobs deploy documind-checkpoint-setup" in dep
 shutil.rmtree(T, ignore_errors=True)
 
 
@@ -453,6 +644,9 @@ CELL_LABELS = {
     "retrieve": "run in the operator shell, in the kit (the one retrieve(), called from your shell as a roster member)",
     "direct": "run in the operator shell, in the kit (a small chat function, and the direct brain)",
     "loop": "run in the operator shell, in the kit (the LangChain loop on the same question, then a cost question on both brains)",
+    "venv": "run in the operator shell, in the kit (lesson 5.4's ~/graph-venv with the chat image's pins; a minute the first time)",
+    "parallel": "run in the operator shell, in the kit (the kit's LangChain brain on your machine: a scripted model, a stand-in rag-api; no lane, no cost)",
+    "live": "optional: run in the operator shell, in the kit (one Gemini call with the kit's two tools; no tool runs; under a rupee)",
     "rows": "run in the operator shell, in the kit (the rows both services wrote since the retrieve cell; reads only)",
 }
 OUT_LABELS = {
@@ -462,6 +656,9 @@ OUT_LABELS = {
     "retrieve": "(the kit's retrieve() against a local stub of rag-api; your citations and time differ)",
     "direct": "(against a local stub of the chat service; your words and times differ)",
     "loop": "(against a local stub; the model decides which tools it calls, and your lists are the truth)",
+    "venv": "",
+    "parallel": "(this cell, run on the kit's own brains.py, tools.py and limits.py with the chat image's pins; your times differ by a few hundredths)",
+    "live": "(the author's run; the model decides how many calls it asks for, and your tokens differ)",
     "rows": "(against a fake gcloud, priced by the kit's own price(); your numbers differ)",
 }
 WIN = {f"CELL_{k.upper()}": bash_window(CELL_LABELS[k], v) for k, v in CELLS.items()}

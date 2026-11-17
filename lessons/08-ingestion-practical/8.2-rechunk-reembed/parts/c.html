@@ -1,0 +1,113 @@
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 3 &middot; REST</span><h3>REST: which image serves, and how many tokens a new chunk is</h3><p>Two GETs on the Cloud Run Admin API, then one embedding request read for what the model counted.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>gcloud run services describe</code> printed one line in step 5. Underneath it is the Cloud Run Admin API, and its service resource says more: the image in the service's template, the newest revision that is ready, where the traffic goes, and, one call further, every revision the service has kept with the image each one runs. Step 9's revert deploys one of those images again, so read them now, while the edited worker serves.</p>
+
+%%W_REST%%
+
+<p>Expect the template's image to be <code>ingest:COMMIT-c400</code>, the latest ready revision to be the one step 5's deploy made, and all the traffic on it (Cloud Run reports the share that follows the newest revision as <code>latest</code>). Below, the newest three revisions with their creation times: the <code>-c400</code> one on top and the original image under it. The original revision is still there, but traffic follows the newest ready one, and step 9 makes a newer one rather than routing back to an old one by name: a route to a named revision would pin the service there, and every later deploy would land with no traffic.</p>
+
+<h4>The tokens in the largest new chunk</h4>
+<p>The kit counts characters: the window is %%NEW_CHARS%% characters, and the batcher estimates tokens as characters divided by %%CPT%%. The embedding model counts tokens, and reads at most 2,048 of one text, cutting the rest unless told not to (lesson B.2 read that on Google's page on 7 October 2026). The largest chunk at %%NEW_PAIR%% is <code>%%BIG_LOC%%</code>'s first window, %%BIG400%% characters. The cell cuts the handbook at %%NEW_PAIR%% in memory, finds that window, and sends it to <code>text-embedding-005</code>'s REST endpoint in <code>us-central1</code>, as the worker's client would, under the worker's task type. The response carries the model's own count beside the vector.</p>
+
+%%W_TOKENS%%
+
+<p>Expect <code>%%BIG_LOC%%: %%BIG400%% characters; the kit's estimate %%BIG_EST%% tokens</code>, then the model's count, <code>truncated False</code>, 768 numbers, and the characters it billed. The model's count is the true one; the kit's estimate counts cautiously, three characters a token, so a batch stays under the request's token ceiling. At %%KIT_PAIR%% a window could hold five times as much, still far under 2,048 tokens. The smaller pair does not change what the model can read; it changes how much of a section each vector has to stand for. One request, %%BIG400%% characters: %%TOKEN_PAISE%% of a paisa.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; Reconcile</span><h3>Reconcile: the ledger against the bucket, the index against the rows, the golden rows</h3><p>The walk that finds a lost event and cannot see a chunker, the rows read directly, and the handbook's ten questions asked again.</p></div></div>
+
+<h4>Definition</h4>
+<p>Lesson 1.8 ran the nightly walk: every object in the bucket against its ledger row in <code>sources/</code>. For each object, a generation the ledger already holds is <code>ok</code>; any other generation has its bytes hashed, and the hash decides. The bytes the ledger already names are a <code>touch</code> (record the generation, index nothing); bytes a claim indexed that the ledger never recorded are a <code>backfill</code>; bytes no claim holds are a <code>reingest</code>, which rewrites the object onto itself so the worker's own path runs again. Drift counts the sources the ledger had wrong.</p>
+
+@@walk_plan@@
+@@decide@@
+
+<p>Nothing in either function reads the chunker. The walk compares names, generations and hashes of bytes, so it proves the ledger names what the bucket holds; it cannot prove which rule cut the rows. Run the kit's own planner over a stand-in lane, four nights in this lesson's life:</p>
+
+%%W_PLAN%%
+
+<p>The second night is the case the walk exists for: had the re-issue's push been lost, the ledger would still name version 1 at generation 2, the walk would hash generation 3, find bytes no claim holds, and rewrite the object so the worker indexes it, cut by whatever pair the worker runs that night. The same bytes can be cut two ways depending on when they arrive. Now the real walk, the plan only, and the versions view after it:</p>
+
+%%W_RECONCILE%%
+
+<p>Expect one <code>{"reconcile": ...}</code> line for each object that is not <code>ok</code>: the note lesson 8.1 withdrew, if you ran its last step, as <code>withdrawn</code> with the reason "withdrawn, object kept", which is a decision, not drift. Then <code>reconcile_done</code> with <code>"applied": false</code>, the counts, and <code>"drift": 0</code>. In the versions view, the handbook's row reads %%N400%% chunks, %%R400%% reused, %%E400%% embedded, %%N_SECTIONS%% retired. The other Markdown rows have not moved, and they show the limit of everything above: they are still cut at %%KIT_PAIR%%, and no walk will ever say so.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Document</th><th>At 2000/200, on your lane</th><th>At 400/50, if re-issued</th></tr></thead>
+<tbody>
+%%OTHER_ROWS%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>The lane's rows carry the embedding model and its version, but no field names the chunker. After a change, the way to find a document cut by the old rule is its <code>chunks</code> beside an offline count at each pair, which works for Markdown and not for a PDF.</p>
+
+<h4>The rows and the index, read directly</h4>
+<p>The ledger row is a summary. The rows are the evidence: the cell counts the handbook's rows by version and state, finds the longest current row, and checks whether two current rows hold version 1's vectors: <code>NP-03</code>, which the new rule left whole, and <code>%%BIG_LOC%%</code>, which it cut. Then it counts every tenant's current rows in Firestore and reads the Vector Search index's own count.</p>
+
+%%W_ROWS%%
+
+<p>Expect the new version current with %%N400%% rows and version 1 retired with %%N_SECTIONS%%, beside any older version whose %%RETENTION%% days have not run out; the longest current row at %%BIG400%% characters; <code>NP-03</code>'s current hash equal to version 1's and <code>same vector: True</code>, because the worker copied it; <code>%%BIG_LOC%%</code>'s different, <code>same vector: False</code>. The index's count should equal Firestore's current rows once the stream has caught up, which takes a few minutes after an ingest. A source withdrawn by hand, or retired by the walk when its object left the bucket, leaves the index too since 13 October 2026: the rows are retired, the managed stores told, and the retired ids removed with the worker's own <code>remove_datapoints()</code>, as the kit's code shows. Before that date only the worker's swap and undo removed them, so on a lane that withdrew or retired a source on an older kit, lesson 8.1's note among them, the count can still be higher by that source's chunks.</p>
+
+@@retire_branch@@
+
+<p>The retriever drops such a leftover datapoint after the search, because its row is no longer current, so answers stay right; but the count is not the ledger's, and the walk does not compare the two.</p>
+
+<h4>The gate: the handbook's golden rows, asked again</h4>
+<p>The re-cut changed %%E400%% vectors in the same index the questions search, so lesson 1.6's live gate, scoped to the handbook, is the check that matters. Every one of the %%EVAL_ROWS_W%% rows asks about a real clause, and every real clause kept its text and its vector: what moved is the %%E400%% windows of generated text beside them, now shorter and more numerous. The gate says whether the clauses still win.</p>
+
+%%W_EVAL%%
+
+<p>Expect the scope line, <code>%%EVAL_ROWS%% row(s) cite it</code>, the thresholds, the shape table and the latency line, then either <code>All thresholds met.</code> or the rows that cost a point. Set the run beside lesson 1.6's green run on version 1: the same %%EVAL_ROWS%% questions, the same clauses, a different neighbourhood. A row that now misses names the clause a window of filler displaced, which is the real cost of a smaller chunk on this handbook. With acme pinned to the kit's index, as the setup section asked, these answers come from the rows you just made; on RAG Engine they would come from text the store cut at %%MANAGED_SIZE%% tokens with %%MANAGED_OV%% of overlap, by its own rule, and this lesson's change would not reach them.</p>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>What the change cost</th><th>On your lane</th><th>Where the figure comes from</th></tr></thead>
+<tbody>
+<tr><td>The build</td><td data-label="On your lane">Cloud Build minutes, not priced on the page</td><td data-label="Where the figure comes from">one image, step 5</td></tr>
+<tr><td>The re-issue's embeddings</td><td data-label="On your lane">%%E400%% chunks, %%CH400%% characters: Rs %%RS400%%</td><td data-label="Where the figure comes from">step 4's count, at lesson 8.3's dated price</td></tr>
+<tr><td>Its Firestore writes</td><td data-label="On your lane">%%FS_WRITES%% writes (%%N400%% staged, %%N400%% swapped current, %%N_SECTIONS%% retired): Rs %%FS_RS%%</td><td data-label="Where the figure comes from">Mumbai's price per 1,00,000 writes, lesson 8.3's table</td></tr>
+<tr><td>The token count</td><td data-label="On your lane">%%BIG400%% characters: %%TOKEN_PAISE%% of a paisa</td><td data-label="Where the figure comes from">step 7</td></tr>
+<tr><td>The gate</td><td data-label="On your lane">%%EVAL_ROWS%% answers at about Rs %%TYPICAL%% each: Rs %%EVAL_RS%%</td><td data-label="Where the figure comes from">the course's typical answer, priced with <code>shared/prices.py</code></td></tr>
+<tr><td>The revert</td><td data-label="On your lane">nothing embedded, nothing built</td><td data-label="Where the figure comes from">step 9</td></tr>
+<tr><td>The lane, while it is up</td><td data-label="On your lane">Rs %%LANE_H_SMALL%% an hour on a SMALL shard (Rs %%LANE_H_MEDIUM%% on MEDIUM), whatever you run</td><td data-label="Where the figure comes from">lesson 0.4's standing cost</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Revert</span><h3>Put it back: the original tag, version 1, the checkout</h3><p>One deploy with no build, one upload the worker answers with an undo, and two files checked out again.</p></div></div>
+
+<h4>Definition</h4>
+<p>The order matters. Deploy the original tag first: from that moment every document the worker ingests is cut at %%KIT_PAIR%% again, and nothing else can be cut at %%NEW_PAIR%% while you work. Then upload version 1's bytes: the worker finds a version it retired %%RETENTION%% days or less ago and answers with the undo, flipping version 1's %%N_SECTIONS%% rows back and retiring the new version's %%N400%%. The undo cuts nothing, so it would bring back version 1's chunks under either worker; the deploy is what decides how the next upload is cut. The tag comes from the file step 5 wrote, so a new shell is no obstacle.</p>
+
+%%W_REVERT%%
+
+<p>Expect <code>back to ingest:COMMIT</code>, the deploy's lines, the service's image back at <code>ingest:COMMIT</code> on a newer revision, and then <code>make reindex</code>'s line: <code>ingest_reactivated</code>, version 1's key <code>acme_%%V1_KEY%%...</code>, %%N_SECTIONS%% chunks, %%N_SECTIONS%% reused, 0 embedded, %%N400%% retired. Last, the checkout. The test runs once more so the kit you leave is the kit the course ships, and passes:</p>
+
+%%W_BACK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The worker is the original image again, on a new revision, and the handbook is version 1 again, reactivated: its rows were never deleted, so nothing was embedded, and the new version's %%N400%% rows are retired with %%RETENTION%% days to live. Your checkout matches the kit, line for line, and the twin test says the twins agree. The change, the re-embed, the reconcile and the revert each left a record: the revisions, the ledger's rows and claims, and the worker's lines.</p></div>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Ten checks, each one step above, each with what a pass looks like on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The twins agree, and a test says so</td><td data-label="The check">the twin test, step 3</td><td data-label="Pass looks like"><code>Ran %%TEST_N%% tests</code>, <code>OK</code></td></tr>
+<tr><td>2</td><td data-label="Claim">One twin edited alone is caught</td><td data-label="The check">the first edit, step 5</td><td data-label="Pass looks like"><code>FAILED (failures=3)</code>, the first message naming both files and both pairs</td></tr>
+<tr><td>3</td><td data-label="Claim">A size of %%LONGEST%% or more changes nothing on the handbook</td><td data-label="The check">the measuring cell, step 4</td><td data-label="Pass looks like">%%N_SECTIONS%% chunks, %%N_SECTIONS%% reused, 0 embedded down to %%LONGEST%%/50; %%E598%% embedded at %%LONGEST_MINUS%%/50</td></tr>
+<tr><td>4</td><td data-label="Claim">The edited worker serves, under a tag of its own</td><td data-label="The check">the describe line, step 5; the REST read, step 7</td><td data-label="Pass looks like"><code>ingest:COMMIT-c400</code> on the newest revision, with all the traffic</td></tr>
+<tr><td>5</td><td data-label="Claim">The re-issue embedded only what the new rule changed</td><td data-label="The check">the worker's line, step 6</td><td data-label="Pass looks like"><code>ingest_ok</code> %%N400%% %%R400%% %%E400%% %%N_SECTIONS%%, as step 4 predicted</td></tr>
+<tr><td>6</td><td data-label="Claim">The kept clauses kept their vectors</td><td data-label="The check">the rows, step 8</td><td data-label="Pass looks like"><code>NP-03</code> <code>same vector: True</code>; <code>%%BIG_LOC%%</code> <code>False</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The ledger names what the bucket holds</td><td data-label="The check"><code>make reconcile</code>, step 8</td><td data-label="Pass looks like"><code>"drift": 0</code>, a withdrawn note counted apart</td></tr>
+<tr><td>8</td><td data-label="Claim">The index holds the current rows</td><td data-label="The check">the count beside the index, step 8</td><td data-label="Pass looks like">equal once the stream catches up, or higher by the chunks of a source withdrawn by hand</td></tr>
+<tr><td>9</td><td data-label="Claim">The handbook's golden rows still pass, or you know which do not</td><td data-label="The check"><code>make eval-live SOURCE=hr_policy_2026.md</code>, step 8</td><td data-label="Pass looks like"><code>All thresholds met.</code>, or the rows that cost a point, each naming its clause</td></tr>
+<tr><td>10</td><td data-label="Claim">The revert restores the image, the handbook and the checkout</td><td data-label="The check">step 9</td><td data-label="Pass looks like"><code>ingest:COMMIT</code>; <code>ingest_reactivated</code> %%N_SECTIONS%% %%N_SECTIONS%% 0 %%N400%%; the test <code>OK</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p><code>documind-ingest</code> runs its original image again, on a revision two newer than the one you started with; the <code>-c400</code> image stays in Artifact Registry, under its own tag, until you delete it. The handbook is version 1 again, reactivated once more; the re-issued version's %%N400%% rows are retired, with their %%E400%% fresh vectors, and the retention policy removes them %%RETENTION%% days from now. The BigQuery mirror gained %%N400%% rows and the managed stores followed both swaps. Your checkout is the kit again. Your home directory holds <code>hr_policy_2026_r4.md</code>, <code>lesson82-orig-sha</code>, <code>lesson82-build.log</code> and <code>lesson82-revert.log</code>; delete them when you are done. Put acme's pin back with the setup section's second window.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 8 Ingestion practical &middot; Lesson 8.2 Change a chunker, re-embed and reconcile &middot; v5.0</p><p>Next: Lesson 8.3 %%NEXT_TITLE%%.</p></div>

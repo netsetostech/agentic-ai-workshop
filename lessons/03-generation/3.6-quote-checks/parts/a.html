@@ -1,0 +1,96 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 3 &middot; Generation &middot; Lesson 3.6</div>
+<h1>Check quotes and version prompts: <span>each quote held against the passage it cites, and the prompt's text bound to the label every answer carries</span></h1>
+<p>Lesson 3.5 resolved the model's citations and checked one answer's quotes against their rows. This lesson checks a whole source's quotes the way the eval gate can: each quote looked for in the one passage it cites, read back from the same retrieval the answer drew on, with five verdicts. It also treats the prompt that asks for those quotes as a release. Its text has a sha256, its version is a label every answer carries, and a changed text under the old label fails a check that runs offline for Rs 0 and on every push. You will run both quote measures offline, check a source's quotes on your lane, weaken rule 5 in memory and then on a branch, ship it to a candidate that answers as <code>%%LABEL_V4%%</code>, compare its quotes with v3's, find its rows, and take it down again.</p>
+<div class="hero-chips"><div class="hero-chip">quote_check(): %%N_VERDICTS%% verdicts</div><div class="hero-chip">/v1/passages: the text the model read</div><div class="hero-chip">DOCUMIND_EVAL_PASSAGES=1</div><div class="hero-chip">%%LABEL%% = sha256 %%V3_SHORT%%</div><div class="hero-chip">make prompt-version: Rs 0</div><div class="hero-chip">a v4 candidate, built and untagged</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">A quote is a claim about one passage, and a prompt is a release</a></li>
+<li><a href="#s2">The words: quote, pool, the five verdicts, the three rates, the switch, label, text, registry, candidate</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Offline: nine quotes through both measures, and the gate's own lines over a stand-in API</a></li>
+<li><a href="#s4">Your lane: what the UI shows as a quote, then a source's quotes held against their passages</a></li>
+<li><a href="#s5">The prompt's version: the label, the text, its sha256 and the check</a></li>
+<li><a href="#s6">The change in memory: rule 5 weakened on the bench, and the sha256 it would register</a></li>
+<li><a href="#s7">Ship it: v4 on a branch, checked, built, and answering on a candidate</a></li>
+<li><a href="#s8">The rows name the prompt; the candidate taken down, and v4 spent</a></li>
+<li><a href="#s9">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn why a quote is checked against the one passage it cites rather than the whole corpus, what each of <code>quote_check()</code>'s %%N_VERDICTS_WORD%% verdicts means, and how a prompt's text is bound to the version label every answer carries. Then you will prove it on your lane: nine quotes offline, a source's quotes on the live revision, a weakened rule 5 in memory and then on a v4 candidate, its quotes compared with v3's, its rows found, and the candidate removed.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>A quote is a claim about one passage, and a prompt is a release</h3><p>Why a quote is checked where it says it came from, what each place to look can and cannot see, and why a prompt's words carry a version.</p></div></div>
+
+<p><strong>A quote says where its words came from.</strong> A citation makes two claims: this passage supports the answer, and these are its words. <code>resolve()</code> turns the draft's <code>[Source N]</code> into a chunk id, a page and a score, one citation a chunk: a passage the draft lists twice keeps its first quote. The quote it copies as the model wrote it, cut to %%QUOTE_CIT%% characters, and when the model wrote an empty one it puts the passage's first %%QUOTE_CIT%% characters in its place. It does the same for a source the answer cites only in its prose, an <code>[N]</code> the draft's list leaves out: the citation is added, and its quote is the passage's opening. Nothing on the request path compares the words with the passage. Rule 5 of the prompt asks for the clause that answers, at most twenty-five words, and the schema describes the field as exact words from that source, but both are requests. So a citation's quote can be the passage's own words, real words from another passage under the wrong number, words the model wrote itself, or the passage's opening standing in for a quote nobody gave. Every caller of <code>/v1/query</code> receives it as evidence: the eval gate, the MCP server's <code>retrieve</code> tool, and the chat service's agents, which pass the citations on.</p>
+
+<p><strong>Where you look decides what you find.</strong> The live gate already looks for each quote somewhere: <code>judge_citations()</code> searches the tenant's whole corpus, the text mirrors under <code>evals/corpus</code>, and prints <code>quote_support_rate</code> as information, not a threshold, because a Doc AI extraction and a pypdf mirror hyphenate differently. The whole corpus is too generous and too strict at once. It passes real words under the wrong source, and it passes a passage's opening that <code>resolve()</code> put in for an empty quote or a bare <code>[N]</code>, because both are somewhere in the corpus. It fails the generator's own repair, the three dots <code>_draft()</code> adds to a quote it cut, and any quote of a PDF whose hyphenation differs from the mirror's. <code>quote_check()</code> looks in one place: the passage the citation names, read back from <code>/v1/passages</code>, which runs the same retrieval and rerank as <code>/v1/query</code> and returns each passage's full text with no model call. That passage is the text the model read, so a quote that is not in it is the model's own doing. It gives one of %%N_VERDICTS_WORD%% verdicts: own, elsewhere, absent, substituted or unread. With <code>DOCUMIND_EVAL_PASSAGES=1</code> the live gate reads each answerable row's pool again and prints <code>quote_passage_rate</code> beside the corpus rate, still as information.</p>
+
+<p><strong>A prompt is a release, and its version is a label.</strong> <code>SYSTEM</code> starts every prompt <code>generate()</code> sends, with <code>DATED_RULE</code> after it when a packed passage carries a date; the two are %%TEXT_CHARS%% characters. <code>config.py</code> names them <code>%%LABEL%%</code>, and the label goes wherever an answer goes: <code>/version</code> reports it, every usage row carries its version, the answer cache's scope includes it so that an answer made under one version is never served under another, and <code>tenant_daily</code> groups by it. A label is worth that only if it names one text. <code>prompt_versions.json</code> maps each label to the sha256 of its text, <code>make prompt-version</code> checks the code against it offline, and the same rule runs as a unit test on every push of the learner repository. Change one character and the sha256 changes; keep the label and the check fails, naming the next version and the line to register. A registered line never changes, so <code>v3</code> names one text for good.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128240;</div><div>
+<p><strong>A sub-editor, and the style guide's control number.</strong> A reporter files a story that quotes the council and cites "minute 14". The sub-editor opens minute 14, not the whole archive, and lays the quote over it. Minute 14's words: it stands. Minute 9's words under minute 14's number: a misattribution, true words in the wrong place, which a search of the whole archive would have passed. Words in no minute: the reporter's own sentence in quotation marks. "See the minutes" where the quote should be: nothing was quoted, whatever page is stapled to it. And a minute the archive could not produce that day is not judged, and not passed either.</p>
+<p>The reporters write to a style guide with a control number on its cover. Change one word and it is a new issue with a new number, filed beside the old one and never written over it, and every story is stamped with the number of the issue it was written under. When readers complain about last Tuesday's stories, the stamp says which guide was in force. The sub-editor is <code>quote_check()</code>, the archive search is <code>judge_citations()</code>, the control number is the prompt's version, the filing cabinet is the registry, and the stamp is <code>prompt_version</code> on every usage row.</p></div></div>
+
+<h4>The quote check: a citation and its quote against six passages, by quote_check()'s rule</h4>
+<p>The bench holds a citation as <code>/v1/query</code> returns one: the passage it names and the quote it carries. It runs <code>quote_check()</code>'s steps in order against six passages of acme's handbook, cut by the kit's chunker and given the ids the ingest worker mints, and prints the verdict and the step that decided it. Beside each case is what <code>judge_citations()</code> said about the same quote over acme's whole corpus, %%CORPUS_CHARS%% characters, when this page was built. The cases are the nine that step 3 runs; type your own quote to see where it lands.</p>
+
+<div class="diagram qb" id="qcheck">
+<div class="dg-title">Quote check - quote_check() from evals/run_eval.py, as rules, on six handbook passages</div>
+<div class="qb-controls">
+<label class="qb-l">Cases<select id="qc-case"></select></label>
+<label class="qb-l">The citation names<select id="qc-src"></select></label>
+<label class="qb-l qb-wide">The quote, as the citation carries it<textarea id="qc-quote" rows="3" spellcheck="false"></textarea></label>
+</div>
+<div class="qb-out" id="qc-out" aria-live="polite"></div>
+<div class="qb-pool" id="qc-pool"></div>
+<p class="dg-cap">The six passages stand in for the pool <code>/v1/passages</code> returns for lk-06's question; on your lane the reranker chooses them, and step 4 reads yours. The ids take the worker's form, <code>acme:</code>, the handbook's sha256, then the passage's position, as your lane's do. The rule is ported from <code>quote_check()</code> and checked against it on every case when this page was built; the corpus column of a typed quote is exact only when its words are in one of the seven passages this page holds.</p>
+</div>
+
+<h4>The version strip: prompt_pin's rule, live, and where the label goes</h4>
+<p>The strip holds what <code>make prompt-version</code> reads: <code>SYSTEM</code> and <code>DATED_RULE</code> as <code>generator.py</code> sets them, <code>prompt_version</code> as <code>config.py</code> sets it, and the registry. It does not hold the registry's history in git, which <code>make prompt-version</code> also reads for the version it offers next (step 8). It hashes the text with the same sha256, prints what <code>prompt_pin.py</code> would print, and follows the label to the places the service writes it. The first five cases are the states step 7 walks through; three more are cases the kit's own test checks, and the last is one space.</p>
+
+<div class="diagram qb" id="vstrip">
+<div class="dg-title">Version strip - prompt_pin.py's check, the sha256 and the label's path, as rules</div>
+<div class="qb-controls">
+<label class="qb-l">Cases<select id="vs-case"></select></label>
+<label class="qb-l">prompt_version in config.py<select id="vs-ver"><option value="v3">v3</option><option value="v4">v4</option><option value="v5">v5</option></select></label>
+<label class="qb-check"><input type="checkbox" id="vs-reg"> the registry holds v4's line</label>
+<label class="qb-l qb-wide">SYSTEM, as generator.py sets it<textarea id="vs-system" rows="8" spellcheck="false"></textarea></label>
+<label class="qb-l qb-wide">DATED_RULE (it starts with a line break)<textarea id="vs-dated" rows="3" spellcheck="false"></textarea></label>
+</div>
+<div class="qb-out" id="vs-out" aria-live="polite"></div>
+<p class="dg-cap">The sha256 is a JavaScript port, checked against Python's <code>hashlib</code> when this page was built, and the verdict lines are <code>prompt_pin.check()</code>'s, checked against the script itself on every case. The cache scope is <code>semantic_cache.scope_of()</code> for the UI's request, no filters and a top_k of 5. The strip reads nothing of your clone; <code>make prompt-version</code> does.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the two benches are not</div>
+<p>Neither calls a model or your lane. The quotes in the first are written by hand, and what a model quotes for a given pool is steps 4, 6 and 7's business. The second hashes the text in the page; whether your clone's files agree with your registry is what <code>make prompt-version</code> tells you, in step 5.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: quote, pool, the five verdicts, the three rates, the switch, label, text, registry, candidate</h3><p>Fourteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Quote</strong></td><td data-label="Meaning">The words a citation carries. The model writes one per citation, at most %%QUOTE_DRAFT%% characters (<code>DraftCitation</code>); <code>resolve()</code> copies it into the <code>Citation</code>, cut to %%QUOTE_CIT%%, or puts the passage's first %%QUOTE_CIT%% characters there when it is empty, and in the citation it adds for a source the answer cites only as an <code>[N]</code> in its prose. One citation a chunk: a second quote of the same passage is dropped. Nothing on the request path checks it.</td><td data-label="On your lane">In <code>/v1/query</code>'s citations. The UI's stream sends each passage's first %%STREAM_QUOTE%% characters instead.</td></tr>
+<tr><td><strong>Pool</strong></td><td data-label="Meaning">What <code>/v1/passages</code> returns: the same door, retrieval and rerank as <code>/v1/query</code>, then each passage's id, source and full text, with no model call. <code>run_eval.passages()</code> sends <code>ask()</code>'s body, so it is the pool the row's answer drew on.</td><td data-label="On your lane">%%TOP_K%% passages a row; its usage row is event <code>passages</code>, with no tokens.</td></tr>
+<tr><td><strong>own, elsewhere, absent</strong></td><td data-label="Meaning"><code>quote_check()</code>'s three judgments: the words are in the passage the citation names; not there, but in another passage of the pool; in no passage of the pool. Whitespace collapsed, case folded, a substring.</td><td data-label="On your lane">Step 3 shows all three; step 4 counts yours.</td></tr>
+<tr><td><strong>substituted</strong></td><td data-label="Meaning">The quote is the cited passage's first %%QUOTE_CIT%% characters: <code>resolve()</code> filled in for an empty quote, or for a source the answer cited only as an <code>[N]</code> in its prose, so nothing was quoted.</td><td data-label="On your lane">A model that leaves the quote empty, or cites a source in its prose and not in its list.</td></tr>
+<tr><td><strong>unread</strong></td><td data-label="Meaning">The passage the citation names is not in the pool read back, or no pool could be read. Not judged, and left out of the rate.</td><td data-label="On your lane">A route that failed twice, or a retrieval that came back different.</td></tr>
+<tr><td><strong>quote_support_rate</strong></td><td data-label="Meaning"><code>judge_citations()</code>: the share of cited rows whose every quote is somewhere in the tenant's corpus mirrors. Information, never a threshold.</td><td data-label="On your lane">Printed by every <code>make eval-live</code>.</td></tr>
+<tr><td><strong>quote_passage_rate</strong></td><td data-label="Meaning"><code>passage_checks()</code>: the answered rows' quotes that are own, over those whose passage was read. Information, never a threshold.</td><td data-label="On your lane">Printed only with the switch.</td></tr>
+<tr><td><strong>must_retrieve_recall</strong></td><td data-label="Meaning">The rows' <code>must_retrieve</code> anchors found in the pools read back: a clause code in a passage's text, a document slug in its source. Information.</td><td data-label="On your lane">The same switch.</td></tr>
+<tr><td><strong>The switch</strong></td><td data-label="Meaning"><code>DOCUMIND_EVAL_PASSAGES=1</code>, an environment variable rather than a flag, because lessons quote <code>main()</code> and the <code>eval-live</code> recipe whole. Off, every line <code>run_eval.py</code> prints is what it was.</td><td data-label="On your lane">Off unless you set it.</td></tr>
+<tr><td><strong>Prompt label</strong></td><td data-label="Meaning"><code>prompt_id@prompt_version</code>, from <code>config.py</code>. <code>/version</code> reports it, every usage row carries the version, the answer cache's scope includes it, <code>tenant_daily</code> groups by it.</td><td data-label="On your lane"><code>%%LABEL%%</code></td></tr>
+<tr><td><strong>Prompt text</strong></td><td data-label="Meaning"><code>SYSTEM</code> followed by <code>DATED_RULE</code>, as <code>generate()</code> starts every prompt; the dated rule only when a packed passage carries a date.</td><td data-label="On your lane">%%TEXT_CHARS%% characters</td></tr>
+<tr><td><strong>sha256 and the registry</strong></td><td data-label="Meaning">The text's sha256 in UTF-8, and <code>prompt_versions.json</code>, which maps each label to one. A new version adds a line; no line changes.</td><td data-label="On your lane"><code>%%LABEL%%</code>: <code>%%V3_SHORT%%...</code></td></tr>
+<tr><td><strong>make prompt-version</strong></td><td data-label="Meaning"><code>commands/prompt_pin.py</code>, standard library, no project: exit 0 when the label is registered to its text's sha256, 1 when it is not, 2 when a file cannot be read. The dry run checks the same rule on every push.</td><td data-label="On your lane">Rs 0</td></tr>
+<tr><td><strong>Candidate</strong></td><td data-label="Meaning">A revision of documind-api with no traffic, at the tag URL <code>candidate---</code>. <code>make release-candidate</code> puts a newly built image there and records its name in <code>.candidate-revision</code>.</td><td data-label="On your lane"><code>https://candidate---documind-api-NUMBER...</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold: the quote check judges the model's words against the text it read, and the version check judges the code's text against its label. Neither needs a model call. The first is information the gate prints; the second fails the dry run on every push.</p>

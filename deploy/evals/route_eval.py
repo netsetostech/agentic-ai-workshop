@@ -8,6 +8,7 @@
     python deploy/evals/route_eval.py --split dev --live-l1 --project documind-ai-YOUR-ID [--runs 3]   # LIVE
     python deploy/evals/route_eval.py --split dev --live --project documind-ai-YOUR-ID [--arm B|C|Astar]   # LIVE
                                       [--save run.jsonl]     # make route-eval: the deployed Desk
+    python deploy/evals/route_eval.py --compare b.json c.json astar.json          # OFFLINE - three arms' reports, paired
 
 Stdlib only: it runs in CI's shared interpreter and in `make desk-check`, with no credential and no cost. --local and
 --live-l1 import the router itself (services/chat/desk_router.py, which needs only the standard library and shared/),
@@ -89,10 +90,37 @@ leave-one-group-out: its own group - its id, its golden row, its paraphrases, it
 same normalised text - is out of its neighbours (knn_vote), and --selftest checks that no dev row can retrieve itself.
 Rows in the groups of the classifier's prompt examples (services/chat/desk_routes.py) are left out of both runs'
 scores, since the prompt has seen them.
+
+THE PROMPT'S EXAMPLES (workshop lesson 3.2). --exemplars kit|none|FILE, with --local or --live-l1, swaps the L1 prompt's
+examples for the run and puts them back after: kit is desk_routes.PROMPT_EXEMPLARS (the eight), none an empty list, and
+FILE a JSON list or JSON lines of [row id, route, question] (or {id, route, question}), at most twelve, none of them a
+scored row, a row of a scored group or a scored row's question. Only desk_router.PROMPT_EXEMPLARS is patched - the name
+desk_router imports from desk_routes and prompt() reads - so prompt_groups(), which reads desk_routes' own tuple, leaves
+the same rows out of every arm's score. The run then prints the examples it used and "L1 alone": L1's own route against
+the row's acceptable routes, before the vote, the acceptance rules and the arbiter, on the turns it was asked (a call
+that failed counts as asked and wrong; decision["l1"] and decision["l1_error"]). --local's scripted L1 reads no example,
+so offline the arms agree: what the examples change is a model's answer, and --live-l1 measures it. Without
+--exemplars, nothing is printed that was not printed before.
+
+THE ARMS SIDE BY SIDE (workshop lesson 10.5). evals/route_arms.jsonl is a second set for --routes: five rows a
+calculator decides (fig-06's answer is that the Code gives no figure; fig-04, the notice-and-wages chain across two
+desks, is not written yet), jn-03, and six lookups a clause answers, every figure recomputed by
+evals/tests/test_route_arms.py. A --live run keeps, for each desk turn, what the arms differ in: each section's desk,
+its mode (agent or direct), the tool calls it refused and the calculations code returned, and the turn's model calls,
+rupees (limits.cost_inr, its own router decision included) and latency as measured here; a measure the reply does not
+carry is left out, never written as 0. --report puts the turn's calls, rupees and latency, its sections' modes, the
+calculators whose results it holds and the refused tools beside each row's verdict. --compare reads two or three such
+reports of one split, one arm each, on the same rows: per arm the correct and authority rates with their intervals,
+the desk turns' rupees, calls, p50 and p95 latency and the turns in agent mode; then B against each other arm, the
+rows paired by id, on correct and on authority, through evals/paired.py (Newcombe's interval, the exact McNemar p and
+the margin registered there before any run). It prints an indicative verdict, never a ship decision: the rows are dev
+rows, not a test split people wrote, and B's exemplar index (make route-index) holds every row taken from
+evals/routes.jsonl.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
@@ -796,6 +824,95 @@ def gate_failures(result: dict) -> list[str]:
     return why
 
 
+# --------------------------------------------------------------------- the prompt's examples (lesson 3.2)
+EXEMPLARS_MAX = 12                      # desk_routes: at most twelve; prompt() reads PROMPT_EXEMPLARS[:12]
+_FENCES = re.compile(r"<{3,}|>{3,}")
+
+
+def load_exemplars(spec: str, rows: list[dict], scored: list[dict]) -> tuple[tuple[str, str, str], ...]:
+    """--exemplars: the L1 prompt's examples for this run. kit is desk_routes.PROMPT_EXEMPLARS; none is no example; any
+    other value is a file of [row id, route, question] triples or {id, route, question} objects, as one JSON list or as
+    JSON lines. A file's example is refused when it is a scored row, a row of a scored group or a scored row's question
+    (normalised): the comparison is on rows no prompt has seen, and the scored rows are the same in every arm."""
+    _, desk_routes = router()
+    if spec == "kit":
+        return tuple(desk_routes.PROMPT_EXEMPLARS)
+    if spec == "none":
+        return ()
+    try:
+        with open(spec, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        raise SystemExit(f"--exemplars {spec}: kit, none or a readable file ({e.strerror})")
+    try:
+        items = json.loads(text)
+    except ValueError:
+        try:
+            items = [json.loads(line) for line in text.splitlines() if line.strip()]
+        except ValueError as e:
+            raise SystemExit(f"--exemplars {spec}: neither a JSON list nor JSON lines ({e})")
+    if not isinstance(items, list) or len(items) > EXEMPLARS_MAX:
+        raise SystemExit(f"--exemplars {spec}: a list of at most {EXEMPLARS_MAX} examples")
+    group_of = {r["id"]: r["group"] for r in rows}
+    scored_ids, scored_groups = {r["id"] for r in scored}, {r["group"] for r in scored}
+    scored_text = {normalise(r["question"]): r["id"] for r in scored}
+    out = []
+    for n, item in enumerate(items, 1):
+        if isinstance(item, dict):
+            item = [item.get("id"), item.get("route"), item.get("question")]
+        if not (isinstance(item, list) and len(item) == 3 and all(isinstance(x, str) and x.strip() for x in item)):
+            raise SystemExit(f"--exemplars {spec}: example {n} is not [row id, route, question]")
+        rid, route, question = item
+        if route not in ROUTES:
+            raise SystemExit(f"--exemplars {spec}: example {n}'s route {route!r} is not one of {ROUTES}")
+        if len(question) > 1000 or "\n" in question or _FENCES.search(question):
+            raise SystemExit(f"--exemplars {spec}: example {n}'s question is one line of at most 1,000 characters with "
+                             f"no <<< or >>> fence")
+        why = ("is a scored row" if rid in scored_ids else
+               f"is in a scored group, {group_of[rid]}" if group_of.get(rid) in scored_groups else
+               f"asks scored row {scored_text[normalise(question)]}'s question" if normalise(question) in scored_text
+               else None)
+        if why:
+            raise SystemExit(f"--exemplars {spec}: example {n} ({rid}) {why}: the score would include a row the "
+                             f"prompt has seen")
+        out.append((rid, route, question))
+    return tuple(out)
+
+
+@contextlib.contextmanager
+def exemplars_in_prompt(desk_router, examples):
+    """desk_router.PROMPT_EXEMPLARS swapped for `examples` for the duration, then put back whatever happens; None leaves
+    it alone. desk_router imported the name from desk_routes and prompt() reads it there, so the L1 prompt is all that
+    changes: desk_routes.PROMPT_EXEMPLARS, which prompt_groups() reads, is never touched."""
+    if examples is None:
+        yield
+        return
+    kept = desk_router.PROMPT_EXEMPLARS
+    desk_router.PROMPT_EXEMPLARS = tuple(examples)
+    try:
+        yield
+    finally:
+        desk_router.PROMPT_EXEMPLARS = kept
+
+
+def l1_alone(rows: list[dict], run: list[dict]) -> tuple[int, int, int]:
+    """(right, asked, failed): L1's own route - decision["l1"], before the vote, the acceptance rules and the arbiter -
+    against the row's acceptable routes, over the turns L1 was asked. A call that failed (decision["l1_error"]: a
+    timeout, an error, an answer outside the schema, the turn's limits) is asked and wrong; a turn decided before L1
+    (the gate, an anchor, single mode) is not counted."""
+    by_id = {r["id"]: r for r in rows}
+    asked = [x for x in run if x["decision"].get("l1") is not None or x["decision"].get("l1_error") is not None]
+    right = sum(1 for x in asked if x["decision"].get("l1")
+                and x["decision"]["l1"]["route"] in by_id[x["id"]]["acceptable_routes"])
+    return right, len(asked), sum(1 for x in asked if x["decision"].get("l1") is None)
+
+
+def exemplars_line(spec: str, examples) -> str:
+    what = {"kit": "the kit's own, desk_routes.PROMPT_EXEMPLARS", "none": "none"}.get(spec, f"from {spec}")
+    return (f"  exemplars: {what} - {len(examples)} in the L1 prompt; the rows of the kit's "
+            f"{len(router()[1].PROMPT_EXEMPLARS)} stay out of the score in every arm")
+
+
 def run_router(a) -> int:
     """--local and --live-l1."""
     desk_router, desk_routes = router()
@@ -806,6 +923,8 @@ def run_router(a) -> int:
         return 1
     held = prompt_groups(rows)
     scored = [r for r in rows if (a.split == "all" or r["split"] == a.split) and r["group"] not in held]
+    spec = getattr(a, "exemplars", None)                # lesson 3.2: the L1 prompt's examples, swapped for this run
+    examples = None if spec is None else load_exemplars(spec, rows, scored)
     pool = index_rows(rows)
     if a.live_l1:
         if not a.project:
@@ -819,13 +938,20 @@ def run_router(a) -> int:
     base = build_index(pool, vectors)
     indexes = {t: [e for e in base if e["route"] in desk_routes.enabled_routes(classes.get(t, ()))]
                for t in TENANTS if t not in SINGLE}
-    runs = [route_run(scored, indexes, models) for _ in range(max(1, a.runs))]
+    with exemplars_in_prompt(desk_router, examples):
+        runs = [route_run(scored, indexes, models) for _ in range(max(1, a.runs))]
     print(f"{'live: flash-lite, flash and text-embedding-005' if a.live_l1 else 'local: the classifier is scripted, so this measures the cascade, not a model'}")
     print(f"  {len(scored)} rows scored; {sum(1 for r in rows if r['group'] in held and (a.split == 'all' or r['split'] == a.split))} "
           f"left out (the groups of the prompt's examples); index of {len(base)} dev rows")
+    if examples is not None:
+        print(exemplars_line(spec, examples))
     result = score(scored, predictions(runs[0]), classes_from_manifest())
     report(result, "B", a.split)
     router_report(scored, runs[0])
+    if examples is not None:
+        right, asked, failed = l1_alone(scored, runs[0])
+        print(f"  {'L1 alone':<30}{rate(right, asked)}  (L1's own route, before the vote and the arbiter, on the turns "
+              f"it was asked; {failed} failed)")
     if len(runs) > 1:
         by_id = {r["id"]: r for r in scored}
         stable = [i for i in by_id if all(predictions([x for x in run if x["id"] == i])[i]["route"]
@@ -833,8 +959,11 @@ def run_router(a) -> int:
         flips = sorted({x["id"] for run in runs for x in run} - set(stable))
         print(f"  {f'pass^{len(runs)}':<30}{rate(len(stable), len(by_id))}; failing in some run: {', '.join(flips[:20]) or 'none'}")
     if a.report:
+        os.makedirs(os.path.dirname(a.report) or ".", exist_ok=True)       # a fresh clone has no evals/reports/
         with open(a.report, "w", encoding="utf-8") as f:
             json.dump({"arm": "B", "split": a.split, "tally": result["tally"], "confusion": result["confusion"],
+                       **({"exemplars": {"spec": spec, "examples": [list(e) for e in examples]},
+                           "l1_alone": list(l1_alone(scored, runs[0]))} if examples is not None else {}),
                        "rows": result["verdicts"], "decisions": [{"id": x["id"], **desk_router.record(x["decision"])}
                                                                  for x in runs[0]]}, f, indent=1)
     failures = gate_failures(result)
@@ -898,8 +1027,9 @@ def percentile(values: list[float], p: float) -> float | None:
     return v[max(0, math.ceil(p / 100 * len(v)) - 1)] if v else None
 
 
-def live_prediction(row: dict, route: dict, desk: dict | None, arm: str) -> dict:
-    """One row's prediction from the /v1/route answer and, for an answer or denial row, the /v1/desk answer."""
+def live_prediction(row: dict, route: dict, desk: dict | None, arm: str, latency_ms: float | None = None) -> dict:
+    """One row's prediction from the /v1/route answer and, for an answer or denial row, the /v1/desk answer, with
+    what the desk turn did and cost (desk_turn(); latency_ms as the caller measured it)."""
     d = route.get("decision") or {}
     got = route.get("route")
     pred = {"id": row["id"], "route": d.get("desk") if got in ("denied", "not_covered") else got,
@@ -909,7 +1039,30 @@ def live_prediction(row: dict, route: dict, desk: dict | None, arm: str) -> dict
     else:
         pred.update(outcome=desk.get("outcome"), citations=[c for c in desk.get("citations") or [] if isinstance(c, dict)],
                     answer=str(desk.get("answer") or ""), retrieve_calls=int(desk.get("retrieve_calls") or 0))
+        pred.update(desk_turn(desk, latency_ms))
     return pred
+
+
+DESK_MEASURES = ("desk_model_calls", "desk_cost_inr", "desk_latency_ms")
+
+
+def desk_turn(desk: dict, latency_ms: float | None = None) -> dict:
+    """What a /v1/desk reply says its turn did (workshop lesson 10.5): each section's desk, its mode (agent or direct),
+    the tool calls it refused and the calculations code returned; then the turn's model calls and rupees
+    (limits.cost_inr, the router's decision inside the turn included) and its latency. A measure the reply does not
+    carry is left out, never written as 0."""
+    lim = desk.get("limits") if isinstance(desk.get("limits"), dict) else {}
+    out = {"sections": [{"desk": s.get("desk"), "mode": s.get("mode"),
+                         "refusals": [t for t in s.get("refusals") or () if isinstance(t, str)],
+                         "calculations": [c for c in s.get("calculations") or () if isinstance(c, dict)]}
+                        for s in desk.get("sections") or () if isinstance(s, dict)]}
+    if "model_calls" in desk:
+        out["desk_model_calls"] = int(desk.get("model_calls") or 0)
+    if "cost_inr" in lim:
+        out["desk_cost_inr"] = float(lim.get("cost_inr") or 0)
+    if latency_ms is not None:
+        out["desk_latency_ms"] = round(latency_ms)
+    return out
 
 
 def own_tenant(row: dict, path: str, reply) -> None:
@@ -969,7 +1122,7 @@ def run_live(a, minter=mint, poster=post) -> int:
         own_tenant(r, "/v1/route", route)
         cost += float(route.get("cost_inr") or 0)
         router_ms.append(float(route.get("router_ms") or 0))
-        desk = None
+        desk, ms = None, None
         if r["expected_route"] in DESK_ROWS or r["expected_outcome"] == "denied":
             session = f"eval-{run_id}-{r['id']}"[:64]
             extra = {"arm": arm} if arm != "B" else {}
@@ -986,8 +1139,9 @@ def run_live(a, minter=mint, poster=post) -> int:
                 desk = {"outcome": None, "citations": [], "answer": "", "retrieve_calls": 0}
             else:
                 own_tenant(r, "/v1/desk", desk)
-                latency.append((time.monotonic() - t0) * 1000)
-        preds[r["id"]] = live_prediction(r, route, desk, arm)
+                ms = (time.monotonic() - t0) * 1000
+                latency.append(ms)
+        preds[r["id"]] = live_prediction(r, route, desk, arm, ms)
     classes = classes_from_registry(a.registry) if a.registry else classes_from_manifest()
     result = score(scored, preds, classes)
     report(result, arm, a.split)
@@ -1003,13 +1157,133 @@ def run_live(a, minter=mint, poster=post) -> int:
             for p in preds.values():
                 f.write(json.dumps(p, ensure_ascii=False) + "\n")
     if a.report:
+        os.makedirs(os.path.dirname(a.report) or ".", exist_ok=True)       # a fresh clone has no evals/reports/
         with open(a.report, "w", encoding="utf-8") as f:
             json.dump({"arm": arm, "split": a.split, "tally": result["tally"], "confusion": result["confusion"],
-                       "rows": result["verdicts"]}, f, indent=1)
+                       "rows": report_rows(result["verdicts"], preds)}, f, indent=1)
     failures = gate_failures(result) if arm == "B" else []
     for w in failures:
         print(f"FAIL  {w}")
     return 1 if failures or refused else 0
+
+
+# --------------------------------------------------------------------- the arms side by side (lesson 10.5)
+# (the line each arm prints, the verdict's key, its name in the paired lines): the two rates the ship rule reads
+PAIRED_ON = (("correct_rate (answer rows)", "correct", "correct"), ("authority_rate", "authority_ok", "authority"))
+
+
+def report_rows(verdicts: list[dict], preds: dict[str, dict]) -> list[dict]:
+    """--report's rows: each row's verdict and, for a desk turn the run kept, what --compare reads beside it: the
+    turn's model calls, rupees and latency, its sections' modes, the calculators whose results it holds and the tools
+    refused. A row with no desk turn is its verdict alone, as before lesson 10.5."""
+    out = []
+    for v in verdicts:
+        p = preds.get(v["id"]) or {}
+        row = {**v, **{k: p[k] for k in DESK_MEASURES if k in p}}
+        if isinstance(p.get("sections"), list):
+            secs = [s for s in p["sections"] if isinstance(s, dict)]
+            row.update(modes=[s.get("mode") for s in secs],
+                       calculators=[c.get("calculator") for s in secs for c in s.get("calculations") or ()
+                                    if isinstance(c, dict)],
+                       refusals=[t for s in secs for t in s.get("refusals") or ()])
+        out.append(row)
+    return out
+
+
+def load_report(path: str) -> dict:
+    """A --report file of one arm: its arm, split and rows."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            rep = json.load(f)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"{path}: not a --report file ({e})")
+    if (not isinstance(rep, dict) or rep.get("arm") not in ARMS or not isinstance(rep.get("rows"), list)
+            or not all(isinstance(v, dict) and isinstance(v.get("id"), str) for v in rep["rows"])):
+        raise SystemExit(f"{path}: not a --report file of one arm ({', '.join(ARMS)}), with its split and rows")
+    return rep
+
+
+def turn_lines(rows: list[dict]) -> list[str]:
+    """One arm's desk turns: rupees and model calls, latency, and the turns in agent mode with their calculator
+    results and refused tool calls."""
+    turns = [v for v in rows if "desk_cost_inr" in v]
+    if not turns:
+        return [f"  {'desk turns':<30}not measured: no row carries a desk turn's rupees (a /v1/route run, or a report "
+                f"written before lesson 10.5)"]
+    cost = sum(float(v["desk_cost_inr"]) for v in turns)
+    calls = sum(int(v.get("desk_model_calls") or 0) for v in turns)
+    ms = [float(v["desk_latency_ms"]) for v in turns if v.get("desk_latency_ms") is not None]
+    out = [f"  {'desk turns':<30}{len(turns)}: Rs {cost:.4f} in all, Rs {cost / len(turns):.4f} a turn; "
+           f"{calls} model calls, {calls / len(turns):.1f} a turn"]
+    if ms:
+        out.append(f"  {'desk latency_ms':<30}p50 {percentile(ms, 50):.0f}  p95 {percentile(ms, 95):.0f}  "
+                   f"over {len(ms)} turns")
+    agent = sum(1 for v in turns if "agent" in (v.get("modes") or ()))
+    out.append(f"  {'agent mode':<30}{agent} of {len(turns)} turns; "
+               f"{sum(len(v.get('calculators') or ()) for v in turns)} calculator results, "
+               f"{sum(len(v.get('refusals') or ()) for v in turns)} refused tool calls")
+    return out
+
+
+def paired_lines(other: dict, b: dict, name: str, what: str) -> list[str]:
+    """B against one other arm on one verdict, {row id: passed} each over the same rows: evals/paired.py's interval,
+    its exact test and its pre-registered margin."""
+    import paired
+    both, a_only, b_only, neither = paired.pairs(other, b)
+    n = both + a_only + b_only + neither
+    if n == 0:
+        return [f"  paired ({what}): no row both arms measured"]
+    diff, lo, hi = paired.newcombe(both, a_only, b_only, neither)
+    return [f"  paired ({what}), {n} rows: both {both}, {name} only {a_only}, B only {b_only}, neither {neither}",
+            f"  B - {name} = {100 * diff:+.1f} points, 95% [{100 * lo:+.1f}, {100 * hi:+.1f}] (Newcombe), "
+            f"exact McNemar p = {paired.mcnemar(a_only, b_only):.3f}",
+            f"  {paired.verdict(lo, hi, name, 'B')} (margin {100 * paired.MARGIN:g} points, registered "
+            f"{paired.MARGIN_REGISTERED})"]
+
+
+def compare(paths: list[str], out=None) -> int:
+    """--compare: two or three reports of one split, one arm each, on the same rows - each arm's rates, rupees, calls
+    and latency, then B paired against each other arm by row id. Indicative, never a ship decision."""
+    out = out or sys.stdout
+    reps = [load_report(p) for p in paths]
+    arms = [r["arm"] for r in reps]
+    if len(set(arms)) != len(arms):
+        raise SystemExit(f"--compare: the reports are of arms {', '.join(arms)}: one report an arm")
+    if "B" not in arms:
+        raise SystemExit("--compare pairs arm B against the others: give B's report too")
+    if len({str(r.get("split")) for r in reps}) != 1:
+        raise SystemExit(f"--compare: the reports are of splits {', '.join(str(r.get('split')) for r in reps)}: "
+                         f"compare runs of one split")
+    ids = [v["id"] for v in reps[0]["rows"]]
+    for path, r in zip(paths, reps):
+        if sorted(v["id"] for v in r["rows"]) != sorted(ids):
+            raise SystemExit(f"--compare: {path} scores other rows than {paths[0]}: compare runs of one route set "
+                             f"and split")
+    split = reps[0].get("split")
+    by_arm = {r["arm"]: {v["id"]: v for v in r["rows"]}
+              for r in sorted(reps, key=lambda r: list(ARMS).index(r["arm"]))}       # B, C, Astar
+    print(f"compare: arms {', '.join(by_arm)} on the same {len(ids)} rows, split {split}", file=out)
+    for arm, rows in by_arm.items():
+        print(f"arm {arm} ({ARMS[arm]})", file=out)
+        for label, key, _ in PAIRED_ON:
+            got = [bool(rows[i][key]) for i in ids if key in rows[i]]
+            print(f"  {label:<30}{rate(sum(got), len(got)) if got else 'not measured'}", file=out)
+        for line in turn_lines([rows[i] for i in ids]):
+            print(line, file=out)
+    for arm in [a for a in by_arm if a != "B"]:
+        print(f"B against {arm}, row by row", file=out)
+        for _, key, what in PAIRED_ON:
+            other = {i: bool(by_arm[arm][i][key]) for i in ids if key in by_arm[arm][i] and key in by_arm["B"][i]}
+            for line in paired_lines(other, {i: bool(by_arm["B"][i][key]) for i in other}, arm, what):
+                print(line, file=out)
+    held = {r["id"] for r in index_rows(load_rows(ROUTES_FILE))}
+    seen = [i for i in ids if i in held]
+    why = [] if split == "test" else [f"the rows are {split} rows, not a test split people wrote"]
+    if seen:
+        why.append(f"B's exemplar index (make route-index: the dev rows of evals/routes.jsonl) holds {len(seen)} of "
+                   f"these {len(ids)} rows, so on them B's figures are an upper bound; C and Astar read no index")
+    print("indicative, not a ship decision" + (": " + "; ".join(why) if why else ""), file=out)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1028,7 +1302,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--live", action="store_true", help="the deployed Desk, as each row's eval account (LIVE)")
     ap.add_argument("--chat-url", help="--live: the chat service's URL (default DOCUMIND_CHAT_URL)")
     ap.add_argument("--save", help="--live: write the run's predictions here, for --predictions later")
+    ap.add_argument("--exemplars", metavar="kit|none|FILE", help="--local or --live-l1: the L1 prompt's examples for this "
+                                                               "run (lesson 3.2), then 'L1 alone'")
+    ap.add_argument("--compare", nargs="*", metavar="REPORT", help="two or three --report files of one split, one arm "
+                                                                   "each: the arms side by side (lesson 10.5, offline)")
     a = ap.parse_args(argv)
+    if a.exemplars is not None and (a.selftest or a.live or not (a.local or a.live_l1)):
+        ap.error("--exemplars swaps the examples of the router in process: it runs with --local or --live-l1 alone")
+    if a.compare is not None:
+        if a.selftest or a.live or a.local or a.live_l1 or a.predictions:
+            ap.error("--compare reads saved reports: it runs alone")
+        if not 2 <= len(a.compare) <= len(ARMS):
+            ap.error('--compare takes two or three --report files, one arm each: '
+                     'make route-compare REPORTS="b.json c.json astar.json"')
+        return compare(a.compare)
     if a.selftest:
         return selftest(a.routes)
     if a.live:
@@ -1036,7 +1323,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.local or a.live_l1:
         return run_router(a)
     if not a.predictions:
-        ap.error("--selftest, --predictions, --local, --live-l1 or --live")
+        ap.error("--selftest, --predictions, --local, --live-l1, --live or --compare")
     rows = load_rows(a.routes)
     why = check_rows(rows)
     if why:
@@ -1049,9 +1336,10 @@ def main(argv: list[str] | None = None) -> int:
     result = score(rows, preds, classes)
     report(result, arm, a.split)
     if a.report:
+        os.makedirs(os.path.dirname(a.report) or ".", exist_ok=True)       # a fresh clone has no evals/reports/
         with open(a.report, "w", encoding="utf-8") as f:
             json.dump({"arm": arm, "split": a.split, "tally": result["tally"], "confusion": result["confusion"],
-                       "rows": result["verdicts"]}, f, indent=1)
+                       "rows": report_rows(result["verdicts"], preds)}, f, indent=1)
     return 0
 
 

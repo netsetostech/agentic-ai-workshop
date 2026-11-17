@@ -1,0 +1,76 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>The record read back against Cloud Run, and gate-check alone</h3><p>Cloud Run's own API for the revision and the service, the report's sha256 computed again, then gate-check with nothing after it.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>gate-check</code> trusts nothing it can read again, and neither should you. The record says what the gate saw. The first cell reads the same facts again without <code>release.py</code>: the revision and the service from the Cloud Run Admin API's v1 resources, the same JSON <code>gcloud run ... describe --format=json</code> prints, and the sha256 of the report and of each rule file from your disk. Then <code>gate-check</code> runs alone: the first recipe line of <code>make promote-gated</code> without the second, so nothing moves.</p>
+
+<h4>Do it: the record against the lane</h4>
+%%CELL_LANE%%
+%%OUT_LANE%%
+
+<h4>Do it: gate-check, and nothing after it</h4>
+%%CELL_GATECHECK%%
+%%OUT_GATECHECK%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Every value the record holds is still true of the lane: the file and the tag name the revision, Cloud Run reports the digest and <code>GIT_SHA</code> the gate recorded, the report hashes to the record's sha256, and the rule files are the ones the verdict was judged by. <code>gate-check</code> exited 0, so <code>make promote-gated</code> would move traffic now. It goes on saying so for %%MAXH%% hours from the gate's finish, while no rule file changes and no newer candidate takes the tag. Lesson 11.3 runs it.</p></div>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Change it</span><h3>Change it: a record that names another revision</h3><p>A copy of your record with one field changed, offered to make promote-gated through GATE_FILE.</p></div></div>
+
+<p>The cell copies your record to <code>evals/reports/scratch-gate.json</code> with one field changed: the revision, set to the one serving now. It offers the copy to <code>make promote-gated</code> through <code>GATE_FILE</code>, deletes it, and runs <code>gate-check</code> on your own record, which it never touched. The copy is green, fresh, judged by today's rules, and its report still hashes to its sha256: everything in it is true except the name.</p>
+%%CELL_SCRATCH%%
+%%OUT_SCRATCH%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p><code>gate-check</code> refused the copy from the files alone: it names the serving revision, and <code>make promote</code> would move traffic to the candidate. make stopped at that recipe line, line %%CHECK_LINE%% of <code>mk/release.mk</code>, printed its own error line and exited 2, so <code>make promote</code> never ran and no traffic moved. Your own record still passes. The panel in step 1 shows the next forgery: rename <code>.candidate-revision</code> as well, the files agree, and the lane gives it away.</p></div>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>What the record does not hold, and what it costs</h3><p>CI's gate, the two targets that release with no gate at all, the path never to dispatch, and the rupees.</p></div></div>
+
+<h4>CI gates by job dependency, and writes no record</h4>
+<p>In <code>documind-cd.yml</code> the live gate is a step of <code>release-candidate</code>, and <code>promote</code> needs that job, so a red gate means <code>promote</code> never starts. The revision's name travels as a job output; <code>promote</code> writes it to <code>.candidate-revision</code> on its own runner, waits for the <code>production</code> environment's reviewer, and runs plain <code>make promote</code>. That binds the name for the length of one run, with a person in between. It keeps no digest, no report and no time, and the runners' files are gone when the run ends. A record from <code>make gate</code> stays in your checkout, and CI never reads it.</p>
+@@cd_ci@@
+
+<h4>make up and make deploy-services release the API with no gate</h4>
+<p><code>make deploy-services</code> ends by moving all of <code>documind-api</code>'s traffic to the revision its own deploy just made: no candidate, no tag, no gate. <code>make up</code> runs <code>deploy-services</code> among its steps. Both build and repair a lane, and neither is a release. After either one, the API serves a revision no gate judged, and nothing in either target reads your gate record or removes it: it still names the candidate.</p>
+@@mk_ungated@@
+
+<div class="box box-red"><div class="box-title">Never dispatch with path=clouddeploy</div>
+<p><code>documind-cd.yml</code>'s other path rolls a Cloud Deploy release of <code>run-service.yaml</code> out over <code>documind-api</code>, with settings that are not your lane's (lesson 11.1 reads them). It would break the API, and no gate record would mean anything afterwards. Dispatch with <code>-f path=candidate</code> only; the comment above <code>make gate</code> in <code>mk/release.mk</code>, quoted in step 4, says the same.</p></div>
+
+<h4>What else a green record cannot promise</h4>
+<ul>
+<li><strong>A make target is not a lock.</strong> <code>make promote-gated</code> is a rule your checkout keeps. Plain <code>make promote</code>, a <code>gcloud run services update-traffic</code> typed by hand, or anyone holding <code>roles/run.developer</code> on the project moves traffic without reading any record.</li>
+<li><strong>The window is a bound.</strong> %%MAXH%% hours is how long the kit lets a verdict stand. Documents can be reindexed and rosters changed inside it, and the record sees neither.</li>
+<li><strong>It holds what the rows asked.</strong> %%N_ROWS%% questions through <code>/v1/query</code>, as two identities. The gaps lesson 4.3 found, the stream's refusals among them, are still gaps.</li>
+<li><strong>One record at a time.</strong> The next <code>make gate</code> replaces <code>gate.json</code>, whichever revision it judges; only the reports keep their revisions' names.</li>
+</ul>
+
+<h4>What it costs</h4>
+%%COST_TABLE%%
+<p>Lesson 11.1's dispatch already paid for one gate on this candidate, in CI. <code>make gate</code> asks the same rows again because the CI gate kept nothing your checkout can read: judging one revision twice costs twice.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Nine checks, each one block above, each with the value that proves it on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The candidate is the dispatch's</td><td data-label="The check">step 3's lines, then step 5, name the candidate</td><td data-label="Pass looks like">one revision in the dispatch's <code>&gt;&gt; candidate revision</code> line, in <code>.candidate-revision</code> and on the tag: <code>the same revision</code></td></tr>
+<tr><td>2</td><td data-label="Claim">It answers as its own build</td><td data-label="The check">step 5, the audience cell</td><td data-label="Pass looks like"><code>/version</code>: <code>HTTP 200</code> and <code>git_sha COMMIT</code> with the canonical URL's token</td></tr>
+<tr><td>3</td><td data-label="Claim">The audience decides</td><td data-label="The check">step 5, the audience cell</td><td data-label="Pass looks like"><code>/v1/sources</code>: <code>HTTP 200</code> with the canonical URL's token, refused with the tag URL's</td></tr>
+<tr><td>4</td><td data-label="Claim">The gate judged that revision</td><td data-label="The check">step 5, <code>make gate</code></td><td data-label="Pass looks like"><code>&gt;&gt; gate: documind-api-..., the revision .candidate-revision names and the candidate tag routes to</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The verdict is recorded with what it judged</td><td data-label="The check">step 5, <code>make gate</code></td><td data-label="Pass looks like"><code>&gt;&gt; gate record: %%GATE_FILE%%</code>, then <code>PASS</code> (or <code>FAIL</code>) with the report's sha256</td></tr>
+<tr><td>6</td><td data-label="Claim">The record is true of the lane</td><td data-label="The check">step 6, the record against the lane</td><td data-label="Pass looks like">every line <code>same</code>: the file, the tag, the digest, <code>GIT_SHA</code>, Ready, the report and the %%N_RULES_W%% rule files</td></tr>
+<tr><td>7</td><td data-label="Claim">gate-check passes, and nothing moves</td><td data-label="The check">step 6, gate-check alone</td><td data-label="Pass looks like">its four lines and <code>exit 0</code>; the candidate still at 0%</td></tr>
+<tr><td>8</td><td data-label="Claim">Another revision is refused before promote</td><td data-label="The check">step 7</td><td data-label="Pass looks like"><code>another revision: ...</code>, make's <code>Error 1</code> line, <code>exit 2</code>, then <code>your record: gate-check exit 0</code></td></tr>
+<tr><td>9</td><td data-label="Claim">Every refusal on this page is the kit's</td><td data-label="The check">step 4, the kit's tests</td><td data-label="Pass looks like"><code>Ran %%N_TESTS%% tests</code> and <code>OK</code></td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>In this checkout: <code>.candidate-revision</code> names the candidate; <code>evals/reports/gate-documind-api-....json</code> holds its rows' verdicts and <code>%%GATE_FILE%%</code> the record, both ignored by git; the copy from step 7 is gone. In the cloud nothing moved: the candidate still takes 0% under its tag, and the serving revision 100%. The gate's answers left their usage rows under the candidate's revision, as lesson 4.3 showed, and the outsider's requests were refused at the roster. The record holds for %%MAXH%% hours from the gate's finish. Lesson 11.3's gated promote reads it, so take that step within the window, or run <code>make gate</code> again first. Put acme's pin back now, with the setup section's pin-back window.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 11 Project &middot; Lesson 11.2 %%TITLE%% &middot; v5.0</p><p>Next: Lesson 11.3 %%NEXT_TITLE%%.</p></div>

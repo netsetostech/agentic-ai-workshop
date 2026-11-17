@@ -91,7 +91,7 @@ rupees: tenant_daily's cost_inr is cost_usd x 85; make usage's USD_INR is 85
   query       read by: the sink, into BigQuery, tenant_daily, the view, make usage, documind/queries, for alerts
   stream      read by: the sink, into BigQuery, tenant_daily, the view, make usage, documind/queries, for alerts
 the Desk's own view, desk_daily (make desk-views), reads: desk
-alert policies in terraform/alerts.tf: 7 - api_latency, unanswerable_rate, gpu_left_warm, ingest_failed, reconcile_drift, reconcile_failed, dlq_depth
+alert policies in terraform/alerts.tf: 8 - api_latency, unanswerable_rate, gpu_left_warm, ingest_failed, reconcile_drift, reconcile_failed, dlq_depth, ingest_backlog
 alert policies in terraform/desk_alerts.tf: 8 - desk_fallback_share*, desk_l2_share*, desk_clarify_oos_trend*, case_overdue, doc_type_pin_miss, desk_delegation_refused, desk_gate_error_share**, desk_check_tenants_unread (* only on a lane planned with DESK_ROUTER_ALERTS=true, ** only on a lane planned with DESK_GATE_ALERTS=true)
 the one that reads the dead-letter queue: dlq_depth
 ```
@@ -279,6 +279,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_11.5_Usage_Reconcile_WIX.html`. All 23 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `f7064bb5d693cc1baf873d3389be6b6a2b2e3ab5`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_11.5_Usage_Reconcile_WIX.html`. All 23 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `1ca4b3cd1d316cd0e1bcfbf73c5d8280022ba298`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

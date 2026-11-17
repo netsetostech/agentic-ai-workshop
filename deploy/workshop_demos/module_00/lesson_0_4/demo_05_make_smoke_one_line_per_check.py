@@ -26,7 +26,10 @@ RETRY_FAILED_STEP = False
 
 
 # Original CLI workflow for step_01_make_smoke_one_line_per_check.
-COMMANDS_01 = """env -u DOCUMIND_API_URL python smoke/smoke.py; echo "exit $?"     # no URL: it refuses, and says what it checks
+COMMANDS_01 = """set +e +o pipefail   # as the page runs it: its expected output shows a command here failing, as the cell means it to
+env -u DOCUMIND_API_URL python smoke/smoke.py; echo "exit $?"     # no URL: it refuses, and says what it checks
+true   # that failure is the cell's answer: compare the output with the page's expected window
+
 
 """
 

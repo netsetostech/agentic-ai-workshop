@@ -41,7 +41,7 @@ def step_01_the_peer_s_permissions_as_the_kit_writes_t(session):
       documind-agent-sa may call documind-mcp: True
       its project roles: aiplatform.user, logging.logWriter, cloudtrace.agent
       the rosters it is on: acme
-      agent.py imports: __future__, google, logging, os, starlette, urllib, uvicorn
+      agent.py imports: __future__, chain, google, logging, os, pins, starlette, urllib, uvicorn
       the image copies: services/agent/requirements.txt, services/agent/
     """
     import ast, re, sys

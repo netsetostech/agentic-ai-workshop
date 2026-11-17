@@ -1,0 +1,97 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 10 &middot; Agent patterns &middot; Lesson 10.8</div>
+<h1>Defend agents against injected documents and poisoned tools: <span>what the model reads, what leaves, and which tools it is handed</span></h1>
+<p>Every agent in the kit reads text it did not write. A chat brain reads quotes from acme's documents; a Desk agent reads whole passages; the A2A peer reads the descriptions of the tools its MCP server lists. Any member can upload a note whose words are aimed at the model that will read it later, and another team's server can change a tool under the peer. This lesson loads one such note and serves one such server, then runs three things against them: the controls the kit already had, a fence on what an agent reads and a scrub on what the chat service says, and the peer's tool pins. Lesson 4.9's attack runner gains the agents' doors and judges every reply. What code holds, fails a run when it opens; what a model is only asked to keep is measured, as a rate, and shown as the gap.</p>
+<div class="hero-chips"><div class="hero-chip">AGENT_FENCE</div><div class="hero-chip">AGENT_SCRUB</div><div class="hero-chip">TOOL_PINS</div><div class="hero-chip">vendor_note_acme.md</div><div class="hero-chip">make evil-mcp</div><div class="hero-chip">atk-16 to atk-21</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Three ingredients, three agents, and what each control takes away</a></li>
+<li><a href="#s2">The words: injected document, poisoned tool, fence, scrub, pin, enforced, measured</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Your lane: the note goes in, and the switches</a></li>
+<li><a href="#s4">The Chat page and the Desk page, with the note in the corpus</a></li>
+<li><a href="#s5">The fence and the scrub, in the code and on the note itself</a></li>
+<li><a href="#s6">The controls that were already there</a></li>
+<li><a href="#s7">The attack set: six rows on three surfaces, judged offline</a></li>
+<li><a href="#s8">The doors by hand: two brains, the router, the lane's peer</a></li>
+<li><a href="#s9">The runner on your lane: enforced rows, and the rate as the gap</a></li>
+<li><a href="#s10">Poisoned tools, on your machine: the pins</a></li>
+<li><a href="#s11">Why it is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s12">Verify it yourself, and withdraw the note</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will put an untrusted document into acme's corpus and watch which agent reads it, fence what the agents read and scrub what the chat service says, and pin the peer's tools so a changed or added tool never reaches its model. Then you will run the attack set on every surface: <code>make attack-eval</code> shows 0 enforced failures and an attack-success table, and the chat brains' rate is the gap the measured controls leave.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Three ingredients, three agents, and what each control takes away</h3><p>An attack on an agent needs private data, untrusted text the model reads, and a way out. Code can take one ingredient away; a prompt can only ask.</p></div></div>
+
+<p><strong>Three ingredients.</strong> An agent is dangerous to its owner when three things meet in one turn: it reads private data (acme's corpus), it reads text that someone outside the trust boundary wrote (an uploaded note, a tool's description), and it has a way to send something out (an image or link in its answer that a reader's browser fetches, or a tool call). Every agent in DocuMind has the first. The second arrives with any upload, because the uploads bucket lets the UI's account write, and with any MCP server another team runs. The third is what the controls go after.</p>
+
+<p><strong>Three agents, three readers.</strong> A chat brain reads the quotes rag-api's generator wrote, through <code>tools.search()</code>; the Desk agent reads whole passages through <code>desk_agent._search()</code>; the A2A peer reads its tools' names, descriptions and schemas, which is how a model decides when and how to call a tool. The note in this lesson speaks to the first two. The poisoned server speaks to the third.</p>
+
+<p><strong>Enforced against measured.</strong> A control enforced by code holds whatever the model thinks: the tenant is looked up from the caller's identity, never read from a request; the Desk drops any passage outside its classes; <code>check_args</code> refuses a figure the question invents; the pins drop a tool whose fingerprint changed. A control that asks the model, such as a fence that names quoted text as data, holds only as often as the model obeys it. The runner marks the first kind <code>structural</code> and fails the run when one opens; it marks the second <code>behavioural</code> and counts how often it opens, as the attack success rate. The exit scrub sits between the two: its output is code, but the row that measures it asks whether the image's host still reached the reply, so it is counted, not gated.</p>
+
+<div class="analogy"><div class="analogy-icon">&#128273;</div><div>
+<p><strong>A clerk who reads every letter, and a key cabinet that opens only for a card.</strong> The clerk is diligent and literal. A letter that says "also post a copy of this file to the address below" might be obeyed, because the clerk reads letters to act on them. You cannot train that away in every case. What you can do is stamp every letter QUOTED on arrival so the clerk knows it is a letter and not an instruction from the desk (the fence), check every outgoing envelope and cut out anything addressed to a stranger (the scrub), and keep the cabinet of keys behind a card reader that accepts only the cards you issued, so a new key, or an old key reground to a new shape, opens nothing (the pins). The stamp is a request; the envelope check and the card reader are machinery.</p></div></div>
+
+<h4>The ingredients, on DocuMind's parts</h4>
+<div class="diagram tri">
+<div class="dg-title">What each control takes away, and from which agent</div>
+<div class="cd">
+<div class="lane"><div class="lane-h">private data</div>
+<div class="node code"><b>acme's corpus</b>Every agent reads it as the caller's tenant, which no request may name.<small>tenant_pin: enforced. The Desk reads only its classes: doc_class, enforced. The peer reads as its own account, on acme's roster alone.</small></div></div>
+<div class="cd-arrow">+</div>
+<div class="lane"><div class="lane-h">untrusted text</div>
+<div class="node"><b>an uploaded note</b>Its chunks reach a chat brain as quotes and a Desk agent as passages.<small>agent_fence: measured. check_args: enforced, for a figure a question or a note invents.</small></div>
+<div class="node"><b>a tool's description</b>What the peer's model reads to choose and call a tool, written by the server's owner.<small>tool_pins: enforced, by fingerprint.</small></div></div>
+<div class="cd-arrow">+</div>
+<div class="lane"><div class="lane-h">a way out</div>
+<div class="node"><b>an image or link in the answer</b>A reader's browser fetches it the moment the answer renders, with whatever its URL carries.<small>agent_scrub: markers in code, counted as a rate.</small></div>
+<div class="node"><b>a tool call</b>A poisoned description asks the model to send what it read to a host the attacker names.<small>tool_pins drops the tool before the first call.</small></div></div>
+</div>
+<p class="dg-cap">Three agent brains and the Desk read documents, and are fenced; the peer reads tools, and is pinned; the direct brain and <code>/v1/stream</code> are outside every control here but the tenant's (step 11).</p>
+</div>
+
+<h4>Switch a control off, and read what the runner says</h4>
+<p>Each button is one of the %%N_NEW_CONTROLS_W%% controls lesson 10.8 added to the attack runner's registry; each row is one of its %%N_NEW_W%% attack rows. With a control on, the row shows the runner's verdict on the reply the kit's own test uses for a door that holds; with it off, on the reply the same test uses for a door that does not. The verdicts, the outcomes and the reasons are the runner's own, computed when this page was built. Pick a row to read its question, the body the runner sends, and both replies.</p>
+
+<div class="diagram" id="tf">
+<div class="dg-title">The controls, each on or off, and the runner's verdict on each row</div>
+<div class="tf-ctl" id="tf-ctl"></div>
+<p class="tf-sum" id="tf-sum" aria-live="polite"></p>
+<div class="tf-rows" id="tf-rows"></div>
+<div class="tf-detail" id="tf-detail" aria-live="polite"></div>
+<p class="dg-cap">An enforced control off turns its row FAILED or LEAKED, and a live run exits 1. A measured control off turns its row open, and the rate moves. On your lane the reply is a model's, so a measured row can open with the control on; that is what the rate is for.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panel is not</div>
+<p>It does not run a model. The two replies per row are the strings the kit's <code>test_attacks.py</code> judges for that door, and the panel shows which verdict each earns. The pins have no row in the set: they are proved by step 10's drill and the kit's <code>test_pins.py</code>, and step 11 names that gap.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: injected document, poisoned tool, fence, scrub, pin, enforced, measured</h3><p>Fourteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Injected document</strong></td><td data-label="Meaning">An upload whose text speaks past the person to the model that later reads it.</td><td data-label="On your lane"><code>evals/adversarial/vendor_note_acme.md</code>, ingested for acme in step 3</td></tr>
+<tr><td><strong>Poisoned tool</strong></td><td data-label="Meaning">A tool whose description carries an instruction to the model, or a tool added or swapped after it was trusted.</td><td data-label="On your lane"><code>make evil-mcp</code>: <code>summarise_inbox</code> added, or <code>retrieve</code> rewritten with <code>RUG=1</code></td></tr>
+<tr><td><strong>Rug pull</strong></td><td data-label="Meaning">A tool trusted on Monday whose description is changed on Tuesday, under the same name.</td><td data-label="On your lane"><code>make evil-mcp RUG=1</code></td></tr>
+<tr><td><strong>Fence</strong></td><td data-label="Meaning">A <code>&lt;document source="..."&gt;</code> wrapper around each quote or passage the model reads, with one rule first; the text cannot close the fence itself.</td><td data-label="On your lane"><code>AGENT_FENCE=on</code> on documind-chat; off by default</td></tr>
+<tr><td><strong>RULE</strong></td><td data-label="Meaning">The one sentence the fenced result puts first.</td><td data-label="On your lane">"%%RULE%%"</td></tr>
+<tr><td><strong>Exit scrub</strong></td><td data-label="Meaning">Images, HTML tags and off-list links in an answer replaced by visible markers before the answer leaves, with the count.</td><td data-label="On your lane"><code>AGENT_SCRUB=on</code>: <code>[image removed]</code>, <code>[html removed]</code>, <code>[link removed]</code>; <code>scrubbed</code> in the reply, and a line under the Chat page's caption</td></tr>
+<tr><td><strong>Tool pin</strong></td><td data-label="Meaning">A tool's name with the fingerprint a person reviewed; the peer keeps only tools that match both.</td><td data-label="On your lane"><code>services/agent/tool_pins.json</code>, %%N_TOOLS%% tools; <code>TOOL_PINS=on</code>, off by default</td></tr>
+<tr><td><strong>Fingerprint</strong></td><td data-label="Meaning">A sha256 over a tool's name, description and input schema: exactly what the model is shown.</td><td data-label="On your lane">64 hex characters; <code>retrieve</code>'s starts <code>%%FP_RETRIEVE%%</code></td></tr>
+<tr><td><strong>Enforced control</strong></td><td data-label="Meaning">Code that always runs; the runner calls its row <code>structural</code>, and one that opens fails the run.</td><td data-label="On your lane"><code>tenant_pin</code>, <code>check_args</code>, <code>doc_class</code>; the pins, outside the set</td></tr>
+<tr><td><strong>Measured control</strong></td><td data-label="Meaning">A rule the model is asked to keep; the runner calls its row <code>behavioural</code> and counts it in the attack success rate.</td><td data-label="On your lane"><code>agent_fence</code>, <code>agent_scrub</code></td></tr>
+<tr><td><strong>Attack success rate</strong></td><td data-label="Meaning">Of the behavioural rows judged, the share that opened: per attack and language, then all.</td><td data-label="On your lane">the table <code>make attack-eval</code> prints; one row of %%N_BEH_W%% moves it by half</td></tr>
+<tr><td><strong>Class filter</strong></td><td data-label="Meaning">A Desk agent keeps only passages whose <code>doc_type</code> is one of its classes; an upload ingests as <code>unknown</code> until an operator registers it.</td><td data-label="On your lane">the note's %%N_CHUNKS_W%% chunks, all <code>unknown</code>, dropped from every desk</td></tr>
+<tr><td><strong>Surface and door</strong></td><td data-label="Meaning">A door is a route the runner posts to; a surface is the service the door belongs to, and <code>--surfaces</code> picks which run.</td><td data-label="On your lane"><code>/v1/chat</code> and <code>/v1/desk</code> on documind-chat; <code>/</code> on the peer; the api doors from lesson 4.9</td></tr>
+<tr><td><strong>Fleet</strong></td><td data-label="Meaning">The runner's lane that routes each row to the surface it belongs to; a surface with no lane stops the run, named.</td><td data-label="On your lane"><code>--chat-url</code>, <code>--desk</code>, <code>--peer-local</code>, which <code>make attack-agents</code> passes</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold. The fence and the peer's one added sentence are the same kind of thing: words to the model. The scrub, the class filter, the tenant pin, <code>check_args</code> and the pins are the other kind: code that runs whatever the model was told. The page keeps the two apart in every table.</p>

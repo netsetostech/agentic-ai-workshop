@@ -1,0 +1,95 @@
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 4 &middot; REST</span><h3>Before and after: the live URL and the tag URL</h3><p>The same question to the revision your users reach and to the candidate, with the label each one answers under.</p></div></div>
+
+<p><strong>Two addresses, one service.</strong> The UI reaches only the live URL, so it cannot show you the candidate before it is promoted. The tag URL reaches the candidate directly. The token is minted for the service's canonical URL and works on both, as lesson 11.2's gate uses it. <code>GET /version</code> names the label each one answers under, and the same question goes to both.</p>
+%%CELL_BEFORE_AFTER%%
+%%OUT_BEFORE_AFTER%%
+
+<p>What to look for: <code>documind-rag@v3</code> on the live URL and <code>documind-rag@v4</code> on the tag URL, each with its own <code>git_sha</code>. Then two answers to one question, the live one as wrong as it was in step 3, and the candidate's as your rule should make it. If the candidate's answer is still wrong, the rule did not fix the case it came from, whatever the gate said about the other rows. Do not promote it.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 4 &middot; Promote or roll back</span><h3>Promote, or roll back</h3><p>A green record moves the traffic to the candidate. A red one moves nothing, and the version goes back with git.</p></div></div>
+
+<p><strong>Green.</strong> <code>make promote-gated</code> runs lesson 11.2's <code>gate-check</code> on the record, then the unchanged <code>make promote</code>. That writes the revision serving now to <code>.previous-revision</code>, moves all the traffic to the candidate by name, and prints <code>/version</code> from the live URL. Ask the question on the UI again afterwards: the UI now reaches v4. The cell asks it once more from the shell. If anything looks wrong later, <code>make rollback</code> returns the traffic to the revision in <code>.previous-revision</code>, which never went away.</p>
+%%CELL_PROMOTE%%
+%%OUT_OUTCOME%%
+
+<p><strong>Red.</strong> No promote. No traffic reached v4, so you can drop it without changing any version that has served. Revert the commit that holds v4 and its golden row; the next rule you accept builds on v3 again. <code>PROMPT_VERSION=v4</code> is still in <code>documind-api</code>'s template, because an update with <code>--no-traffic</code> still writes it. Any later candidate made from an image without v4 would carry the variable and refuse to start. So build the reverted commit and put v3 back with <code>make prompt-candidate</code>, which makes a new candidate with no traffic.</p>
+%%CELL_REVERT%%
+<p>The author's run took one of these two paths, and the recording above shows which.</p>
+
+<!-- ============================ STEP 10 ============================ -->
+<div class="step" id="s10"><div class="step-n">10</div><div><span class="kicker">Level 4 &middot; Direct reads</span><h3>The version on every usage row</h3><p>Cloud Logging's rows, grouped by the version that answered, and what the new line costs on every answer.</p></div></div>
+
+<p><strong>The rows, by version.</strong> Every answer leaves a usage row, and each row carries <code>prompt_version</code>, the excerpt in step 4. <code>make usage</code> groups the rows by tenant, model, brain, surface and retrieval backend, but not by version, so this cell reads the same rows with <code>make usage</code>'s own <code>read_rows()</code> and groups them with its own <code>group()</code>, keyed by <code>prompt_version</code>. The gate's answers on the candidate are v4's, and the live answers before the promote are v3's.</p>
+%%CELL_USAGE%%
+%%OUT_USAGE_DELTA%%
+
+<p><strong>What the line costs.</strong> Your rule rides on every answer as input tokens. The page's example line is %%EST_TOKENS%% tokens by the kit's own estimate (<code>len // 4</code>), about Rs %%RS_PER_1000%% per 1,000 answers at %%GEN_MODEL%%'s input price. If nothing else asked in between, the newest v3 row and the newest v4 row answer the same question: step 8's live answer, and the candidate's (or step 9's, after a promote). The question and the sources are the same and only the rules differ, so their <code>tokens_in</code> should differ by about the real count of your line.</p>
+
+<!-- ============================ STEP 11 ============================ -->
+<div class="step" id="s11"><div class="step-n">11</div><div><span class="kicker">Level 4 &middot; Prove, optional</span><h3>Optional: a rule worded past the phrases, gated</h3><p>A rule that asks for fewer refusals in words the check does not know, accepted, built, and sent to the gate.</p></div></div>
+
+<p><strong>What the check cannot see.</strong> The rule below asks the assistant to give "the closest answer it supports" instead of saying the context does not cover the question. None of the %%N_PHRASES%% phrases is in it, so <code>make improve</code> accepts it, as the panel in step 1 does. Its meaning reaches only the gate. There, <code>refusal_rate</code> counts the %%N_UNANS%% rows the documents cannot answer, and %%N_RED%% of them answered turn it red. Do not paste the golden row accept prints this time: the question is in the set already. The commit holds the version alone, and the next cell takes it back off.</p>
+%%CELL_PAST%%
+%%OUT_GATE_PAST%%
+%%CELL_PAST_BACK%%
+<p>The recording is the author's. If the gate passes this rule anyway, that is the result, and it says something too: neither the check nor these rows caught it. The way out is more rows the documents cannot answer, written by lesson 4.1's method.</p>
+
+<!-- ============================ STEP 12 ============================ -->
+<div class="step" id="s12"><div class="step-n">12</div><div><span class="kicker">Level 5 &middot; Advanced</span><h3>Why it works this way, what it costs, and what the kit does not do yet</h3><p>The design choices, from the kit's own code and comments, then the bill and the gaps.</p></div></div>
+
+<p><strong>Versions only grow.</strong> An accepted version is never edited, so a usage row's <code>prompt_version</code> names one text forever. A version the gate turns down goes with a <code>git revert</code>, because no traffic reached it. Accept refuses a proposal made on an older version, so two people cannot both write a v4.</p>
+
+<p><strong>The version is a setting, not the code's default.</strong> <code>config.py</code> stays at v3. <code>make prompt-version</code> hashes <code>SYSTEM</code> and <code>DATED_RULE</code> and nothing else, so on a kit with v4 accepted it gives the same verdict as before. A rules version made the code's default would be checked against the wrong text. The tuned models of lessons 12.1 to 12.3 also keep the prompt they were trained behind wherever v3 serves.</p>
+%%OUT_PIN_V4%%
+
+<p><strong>Two rules numbered %%OWN1%%.</strong> <code>DATED_RULE</code> is written with its own number, %%OWN1%%. Under v4, a context with a dated source carries your rule %%OWN1%% and then the dated rule %%OWN1%%. The kit's author kept it that way on purpose: the prompt bench's edit arm already produces the same, and its parser needs consecutive numbers, so starting the version's rules at 7 would break the bench.</p>
+%%OUT_DATED%%
+
+<p><strong>A cached answer belongs to its version.</strong> The answer cache's scope includes the prompt version. So a v3 answer stored before the change is never served as v4's, and the gate cannot be handed v3's answers. The cache is off on the lane until its threshold is measured; when it is on, the scope keeps the versions apart.</p>
+@@scope@@
+
+<p><strong>The proposer is told the rules it must keep.</strong> The request lists every forbidden phrase, and the check runs on the reply anyway. The proposer also sees the rules as they are served, with the dated line beside them, so it can see what the prompt already says.</p>
+
+<h4>What it costs</h4>
+%%COST_TABLE%%
+<p>A pass through this lesson on the author's lane is about Rs %%RS_PASS%%: %%N_LANE%% answers outside the gate, one proposal and one gate. Step 11's optional gate brings it to about Rs %%RS_OPTIONAL%%. Each wrong answer you try in step 3 adds about Rs %%RS_ANSWER%%.</p>
+
+<div class="box box-amber"><div class="box-title">What the kit does not do yet</div>
+<ul>
+<li><strong>The change lasts only while the variable does.</strong> <code>make deploy-services</code> sets <code>documind-api</code>'s environment whole, from a list that has no <code>PROMPT_VERSION</code>. The next routine deploy therefore serves v3 again, with no error: lesson 11.7's gotcha of a setting made by hand that a routine deploy drops. Run <code>make prompt-candidate PROMPT_VERSION=v4</code> again afterwards, then gate it and promote it.</li>
+<li><strong>The template keeps the variable.</strong> After a candidate that is never promoted, <code>PROMPT_VERSION</code> stays in the template, and <code>make release-candidate</code> and <code>make candidate</code> carry it to their revisions. <code>make prompt-candidate PROMPT_VERSION=v3</code> puts the default back.</li>
+<li><strong>Only rag-api's prompt.</strong> The chat service's brains keep a prompt of their own (<code>services/chat/brains.py</code>), which this loop does not version.</li>
+<li><strong>Accept counts the wrong rows.</strong> Its last lines name the %%N_REF%% refusal rows, but <code>refusal_rate</code> is judged over %%N_UNANS%% rows (step 6).</li>
+<li><strong>No table by version.</strong> <code>make usage</code> does not group by <code>prompt_version</code>; step 10's cell does.</li>
+<li><strong>Unverified until the author's run:</strong> the google-genai call itself (<code>response_json_schema</code>, the retry options and the default thinking's cost), a v4 revision starting with <code>/version</code> showing <code>documind-rag@v4</code>, and lesson 11.2's gate accepting the candidate.</li>
+</ul></div>
+
+<!-- ============================ STEP 13 ============================ -->
+<div class="step" id="s13"><div class="step-n">13</div><div><span class="kicker">Level 5 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Twelve checks, each one block above, each with the value that proves it on your lane. The last is for step 11, if you ran it.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The usage row carries the version, not the question</td><td data-label="The check">step 3</td><td data-label="Pass looks like"><code>'prompt_version': 'v3'</code>; <code>the question in the row: False</code></td></tr>
+<tr><td>2</td><td data-label="Claim">The default prompt is unchanged</td><td data-label="The check">step 4</td><td data-label="Pass looks like"><code>byte for byte the tuning set's SYSTEM: True</code>; the registry line for <code>documind-rag@v3</code></td></tr>
+<tr><td>3</td><td data-label="Claim">The row's facts are in the documents</td><td data-label="The check">step 5</td><td data-label="Pass looks like">the request printed, with no <code>refused</code> line</td></tr>
+<tr><td>4</td><td data-label="Claim">A rule that refuses less is stopped at Rs 0</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>REFUSED:   "never refuse" undoes SYSTEM's rule 3</code> and <code>Nothing was written.</code></td></tr>
+<tr><td>5</td><td data-label="Claim">The proposal passed the check</td><td data-label="The check">step 5</td><td data-label="Pass looks like"><code>checks: ... passed</code> and <code>wrote .../evals/reports/proposal.json</code></td></tr>
+<tr><td>6</td><td data-label="Claim">A person accepted it, and nothing else was written</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>accepted:  documind-rag@v4</code> with your name; <code>git status</code> shows only <code>prompt_rules.json</code></td></tr>
+<tr><td>7</td><td data-label="Claim">The golden set holds the row and checks itself</td><td data-label="The check">step 6</td><td data-label="Pass looks like"><code>rows : %%N_GATE%%</code> and <code>The golden set is sound.</code></td></tr>
+<tr><td>8</td><td data-label="Claim">The candidate answers as v4</td><td data-label="The check">steps 7 and 8</td><td data-label="Pass looks like"><code>PROMPT_VERSION v4</code> on the revision; <code>documind-rag@v4</code> on the tag URL</td></tr>
+<tr><td>9</td><td data-label="Claim">The gate's verdict, bound to the candidate</td><td data-label="The check">step 7</td><td data-label="Pass looks like">the revision's name with <code>PASS</code> or <code>FAIL</code></td></tr>
+<tr><td>10</td><td data-label="Claim">The rule fixed the case it came from</td><td data-label="The check">step 8</td><td data-label="Pass looks like">the live answer wrong, the candidate's right</td></tr>
+<tr><td>11</td><td data-label="Claim">Promoted, or rolled back</td><td data-label="The check">step 9</td><td data-label="Pass looks like"><code>&gt;&gt; live:</code> with the candidate and <code>documind-rag@v4</code>; or the revert commit and a v3 candidate</td></tr>
+<tr><td>12</td><td data-label="Claim">The version on the rows, and what it costs</td><td data-label="The check">steps 10 and 11</td><td data-label="Pass looks like">a v3 line and a v4 line; <code>tokens_in, v4 minus v3</code> near the estimate; step 11's verdict, if you ran it</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>In your fork, one commit holds v4 in <code>prompt_rules.json</code>, with your name, the date, the proposer and the golden row's id, and that row in <code>build_golden.py</code> and <code>golden.jsonl</code>, %%N_GATE%% rows now. A revert commit follows it if the gate was red. <code>evals/reports/</code> holds the proposal, the gate's record and its report, all gitignored. <code>documind-api</code> has a revision built from that commit with <code>PROMPT_VERSION=v4</code>. It serves all the traffic if you promoted it, with <code>.previous-revision</code> naming the one before. If you did not, a v3 candidate followed it with no traffic. Cloud Logging holds the usage rows of about %%N_GATE%% gate answers and your own. The next <code>make deploy-services</code> drops the variable, and the service answers as v3 again until you put v4 back the same way.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 12 Tuning &middot; Lesson 12.4 Improve the agent safely: eval-gated self-improvement &middot; v5.0</p><p>This is the last lesson of the course. Lesson 11.8, Complete the independent capstone and operational handover, is where your lane is checked and handed on.</p></div>

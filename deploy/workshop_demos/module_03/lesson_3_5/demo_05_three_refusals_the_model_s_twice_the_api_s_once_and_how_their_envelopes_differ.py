@@ -3,7 +3,7 @@
 Do it: three questions, three envelopes, three rows
 
 Run order inside this file:
-1. Do it: three questions, three envelopes, three rows (source window 21)
+1. Do it: three questions, three envelopes, three rows (source window 22)
 
 Prerequisites: demo_04_one_answer_from_the_lane_field_by_field_with_every_quote_checked_against_its_row.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -46,8 +46,8 @@ def step_01_three_questions_three_envelopes_three_rows(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: answerable False | confidence low | citations 0 | backend vertex | tokens 1xxx + 1xx | cost_usd 0.00xxxx | pool 20 | The provided context does not contain information about Globex's not
-    answerable False | confidence low | citations 0 | backend vertex | tokens 1xxx + 1xx | cost_usd 0.00xxxx | pool 20 | The context covers FY2025 and FY2026; it does not state the revenue f
+    Observe: answerable False | confidence low | citations 0 | backend vertex | tokens xxxx + xx | cost_usd None | pool 20 | The provided context does not contain information about Globex's not
+    answerable False | confidence low | citations 0 | backend vertex | tokens xxxx + xx | cost_usd None | pool 20 | The context covers FY2025 and FY2026; it does not state the revenue f
     answerable False | confidence low | citations 0 | backend none | tokens 0 + 0 | cost_usd 0.0 | pool 0 | The corpus holds nothing near this question: no passage of this tena
     acme	False	none	0	0.0
     acme	False	vertex	1xxx	0.00xxxx
@@ -63,7 +63,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_21', step_01_three_questions_three_envelopes_three_rows),
+        ('source_22', step_01_three_questions_three_envelopes_three_rows),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

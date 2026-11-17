@@ -3,7 +3,7 @@
 Do it: one question, two halves, three rows
 
 Run order inside this file:
-1. Do it: one question, two halves, three rows (source window 16)
+1. Do it: one question, two halves, three rows (source window 17)
 
 Prerequisites: demo_03_the_contract_offline_drafts_that_pass_drafts_that_fail_and_the_resolver_on_the_k.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -35,16 +35,16 @@ def step_01_one_question_two_halves_three_rows(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: the contract: {"answer": "A confirmed employee in grade E3 must serve a notice period of ... [1]...", "citations": "3 citations", "confidence": "high", "answerable": true}
-    the envelope: {'model': 'gemini-3.6-flash', 'backend': 'vertex', 'tokens_in': 1xxx, 'tokens_out': 4xx, 'cached_tokens': 0, 'cost_usd': 0.00xxxx, 'latency_ms': 2xxx, 'cache_hit': 'none'}
-    [N] marks in the answer: ['1', '2', '3'] | citations returned: 3
+    Observe: the contract: {"answer": "A confirmed employee at grade E3 or above is required to serve a notice period of 60 days....", "citations": "1 citations", "confidence": "high", "answerable": true}
+    the envelope: {'model': 'gemini-3.6-flash', 'backend': 'vertex', 'tokens_in': 6xx, 'tokens_out': xx, 'cached_tokens': 0, 'cost_usd': None, 'latency_ms': xxxx, 'cache_hit': 'none'}
+    [N] marks in the answer: [] | citations returned: 1
        [1] #  1 hr_policy_2026.md        page None score 0.9xxx kind text | row found True | quote in the row True | 1x words
-       [2] #  4 hr_policy_2026.md        page None score 0.8xxx kind text | row found True | quote in the row True | 1x words
-       [3] #  2 hr_policy_2026.md    
     """
-    import os, re, json, subprocess, urllib.request, warnings
+    import os, sys, json, subprocess, urllib.request, warnings
     warnings.filterwarnings("ignore", category=UserWarning)
     from google.cloud import firestore
+    sys.path.insert(0, ".")
+    from shared.documind_schemas import cited_numbers                                              # the marks resolve() reads
     PROJECT, API = os.environ["PROJECT"], os.environ["API"]
     tok = subprocess.run(["gcloud", "auth", "print-identity-token", "--include-email", f"--audiences={API}",
                           f"--impersonate-service-account=documind-ui-sa@{PROJECT}.iam.gserviceaccount.com"], capture_output=True, text=True, check=True).stdout.strip()
@@ -53,7 +53,7 @@ def step_01_one_question_two_halves_three_rows(session):
     j = json.load(urllib.request.urlopen(req, timeout=180))
     print("the contract:", json.dumps({"answer": j["answer"][:90] + "...", "citations": f"{len(j['citations'])} citations", "confidence": j["confidence"], "answerable": j["answerable"]}, ensure_ascii=False))
     print("the envelope:", {k: j[k] for k in ("model", "backend", "tokens_in", "tokens_out", "cached_tokens", "cost_usd", "latency_ms", "cache_hit")})
-    print("[N] marks in the answer:", sorted(set(re.findall(r"\[(\d+)\]", j["answer"])), key=int), "| citations returned:", len(j["citations"]))
+    print("[N] marks in the answer:", cited_numbers(j["answer"]), "| citations returned:", len(j["citations"]))
     db = firestore.Client(project=PROJECT)
     norm = lambda s: " ".join(s.split()).lower()
     for i, c in enumerate(j["citations"], 1):
@@ -67,7 +67,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_16', step_01_one_question_two_halves_three_rows),
+        ('source_17', step_01_one_question_two_halves_three_rows),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

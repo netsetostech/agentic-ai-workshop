@@ -143,7 +143,7 @@ Expected shape, not a promised result:
 
 ```text
 STOP: the Standard CPU lab cannot run the L4 GPU lesson. Set gke_autopilot=true in Terraform, review cluster replacement and quota, and apply before make gke-up.
-make: *** [Makefile:711: gke-up] Error 1
+make: *** [Makefile:714: gke-up] Error 1
 ```
 
 ### demo_06_the_duty_cycle_sum.py
@@ -188,6 +188,6 @@ Run the listed cleanup sections in order, even after a failure; retain evidence 
 
 ## Source and coverage
 
-[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_9.3_VLLM_GKE_WIX.html`. All 23 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `383d76df919ed8e9e3c09d023f05584889c7ce6d`.
+[Reading guide](GUIDE.md) retains explanatory prose and UI instructions from the lesson's main page, `Netsetos_GCP_Capstone_9.3_VLLM_GKE_WIX.html`. All 23 original windows are accounted for in `lesson_map.json`: executable steps, shared setup, or read-only examples. Reviewed source: `c1c3a8488e65d2434527d5959991d2ca5a30bf91`.
 
 Source line numbers refer to the teaching HTML before generated IDE-link blocks. Use the numbered section anchor/heading to find the example in the rendered page; its link opens this same learner file.

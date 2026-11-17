@@ -123,8 +123,9 @@ JS = """<script>
     if (f === 'kind') restricts.push('kind = text');
     if (f === 'policy') restricts.push('doc_type = policy');
     out.push(li('ok', 'embed_query', 'the question, once, under RETRIEVAL_QUERY with the declared model: 768 numbers, shared with the answer cache'));
-    out.push(li('ok', 'find_neighbors', 'restricts: ' + restricts.join(', ') + ' (plus current = true when RETRIEVAL_CURRENT_ONLY is on)'));
-    if (f === 'policy'){ out.push(li('stop', 'the pool', 'empty: the worker stamped every plain upload doc_type = unknown, so no datapoint carries policy. answerable: false, no citations, no model call.')); path.innerHTML = out.join(''); return; }
+    if (t === 'zeta') out.push(li('ok', 'the store', 'zeta\\'s own pin decides: on a lane from make up, Vertex AI Search, searched in zeta\\'s own data store; pinned to vector, find_neighbors with restricts ' + restricts.join(', ')));
+    else out.push(li('ok', 'find_neighbors', 'restricts: ' + restricts.join(', ') + ' (plus current = true when RETRIEVAL_CURRENT_ONLY is on)'));
+    if (f === 'policy'){ out.push(li('stop', 'the pool', 'empty: the worker stamped every plain upload doc_type = unknown, so no datapoint or row carries policy. answerable: false, no citations, no model call.')); path.innerHTML = out.join(''); return; }
     if (t === 'globex'){ out.push(li('stop', 'the pool', '20 candidates from globex\\'s corpus, none about travel: the model refuses (answerable: false) rather than borrow acme\\'s clause, which the restrict kept out of the pool.')); path.innerHTML = out.join(''); return; }
     out.push(li('end', 'the answer', CAP[t] + ' - the other tenant\\'s figure never entered the pool.'));
     path.innerHTML = out.join('');

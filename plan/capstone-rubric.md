@@ -1,11 +1,15 @@
 # DocuMind Capstone — the eight components and the published rubric
 
-**Status:** authored 2026-09-05 for Module 13. **Published means published**: this document goes
-to learners in 13.1, weeks before the defence, and the assessor scores against this file and
-nothing else. A rubric a learner has not seen is an exam, and this is not one.
+**Status:** authored 2026-09-05 for the notebook course's Module 13; renumbered 2026-10-13 to the
+Agents Workshop's lessons (`course-manifest.json`), where the capstone is lesson 11.8, and on the same
+day every lesson number in it checked against the manifest and every file it cites found, in the kit
+or the course.
+**Published means published**: lesson 11.8's page shows this document to learners, weeks before the
+defence, and the assessor scores against this file and nothing else. A rubric a learner has not seen
+is an exam, and this is not one.
 
-`course-bibles/migration-v2.0.md` §4 defines what this credential is and how it differs from the
-course certificate. Read that first if you are wondering who this is for.
+What this credential is, and how it differs from the course certificate, is the course owner's to
+state, with the decisions under *Open, and owned by the course owner* at the end of this file.
 
 ---
 
@@ -16,14 +20,19 @@ under ten minutes. That constraint is deliberate: a component nobody can verify 
 
 | # | Component | Where it comes from | How a reviewer checks it |
 |---|---|---|---|
-| 1 | **A live URL behind IAP** | 12.8 | Open it. Sign in. Ask a question. A non-member gets 403. |
-| 2 | **Your own corpus, ≥ 30 pages, ingested** | 12.5, 13.2 | `documents` page lists them; a query cites one. |
-| 3 | **An eval suite, ≥ 30 golden rows, including tenant isolation** | 4.7, 4.8, 12.7, 13.2 | `make eval` exits 0; `golden.jsonl` has ≥ 5 isolation rows. |
-| 4 | **One lane on top of the core** — chat, media, SLM or graph | 13.1 choice, built 13.2–13.4 | The lane's feature works from the live URL. |
-| 5 | **`ARCHITECTURE.md`, with the alternatives you rejected** | 13.1 | It names at least three rejected options and why. |
-| 6 | **`COST-MODEL.md`** at 1k / 10k / 100k queries a month | 11.4, 11.5, 13.3 | Dual-priced INR, dated, at `USD_INR = 85`. |
-| 7 | **`FAILURE-MODES.md`**, four entries, each proved by a script | 13.3 | Run a chaos script; the documented symptom appears. |
-| 8 | **`RUNBOOK.md` + one recorded rollback** | 12.7, 13.4 | The rollback log shows `/version` before and after. |
+| 1 | **A live URL behind IAP** | 0.3, 3.8, 4.7 | Open it. Sign in. Ask a question. A non-member gets 403. |
+| 2 | **Your own corpus, ≥ 30 pages, ingested** — a tenant other than acme, globex and zeta | 1.5, 3.8, 11.8 | The UI's Documents page lists them; a query cites one. |
+| 3 | **An eval suite, ≥ 30 golden rows, including tenant isolation** | 4.1, 4.2, 4.7 | `make eval` exits 0; `evals/golden.jsonl` has ≥ 5 isolation rows. |
+| 4 | **One lane on top of the core** — chat, media, SLM or graph | chosen in 11.8; built in 5.4 (chat), 7.5 (media), 9.2 (SLM) or 7.1–7.2 (graph) | The lane's feature works from the live URL. |
+| 5 | **`ARCHITECTURE.md`, with the alternatives you rejected** | 11.8 | It names at least three rejected options and why. |
+| 6 | **`COST-MODEL.md`** at 1k / 10k / 100k queries a month | 8.3, 11.5, 11.6 | Dual-priced INR, dated, at `USD_INR = 85`. |
+| 7 | **`FAILURE-MODES.md`**, four entries, each proved by a script | 11.7 | Run the entry's command, a `make gotcha-drill` from `ops/gotchas.json` or a script in the fork; the documented symptom appears. |
+| 8 | **`RUNBOOK.md` + one recorded rollback** | 11.3 | The rollback log shows `/version` before and after. |
+
+The four documents start from the kit's templates, `capstone/templates/ARCHITECTURE.md`, `COST-MODEL.md`,
+`FAILURE-MODES.md` and `RUNBOOK.md`, copied to the fork's root. Each holds `{{...}}` placeholders, and
+`make capstone-check` fails its component until the ones it reads are replaced.
+`commands/tests/capstone_fork/` holds the four filled in, for a made-up company.
 
 **Component 5 is the one people under-build and the one the defence leans on hardest.** An
 architecture document that lists what you built is a description. One that lists what you did not
@@ -91,7 +100,7 @@ independently; a split of more than 3 points goes to a third.
 | 2 | Thresholds with reasons, and a red run they can point at in CI history. |
 | 3 | Also: which assertions are **vacuous** — enforced upstream so they cannot fail — and what they replaced them with. |
 
-> Dimension 4's 3 is the hardest point in the rubric and it is deliberately the lesson of 12.7:
+> Dimension 4's 3 is the hardest point in the rubric and it is deliberately the lesson of 4.1 and 4.7:
 > DocuMind's own `must_not_contain` isolation rows pass by construction, because the retriever
 > filters by tenant before generation. A learner who finds that in their own suite has understood
 > something most teams never do.
@@ -115,10 +124,10 @@ independently; a split of more than 3 points goes to a third.
 | 15–75 | **Interview.** Two assessors, the five dimensions, in any order. Live system on screen. |
 | 75–90 | **Feedback**, scored there and then, against this file. |
 
-**A defence is not the peer mock.** 13.5 runs a **60-minute peer mock interview** the week before —
-practice, unscored, with a peer. 13.6 is the **90-minute defence** — assessed, two assessors, and
-the credential depends on it. The two are different events with different purposes and the words
-are not interchangeable.
+**A defence is not the peer mock.** The **60-minute peer mock interview** runs the week before —
+practice, unscored, with a peer. The **90-minute defence** is assessed, by two assessors, and the
+credential depends on it. The two are different events with different purposes and the words are
+not interchangeable.
 
 **One retry within 30 days.** A retry is scored the same way by at least one assessor who was not
 in the first defence.
@@ -129,7 +138,9 @@ in the first defence.
 
 - **Score the system in front of you, not the story.** Every dimension can be checked live.
 - **A missing component is not a zero on a dimension** — it is an incomplete submission, and the
-  defence does not run. Check the eight before the day.
+  defence does not run. Check the eight before the day: `make capstone-check FORK=<the fork>`
+  (lesson 11.8) says PASS or FAIL for each, with `PROJECT=` it also reads the lane, and it scores
+  nothing.
 - **"I don't know" scores better than a confident wrong answer**, and say so at the start. The
   dimensions reward calibration; a learner who inflates one answer makes you doubt the other four.
 - **Write the reason next to the score.** The feedback slot is fifteen minutes and it is the part
@@ -139,7 +150,7 @@ in the first defence.
 
 ## Open, and owned by the course owner
 
-`course-bibles/migration-v2.0.md` §7 (*Decisions still owned by Sart*) lists four commercial decisions this document deliberately
-does not make: the capstone tier's price, the v2.0 track ID, the length of the 50% upgrade window,
-and whether Module 13 is purchasable without the course. None of them changes the rubric; all of
-them change 13.1's copy. They are Sart's.
+Four commercial decisions this document deliberately does not make: the capstone tier's price, the
+v2.0 track ID, the length of the 50% upgrade window, and whether the capstone is purchasable without
+the course. None of them changes the rubric; all of them change lesson 11.8's copy. They are Sart's,
+the course owner's.

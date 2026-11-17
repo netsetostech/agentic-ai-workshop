@@ -1,6 +1,6 @@
 """Lesson 4.2: Where the gate and the judge disagree: read the row
 
-Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary and writes no per-row ratings, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
+Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary, and writes per-row ratings only when --save-rows names a file, which the run above does not, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
 
 Run order inside this file:
 1. Where the gate and the judge disagree: read the row (source window 35)
@@ -27,7 +27,7 @@ RETRY_FAILED_STEP = False
 def step_01_where_the_gate_and_the_judge_disagree_read(session):
     """Run Where the gate and the judge disagree: read the row at this checkpoint.
 
-    Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary and writes no per-row ratings, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
+    Four ways the two can meet, and the gate's misses read against the judge's answers. judge.py prints its summary, and writes per-row ratings only when --save-rows names a file, which the run above does not, so "read the row" means reading the answers. The cell takes each row the gate failed and prints what the judge's own collection received for it.
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
     Operations: bash — run in the operator shell, in the kit (reads both files; changes nothing).

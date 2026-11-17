@@ -58,7 +58,7 @@ from pydantic import BaseModel, Field
 
 import limits
 from brains import BRAINS, DEFAULT_BRAIN, MODEL, build as build_brain
-from shared import iap
+from shared import iap, spotlight
 from shared.profile import LOCAL_MODEL, PROFILE
 from shared.tenancy import tenant_for
 
@@ -163,7 +163,7 @@ def caller(request: Request) -> dict:
         # (7.1 taught the leg; 12.8 shipped it on every surface). One implementation: shared/iap.py.
         who = iap.identity(request.headers, bearer_audience=SELF_URL or None)
         return {"email": who["email"],
-                "assertion": request.headers.get(iap.ASSERTION_HEADER) if who["via"] == "iap" else None}
+                "assertion": iap.assertion_of(request.headers) if who["via"] == "iap" else None}
     except iap.IapError as e:
         # 401, not 403: we do not know who this is. 403 is for somebody we DO know and
         # will not serve, and the difference matters when you are reading logs at 3am.
@@ -192,6 +192,9 @@ def chat(req: ChatRequest, request: Request, user=Depends(caller)) -> dict:
 
     name = req.brain or DEFAULT_BRAIN
     brain = brain_for(request.app, name)
+    # A company whose agent_actions is approval (workshop lesson 5.8): the LangGraph brain with the approve node in
+    # the refuse node's place, and a 409 while the conversation waits for a person. Any other company, or brain: the brain above.
+    brain = approval_routes.wired(request.app, name, brain, tenant_id, user["email"], req.session_id)
     # The turn's limits (workshop lesson 5.5): model calls, rupees and a deadline, counted from here, after the
     # brain is built, so a cold import is not the turn's time. A tripped limit is still a 200, with stopped_by.
     meter = limits.Meter(model=LOCAL_MODEL if PROFILE == "local" else MODEL)
@@ -207,6 +210,12 @@ def chat(req: ChatRequest, request: Request, user=Depends(caller)) -> dict:
         context={"tenant_id": tenant_id, "user_id": user["email"],
                  "assertion": user["assertion"] or "", "brain": name, "meter": meter},
     )
+    if spotlight.SCRUB:
+        # AGENT_SCRUB=on (workshop lesson 10.8): the answer leaves with no image, HTML tag or off-list link a reader's
+        # browser would fetch, each replaced by a visible marker, and the count is in the response. The row below
+        # stays as lessons 5.1, 5.5, 5.7 and 11.5 parse it.
+        answer, scrubbed = spotlight.scrub(out.get("answer") or "")
+        out = {**out, "answer": answer, "scrubbed": scrubbed}
     latency_ms = int((time.monotonic() - t0) * 1000)
     used = meter.row()
     # One row per turn, in the shape 12.3's sink collects: WHICH brain answered is the field
@@ -235,3 +244,9 @@ def chat(req: ChatRequest, request: Request, user=Depends(caller)) -> dict:
 # a question the law hands to a person before any brain runs. desk.py holds both; this is their one install line.
 import desk  # noqa: E402
 desk.install(app, caller=caller, tenant_for=tenant_for, thread_config=thread_config)
+
+# A person in the loop (workshop lesson 5.8): the /v1/approvals routes, and the brain and the hold chat() asks
+# approval_routes.wired() for above, all behind tenant_settings.agent_actions = approval (make agent-actions). For a
+# company that has not set it, and on the local profile, the service is what it was.
+import approval_routes  # noqa: E402
+approval_routes.install(app, caller=caller, tenant_for=tenant_for, thread_config=thread_config)

@@ -1,6 +1,6 @@
 """Lesson 2.4: The Firestore rung by hand: the API's three predicates on Firestore's own vector index
 
-Run the cell as it is, then twice more with a filter in front of its first line: F='{"doc_type":"policy"}' python - <<'PY' and F='{"kind":"text"}' python - <<'PY', the rest unchanged. The worker stamped the lane's uploads doc_type: unknown, so the first filter empties the pool on this rung exactly as it did on the index in lesson 2.1, and the second keeps it whole.
+The cell runs the rung three times on one embedding: with no caller filter, with {"doc_type":"policy"}, and with {"kind":"text"}. The worker stamped the lane's uploads doc_type: unknown, so the second empties the pool on this rung exactly as it did on the index in lesson 2.1, and the third keeps it whole. With the switch off it asks for 80 rows and keeps the first 20 current ones, as the function does.
 
 Run order inside this file:
 1. Do it: the rung under three predicate sets (source window 11)
@@ -27,28 +27,28 @@ RETRY_FAILED_STEP = False
 def step_01_the_rung_under_three_predicate_sets(session):
     """Run Do it: the rung under three predicate sets at this checkpoint.
 
-    Run the cell as it is, then twice more with a filter in front of its first line: F='{"doc_type":"policy"}' python - <<'PY' and F='{"kind":"text"}' python - <<'PY', the rest unchanged. The worker stamped the lane's uploads doc_type: unknown, so the first filter empties the pool on this rung exactly as it did on the index in lesson 2.1, and the second keeps it whole.
+    The cell runs the rung three times on one embedding: with no caller filter, with {"doc_type":"policy"}, and with {"kind":"text"}. The worker stamped the lane's uploads doc_type: unknown, so the second empties the pool on this rung exactly as it did on the index in lesson 2.1, and the third keeps it whole. With the switch off it asks for 80 rows and keeps the first 20 current ones, as the function does.
 
     Args: session is the active lesson run, with validated settings and saved prerequisites.
-    Operations: bash — run in the operator shell (a Python cell; one embedding, a few dozen Firestore reads).
+    Operations: bash — run in the operator shell (a Python cell; one embedding, three vector queries and a count, a few hundred Firestore reads).
     Returns: None; observations are printed or saved by the lesson code.
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: predicates: tenant_id -> 20 rows, every one found_by firestore
-       NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+    Observe: predicates: tenant_id -> 20 rows of 80 nearest, every one found_by firestore
+       NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.6xxx
        ...
-    index needed: (tenant_id, embedding) | reads billed, at most: 1x for 1xxx index entries + 20 documents
+    index needed: (tenant_id, embedding) | reads billed, at most: 2x for 2xxx index entries + 80 documents
 
-    predicates: tenant_id, doc_type (doc_type=policy) -> 0 rows, every one found_by firestore
-    index needed: (tenant_id, doc_type, embedding) | reads billed, at most: 1x for 1xxx index entries + 0 documents
+    predicates: tenant_id, doc_type (doc_type=policy) -> 0 rows of 0 nearest, every one found_by firestore
+    index needed: (tenant_id, doc_type, embedding) | reads billed, at most: 2x for 2xxx index entries + 0 documents
 
-    predicates: tenant_id, kind (kind=text) -> 20 rows, every one found_by firestore
-       NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.7xxx
+    predicates: tenant_id, kind (kind=text) -> 20 rows of 80 nearest, every one found_by firestore
+       NP-03     hr_policy_2026.md          doc_type unknown  kind text   current True  score 0.6xxx
        ...
-    index needed: (tenant_id, kind, embedding
+
     """
-    import os, json, math, warnings
+    import os, math, warnings
     warnings.filterwarnings("ignore", category=UserWarning)
     from google import genai
     from google.cloud import firestore
@@ -56,29 +56,34 @@ def step_01_the_rung_under_three_predicate_sets(session):
     from google.cloud.firestore_v1.vector import Vector
     PROJECT, REGION = os.environ["PROJECT"], os.environ["REGION"]
     Q = os.environ.get("Q", "What is the notice period for a confirmed E3?")
-    F = json.loads(os.environ.get("F", "{}"))                                 # the caller's filters: doc_type, kind
     CURRENT = os.environ.get("RETRIEVAL_CURRENT_ONLY", "off") == "on"
+    TOP_K = int(os.environ.get("TOP_K_RETRIEVE", "20"))                     # the API's pool, as the box above exported it
     client = genai.Client(enterprise=True, project=PROJECT, location=REGION)    # held in a name: a discarded client closes its connection
     vec = list(client.models.embed_content(
         model="text-embedding-005", contents=[Q], config={"output_dimensionality": 768, "task_type": "RETRIEVAL_QUERY"}).embeddings[0].values)
     db = firestore.Client(project=PROJECT)
-    q = db.collection("chunks").where("tenant_id", "==", "acme")               # the roster's predicate, never the body's
-    if CURRENT:
-        q = q.where("current", "==", True)                                     # the ledger's, when RETRIEVAL_CURRENT_ONLY is on
-    for k, v in F.items():
-        # the caller's: FILTER_KEYS only, checked by main.py; a doc_type list is one `in`
-        q = q.where(k, "in", v) if isinstance(v, list) else q.where(k, "==", v)
-    hits = q.find_nearest("embedding", Vector(vec), distance_measure=DistanceMeasure.COSINE, limit=20, distance_result_field="d").get()
-    pool = []
-    for h in hits:
-        d = h.to_dict(); d["id"] = h.id; d["score"] = 1.0 - d.pop("d", 1.0); d.pop("embedding", None); d["found_by"] = "firestore"
-        pool.append(d)
     entries = db.collection("chunks").where("tenant_id", "==", "acme").count().get()[0][0].value
-    fields = "tenant_id" + (", current" if CURRENT else "") + "".join(", " + k for k in F)
-    print(f"predicates: {fields}{''.join(f' ({k}={v})' for k, v in F.items())} -> {len(pool)} rows, every one found_by firestore")
-    for c in pool[:5]:
-        print(f"   {c.get('locator', '?'):9} {c.get('source_uri', '').split('/')[-1][:26]:26} doc_type {str(c.get('doc_type')):8} kind {str(c.get('kind')):6} current {str(c.get('current')):5} score {c['score']:.4f}")
-    print(f"index needed: ({fields}, embedding) | reads billed, at most: {math.ceil(entries / 100)} for {entries} index entries + {len(pool)} documents")
+    for F in ({}, {"doc_type": "policy"}, {"kind": "text"}):                  # the caller's filters: none, then each key alone
+        q = db.collection("chunks").where("tenant_id", "==", "acme")           # the roster's predicate, never the body's
+        if CURRENT:
+            q = q.where("current", "==", True)                                 # the ledger's, when RETRIEVAL_CURRENT_ONLY is on
+        for k, v in F.items():
+            # the caller's: FILTER_KEYS only, checked by main.py; a doc_type list is one `in`
+            q = q.where(k, "in", v) if isinstance(v, list) else q.where(k, "==", v)
+        hits = q.find_nearest("embedding", Vector(vec), distance_measure=DistanceMeasure.COSINE,
+                              limit=TOP_K if CURRENT else min(4 * TOP_K, 1000), distance_result_field="d").get()
+        fetched = len(hits)
+        if not CURRENT:                                                        # the switch off: retired versions out, the first TOP_K kept
+            hits = [h for h in hits if h.to_dict().get("current") is not False][:TOP_K]
+        pool = []
+        for h in hits:
+            d = h.to_dict(); d["id"] = h.id; d["score"] = 1.0 - d.pop("d", 1.0); d.pop("embedding", None); d["found_by"] = "firestore"
+            pool.append(d)
+        fields = "tenant_id" + (", current" if CURRENT else "") + "".join(", " + k for k in F)
+        print(f"predicates: {fields}{''.join(f' ({k}={v})' for k, v in F.items())} -> {len(pool)} rows of {fetched} nearest, every one found_by firestore")
+        for c in pool[:5]:
+            print(f"   {c.get('locator', '?'):9} {c.get('source_uri', '').split('/')[-1][:26]:26} doc_type {str(c.get('doc_type')):8} kind {str(c.get('kind')):6} current {str(c.get('current')):5} score {c['score']:.4f}")
+        print(f"index needed: ({fields}, embedding) | reads billed, at most: {math.ceil(entries / 100)} for {entries} index entries + {fetched} documents\n")
 
 def demonstrate(session):
     """Run this section in source order, saving each function's outcome.

@@ -35,16 +35,14 @@ def step_01_the_same_question_at_top_k_5_and_top_k_20(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: top_k 5: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 17xx ms of 28xx | rerank_fallback 0 | cache_hit none
-       3 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
-       [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'NP-03 ...'
-       [2] score 0.8xxx  #  4  hr_policy_2026.md          p.-  '...'
-       [3] score 0.6xxx  #  2  hr_policy_2026.md          p.-  '...'
-       sorted by score, the ranker's order among them: ['#1', '#4', '#2']
+    Observe: top_k 5: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 2xxx ms of 4xxx | tokens_in 1xxx | rerank_fallback 0 | cache_hit none
+       1 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
+       [1] score 0.9xxx  #  1  hr_policy_2026.md          p.-  'A confirmed employee at grade E3 or above se'
+       sorted by score, the ranker's order among them: ['#1']
 
-    top_k 20: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 3xxx ms of 4xxx | rerank_fallback 0 | cache_hit none
-       4 citations: ...
-       sorted by score, the ranker's orde
+    top_k 20: pool 20 | from the index 20 | retrieve 6xx + rerank 3xx + generate 2xxx ms of 4xxx | tokens_in 5xxx | rerank_fallback 0 | cache_hit none
+       1 citations: the sources the model used, in the order it used them; [N] in the answer is the packed position
+       [1] score 0.9xx
     """
     from workshop_helpers.lesson31 import require_fresh_vector
     import os, json, subprocess, urllib.request
@@ -66,7 +64,7 @@ def step_01_the_same_question_at_top_k_5_and_top_k_20(session):
         j = ask(k); s = j["stages"]
         require_fresh_vector(j)
         json.dump(j, open(f"/tmp/ans53_{k}.json", "w"))
-        print(f"\ntop_k {k}: pool {s['pool']} | from the index {s['vector_chunks']} | retrieve {s['retrieve_ms']} + rerank {s['rerank_ms']} + generate {s['generate_ms']} ms of {j['latency_ms']} | rerank_fallback {s.get('rerank_fallback', 0)} | cache_hit {j['cache_hit']}")
+        print(f"\ntop_k {k}: pool {s['pool']} | from the index {s['vector_chunks']} | retrieve {s['retrieve_ms']} + rerank {s['rerank_ms']} + generate {s['generate_ms']} ms of {j['latency_ms']} | tokens_in {j['tokens_in']} | rerank_fallback {s.get('rerank_fallback', 0)} | cache_hit {j['cache_hit']}")
         print(f"   {len(j['citations'])} citations: the sources the model used, in the order it used them; [N] in the answer is the packed position")
         for i, c in enumerate(j["citations"], 1):
             print(f"   [{i}] score {c['score']:.4f}  #{c['chunk_id'].rsplit('#', 1)[1]:>3}  {c['source_uri'].split('/')[-1][:26]:26} p.{c.get('page') or '-'}  {c['quote'][:44]!r}")

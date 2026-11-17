@@ -38,9 +38,9 @@ def step_01_embed_pool_rank_compare(session):
     Observe: pool: 20 current ids from the index in 9xx ms, every one found_by vector
     ranker: 20 of 20 back in 2xx ms, 20 records sent, model semantic-ranker-fast-004
        rank 1  score 0.9xxx  pool # 1  NP-03     hr_policy_2026.md
-       rank 2  score 0.xxxx  pool # x  ...       hr_policy_2026.md
+       rank 2  score 0.xxxx  pool # x  ...       ...
        ...
-    the API's cited ids, by score: ['#1', '#4', '#2'] | by hand, first 5: ['#1', '#4', '#2', '#7', '#3']
+    the API's citations, by score: ['pool #1'] | by hand, first 5: ['pool #1', 'pool #3', 'pool #10', 'pool #6', 'pool #18']
     every citation is in the by-hand top 5: True | in the same relative order: True
     saved /tmp/pool53.json for steps 5, 7 and 8
     """
@@ -83,7 +83,8 @@ def step_01_embed_pool_rank_compare(session):
         ans = json.load(open("/tmp/ans53_5.json"))
         cited = [c["chunk_id"] for c in sorted(ans["citations"], key=lambda c: -c["score"])]
         hand = [pool[i]["id"] for i, _ in ranked[:5]]
-        print("the API's cited ids, by score:", [f"#{c.rsplit('#', 1)[1]}" for c in cited], "| by hand, first 5:", [f"#{c.rsplit('#', 1)[1]}" for c in hand])
+        at = {c["id"]: f"pool #{n + 1}" for n, c in enumerate(pool)}             # a chunk's number repeats across documents; its pool position does not
+        print("the API's citations, by score:", [at.get(c, "not in the pool") for c in cited], "| by hand, first 5:", [at[c] for c in hand])
         print("every citation is in the by-hand top 5:", all(c in hand for c in cited), "| in the same relative order:", [c for c in hand if c in cited] == cited)
     except FileNotFoundError:
         print("run step 3 first to compare with the API's citations")

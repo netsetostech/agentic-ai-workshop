@@ -46,7 +46,7 @@ def step_01_prove_a_first_success_make_dryrun(session):
       DocuMind AI — Tier-A offline dry run
       ------------------------------------------------------------
       [SKIP] extract       kit-only checkout (the learner repo): deploy/ is the extracted tree, nothing to compare  (Ns)
-      [PASS] py_compile    125 python files parse  (Ns)
+      [PASS] py_compile    150 python files parse  (Ns)
       [PASS] imports       all local imports resolve  (Ns)
       [PASS] shared-deps   every google.cloud client a shared module opens is pinned by its importers  (Ns)
       [PASS] requirements  11 files, all deps pinned  (Ns)

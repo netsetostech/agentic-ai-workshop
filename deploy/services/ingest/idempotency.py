@@ -26,6 +26,7 @@ def claim(db: firestore.Client, doc_key: str, gcs_uri: str, tenant_id: str, reta
     the id's prefix - `acme` must not list `acme_eu_*`. retake=True takes a `superseded` claim back: the worker asks
     for it after reactivate() refused the undo, so the bytes are ingested as a fresh version instead of being acked
     as a duplicate for ever. A `queued` claim belongs to the batch lane and is never retaken.
+    A `processing` claim is refused here too: retake_expired() takes it back once its lease has run out.
     """
     ref = db.collection("documents").document(doc_key)
     retakes = ("failed", "superseded") if retake else ("failed",)
@@ -74,6 +75,56 @@ def release(db: firestore.Client, doc_key: str, error: str) -> None:
     db.collection("documents").document(doc_key).set(
         {"status": "failed", "error": error[:400],
          "failed_at": firestore.SERVER_TIMESTAMP}, merge=True)
+
+
+# The claim's lease (13 October 2026, lesson 8.4's review). release() gives a claim back when the pipeline raises; a
+# worker cut off without raising - the request killed at its 600 s deadline, the instance out of memory - runs
+# neither release() nor finish(), and its claim stayed `processing` for ever: claim() refused every redelivery, the
+# worker acked each one as a duplicate, and the document was never indexed while every delivery succeeded. So a
+# claim now holds for a lease, counted from its claimed_at. On the push lane that is the push subscription's ack
+# deadline (eventarc.tf: ack_deadline_seconds = 600, the worker's --timeout too), after which no request can still
+# be working on it, and a minute for the clocks; a claim the batch job took (lane=batch) holds for the job's timeout
+# (batch.tf: 7200s) on the same rule. Past its lease a delivery takes the claim back (retake_expired); inside it the
+# worker nacks the delivery, so Pub/Sub brings it back later instead of a duplicate's ack losing the document.
+LEASE_SECONDS = 600 + 60
+BATCH_LEASE_SECONDS = 7200 + 60
+
+
+def lease_of(row: dict) -> int:
+    """A `processing` claim's lease in seconds: the batch job's for a claim it took, the push lane's otherwise."""
+    return BATCH_LEASE_SECONDS if row.get("lane") == "batch" else LEASE_SECONDS
+
+
+def retake_expired(db: firestore.Client, doc_key: str, gcs_uri: str, tenant_id: str, now: datetime | None = None) -> dict:
+    """Take a `processing` claim back once its lease has run out - in a transaction, as claim() takes back a failed
+    one, so two deliveries never both win it.
+
+    Returns the verdict with the claim's lane, age and lease in seconds: `retaken` (this caller holds the claim now:
+    claimed_at restamped, the cut-off holder's stamp kept as retaken_from, the batch lane's mark dropped because the
+    push lane holds it), `held` (inside the lease: the holder may still finish) or `moved` (no longer `processing`:
+    finished, failed or queued since the caller looked). A claim with no claimed_at has no clock and no lease."""
+    ref = db.collection("documents").document(doc_key)
+    now = now or datetime.now(timezone.utc)
+
+    @firestore.transactional
+    def _retake(tx: firestore.Transaction) -> dict:
+        snap = ref.get(transaction=tx)
+        row = (snap.to_dict() or {}) if snap.exists else {}
+        lane, lease = row.get("lane") or "push", lease_of(row)
+        if row.get("status") != "processing":
+            return {"verdict": "moved", "lane": lane, "status": row.get("status"), "age_s": None, "lease_s": lease}
+        taken = row.get("claimed_at")
+        age = None
+        if isinstance(taken, datetime):
+            age = int((now - (taken if taken.tzinfo else taken.replace(tzinfo=timezone.utc))).total_seconds())
+        if age is not None and age < lease:
+            return {"verdict": "held", "lane": lane, "status": "processing", "age_s": age, "lease_s": lease}
+        fresh = {k: v for k, v in row.items() if k != "lane"}
+        tx.set(ref, {**fresh, "gcs_uri": gcs_uri, "tenant_id": tenant_id, "status": "processing",
+                     "claimed_at": firestore.SERVER_TIMESTAMP, "retaken_from": taken})
+        return {"verdict": "retaken", "lane": lane, "status": "processing", "age_s": age, "lease_s": lease}
+
+    return _retake(db.transaction())
 
 
 # ------------------------------------------------------------------------------ the ledger (11 September 2026)

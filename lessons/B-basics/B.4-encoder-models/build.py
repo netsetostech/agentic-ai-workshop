@@ -113,7 +113,7 @@ assert "discoveryengine.googleapis.com" in (KIT / "commands/lesson-12.1.sh").rea
 # ------------------------------------------------------------------ verbatim excerpts
 EXCERPTS = {
     "handler": ("services/rag-api/main.py - /v1/query: the question embedded once and the pool retrieved, then the pool reranked",
-                block(API, '    with stage(stages, "retrieve"):', n=4) + "\n...\n" + block(API, '        with stage(stages, "rerank"):', n=2)),
+                block(API, '    with stage(stages, "retrieve"):', end='    stages["pool"]') + "\n...\n" + block(API, '        with stage(stages, "rerank"):', n=2)),
     "idx_consts": ("services/ingest/indexer.py - the document side: one model, the document task type, 768 numbers, a regional client",
                    block(IDX, 'EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL"', n=10)),
     "idx_embed_all": ("services/ingest/indexer.py - embed_all(): every chunk of a document, once, at ingest",
@@ -129,7 +129,7 @@ EXCERPTS = {
                    + block(CFG, "    top_k_retrieve: int = Field(20", n=1)),
 }
 assert EXCERPTS["handler"][1].rstrip().endswith("chunks = rerank(req.query, chunks, req.top_k, tenant_id=req.tenant_id)")
-assert "qvec = embed_query(req.query)" in EXCERPTS["handler"][1]
+assert "qvec = embed_query(req.query)" in EXCERPTS["handler"][1] and "chunks = [] if hit else retrieve(" in EXCERPTS["handler"][1]   # the whole retrieve stage
 assert EXCERPTS["idx_consts"][1].rstrip().endswith(")") and 'location="us-central1",' in EXCERPTS["idx_consts"][1]
 assert EXCERPTS["idx_embed_all"][1].rstrip().endswith("return out") and '"task_type": EMBEDDING_TASK_TYPE' in EXCERPTS["idx_embed_all"][1]
 assert EXCERPTS["vector_tf"][1].rstrip().endswith('distance_measure_type       = "DOT_PRODUCT_DISTANCE"')

@@ -59,7 +59,7 @@ def step_01_the_direct_brain_one_retrieve_no_loop(session):
     Failures propagate to the session; inspect its failed attempt before continuing.
 
     Example: Run this file after its README prerequisites, or set a breakpoint in this function.
-    Observe: direct    tool_calls ['retrieve']  refusals []  citations 5  3180 ms
+    Observe: direct    tool_calls ['retrieve']  refusals []  citations 1  3180 ms
           Gratuity is payable on termination after not less than five years of continuous service [1].
     """
     # Preserve the kit CLI's arguments, conditions and observation order.

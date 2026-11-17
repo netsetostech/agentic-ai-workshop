@@ -3,7 +3,7 @@
 Read the lane, Rs 0
 
 Run order inside this file:
-1. Read the lane, Rs 0 (source window 32)
+1. Read the lane, Rs 0 (source window 33)
 
 Prerequisites: demo_06_the_model_call_by_hand_the_schema_the_thinking_the_usage_the_price.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -62,7 +62,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_32', step_01_read_the_lane_rs_0),
+        ('source_33', step_01_read_the_lane_rs_0),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

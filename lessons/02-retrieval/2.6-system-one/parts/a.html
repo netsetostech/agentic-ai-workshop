@@ -1,0 +1,126 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 2 &middot; Retrieval &middot; Lesson 2.6</div>
+<h1>Decide answer-or-refuse with a System One model (Jev): <span>the evidence rule, the generator and Jev on one pool, scored on the golden set</span></h1>
+<p>Lesson 2.5 rewrote the question before retrieval. This lesson decides what happens to the pool that retrieval hands back: answer from it, or refuse. The kit decides twice today. Code refuses an empty pool before any model runs, for nothing. Otherwise the generator reads the passages and may refuse by setting <code>answerable</code> to false, a refusal that has already paid for a full generator call. A decision could sit between rerank and generate instead: a System One model, which returns a typed decision with a calibrated probability rather than text. TypeSafe AI describes its Jev as one. It is the kit's first model that is not Google's, so it sits behind <code>JEV_MODE</code>, off by default, and in this course it is not on the request path at all. <code>evals/decide.py</code> asks three arms to decide every golden row from the same pool: the kit's evidence rule at Rs 0, the generator's own <code>answerable</code>, and Jev. It scores each against the golden set's truth, with Wilson intervals, calibration, latency and rupees. You will move the rule's floor across the %%N_ROWS%% rows, ask a refusal row in the UI and see what it paid for, read the two refusals and the seam Jev would plug into, run the eval for Rs 0 and on your lane, and hold every arm against the gate's %%GATE%%.</p>
+<div class="hero-chips"><div class="hero-chip">answer or refuse</div><div class="hero-chip">EVIDENCE_FLOOR %%FLOOR2%%</div><div class="hero-chip">%%N_ROWS%% rows: %%N_ANS%% + %%N_UN%%</div><div class="hero-chip">JEV_MODE=off</div><div class="hero-chip">Wilson, Brier, kappa</div><div class="hero-chip">make decide</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">Why decide before generating, and who may decide</a></li>
+<li><a href="#s2">The words: decision, arm, evidence share, floor, two refusals, rates, Wilson, Brier, kappa, System One, JEV_MODE, skip</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">A refusal in the UI, and what it paid for</a></li>
+<li><a href="#s4">The kit's code: two refusals in the handler, and the evidence rule</a></li>
+<li><a href="#s5">The decision eval for Rs 0, a higher floor, and Jev's switch</a></li>
+<li><a href="#s6">The rule and the generator on your lane's pools</a></li>
+<li><a href="#s7">Against the gate: refusal recall, false answers, calibration, latency and rupees</a></li>
+<li><a href="#s8">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what an answer-or-refuse decision is, why the kit refuses twice today and what each refusal costs, how a rule, the generator and a System One model are measured against the same truth, and why Jev is measured offline here rather than put on the request path. Then you will prove it: ask a refusal row in the UI, run the decision eval for Rs 0 and on your lane, and read each arm's refusal recall against the gate's %%GATE%%.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>Why decide before generating, and who may decide</h3><p>A pool is not an answer, the kit's second refusal is its expensive one, three deciders can be held to one truth, and the third of them is not on the request path in this course.</p></div></div>
+
+<p><strong>Retrieval hands over a pool, and something must decide what to do with it.</strong> The golden set says what the right decision is for every row. Of its %%N_ROWS%% rows, %%N_ANS%% are questions the tenant's documents answer and %%N_UN%% are not. The %%N_REF_UN%% refusal rows ask for something no document of the tenant holds: ACME's sabbatical policy, its revenue in FY2024, the name of its CTO. The %%N_ISO_UN%% isolation rows ask one tenant what only another tenant's documents say. A system that answers one of those %%N_UN%% has written a false answer, and an isolation row answered is the worse kind, because the words came from somewhere the tenant's documents are not. A system that refuses one of the %%N_ANS%% has lost an answer someone needed. That makes the decision a classifier with a confusion matrix, and <code>evals/decide.py</code> scores it as one.</p>
+
+<p><strong>The kit decides twice today, and the second decision is the expensive one.</strong> When retrieval finds nothing, <code>empty_pool_answer()</code> writes the refusal in code: <code>answerable</code> false, backend <code>none</code>, no reranker, no model, Rs 0. When retrieval finds something, the reranker orders the pool and the generator reads it, and rule 3 of its system prompt lets it set <code>answerable</code> to false when the context does not contain the answer. A dense retriever always finds something: it returns the nearest neighbours of the question whether or not they answer it. So on your lane nearly every refusal is the model's, and the model's refusal is billed as a full call. For the sabbatical question, packed from the Rs 0 lane's five passages and counted the way the kit's packer counts, the prompt alone is about %%RF01_TOK%% tokens, before the model has thought about it. Lesson 3.5 compared the two refusals' envelopes. This lesson asks whether a cheaper decision could come first, and what it would cost in lost answers.</p>
+
+<p><strong>Three deciders, one pool.</strong> <code>decide.py</code> takes each golden row's pool from your lane's <code>/v1/passages</code>, which is <code>/v1/query</code> up to the reranker and nothing after it: the same door, roster, filters, guard, backend and rerank, then the passages, with no model. Three arms then decide on that pool. The <em>rule</em> is the kit's own code: the share of the question's information the pool carries, each content word weighted by its idf over the tenant's chunks, held against <code>EVIDENCE_FLOOR</code>, %%FLOOR%%. It is the gate the Rs 0 lane has always applied, and it costs nothing and takes microseconds. The <em>generator</em> is <code>/v1/query</code> itself, asked as the eval gate asks it (top_k %%GEN_TOPK%%), and its decision is the <code>answerable</code> it returns. <em>Jev</em> is TypeSafe AI's System One model. By TypeSafe's own page in October 2026, it returns a typed decision (a choice, a score, a value between 0 and 1) with a calibrated probability instead of text. Those are the vendor's claims, not the kit's measurements, and measuring them is what the third arm is for.</p>
+
+<p><strong>What is measured, and why every rate carries an interval.</strong> Answer rate is the share of the %%N_ANS%% answerable rows an arm answered; refusal recall is the share of the %%N_UN%% unanswerable rows it refused; accuracy is the share of all rows it decided right. Each is printed with its Wilson 95% interval, because %%N_UN%% rows is a small sample: even %%N_UN%% refusals out of %%N_UN%% leave a lower bound of %%W18%%. The live eval gate wants refusal recall of %%GATE%%. An arm that gives a score is also checked for calibration: does a score of 0.8 mean right four times in five? Every arm is timed and priced per decision. And an error or a skipped row is never a refusal: it is counted on its own line and left out of every rate.</p>
+
+<p><strong>Jev is not on the request path in this course.</strong> It is the kit's first model that is not Google's, so it arrives behind three guards. <code>JEV_MODE</code> is off by default and makes no call. <code>recorded</code> mode reads <code>evals/system_one/recorded.jsonl</code>, which does not exist: no recording ships until one is made against TypeSafe's API, and none is written by hand. <code>live</code> mode would send only the tenants whose <code>data_region</code> is <code>any</code>, %%ANY_T%% (%%N_ANY%% of the %%N_ROWS%% rows), with identifiers masked, and today it answers an error, because TypeSafe's adapter is a later pull request, 2.6-C, waiting on TypeSafe's documentation and terms. So wherever Jev's numbers would go, this page says <em>Jev not available</em> until the author's recording exists. The diagram shows where Jev would sit; in this course only <code>decide.py</code> calls it, offline.</p>
+
+<div class="analogy"><div class="analogy-icon">&#9878;&#65039;</div><div>
+<p><strong>The registry's scrutiny.</strong> A petition filed in a High Court goes first to the registry, which scrutinises it before any judge sees it: are the annexures there, is the court fee paid, is the affidavit sworn? A filing that lacks the papers to decide it is returned with objections, by a clerk, in minutes. A filing with no papers at all is not taken in at the counter. Everything else is listed, and the judge still rules: a listed matter can be dismissed after a full hearing, which has cost the court a morning. Scrutiny never decides the merits, and it is judged two ways: how many hopeless filings it stopped before they reached a bench, and how many sound ones it returned that deserved a hearing. Too strict, and litigants lose their day in court; too lax, and judges spend their mornings on filings that could never succeed. A court could even hand scrutiny to an agency outside the building, if its rules let the case files leave.</p>
+<p>The empty filing is the empty pool, refused in code. The registry is the rule, or Jev, deciding before generation. The judge is the generator, whose rule 3 still refuses what it reads. Stopped hopeless filings are refusal recall; sound filings returned are lost answers. And whether the files may leave the building is a tenant's <code>data_region</code>.</p></div></div>
+
+<h4>The answer path: where each refusal is made, and the slot no code fills</h4>
+<div class="diagram"><div class="dg-title">/v1/query in services/rag-api/main.py, in the order it runs</div>
+<div class="spine">
+<div class="fs"><div class="fs-main"><div class="fs-n">1</div><div><b><code>desk_door</code></b> The Desk's gate from lesson 5.6, a middleware in front of <code>/v1/query</code>, <code>/v1/stream</code> and <code>/v1/passages</code>: a question the law hands to a person never reaches retrieval.</div></div><div class="fs-branch"><b>Answered here:</b> a fixed reply, model <code>none</code>, backend <code>desk_gate</code>.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">2</div><div><b><code>enforce_membership</code>, <code>check_filters</code>, <code>screen_prompt</code></b> The roster, the two filter keys a caller may send, and Model Armor on the question when <code>ARMOR=on</code>: all before any work.</div></div><div class="fs-branch"><b>Refused here:</b> a 403, or a 400 that names the problem.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">3</div><div><b><code>retrieve</code></b> <code>choose_for()</code> and <code>retrieval_backend_for()</code> name the store; the question is embedded once; the tenant's candidates come back from the kit's index, or from lesson 2.4's Firestore rung inside <code>_dense_retrieve()</code>.</div></div><div class="fs-branch"><b>Out:</b> the pool the reranker will see, or nothing at all.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">4</div><div><b><code>empty_pool_answer</code></b> Nothing was retrieved: the first refusal, made by code. <code>answerable</code> false, backend <code>none</code>, 0 tokens, Rs 0.</div></div><div class="fs-branch"><b>Refused:</b> no reranker and no model ran.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">5</div><div><b><code>rerank</code></b> The Ranking API's order, the request's top_k of the pool (lesson 2.3). <code>/v1/passages</code> returns at this point, with each passage's full text.</div></div><div class="fs-branch"><b>/v1/passages stops:</b> the passages, no model, Rs 0.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main slot"><div class="fs-n">6</div><div><b>Where Jev would go</b> A decision on the reranked pool: answer, and the generator runs; refuse, and a refusal is written without it. No code sits here in this course. <code>evals/decide.py</code> asks the rule and Jev offline, on <code>/v1/passages</code>' pools, beside the generator's own decision.</div></div><div class="fs-branch"><b>After 6 December:</b> possibly a switch, off, shadow or enforce (step 7).</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">7</div><div><b><code>generate</code></b> The model reads the packed pool and fills <code>ModelDraft</code>; <code>answerable=false</code> is rule 3 of its system prompt, lesson 3.5's refusal.</div></div><div class="fs-branch"><b>Refused by the model:</b> a full generator call, billed.</div></div>
+<div class="down" aria-hidden="true">&#8595;</div>
+<div class="fs"><div class="fs-main"><div class="fs-n">8</div><div><b><code>screen_response</code></b> Model Armor on the buffered answer when <code>ARMOR=on</code>.</div></div><div class="fs-branch"><b>Blocked:</b> a 502, after the usage row is logged.</div></div>
+</div>
+<p class="dg-cap">The names are the kit's own, in the order <code>/v1/query</code> calls them; <code>generate()</code> lives in generator.py and the door in desk_door.py. Step 4 reads the two refusals in the code, and step 5 the switch that guards slot 6.</p></div>
+
+<h4>The rule's floor, on the %%N_ROWS%% golden rows</h4>
+<p>The rule is the one arm that runs without a lane, so the bench below runs it on the kit's own corpus: each golden row's top %%TOPK%% passages from the Rs 0 lane, which ranks the tenant's chunks by their words, and the evidence share <code>decide.py</code> computes for them, read with <code>decide.py</code>'s own <code>LocalLane</code> when this page was built. Move <code>EVIDENCE_FLOOR</code> and the confusion matrix, the three rates, the false answers and the per-shape table move with it, by the rule's own arithmetic: a pool whose share is under the floor is refused. The plot traces the rule as the floor rises, against the gate's line. The generator and Jev read no floor, so they appear on the plot and in the table as fixed, recorded points once the author's run exists, and are marked absent until then.</p>
+
+<div class="diagram" id="decider">
+<div class="dg-title">Decision bench - decide.py's rule on the Rs 0 lane's pools, all %%N_ROWS%% golden rows</div>
+<div class="dc-top">
+<label>EVIDENCE_FLOOR <span class="dc-fv" id="dc-fv">%%FLOOR2%%</span><input type="range" id="dc-floor" min="0" max="0.99" step="0.01" value="%%FLOOR%%"></label>
+<button class="dc-pre" type="button" data-f="%%FLOOR%%">%%FLOOR2%%, the kit's floor</button>
+<button class="dc-pre" type="button" data-f="0.7">0.70, step 5's Change-it</button>
+</div>
+<p class="dc-sum" id="dc-sum" aria-live="polite"></p>
+<div class="dc-grid">
+<div>
+<div class="dc-cm">
+<div class="h">truth</div><div class="h">answered</div><div class="h">refused</div>
+<div class="h">answerable (%%N_ANS%%)</div><div class="ok"><b id="dc-tp">-</b>right answers</div><div class="bad"><b id="dc-fn">-</b>lost answers</div>
+<div class="h">not answerable (%%N_UN%%)</div><div class="bad"><b id="dc-fp">-</b>false answers</div><div class="ok"><b id="dc-tn">-</b>right refusals</div>
+</div>
+<p class="dc-rates">answer rate <span id="dc-ar">-</span><br>refusal recall <span id="dc-rr">-</span><br>accuracy <span id="dc-acc">-</span><br>false answers (* an isolation row) <span id="dc-fa">-</span></p>
+</div>
+<div>
+<svg class="dc-plot" id="dc-plot" viewBox="0 0 320 250" role="img" aria-label="Refusal recall against answer rate: the rule's line as the floor rises, its point at the current floor, the gate's line at %%GATE%%, and the generator's and Jev's recorded points when they exist"></svg>
+<div class="dc-key"><span style="--k:#0d9488">the rule at the floor, and its line as the floor rises</span>%%KEY_RULE_LANE%%<span style="--k:#7c3aed">%%KEY_GEN%%</span><span style="--k:#c2410c">%%KEY_JEV%%</span><span class="line" style="--k:#b45309">the gate's refusal recall, %%GATE%%</span></div>
+</div>
+</div>
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Shape</th><th>Rows</th><th>Rule at the floor</th><th>Generator</th><th>Jev</th></tr></thead>
+<tbody>
+%%SHAPE_ROWS%%
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+<p class="dc-sum">The %%N_BELOW%% rows the floor can move: their top %%TOPK%% passages carry less than all of the question's information. Teal is a right decision at the current floor and orange a wrong one; the dark line in each bar is the floor.</p>
+<ol class="dc-ladder">
+%%LADDER%%
+</ol>
+<p class="dc-all">The other %%N_AT1%% rows carry all of it, a share of 1.00: %%N_AT1_ANS%% answerable, and %%N_AT1_UN%% that are not (%%AT1_UN_IDS%%; * an isolation row). The rule answers every one of them at every floor below 1, so on this lane no floor takes the rule past %%BEST_RR%% refusal recall; from %%BEST_FLOOR%% upwards it holds that figure while answering %%BEST_AR%% of the answerable rows.</p>
+<p class="dg-cap">Shares, verdicts and counts are <code>decide.py</code>'s, computed when this page was built, and the rates are printed by the kit's own <code>route_eval.rate()</code>. At %%FLOOR2%% and 0.70 they equal the two runs in step 5, which the build checks. On your lane the pool comes from dense retrieval and the reranker, so its shares differ, and step 6 measures them.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the bench is not</div>
+<p>It is not your lane and it is not Jev. The Rs 0 lane ranks words, so a row's pool here is not the pool your lane's index and reranker return, and a question can carry every word of its answer without being answered. A recorded point is the author's lane, on that lane's pools, and it does not move with the floor because neither the generator nor Jev reads one. Nothing on this bench calls a model.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: decision, arm, evidence share, floor, two refusals, rates, Wilson, Brier, kappa, System One, JEV_MODE, skip</h3><p>Thirteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Answer-or-refuse decision</strong></td><td data-label="Meaning">Before an answer is written: answer from this pool, or refuse. Scored against <code>evals/golden.jsonl</code>'s own <code>answerable</code>. Whether an answer is right stays the live eval's job; this scores the decision only.</td><td data-label="On your lane">%%N_ANS%% answerable rows, %%N_UN%% not.</td></tr>
+<tr><td><strong>Arm</strong></td><td data-label="Meaning">One way of deciding on the same pool: <code>rule</code> (the kit's code), <code>generator</code> (the deployed <code>/v1/query</code>'s own <code>answerable</code>), <code>jev</code> (TypeSafe's model through <code>shared/system_one.py</code>).</td><td data-label="On your lane">rule and generator; jev not available.</td></tr>
+<tr><td><strong>Evidence share</strong></td><td data-label="Meaning">How much of the question's information the pool carries: each content word weighted by its idf over the tenant's chunks, counted when any passage holds a token it matches. A number from 0 to 1, not a probability.</td><td data-label="On your lane">rf-01, the sabbatical question: %%SH_RF01%% on the Rs 0 lane (step 4).</td></tr>
+<tr><td><strong>EVIDENCE_FLOOR</strong></td><td data-label="Meaning"><code>shared/documind_tools.py</code>'s %%FLOOR%%: the Rs 0 lane's gate, and the rule arm's default floor, which <code>--floor</code> changes.</td><td data-label="On your lane">%%FLOOR2%%; step 5's Change-it tries 0.70.</td></tr>
+<tr><td><strong>The empty pool's refusal</strong></td><td data-label="Meaning"><code>empty_pool_answer()</code>: retrieval found no candidate, so <code>answerable</code> false with backend <code>none</code>, 0 tokens and Rs 0. The first refusal on the path, made by code, and the one every arm shares.</td><td data-label="On your lane">Rare: a dense pool is empty only when a filter empties it.</td></tr>
+<tr><td><strong>The model's refusal</strong></td><td data-label="Meaning">Rule 3 of the generator's <code>SYSTEM</code>: the context does not contain the answer, so <code>answerable=false</code>. Written after a full generator call, and billed as one.</td><td data-label="On your lane">rf-01 in the UI, step 3.</td></tr>
+<tr><td><strong>Answer rate, refusal recall, accuracy</strong></td><td data-label="Meaning">Of the answerable rows, the share answered; of the unanswerable rows, the share refused; of the rows decided, the share right. Printed as <code>k/n = p% [lo, hi]</code>, denominator first.</td><td data-label="On your lane">The gate wants refusal recall %%GATE%%.</td></tr>
+<tr><td><strong>Wilson interval</strong></td><td data-label="Meaning">The 95% score interval for k of n (<code>route_eval.wilson</code>, z 1.96). It stays honest at 0 or n: a perfect %%N_UN%% of %%N_UN%% still has a lower bound of %%W18%%.</td><td data-label="On your lane">Beside every rate <code>decide.py</code> prints.</td></tr>
+<tr><td><strong>Calibration, Brier score</strong></td><td data-label="Meaning">For an arm that gives a score: the mean of (score minus truth) squared, 0 when perfect and 0.25 for a constant 0.5, with reliability bins beside it. The generator gives a confidence word instead, so it is read as right decisions per word.</td><td data-label="On your lane">The rule's share: Brier %%BRIER_RULE%% on the Rs 0 lane, though it is not a probability.</td></tr>
+<tr><td><strong>Cohen's kappa</strong></td><td data-label="Meaning">Agreement between two arms beyond what chance would give, on the rows both decided. Undefined, not perfect, when an arm gives one verdict throughout.</td><td data-label="On your lane">The rule against the generator, step 6.</td></tr>
+<tr><td><strong>System One model, Jev</strong></td><td data-label="Meaning">TypeSafe AI's model that, by TypeSafe's page in October 2026, returns typed decisions (a choice, a score, a 0 to 1 value) with calibrated probabilities instead of text. Hosted outside Google Cloud, early access through console.typesafe.ai, USD %%JEV_USD%% per billion input tokens; retention and region undocumented. The vendor's claims.</td><td data-label="On your lane">Not on your lane: no key and no adapter.</td></tr>
+<tr><td><strong>JEV_MODE</strong></td><td data-label="Meaning"><code>off</code> (the default: no call, no file), <code>recorded</code> (one recorded decision per golden row from <code>evals/system_one/recorded.jsonl</code>), <code>live</code> (TypeSafe's API, through an adapter not built yet). The key would be <code>JEV_API_KEY</code>, read from the environment only.</td><td data-label="On your lane"><code>off</code>.</td></tr>
+<tr><td><strong>Error, skipped</strong></td><td data-label="Meaning">Not decisions. A failed call is an error; a switch that is off, a missing recording or a tenant whose policy keeps its text home is a skip. Neither is ever counted as a refusal.</td><td data-label="On your lane">Jev skips every row with <code>JEV_MODE=off</code>.</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One pair of words carries the lesson: <em>lost answers</em> and <em>false answers</em>. Every arm trades one for the other, the floor makes the trade visible, and the only fair comparison puts every arm on the same pool and the same truth.</p>

@@ -9,7 +9,10 @@ gcloud builds submit --config=cloudbuild.yaml \
 
 # 2. The service: private (IAM), its own account, the MCP server's url, and its own url for the card.
 #    No RAG_API_URL and no roster: the peer does not know the API exists. GOOGLE_CLOUD_LOCATION=global
-#    is for Gemini 3.x; SELF_URL is what makes the agent card say a reachable address.
+#    is for Gemini 3.x; SELF_URL is what makes the agent card say a reachable address. ADK_MAX_LLM_CALLS=12 is the
+#    peer's cap on model calls a task (agent.py's default too; workshop lesson 10.7's make agent-drill trips it).
+#    PEER_CHAIN=on has the peer refuse a delegation loop or a third hop before any model call (services/agent/chain.py,
+#    workshop lesson 10.7). Off unless this deploy is given it: make deploy-services ... PEER_CHAIN=on.
 gcloud run deploy documind-agent \
   --image=${REGION:-us-central1}-docker.pkg.dev/$PROJECT/documind/agent:$GIT_SHA \
   --region=${REGION:-us-central1} --platform=managed \
@@ -18,7 +21,7 @@ gcloud run deploy documind-agent \
   --min-instances=${MIN_INSTANCES:-0} --max-instances=5 --cpu-boost \
   --execution-environment=gen2 \
   --service-account=documind-agent-sa@$PROJECT.iam.gserviceaccount.com \
-  --set-env-vars="^|^GOOGLE_CLOUD_PROJECT=$PROJECT|GOOGLE_GENAI_USE_VERTEXAI=1|GOOGLE_CLOUD_LOCATION=global|MCP_URL=https://documind-mcp-$PROJECT_NUMBER.${REGION:-us-central1}.run.app|SELF_URL=https://documind-agent-$PROJECT_NUMBER.${REGION:-us-central1}.run.app|AGENT_MODEL=gemini-3.6-flash"
+  --set-env-vars="^|^GOOGLE_CLOUD_PROJECT=$PROJECT|GOOGLE_GENAI_USE_VERTEXAI=1|GOOGLE_CLOUD_LOCATION=global|MCP_URL=https://documind-mcp-$PROJECT_NUMBER.${REGION:-us-central1}.run.app|SELF_URL=https://documind-agent-$PROJECT_NUMBER.${REGION:-us-central1}.run.app|AGENT_MODEL=gemini-3.6-flash|PEER_CHAIN=${PEER_CHAIN:-off}|ADK_MAX_LLM_CALLS=12"
 
 # 3. Who may call the peer: the UI's account (this notebook and make smoke-agent mint as it) and the
 #    chat account. A2A carries no identity of its own - IAM is the peer's front door, and the peer

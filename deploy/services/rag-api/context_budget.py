@@ -17,7 +17,7 @@ class TokenBudget:
     system: int = 1_500
     tenant_pack: int = 40_000   # stable prefix, cached (see cache_manager.py)
     chunks: int = 6_000         # retrieved evidence, packed most-relevant-first
-    history: int = 2_000        # rolling summary (documind-chat, 8.5)
+    history: int = 2_000        # earlier turns: 0 in fit(); documind-chat's agents resend whole threads, untrimmed
     answer: int = 2_000         # reserved for output
 
     @property

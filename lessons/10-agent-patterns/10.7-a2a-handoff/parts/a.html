@@ -1,0 +1,95 @@
+<div class="hero"><div class="hero-inner">
+<div class="hero-crumb">Module 10 &middot; Agent patterns &middot; Lesson 10.7</div>
+<h1>Hand one question to the A2A peer, and stop loops and deadlocks: <span>a bounded hand-off, a capped peer, and a caller graph with no way back</span></h1>
+<p>The ADK brain answers from the documents with two tools. The A2A peer that lesson 10.6 traced holds the inventory tools: which documents the corpus holds, and how many. This lesson gives the ADK brain a third tool, <code>documind_peer</code>, that hands one question to the peer. It is off unless <code>PEER_URL</code> is set. Only the question crosses. Before anything is sent, a gate refuses a third hand-off in a turn, and a confused deputy: a peer that would answer from another tenant's documents. A hand-off waits at most %%PEER_TIMEOUT%% s, and the peer stops each task at %%PEER_CAP%% model calls. Then loops and deadlocks. A cycle among the lane's own services is refused by construction, when you check the caller graph. A loop through an agent the lane does not run is refused at run time, before the peer makes a single model call.</p>
+<div class="hero-chips"><div class="hero-chip">documind_peer</div><div class="hero-chip">PEER_URL</div><div class="hero-chip">%%MAX_HANDOFFS%% a turn</div><div class="hero-chip">%%PEER_TIMEOUT%% s</div><div class="hero-chip">confused deputy</div><div class="hero-chip">%%PEER_CAP%% model calls</div><div class="hero-chip">check-callers</div><div class="hero-chip">PEER_CHAIN</div><div class="hero-chip">TransferCap</div></div>
+</div></div>
+
+<div class="content">
+
+<div class="toc"><div class="toc-title">On this page</div>
+<ol>
+<li><a href="#s1">One question across, a cap on the far side, and no way back</a></li>
+<li><a href="#s2">The words: hand-off, gate, confused deputy, budget, cap, caller graph, cycle, chain</a></li>
+<li><a href="#setup">Before you run anything: set up the shell</a></li>
+<li><a href="#s3">Switch the hand-off on, and ask the ADK brain</a></li>
+<li><a href="#s4">The hand-off in the kit: what crosses, and the gate in front of it</a></li>
+<li><a href="#s5">The far side: the peer stops a task at %%PEER_CAP%% model calls</a></li>
+<li><a href="#s6">The hand-off over REST: the response, the smoke, and the confused deputy</a></li>
+<li><a href="#s7">What the lane logs: the hand-off line beside the chat row</a></li>
+<li><a href="#s8">A loop among the lane's own services: refused by construction</a></li>
+<li><a href="#s9">A loop through someone else's agent: refused at run time</a></li>
+<li><a href="#s10">Why it is built this way, what it costs, and what the kit does not do yet</a></li>
+<li><a href="#s11">Verify it yourself: the checklist</a></li>
+</ol></div>
+
+<div class="box box-teal"><div class="box-title">In this lesson</div>
+<p>You will learn what crosses when the ADK brain hands a question to the peer, what refuses a hand-off before it is sent, and what bounds one that is sent. Then you will prove it: <code>documind_peer</code> in the turn's <code>tool_calls</code> with the peer's task completed, a cycle refused by construction, and a loop refused at run time before any model call.</p></div>
+
+<!-- ============================ STEP 1 ============================ -->
+<div class="step" id="s1"><div class="step-n">1</div><div><span class="kicker">Level 0 &middot; Theory</span><h3>One question across, a cap on the far side, and no way back</h3><p>What crosses, what refuses, what bounds, and why a loop between services is a deadlock.</p></div></div>
+
+<p><strong>Why hand a question over.</strong> The ADK brain has two tools, <code>retrieve</code> and <code>calculate_processing_cost</code>. They answer what a document says and what processing costs. Neither can say which documents the corpus holds: that is <code>list_documents</code> and <code>corpus_stats</code> on <code>documind-mcp</code>, and the peer from lesson 10.6 holds them. <code>documind_peer</code> is one more tool, for the ADK brain alone. It hands the peer one question and brings back the peer's answer, in words, with no passages to cite. It exists only while <code>PEER_URL</code> is set on the chat service, and <code>make handoff</code> sets it.</p>
+
+<p><strong>Only the question crosses.</strong> A hand-off is one A2A message. It carries the question's words. Beside them, in the request's metadata, go the delegation chain, <code>["%%ASKER%%"]</code>, and a random hand-off id. The tenant, the person and the thread stay behind. The chat calls the peer as its own account, <code>documind-chat-sa</code>, one of the two invokers lesson 10.6 showed. The peer reads the corpus as its own account, <code>documind-agent-sa</code>, which sits on acme's roster alone.</p>
+
+<p><strong>A confused deputy, refused before anything is sent.</strong> That last fact is a trap. A zeta member asks the chat, the chat asks the peer, and the peer answers from acme's corpus. A service that holds more access than the person it acts for, and uses it for them, is a confused deputy. So before each hand-off, <code>peer.py</code> reads every roster the peer's account is on, and sends only when that is exactly one roster, the asker's. The refusal names no tenant. The asker learns only that the peer's corpus is not theirs.</p>
+
+<p><strong>Three limits, two near and one far.</strong> A turn may hand off at most %%MAX_HANDOFFS%% questions. A third is refused before it is sent, and calls the model makes side by side count each other. One hand-off waits at most %%PEER_TIMEOUT%% s, and never past the turn's own deadline of %%TURN_DEADLINE%% s from lesson 5.5. The UI waits %%UI_WAIT%% s for the whole turn. A cut hand-off is data for the model, as a cut search is. On the far side, the peer stops each task at %%PEER_CAP%% model calls. Before this lesson's kit it ran under ADK's default of %%ADK_DEFAULT%%.</p>
+
+<p><strong>Loops and deadlocks.</strong> Each service holds a request while it waits on the service it called, and each has a fixed number of slots. The chat takes %%CHAT_CONC%% requests at a time on each of at most %%CHAT_INST%% instances, and the peer %%PEER_CONC%% on each of at most %%PEER_INST%%. If the peer could call the chat back, a hand-off could come back to a chat that is waiting on it. Under load, each side fills its slots with requests waiting on the other, and only timeouts end it. That is a deadlock across services.</p>
+
+<p><strong>Refused twice: by construction, and at run time.</strong> An account may invoke a service only where that service's deploy script binds it. <code>make check-callers GRAPH=1</code> reads those bindings and shows they hold no cycle, so the lane's own services cannot deadlock this way. It cannot see an agent the lane does not run, such as a partner's agent that asks the peer again. For that the request carries its own chain. With <code>PEER_CHAIN=on</code>, the peer refuses a request whose chain already names it, or that would be a third hop, before its first model call.</p>
+
+<div class="analogy"><div class="analogy-icon">&#9879;</div><div>
+<p><strong>A hospital ward and an outside lab.</strong> The ward may send a requisition slip to an empanelled lab. The slip names the test and nothing else: not the patient's file, not the ward's notes. The lab works under its own registration, which covers one hospital. So the ward never sends a slip for a patient of another hospital, and the refusal does not say whose registration it is. A visit gets at most two slips. The doctor waits a fixed time for each result and then carries on without it, and the lab stops any test that runs past its own limit. Two rules keep slips from going round in circles. The contracts say who may send slips to whom, and nobody signs a set in which a slip can come back to the desk that sent it. And every slip lists the desks it has passed: a desk that finds its own name there, or two desks already listed, sends it back unrun.</p></div></div>
+
+<h4>Follow one hand-off</h4>
+<p>Choose who asks, what the chat's model sends, and how the peer behaves. The panel follows the turn through the gate, the peer's door, the peer, and back to the model.</p>
+
+<div class="diagram pc" id="ho">
+<div class="dg-title">One ADK turn - the gate, the peer, and what the model reads back</div>
+<div class="pc-box"><b class="h">The turn</b>
+<div class="pc-in"><label>Who asks<select id="ho-who"></select></label><label>The model sends<select id="ho-sends"></select></label><label>The peer<select id="ho-peer"></select></label></div>
+<ol class="hops" id="ho-out" aria-live="polite"></ol></div>
+<p class="dg-cap">Each of the %%N_TURNS%% outcomes is what the kit's code did when this page was built: the kit's chat app and its ADK brain, <code>peer.py</code> and a2a-sdk's client, against the kit's own peer. Gemini was scripted on both sides, and the rosters, the tokens and Cloud Run's check were stood in. For the slow peer the build set <code>PEER_TIMEOUT_S</code> to %%SLOW_BUDGET%% s; on your lane it is %%PEER_TIMEOUT%% s.</p>
+</div>
+
+<h4>Try to close a loop</h4>
+<p>On the left, add one invoker binding to a deploy script and see what <code>check-callers</code> says. On the right, send the peer a request that has come along a chain, with its switch off and on.</p>
+
+<div class="diagram pc" id="lp">
+<div class="dg-title">A loop - refused by construction, and at run time</div>
+<div class="pc-in"><label>By construction: the bindings<select id="lp-bind"></select></label><label>At run time: the request's chain<select id="lp-chain"></select></label><label>The peer's PEER_CHAIN<select id="lp-switch"></select></label></div>
+<div class="pc-two"><div class="pc-box"><b class="h">make check-callers GRAPH=1</b><div id="lp-graph" aria-live="polite"></div></div>
+<div class="pc-box"><b class="h">The peer's task</b><div id="lp-task" aria-live="polite"></div></div></div>
+<p class="dg-cap">The left is <code>commands/check_callers.py</code> run on copies of the kit's <code>sa.tf</code> and deploy scripts, each with that one line changed. The right is the kit's peer, served offline with its model scripted and counted, at <code>PEER_CHAIN=off</code> and <code>on</code>.</p>
+</div>
+
+<div class="box box-amber"><div class="box-title">What the panels are not</div>
+<p>On your lane, Gemini decides whether a question goes to the peer, and writes both answers. The gate, the limits, the caller graph and the chain are the kit's, and they do not change.</p></div>
+
+<!-- ============================ STEP 2 ============================ -->
+<div class="step" id="s2"><div class="step-n">2</div><div><span class="kicker">Level 1 &middot; Definitions</span><h3>The words: hand-off, gate, confused deputy, budget, cap, caller graph, cycle, chain</h3><p>Fifteen rows, each with the value it takes on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>Word</th><th>Meaning</th><th>On your lane</th></tr></thead>
+<tbody>
+<tr><td><strong>Hand-off</strong></td><td data-label="Meaning">One question sent from the ADK brain to the A2A peer, as one A2A message.</td><td data-label="On your lane"><code>documind_peer</code>, the ADK brain's third tool</td></tr>
+<tr><td><strong>documind_peer</strong></td><td data-label="Meaning">The tool. Its description tells the model when to use it; its one argument, <code>request</code>, is the question.</td><td data-label="On your lane">present only while <code>PEER_URL</code> is set</td></tr>
+<tr><td><strong>PEER_URL, PEER_ACCOUNT</strong></td><td data-label="Meaning">The peer's address, and the account it runs as, set on the chat service.</td><td data-label="On your lane">set by <code>make handoff</code>, removed by <code>OFF=1</code> or the chat's next deploy</td></tr>
+<tr><td><strong>Gate</strong></td><td data-label="Meaning">The check that runs before a hand-off is sent.</td><td data-label="On your lane"><code>peer.gate()</code>: the cap per turn, then the rosters</td></tr>
+<tr><td><strong>Confused deputy</strong></td><td data-label="Meaning">A service with more access than the person it acts for, using that access for them.</td><td data-label="On your lane">the peer reads as <code>documind-agent-sa</code>, on acme alone</td></tr>
+<tr><td><strong>HANDOFF_MAX_PER_TURN</strong></td><td data-label="Meaning">How many hand-offs one turn may send.</td><td data-label="On your lane">%%MAX_HANDOFFS%%</td></tr>
+<tr><td><strong>PEER_TIMEOUT_S, budget</strong></td><td data-label="Meaning">The longest one hand-off waits; its budget is the smaller of that and the turn's time left.</td><td data-label="On your lane">%%PEER_TIMEOUT%% s, inside the turn's %%TURN_DEADLINE%% s</td></tr>
+<tr><td><strong>The peer's cap</strong></td><td data-label="Meaning">Model calls one A2A task may make before ADK ends it <code>failed</code>.</td><td data-label="On your lane">%%PEER_CAP%%, <code>ADK_MAX_LLM_CALLS</code> on the peer</td></tr>
+<tr><td><strong>handoffs</strong></td><td data-label="Meaning">The turn's record of each hand-off, sent or refused.</td><td data-label="On your lane">in the response, and one log line each; not in the chat row</td></tr>
+<tr><td><strong>Caller graph</strong></td><td data-label="Meaning">Which service's account may invoke which service.</td><td data-label="On your lane">%%N_SERVICES%% services, %%N_EDGES%% edges, read from the deploy scripts</td></tr>
+<tr><td><strong>Cycle</strong></td><td data-label="Meaning">A path in the caller graph that comes back to where it started.</td><td data-label="On your lane">none; <code>check-callers</code> exits 1 on one</td></tr>
+<tr><td><strong>Deadlock</strong></td><td data-label="Meaning">Requests that each wait on another to finish, so none finishes.</td><td data-label="On your lane">what a cycle allows under load</td></tr>
+<tr><td><strong>Delegation chain</strong></td><td data-label="Meaning">The agents a request has passed through, in order, carried in the request's metadata.</td><td data-label="On your lane"><code>%%CHAIN_KEY%%</code>, <code>["%%ASKER%%"]</code> from the chat</td></tr>
+<tr><td><strong>PEER_CHAIN</strong></td><td data-label="Meaning">The peer's switch for reading the chain.</td><td data-label="On your lane">off; on refuses a loop or a third hop</td></tr>
+<tr><td><strong>TASK_STATE_REJECTED</strong></td><td data-label="Meaning">The state of a task the peer refused to run.</td><td data-label="On your lane">0 model calls, the reason in its status message</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<p>One distinction to hold. The gate refuses a hand-off before it leaves the chat. The budget, the cap and the chain bound a request that has left. The caller graph is checked before anything runs at all.</p>

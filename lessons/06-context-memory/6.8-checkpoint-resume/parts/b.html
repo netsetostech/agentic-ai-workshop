@@ -1,0 +1,90 @@
+<div class="box box-amber"><div class="box-title">What this lesson needs from the setup</div>
+<p>The shell, in the kit's folder, with <code>PROJECT</code>, <code>REGION</code>, <code>NUMBER</code>, <code>ME</code> and <code>API</code>. <code>make thread</code> and <code>make replay</code> run in <code>~/graph-venv</code>, lesson 5.4's venv: <code>commands/graph-venv.sh</code> makes it if it is missing and installs the chat image's pins into it, and <code>make thread</code> adds lesson 6.6's Cloud SQL connector. The Python cells use the same venv, so run the steps in order. Your account must be able to read the DSN secret and connect to the instance, as in lesson 6.6, and to mint tokens as <code>documind-ui-sa</code>, as the setup's <code>tok</code> does. Step 3 needs you in a browser. Steps 4 and 5 run offline at Rs 0; the model calls in steps 3, 5 and 7 are priced in step 9. Nothing on your lane is written but your step 3 conversation.</p></div>
+
+<!-- ============================ STEP 3 ============================ -->
+<div class="step" id="s3"><div class="step-n">3</div><div><span class="kicker">Level 2 &middot; From the UI</span><h3>Your conversation, read back step by step</h3><p>Two questions in the UI on the LangGraph brain, then the thread they wrote, a row per checkpoint.</p></div></div>
+
+<h4>Definition</h4>
+<p>The UI keeps one conversation per browser session and never shows its session id. The chat service files the conversation under <code>acme:</code>your email<code>:</code>that session, so <code>make thread EMAIL="$ME"</code> can find it: it lists your threads, one row per session, the latest written first. Given <code>SESSION=</code>, it decodes that thread along its latest history, a row per checkpoint: when it was written (UTC), its source, the brain that wrote it, its <code>next</code>, how many messages it holds, and the newest one. It connects the way lesson 6.6's cells did, through the Cloud SQL connector as the <code>chat</code> user, and makes its session read only before the first query. Every statement it sends after that is a <code>SELECT</code>.</p>
+
+<h4>The code</h4>
+@@mk_thread@@
+@@read_sql@@
+@@read_lane@@
+
+<h4>Do it: two questions in the UI</h4>
+%%CELL_UI%%
+%%OUT_UI%%
+<ol>
+<li>Open that address, and sign in with the account the line names.</li>
+<li>In the sidebar, set <strong>Brain</strong> to <code>langgraph</code>. It starts on <code>direct</code>, which does not reach the chat service.</li>
+<li>Ask: <em>%%Q1%%</em></li>
+<li>When the answer is in, ask: <em>%%Q2%%</em></li>
+</ol>
+
+<div class="box box-teal"><div class="box-title">Expected</div>
+<p>Two answers with their citations, each with a caption that begins <code>brain: langgraph</code> and ends with the turn's own rupees.</p></div>
+
+<h4>Do it: your thread</h4>
+%%CELL_THREADS%%
+%%OUT_THREADS%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Your two questions are one thread, under your email and the session the UI made. Each turn opens with an <code>input</code> checkpoint: the question is in the input, not yet in the messages, and <code>next</code> is <code>__start__</code>. Each <code>loop</code> checkpoint after it adds one message: the question, the model's call for <code>retrieve</code>, the passages, the answer. A turn with one search is five checkpoints, and the step runs on across turns, so two such turns are ten, steps -1 to 8.</p>
+<p>No row's <code>next</code> was read from the table. <code>make thread</code> asked the LangGraph brain's own graph, built over a saver that refuses writes and a model that is never called. The last row's <code>next</code> is empty: your turn ended. A last row with <code>next</code> <code>tools</code> would be a turn cut off with its search still due.</p></div>
+
+<!-- ============================ STEP 4 ============================ -->
+<div class="step" id="s4"><div class="step-n">4</div><div><span class="kicker">Level 2 &middot; The kit, offline</span><h3>A turn cut off mid-flight, resumed from its checkpoint</h3><p>The kit's cut-off thread copied into a local saver and finished with <code>invoke(None)</code>, then a finished turn replayed to match.</p></div></div>
+
+<h4>Definition</h4>
+<p>The kit's cut-off thread was written by running two turns of the kit's LangGraph brain offline and closing the second turn's stream right after the model asked for <code>retrieve</code>, as a client that goes away does. Its last checkpoint, step %%CUT_STEP%%, holds the call and has <code>next</code> <code>tools</code>. <code>make replay OFFLINE=1</code> reads it and does four things, all on your machine. It copies the thread into a local <code>InMemorySaver</code>, one <code>update_state()</code> per checkpoint, each written as the node that wrote it, so every copied step has the file's step, <code>next</code> and messages. It resumes from where the turn stopped, with <code>graph.invoke(None, ...)</code>. It forks from the turn's input checkpoint with another question. And it lists every checkpoint with <code>get_state_history()</code>.</p>
+<p>Offline, the model is a script: the thread's own model messages played back, then a rule (search for the question, then answer from the first passage). A search the thread recorded is answered as recorded, and any other by the kit's Rs 0 lane over <code>evals/corpus</code>. A socket guard refuses any connection that would leave your machine, and nothing mints a token.</p>
+
+<h4>The code</h4>
+@@fixture@@
+@@cut@@
+@@copy@@
+@@run@@
+
+<h4>Do it: the cut-off turn, resumed</h4>
+%%CELL_REPLAY%%
+%%OUT_REPLAY%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The copy matched the file step for step. The replay ran what step %%CUT_STEP%% said was due: the tools node searched, then the agent node called the model once and answered. Nothing before step %%CUT_STEP%% ran again, not the question and not the model's first call. That is the lesson's proof, a turn cut off mid-flight and resumed from its checkpoint.</p>
+<p>The resumed turn went on from step %%CUT_STEP%%, so it extends the copied line. The fork went back to step %%FORK_FROM%%, the second turn's input, and wrote another question there. <code>get_state_history()</code> lists both, %%HIST_N%% checkpoints in %%HIST_BRANCHES%% branches, each with the step it follows. The script costs nothing, and the lane was never touched.</p></div>
+
+<h4>Do it: a finished turn, replayed</h4>
+<p>At step 0 the first turn had not yet called the model, and the file recorded everything after it, so there is something to compare. The replay re-runs the turn from there and compares what it produced with what the file recorded: each message's kind and the tools it asked for, the sources each search returned, and the answer. A recording that stops mid-turn, like this thread's second turn, is compared as far as it goes, and the rest is what the replay added.</p>
+@@compare@@
+%%CELL_MATCH%%
+%%OUT_MATCH%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>The replay matches: the same steps, the same %%MATCH_CITES%% sources, the same answer. It is a new branch from step 0, and the recorded one is still there beside it. Offline, the script plays the recorded model messages back, so a match is exact. In step 7 the model is Gemini, and an answer's words can change from one run to the next, so read the steps and the sources first.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Level 2 &middot; The service</span><h3>What the chat service does instead: a new question, and the repair</h3><p>The next question on the cut-off thread, as <code>/v1/chat</code> sends it, before and after <code>limits.repair_thread()</code>; then the same question to Gemini.</p></div></div>
+
+<h4>Definition</h4>
+<p><code>/v1/chat</code> has no resume. Every request carries a question, and the brain calls <code>graph.invoke()</code> with it as new input; nothing in the service calls <code>invoke(None)</code>, and the request that was cut off has no caller left to ask. The cell copies the cut-off thread into a new saver twice. The first copy gets the next question as it is. The second is first repaired with <code>limits.repair_thread()</code>, the function the LangChain and LangGraph brains call when the framework's recursion limit trips, and then gets the same question. Both run offline, as in step 4.</p>
+
+<h4>The code</h4>
+@@answer@@
+@@repair@@
+
+<h4>Do it: the next question, offline</h4>
+%%CELL_NEXT%%
+%%OUT_NEXT%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>On the first copy the new question was answered, and message 6, the model's call for <code>retrieve</code>, never was. New input makes LangGraph discard the tasks the last checkpoint left unfinished (langgraph %%LG_VER%%, <code>pregel/_loop.py:%%LG_LINE%%</code>), so the search step %%CUT_STEP%% was waiting for never ran. The thread went on to step %%STEP5_ASK%% with the call still open, and every later turn will send it to the model again.</p>
+<p>On the repaired copy, <code>repair_thread()</code> answered the open call with an error and ended the turn with the stop answer, written as the agent node, so nothing was due. The question then started on a whole thread, and reached step %%STEP5_REPAIR%% with no call left open.</p></div>
+
+<h4>Do it: the next question, with Gemini</h4>
+<p>The script above accepts any history. Gemini is the model your lane runs, so this cell asks it the same question on a copy of the cut-off thread, through the kit's LangGraph brain, with your lane's rag-api as <code>documind-ui-sa</code>: what <code>/v1/chat</code> would do. It prints the answer, or the error that would have been the request's 500, then the messages from the open call on, the calls left open and what the turn cost.</p>
+%%CELL_GEMINI%%
+%%OUT_GEMINI%%
+
+<div class="wjh"><div class="wjh-title">What just happened</div>
+<p>Whatever Gemini made of a call with no answer, the call is still open in the thread. A refusal would repeat on every later turn of the session, since each one sends the whole thread; an answer means the model talked past a search that never ran. Either way the thread now records a request that was never met. So a cut-off turn needs finishing, as step 4 did, or repairing, as above, before the next question, and the chat service does neither today (step 9).</p></div>

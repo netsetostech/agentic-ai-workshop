@@ -5,12 +5,12 @@
 # ---- ENABLE_APIS ----
 gcloud config set project $PROJECT
 
-# Two calls, not one: the Service Usage API takes at most 20 services per request
-# (SU_MAX_BATCH_SIZE_EXCEEDED), and this list is 40 - Vision, Natural Language and
+# Three calls, not one: the Service Usage API takes at most 20 services per request
+# (SU_MAX_BATCH_SIZE_EXCEEDED), and this list is 41 - Vision, Natural Language and
 # Translation joined it with Module 9 (9.3), Vector Search with the managed mirror
 # (P9, 13 September 2026: it backs 4.3's serverless RAG Engine corpora), and Spanner, GKE,
 # Cloud Deploy and Org Policy with the one shape (15 September 2026: spanner.tf, gke.tf,
-# clouddeploy.tf and org_policy.tf declare resources those APIs serve). Both are idempotent.
+# clouddeploy.tf and org_policy.tf declare resources those APIs serve). All three are idempotent.
 gcloud services enable \
   run.googleapis.com \
   compute.googleapis.com \
@@ -54,6 +54,11 @@ gcloud services enable \
   spanner.googleapis.com \
   container.googleapis.com \
   clouddeploy.googleapis.com
+
+# The Security Token Service: Workload Identity Federation swaps GitHub's token for a Google one there (wif.tf,
+# lesson 11.1's keyless build); Google's federation setup enables it with IAM Credentials, which is above.
+gcloud services enable \
+  sts.googleapis.com
 
 # ---- APPLY ----
 # Run from deploy/ (or deploy_module_rag), using the intended existing PROJECT/REGION.

@@ -3,7 +3,7 @@
 Do it: the same call, from the shell
 
 Run order inside this file:
-1. Do it: the same call, from the shell (source window 26)
+1. Do it: the same call, from the shell (source window 27)
 
 Prerequisites: demo_05_three_refusals_the_model_s_twice_the_api_s_once_and_how_their_envelopes_differ.
 Use the existing rag-shell-venv interpreter; Run or Debug this file.
@@ -80,7 +80,7 @@ def demonstrate(session):
     A failed step stops this sequence; inspect its evidence before an explicit retry.
     """
     run_steps(session, [
-        ('source_26', step_01_the_same_call_from_the_shell),
+        ('source_27', step_01_the_same_call_from_the_shell),
     ], retry_failed=RETRY_FAILED_STEP, cleanup=False, finalize=False)
 
 

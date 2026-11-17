@@ -1,0 +1,335 @@
+<div class="box box-teal"><div class="box-title">Phase 2 starts here</div>
+<p>Finish Phase 1 in this terminal first, with the Python environment active. Terraform works from <code>~/deploy_module_rag/terraform</code>, keeps its state at <code>gs://$PROJECT-tfstate</code> under the prefix <code>documind/$PROJECT</code>, the bucket and prefix the kit's Makefile uses (<code>TFSTATE_BUCKET</code>, <code>TFSTATE_PREFIX</code>), and reads its inputs from <code>terraform/runbook-project.auto.tfvars.json</code>, the file <code>make plan</code> writes, plus the <code>TF_VAR_</code> values in your settings file. Every later make target (<code>make drift</code>, <code>make deploy-services</code>, <code>make down</code>, <code>make off</code>) therefore reads this lane. Plan on one path at a time: this phase's saved plan, or <code>make plan</code>, never both in flight.</p></div>
+
+<!-- ============================ STEP 5 ============================ -->
+<div class="step" id="s5"><div class="step-n">5</div><div><span class="kicker">Phase 2 &middot; Terraform &middot; T1 to T4</span><h3>Prepare Terraform: the APIs and the state bucket, its sign-in, the billing account, the inputs</h3><p>Everything Terraform needs before it plans, each block ending in a PASS line.</p></div></div>
+
+<h3 id="T1">T1. Enable APIs, service agents and the state bucket</h3>
+<p>40 APIs, the service agents, the versioned state bucket.</p>
+
+<p>Before you start, finish Phase 1 (S1 to S6) in this terminal with the Python environment active. The API list is the block <code>make apis</code> runs; this step adds the service agents and the state bucket.</p>
+
+<!--BASH bash - APIs and state bucket-->
+(
+set -euo pipefail
+: "${PROJECT:?Restore ~/rag-env.sh}" "${PROJECT_NUMBER:?Restore ~/rag-env.sh}" "${REGION:?Restore ~/rag-env.sh}"
+: "${DEMO_ROOT:?Restore ~/rag-env.sh}" "${TFSTATE_BUCKET:?Restore ~/rag-env.sh}"
+cd "$DEMO_ROOT"
+# The repository's API list (40 services, two batches) from commands/lesson-12.1.sh.
+api_block="$(sed -n '/^# ---- ENABLE_APIS ----/,/^# ---- APPLY ----/p' commands/lesson-12.1.sh | sed '/^# ----/d')"
+[[ -n "$api_block" ]] || { echo 'STOP: ENABLE_APIS block not found in commands/lesson-12.1.sh.' >&2; exit 1; }
+sh -ec "$api_block"
+# Two the full Terraform also needs that are not in that list.
+gcloud services enable iam.googleapis.com sts.googleapis.com --project="$PROJECT"
+# Google-managed service agents Terraform grants roles to.
+for svc in pubsub.googleapis.com aiplatform.googleapis.com clouddeploy.googleapis.com cloudbuild.googleapis.com; do
+  gcloud beta services identity create --service="$svc" --project="$PROJECT"
+done
+gcloud storage service-agent --project="$PROJECT"
+# off.tf reads the Compute Engine default service account; it must exist and be enabled.
+gcloud iam service-accounts describe "$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --project="$PROJECT" --format='yaml(email,disabled)'
+# Terraform state bucket: reuse it if it exists, create it only if it is really absent.
+if out="$(gcloud storage buckets describe "gs://$TFSTATE_BUCKET" --project="$PROJECT" --format='value(name)' 2>&1)"; then
+  echo "REUSE: gs://$TFSTATE_BUCKET already exists"
+elif grep -qiE 'not found|404' <<<"$out"; then
+  gcloud storage buckets create "gs://$TFSTATE_BUCKET" --project="$PROJECT" \
+    --location="$REGION" --uniform-bucket-level-access --public-access-prevention
+else
+  printf '%s\n' "$out" >&2
+  echo 'STOP: bucket lookup failed for a reason other than not-found. Fix access first.' >&2
+  exit 1
+fi
+gcloud storage buckets update "gs://$TFSTATE_BUCKET" --versioning
+echo 'PASS: APIs, service agents and state bucket ready.'
+)
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p>Ends with <code>PASS: APIs, service agents and state bucket ready.</code> If <code>gcloud beta</code> asks to install a component, accept it.</p></div>
+
+<div class="fixnote"><span class="fixnote-t">Fixed in this runbook</span> Runs as one stop-on-error block. The state bucket is only created when the lookup says it does not exist; before, any failed lookup (such as a permission error) was treated as “absent” and a create was attempted. The bucket location follows <code>$REGION</code>. The API list is checked before it runs.</div>
+
+<h3 id="T2">T2. Sign in Terraform and set its quota project</h3>
+<p>Application Default Credentials and the quota project.</p>
+
+<p>Run this alone, open the URL and sign in with your operator account:</p>
+
+<!--BASH bash - ADC login-->
+gcloud auth application-default login --no-launch-browser
+<!--/BASH-->
+
+<!--BASH bash - Quota project-->
+# Use the deployment project ID, not a billing account ID or gcloud's shared project.
+: "${PROJECT:?Restore the existing deployment project ID}"
+export OPERATOR_EMAIL="${OPERATOR_EMAIL:-$(gcloud config get-value account 2>/dev/null)}"
+[[ -n "$OPERATOR_EMAIL" ]] || { echo 'STOP: no operator account; run gcloud auth login first.' >&2; false; } &&
+gcloud config set project "$PROJECT" &&
+gcloud config set billing/quota_project "$PROJECT" &&
+gcloud auth application-default set-quota-project "$PROJECT" &&
+gcloud auth application-default print-access-token >/dev/null &&
+echo "PASS: Terraform credentials ready, quota project $PROJECT"
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p>Ends with PASS.</p></div>
+
+<div class="fixnote"><span class="fixnote-t">Fixed in this runbook</span> Stops if no operator account is known, because T4 puts that address in the alert email list.</div>
+
+<h3 id="T3">T3. Save the billing account for Terraform</h3>
+<p>The billing account Terraform's budget needs, verified and saved.</p>
+
+<!--BASH bash - Billing lookup-->
+rag_load_project_billing() {
+  : "${PROJECT:?Restore the intended project ID}" "${DEMO_ROOT:?Restore DEMO_ROOT}" "${REGION:?Restore REGION}" || return
+  unset BILLING_ACCOUNT_NAME BILLING_ACCOUNT_ID TF_VAR_billing_account_id
+  BILLING_ACCOUNT_ID="$(python - "$PROJECT" "$DEMO_ROOT" "$REGION" <<'RAG_BILLING'
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+project, root, region = sys.argv[1:]
+flags = [f"--project={project}", f"--billing-project={project}", "--format=json"]
+def read_gcloud(args):
+    try:
+        return json.loads(subprocess.check_output(["gcloud", *args, *flags], text=True))
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"STOP: cannot verify project billing; no inputs were saved ({type(exc).__name__}).")
+info = read_gcloud(["projects", "describe", project])
+if info.get("projectId") != project or info.get("lifecycleState") != "ACTIVE":
+    raise SystemExit("STOP: PROJECT must identify the intended ACTIVE project.")
+billing = read_gcloud(["billing", "projects", "describe", project])
+if billing.get("projectId") != project or billing.get("billingEnabled") is not True:
+    raise SystemExit("STOP: billing is not enabled for the intended project.")
+match = re.fullmatch(r"billingAccounts/([0-9A-Za-z]{6}-[0-9A-Za-z]{6}-[0-9A-Za-z]{6})",
+                     billing.get("billingAccountName") or "")
+if not match or match.group(1) == "000000-000000-000000":
+    raise SystemExit("STOP: the linked billing account ID is missing or invalid.")
+account = match.group(1).upper()
+target = Path(root) / "terraform" / "runbook-project.auto.tfvars.json"
+if not target.parent.is_dir():
+    raise SystemExit("STOP: restore DEMO_ROOT to the existing deployment directory.")
+try:
+    values = json.loads(target.read_text()) if target.exists() else {}
+except (OSError, json.JSONDecodeError):
+    raise SystemExit("STOP: inspect the existing runbook-project.auto.tfvars.json; it was not replaced.")
+if not isinstance(values, dict):
+    raise SystemExit("STOP: runbook-project.auto.tfvars.json must contain a JSON object.")
+if values.get("project_id") not in (None, "", project):
+    raise SystemExit("STOP: saved inputs belong to another project; verify the state/backend before proceeding.")
+if values.get("region") not in (None, "", region):
+    raise SystemExit("STOP: saved inputs name another region; a region move is a separate reviewed migration.")
+values.update(project_id=project, region=region, billing_account_id=account)
+with tempfile.NamedTemporaryFile(mode="w", dir=target.parent, prefix=".rag-inputs-", delete=False) as f:
+    json.dump(values, f, indent=2)
+    f.write("\n")
+    temporary = Path(f.name)
+try:
+    temporary.replace(target)
+finally:
+    temporary.unlink(missing_ok=True)
+print(account)
+RAG_BILLING
+)" || return
+  BILLING_ACCOUNT_NAME="billingAccounts/$BILLING_ACCOUNT_ID"
+  export BILLING_ACCOUNT_NAME BILLING_ACCOUNT_ID
+  export TF_VAR_billing_account_id="$BILLING_ACCOUNT_ID"
+  printf 'PASS: verified active project %s and linked billing account %s.\n' "$PROJECT" "$BILLING_ACCOUNT_ID"
+  printf 'Saved Terraform inputs: %s/terraform/runbook-project.auto.tfvars.json\n' "$DEMO_ROOT"
+}
+
+rag_load_project_billing
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p>Prints PASS with your billing account ID.</p></div>
+
+<div class="fixnote"><span class="fixnote-t">Changed for the 14 October kit</span> The inputs go to <code>terraform/runbook-project.auto.tfvars.json</code>, the file the kit's <code>make plan</code> reads and writes (<code>commands/infrastructure.py</code>; its six critical keys are project_id, region, billing_account_id, github_repository, github_repository_id and deploy_ref). Terraform loads every <code>*.auto.tfvars.json</code> in the folder by itself, so the make targets and this runbook see the same values. The earlier runbook wrote <code>runbook-inputs.tfvars.json</code>, which nothing else read.</div>
+
+<h3 id="T4">T4. Set the Terraform inputs</h3>
+<p>Every Terraform input, exported and saved.</p>
+
+<p>Every input the kit's <code>make plan</code> would pass, and the CI trust, saved into the same inputs file. Inputs not listed keep their <code>variables.tf</code> defaults: the Google Chat door, the Desk job and GKE Autopilot stay off.</p>
+
+<p>The CI trust (<code>terraform/wif.tf</code>) lets GitHub Actions workflows from <strong>one</strong> repository, on <strong>one</strong> branch, become <code>sa-documind-cicd</code> in your project with no key file. That account can deploy code that runs as your services, so the repository must be one you own. It is never the repository you cloned: <code>netsetos/agents_workshop_learner</code> is the course author's, and trusting it would let the author's workflows deploy into your lane. On GitHub, open that repository and choose <strong>Fork</strong>; your fork is <code>YOUR-GITHUB-USER/agents_workshop_learner</code>. Lesson 11.1 builds and deploys through this trust. Name your fork in <code>GH_REPO</code>; the block looks up its numeric id, the value the trust is really keyed on, and stops on the author's repository or an empty answer.</p>
+
+<!--BASH bash - Inputs (your fork, not the example's)-->
+export GH_REPO=YOUR-GITHUB-USER/agents_workshop_learner   # your fork: a repository you own
+rag_configure_terraform_inputs() {
+  [[ "${GH_REPO:-}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && "$GH_REPO" != YOUR-GITHUB-USER/* ]] || {
+    printf 'STOP: export GH_REPO=OWNER/REPO, your fork of the kit, before this block.\n' >&2
+    return 1
+  }
+  [[ "${GH_REPO,,}" != "netsetos/agents_workshop_learner" ]] || {
+    printf 'STOP: %s is the course author'"'"'s repository; trusting it would let its workflows deploy into your project. Fork it and name your fork.\n' "$GH_REPO" >&2
+    return 1
+  }
+  [[ "${GH_REPO_ID:-}" =~ ^[1-9][0-9]*$ ]] ||
+    GH_REPO_ID="$(curl -s "https://api.github.com/repos/$GH_REPO" | python -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))')"
+  [[ "$GH_REPO_ID" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'STOP: GitHub returned no numeric id for %s. Check the name; for a private repository, export GH_REPO_ID from: gh api repos/%s --jq .id\n' "$GH_REPO" "$GH_REPO" >&2
+    return 1
+  }
+  [[ "${BILLING_ACCOUNT_ID:-}" =~ ^[0-9A-Za-z]{6}-[0-9A-Za-z]{6}-[0-9A-Za-z]{6}$ && "$BILLING_ACCOUNT_ID" != "000000-000000-000000" ]] || {
+    printf 'STOP: complete the verified project-billing lookup (T3) first.\n' >&2
+    return 1
+  }
+  [[ -n "${OPERATOR_EMAIL:-}" && -n "${REGION:-}" && -n "${RESIDENCY:-}" && -n "${DEMO_ROOT:-}" ]] || {
+    printf 'STOP: OPERATOR_EMAIL, REGION, RESIDENCY or DEMO_ROOT is empty; restore ~/rag-env.sh.\n' >&2
+    return 1
+  }
+  export TF_VAR_project_id="$PROJECT"
+  export TF_VAR_github_repository="$GH_REPO"
+  export TF_VAR_github_repository_id="$GH_REPO_ID"
+  export TF_VAR_billing_account_id="$BILLING_ACCOUNT_ID"
+  export TF_VAR_pagerduty_key='unset-in-dryrun'
+  export TF_VAR_region="$REGION"
+  export TF_VAR_india_region='asia-south1'
+  export TF_VAR_residency="$RESIDENCY"
+  export TF_VAR_env='dev'
+  export TF_VAR_audit_lock='false'
+  export TF_VAR_gemini_quota_override='false'
+  export TF_VAR_budget_amount='5000'
+  export TF_VAR_budget_currency=''
+  export TF_VAR_budget_pubsub='false'
+  export TF_VAR_alert_channels='[]'
+  export TF_VAR_alert_emails="[\"$OPERATOR_EMAIL\"]"
+  export TF_VAR_enforce_no_sa_keys='false'
+  export TF_VAR_deploy_ref='refs/heads/main'
+  export TF_VAR_embedding_model='text-embedding-005'
+  export TF_VAR_embedding_version='1'
+  export TF_VAR_retention_days='30'
+  export TF_VAR_managed_search='true'
+  export TF_VAR_managed_mirror='both'
+  export TF_VAR_tenants='["acme","zeta"]'
+  export TF_VAR_reconcile_job='false'
+  export TF_VAR_batch_job='false'
+  export TF_VAR_reconcile_image=''
+  python - "$DEMO_ROOT/terraform/runbook-project.auto.tfvars.json" "$TF_VAR_github_repository" "$TF_VAR_github_repository_id" "$TF_VAR_deploy_ref" <<'RAG_TRUST' || return 1
+import json, sys
+from pathlib import Path
+target, repository, repository_id, ref = sys.argv[1:]
+path = Path(target)
+values = json.loads(path.read_text()) if path.exists() else {}
+values.update(github_repository=repository, github_repository_id=repository_id, deploy_ref=ref)
+path.write_text(json.dumps(values, indent=2) + "\n")
+print("PASS: CI trust saved to", path.name)
+RAG_TRUST
+  printf 'Terraform project: %s\nTerraform region: %s\nGitHub repository: %s (%s)\nDeploy ref: %s\nBilling account: %s\nManaged mirror: %s\nAlert email: %s\n' "$TF_VAR_project_id" "$TF_VAR_region" "$TF_VAR_github_repository" "$TF_VAR_github_repository_id" "$TF_VAR_deploy_ref" "$TF_VAR_billing_account_id" "$TF_VAR_managed_mirror" "$OPERATOR_EMAIL"
+}
+rag_configure_terraform_inputs &&
+source "$HOME/rag-save-env.sh"
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p>Prints <code>PASS: CI trust saved</code>, the inputs, including <code>GitHub repository:</code> your fork and its numeric id, and your alert email, then <code>PASS: settings saved</code>.</p></div>
+
+<div class="fixnote"><span class="fixnote-t">Fixed in this runbook</span> Stops if the operator email, region or residency is empty. Before, an empty email produced <code>alert_emails = [""]</code>, which fails late during apply.</div>
+
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Phase 2 &middot; Terraform &middot; T5 to T8</span><h3>Run Terraform: init, one saved plan, the apply, the vector index</h3><p>Point Terraform at your bucket, read one plan, apply exactly that, then prove nothing is left to change.</p></div></div>
+
+<h3 id="T5">T5. Initialize Terraform</h3>
+<p>Point Terraform at its state in your bucket.</p>
+
+<!--BASH bash - Init-->
+: "${TFSTATE_BUCKET:?Restore ~/rag-env.sh}" "${TFSTATE_PREFIX:?Restore ~/rag-env.sh}" "${PROJECT:?Restore ~/rag-env.sh}" &&
+cd "$DEMO_ROOT/terraform" &&
+terraform init -input=false -reconfigure -backend-config="bucket=$TFSTATE_BUCKET" -backend-config="prefix=$TFSTATE_PREFIX"
+<!--/BASH-->
+
+<!--BASH bash - State list-->
+terraform state list
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p>Init succeeds. On a first deployment the state list is empty; on a rerun it lists your existing resources, which is expected. This is the bucket and prefix the kit's make targets use, so <code>make drift</code>, <code>make deploy-services</code> and <code>make down</code> read this state later.</p></div>
+
+<div class="fixnote"><span class="fixnote-t">Fixed in this runbook</span> Checks the bucket and project before init, so an empty value cannot point Terraform at a bucket named <code>bucket=</code>.</div>
+
+<h3 id="T6">T6. Plan the full infrastructure</h3>
+<p>A saved plan file, after validate and an input check.</p>
+
+<!--BASH bash - Plan-->
+rag_plan_infrastructure() {
+  : "${PROJECT:?Restore PROJECT}" "${DEMO_ROOT:?Restore DEMO_ROOT}" || return
+  : "${TF_VAR_project_id:?Restore the Terraform inputs}" || return
+  : "${TF_VAR_billing_account_id:?Complete the verified billing lookup}" || return
+  local inputs="$DEMO_ROOT/terraform/runbook-project.auto.tfvars.json"
+  python - "$PROJECT" "$TF_VAR_project_id" "$TF_VAR_billing_account_id" "$inputs" <<'RAG_INPUTS' || return 1
+import json, sys
+from pathlib import Path
+project, terraform_project, account, filename = sys.argv[1:]
+try:
+    values = json.loads(Path(filename).read_text())
+except (OSError, ValueError):
+    raise SystemExit("STOP: rerun the verified billing lookup to save runbook-project.auto.tfvars.json.")
+if not isinstance(values, dict) or not account or terraform_project != project:
+    raise SystemExit("STOP: shell project/account inputs disagree; restore the intended project.")
+if values.get("project_id") != project or values.get("billing_account_id") != account:
+    raise SystemExit("STOP: saved project/billing inputs disagree; rerun the verified lookup.")
+print("PASS: explicit plan inputs match this project's verified billing account.")
+RAG_INPUTS
+  cd "$DEMO_ROOT/terraform" || return
+  terraform validate || return
+  RAG_PLAN="rag-$(date +%Y%m%d-%H%M%S)-$$.tfplan"
+  export RAG_PLAN
+  terraform plan -input=false -lock-timeout=5m -parallelism=3 \
+    -var-file="$inputs" -out="$RAG_PLAN"
+}
+rag_plan_infrastructure
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p>Ends with <code>Plan: N to add, 0 to change, 0 to destroy.</code> Review the plan before applying.</p></div>
+
+<div class="fixnote"><span class="fixnote-t">Fixed in this runbook</span> The input check now uses <code>|| return 1</code> on the heredoc itself instead of testing <code>$?</code> on the next line.</div>
+
+<h3 id="T7">T7. Apply</h3>
+<p>Apply that exact plan, then prove nothing is left to change.</p>
+
+<p>Run alone, in the same terminal as T6 (the plan file name is only in that shell).</p>
+
+<!--BASH bash - Apply-->
+cd "${DEMO_ROOT:?Restore DEMO_ROOT}/terraform" &&
+terraform apply -lock-timeout=5m -parallelism=3 "${RAG_PLAN:?Run T6 in this terminal first}"
+<!--/BASH-->
+
+<p>Confirm nothing is left to change:</p>
+
+<!--BASH bash - Confirm-->
+cd "${DEMO_ROOT:?Restore DEMO_ROOT}/terraform" &&
+terraform output &&
+terraform plan -input=false -lock-timeout=5m -detailed-exitcode \
+  -var-file="$DEMO_ROOT/terraform/runbook-project.auto.tfvars.json"
+echo "exit code: $?"
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p><code>exit code: 0</code>. Exit code 2 means changes remain; 1 means an error. If apply failed partway, fix the error and go back to T6 for a fresh plan.</p></div>
+
+<div class="fixnote"><span class="fixnote-t">Fixed in this runbook</span> Both blocks change into the Terraform folder first, so they work even if you moved directories after T6.</div>
+
+<h3 id="T8">T8. Verify the vector index</h3>
+<p>The index, the endpoint and the deployed ID, still empty.</p>
+
+<!--BASH bash - Verify-->
+(
+  set -euo pipefail
+  : "${DEMO_ROOT:?Complete the shell setup first}"
+  : "${PROJECT:?Set the existing project ID}"
+  : "${REGION:?Set the deployment region}"
+  cd "$DEMO_ROOT"
+  python3 commands/verify-vector-index.py \
+    --deploy-root "$DEMO_ROOT" --project "$PROJECT" --region "$REGION"
+)
+<!--/BASH-->
+
+<div class="box box-teal"><div class="box-title">Checkpoint</div>
+<p>Shows the index, the endpoint and deployed ID <code>documind_chunks_v1</code>, with 0 vectors.</p></div>
+
+<div class="box box-red"><div class="box-title">Stop and read</div>
+<p>Billing runs continuously from here, even with no traffic: the VPC connector, vector index, two Cloud SQL instances, Spanner and GKE.</p></div>

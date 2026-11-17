@@ -1,0 +1,115 @@
+<!-- ============================ STEP 6 ============================ -->
+<div class="step" id="s6"><div class="step-n">6</div><div><span class="kicker">Level 4 &middot; REST</span><h3>REST: the index's own size</h3><p>The index's vectors, shards and shard size, and the deployment's machine and replicas, read from the Vertex AI API.</p></div></div>
+
+<p><code>make vector-status</code> printed the fields gcloud was asked for. The API holds more: the index's shard size, its dimensions, and the deployed index's machine and replica range. The cell reads both with two GETs, then does the one sum that matters for sizing: how much of one shard your vectors fill.</p>
+
+%%CELL_INDEX%%
+%%OUT_INDEX%%
+
+<p>Three things to read. The first line is the index as Vertex AI keeps it: its vector count should equal the datapoints <code>make vector-status</code> printed, and its shard size is the one it was created with; %%LANE_SHARD%%. The second line is the sum: your vectors times %%VEC_BYTES%% bytes, as a share of one shard. It is a tiny fraction, which is the point: your lane's index is nowhere near a limit. The last line is the deployment: the machine the shard size names, and replicas from %%REPLICAS%% to %%REPLICAS%%.</p>
+
+<p>Now turn the sum around. By its dense vectors alone, one SMALL shard holds %%SHARD_DOCS_S%% documents of the corpus's mix, one MEDIUM shard %%SHARD_DOCS_M%%, and one LARGE shard %%SHARD_DOCS_L%%. Ten million documents need %%T_SH_S%%, %%T_SH_M%% or %%T_SH_L%% of them. Google's own formula for the count is the data size divided by the shard size, and its pricing page warns that "Dataset size and restricts (filtering) affect shard count". The kit's datapoints carry a sparse vector and three filters (tenant, kind and document type) beside the dense one, so the real count can only be higher.</p>
+
+<!-- ============================ STEP 7 ============================ -->
+<div class="step" id="s7"><div class="step-n">7</div><div><span class="kicker">Level 5 &middot; Direct reads</span><h3>Direct reads: Firestore's counts and the worker's seconds</h3><p>The rows the Firestore floor multiplies, and the one number no constant gives you: how long a document takes.</p></div></div>
+
+<p>Two reads finish the measurement. The first counts rows in Firestore without fetching them: a <code>count()</code> query returns one number instead of the rows it matched.</p>
+
+%%CELL_COUNTS%%
+%%OUT_COUNTS%%
+
+<p><code>chunk rows</code> counts every version a tenant still holds: the current rows, and the rows a re-issue retired, which stay until their <code>expire_at</code> passes. <code>current</code> is what the index serves; added across the three tenants, it should match the index's vector count from steps 3 and 6. <code>indexed sources</code> is how many rows the fingerprint reads on every ingest to that tenant, which step 8 comes back to. Multiply your chunk rows by %%CHUNK_B%% bytes and you have your lane's Firestore floor for the chunks; for the %%N_CHUNKS%% text chunks alone it is %%L_FS_MIB%% MiB. At ten million documents it is %%T_FS_TIB%% TiB.</p>
+
+<p>The second read is the calibration. Cloud Run logs every delivery Pub/Sub made to the worker, with its HTTP status and how long it took, so the median of those times is your lane's seconds per document. The cell saves the last month of deliveries, then counts them by status:</p>
+
+%%CELL_LATENCY%%
+%%OUT_LATENCY%%
+
+<p>Each line is one HTTP status. A <code>2xx</code> is a delivery the worker took and finished. A <code>429</code>, if you see one, is Cloud Run turning a delivery away because no instance was free; Pub/Sub tries again later, and step 8 reads what that does at scale. Anything in the 500s is a delivery that failed and will be retried. The median of the taken deliveries mixes long PDFs with short text files, and with re-deliveries that found the document already current, so treat it as this corpus's rough figure, not a constant. The last line multiplies it by %%N%% and divides by the %%IN_FLIGHT%% documents the worker takes at once. If the cell prints nothing, your lane's ingest is older than the log keeps; the calculator's ingest row still holds: %%T_INGEST_DAYS%% days for every second a document takes.</p>
+
+<!-- ============================ STEP 8 ============================ -->
+<div class="step" id="s8"><div class="step-n">8</div><div><span class="kicker">Level 6 &middot; Ten million</span><h3>Ten million: what breaks first, and what it costs</h3><p>The straight lines priced, then the four limits read in the kit's code, then what would change each one.</p></div></div>
+
+<h4>The straight lines, priced</h4>
+
+<p>First the index, by shard size. The machine and its hourly price are <a href="%%URL_VS_PRICE%%" target="_blank" rel="noopener">Google's for Mumbai</a>, the shard sizes are <a href="%%URL_SHARDS%%" target="_blank" rel="noopener">Google's documented sizes</a>, and the count is the data size divided by the shard size, rounded up, with the kit's one replica on each:</p>
+
+%%SHARD_TABLE%%
+
+<p>Bigger shards are cheaper per gibibyte at this size: LARGE serves the same %%T_GIB%% GiB for %%T_SERVE_L%% a month, against %%T_SERVE_M%% on MEDIUM and %%T_SERVE_S%% on SMALL. Every line multiplies by the replica count, which the kit holds at one. Then everything else, for the same %%N%% documents of the corpus's mix, from <a href="%%URL_EMBED_PRICE%%" target="_blank" rel="noopener">the embedding price list</a>, <a href="%%URL_VS_PRICE%%" target="_blank" rel="noopener">Vector Search's</a> and <a href="%%URL_FS_PRICE%%" target="_blank" rel="noopener">Firestore's</a>, with Firestore's bytes counted by <a href="%%URL_FS_SIZE%%" target="_blank" rel="noopener">its published size rules</a>:</p>
+
+%%COST_TABLE%%
+
+<p>Three things stand out. Embedding is a one-off, and a batch job would pay %%T_EMBED_B%% for it instead of %%T_EMBED%%. Compaction is not a one-off: Google's page says "If the oldest uncompacted data is five days old, compaction is always triggered", billed as a rebuild of the whole index, so an index that takes updates every day is rebuilt at least every %%COMPACT_DAYS%% days, %%COMPACTIONS%% times in a 30-day month: %%T_COMPACT_MONTH%%. And the fingerprint line is larger than all the others put together. That one is not a pricing problem. It is the first of the four limits.</p>
+
+<h4>1. The fingerprint reads everything, on every ingest</h4>
+
+<p>After every successful ingest, the worker records the document in the ledger, then recomputes the tenant's fingerprint:</p>
+
+@@ingest_ok@@
+@@fingerprint@@
+
+<p><code>corpus_fingerprint()</code> streams every indexed source row of the tenant to hash their keys. The ledger row is written first, so the ingest of a tenant's k-th document reads k rows, and loading N documents into one tenant reads 1 + 2 + ... + N rows, which is N(N + 1)/2. That is the curve that grows faster than the corpus: double the documents and the reads go up four times. At %%N%% documents in one tenant it is %%T_FP_READS%% reads, %%T_FP%% at Firestore's Mumbai price of $%%FS_READ%% per 100,000 reads. Time breaks it as well: the last ingest has to stream %%N%% rows inside its %%TIMEOUT%%-second request, %%T_FP_RATE%% rows a second.</p>
+
+<p>It overtakes the cost of embedding early. For the corpus's mix, embedding one document costs about as much as %%CROSS%% Firestore reads, so once a tenant holds more than %%CROSS%% documents, each new one costs more to fingerprint than to embed. For the statutes the crossing is at %%CROSS_STAT%% documents; for short documents, which are cheap to embed, it is at %%CROSS_SHORT%%. Spreading the same documents over more tenants flattens the curve, because each tenant's sum starts again from one, and the calculator's tenants control shows by how much.</p>
+
+<h4>2. The nightly walk must finish in %%WALK_S%% seconds</h4>
+
+<p>The reconcile job is the backstop for every event the worker missed. It is off unless you turn it on, and when it runs, it runs as one task, with no retry and a %%WALK_S%%-second limit:</p>
+
+@@walk_switch@@
+@@walk_tf@@
+
+<p>Before it decides anything, it loads three complete lists: every object in the uploads bucket, every <code>sources</code> row and every <code>documents</code> row:</p>
+
+@@walk_py@@
+
+<p>At %%N%% documents that is %%T_WALK_ITEMS%% objects and rows, listed and held in one task's memory within %%WALK_S%% seconds: %%T_WALK_RATE%% a second, before the first comparison. The reads are cheap, %%T_WALK_RS%% a night. The limit is the single task and the fixed time. When the time runs out, the task is stopped, the job does not retry, no drift number is printed, and the kit's <em>Nightly reconcile failed</em> alert pages. This limit grows in a straight line, but against a ceiling that does not move.</p>
+
+<h4>3. %%IN_FLIGHT_CAP%% documents in flight</h4>
+
+<p>The worker takes one document per instance and runs at most %%IN_FLIGHT%% instances:</p>
+
+@@deploy_comment@@
+
+<p>So every second one document spends in the worker adds %%N%% &divide; %%IN_FLIGHT%% seconds to a ten-million-document load: %%T_INGEST_DAYS%% days. Your median from step 7 multiplies that. The kit itself states one floor for it, Document AI's pace on a PDF:</p>
+
+@@docai_pace@@
+
+<p>At roughly a second a page, and %%PAGES_DOC%% PDF pages in the corpus's average document, Document AI alone keeps a ten-million-document load running for %%T_DOCAI_DAYS%% days. Then there is what happens to the documents that wait. Pub/Sub delivers each upload's event at once; an event the worker cannot take is turned away and tried again, and the subscription counts every try:</p>
+
+@@dlq@@
+
+<p>The comment is the kit's own record that a refusal counts: the first live load sent a document to the dead-letter topic on five refusals, which is why the limit is now %%ATTEMPTS_W%%. %%ATTEMPTS_W_CAP%% deliveries span at most %%WAITS_W%% backoffs of at most %%MAX_BACKOFF%% seconds: %%DLQ_MIN%% minutes in all. Upload ten million documents at once and the last one waits %%T_BACKLOG_H%% hours for Document AI time alone. Any document refused %%ATTEMPTS_W%% times in those hours goes to the dead-letter topic, which lesson 8.1 reads, instead of the index. The limit was sized for thirty objects.</p>
+
+<h4>4. One replica</h4>
+
+<p>Step 4's excerpt fixes the deployed index at one replica, as both the minimum and the maximum. Replicas are what carry more questions a second. Google's sizing example on its pricing page, priced in Iowa, serves %%SIZING_V%% million vectors of %%SIZING_D%% dimensions at %%SIZING_Q1%% queries a second on one %%SIZING_M%% node, and at %%SIZING_Q3%% on three. The kit's index cannot add a second node when traffic grows. One replica also means no spare: a node that restarts leaves its shard unserved until it is back, and at %%T_SH_M%% MEDIUM shards there are %%T_SH_M%% such nodes.</p>
+
+<h4>What the kit would change</h4>
+
+%%CHANGE_TABLE%%
+
+<p>%%IN_KIT%% Each adds machinery a %%N_DOCS%%-document lane does not need, and each is now a decision you can price with the calculator. Lesson 8.4 does that for a whole design: a documentation platform that keeps itself up to date, costed at three scales from the same arithmetic.</p>
+
+<!-- ============================ STEP 9 ============================ -->
+<div class="step" id="s9"><div class="step-n">9</div><div><span class="kicker">Level 7 &middot; Verify</span><h3>Verify it yourself: the checklist</h3><p>Seven checks, each one step above, each with what a pass looks like on your lane.</p></div></div>
+
+<div class="tw"><div class="tw-scroll" tabindex="0"><table class="comp-table">
+<thead><tr><th>#</th><th>Claim</th><th>The check</th><th>Pass looks like</th></tr></thead>
+<tbody>
+<tr><td>1</td><td data-label="Claim">The corpus makes %%N_CHUNKS%% chunks and %%N_REQ%% requests by the kit's rules</td><td data-label="The check">the measuring cell, step 5</td><td data-label="Pass looks like">the <code>all</code> line reads %%N_DOCS%%, %%N_CHARS%%, %%N_CHUNKS%%, %%N_SENT%%, %%N_REQ%%: this page's numbers, digit for digit</td></tr>
+<tr><td>2</td><td data-label="Claim">The lane chunked the text documents the same way</td><td data-label="The check">the Versions table and <code>make sources</code>, step 3</td><td data-label="Pass looks like">the %%N_ACME_MD%% Markdown documents' <code>chunks</code> equal the offline table; the PDFs within a few</td></tr>
+<tr><td>3</td><td data-label="Claim">The index holds every current chunk, in one shard</td><td data-label="The check"><code>make vector-status</code> and the REST read, steps 3 and 6</td><td data-label="Pass looks like">the vector count equals Firestore's current rows across the three tenants; one shard; a shard size named</td></tr>
+<tr><td>4</td><td data-label="Claim">The deployment has one replica</td><td data-label="The check">the REST read, step 6</td><td data-label="Pass looks like"><code>replicas %%REPLICAS%% to %%REPLICAS%%</code> on the machine the shard size names</td></tr>
+<tr><td>5</td><td data-label="Claim">Your Firestore floor</td><td data-label="The check">the counts, step 7</td><td data-label="Pass looks like">chunk rows times %%CHUNK_B%% bytes; current rows below chunk rows when a re-issue left retired rows</td></tr>
+<tr><td>6</td><td data-label="Claim">Your seconds per document</td><td data-label="The check">the latency read, step 7</td><td data-label="Pass looks like">a median for the 2xx deliveries, and your days at %%N%% documents</td></tr>
+<tr><td>7</td><td data-label="Claim">The calculator is this page's arithmetic</td><td data-label="The check">step 1 at its defaults, against step 8's tables</td><td data-label="Pass looks like">the same vectors, GiB, shards and rupees; the fingerprint and ingest rows orange</td></tr>
+</tbody></table></div><span class="scroll-hint">&#8596; SWIPE</span></div>
+
+<div class="box box-teal"><div class="box-title">What changed on your lane</div>
+<p>Nothing. Every command on this page reads: the ledger and Firestore's counts, two describes and two GETs on the Vertex AI API, one Cloud Logging read, and the kit's own code on the kit's own files. The one file written is <code>~/ingest-requests.json</code> in your home directory; delete it when you are done. If you pinned acme to the kit's index in the setup section, put the pin back. The lane still bills its standing cost for every hour it is up, as lesson 0.4 priced it.</p></div>
+
+</div>
+
+<div class="footer"><p><strong>Netsetos GenAI on GCP</strong> &middot; Module 8 Ingestion practical &middot; Lesson 8.3 Size RAG for ten million documents &middot; v5.0</p><p>Next: Lesson 8.4 %%NEXT_TITLE%%.</p></div>

@@ -26,7 +26,7 @@ from shared import doc_types
 
 from contracts import IngestMessage, DocumentContract, chunk_hash, effective_from_of, sha256_of
 from idempotency import (claim, current_chunks, finish, reactivate, record_source, refresh_fingerprint, release,
-                         retire_previous, source_id_for, stale_generation, status_of, swap_versions, withdrawn)
+                         retake_expired, retire_previous, source_id_for, stale_generation, status_of, swap_versions, withdrawn)
 from indexer import (EMBEDDING_MODEL, EMBEDDING_VERSION, embed_with_carry_over, mirror_to_bigquery,
                      mirror_to_firestore, remove_datapoints, reupsert, to_datapoints, upsert)
 from managed import Mirror
@@ -293,7 +293,7 @@ def _enqueue_batch(doc: DocumentContract, msg: IngestMessage) -> None:
     _db.collection("documents").document(doc.doc_key).set(
         {"status": "queued", "pages": doc.pages, "generation": str(msg.generation),
          "queued_at": firestore.SERVER_TIMESTAMP}, merge=True)
-    consumer = "no job declared (BATCH_JOB unset): make batch runs the queue now, make batch-job declares and schedules it"
+    consumer = "no job declared (BATCH_JOB unset): make batch-job declares and schedules it, then make batch runs it now"
     if BATCH_JOB:
         try:
             op = _run_batch_job()
@@ -314,9 +314,10 @@ async def push(request: Request):
         raw = base64.b64decode(envelope["message"]["data"])
         msg = IngestMessage.model_validate_json(raw)
     except (KeyError, ValueError, ValidationError) as e:
-        # 400, NOT 500. A message this worker can never parse must not be
-        # retried five times before reaching the DLQ - it will fail the same
-        # way every time. Ack the poison and let the DLQ hold it.
+        # 400, NOT 500: a message this worker can never parse fails the same way on every
+        # delivery, and the log line names the field. On a push subscription any non-2xx is a
+        # nack, so Pub/Sub retries it on eventarc.tf's backoff, twelve deliveries, then parks it
+        # on the DLQ (13 October 2026: this comment once said it was acked). make dlq reads it there.
         log.warning(json.dumps({"event": "ingest_poison", "error": str(e)[:200]}))
         raise HTTPException(400, "unparseable message")
 
@@ -382,6 +383,24 @@ async def push(request: Request):
             # newer version still holds, and the swap retires it only once the new rows are whole.
             if not claim(_db, doc.doc_key, doc.gcs_uri, doc.tenant_id, retake=True):
                 return {"status": "duplicate", "doc_key": doc.doc_key}
+        elif status_of(_db, doc.doc_key) == "processing":
+            # THE LEASE (13 October 2026, lesson 8.4's review). Another delivery holds the claim, or held it and was
+            # cut off without release() - at the 600 s deadline, out of memory - and before the lease that claim
+            # stayed processing for ever while every delivery was acked as a duplicate. Past its lease
+            # (idempotency.LEASE_SECONDS) nobody holds it: it is taken back (ingest_claim_retaken) and the bytes are
+            # ingested below. Inside it the holder may still finish, so this delivery is NACKED (ingest_claim_held,
+            # a 409, retried on eventarc.tf's backoff) and comes back to a finished claim - a duplicate then - or an
+            # expired one; a claim that changed while it was read (ingest_claim_moved) is nacked the same way. A
+            # claim the batch job holds is the job's while its lease runs, as a queued one is: acked, so a re-upload
+            # never spends the subscription's twelve attempts waiting out a two-hour job.
+            lease = retake_expired(_db, doc.doc_key, doc.gcs_uri, doc.tenant_id)
+            line = json.dumps({"event": "ingest_claim_" + lease["verdict"], "tenant": doc.tenant_id,
+                               "doc_key": doc.doc_key, "gcs_uri": doc.gcs_uri, "generation": msg.generation, **lease})
+            (log.warning if lease["verdict"] == "retaken" else log.info)(line)
+            if lease["verdict"] == "held" and lease["lane"] == "batch":
+                return {"status": "batch_processing", "doc_key": doc.doc_key}
+            if lease["verdict"] != "retaken":
+                raise HTTPException(409, f"claim {lease['verdict']}: Pub/Sub delivers it again")
         elif status_of(_db, doc.doc_key) == "queued":
             # Handed to the batch lane by an earlier delivery and waiting for the batch job (batch.py) to take it:
             # acked as queued, so the wait is a fact in the log and not a "duplicate" that hides it.

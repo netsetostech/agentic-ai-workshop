@@ -6,6 +6,8 @@
                                                           # current=true, doc_key, and a sources/ row each
     python reconcile.py --project P --retire gs://P-uploads/acme/old.pdf --apply     # withdraw by hand: a tombstone
     python reconcile.py --project P --restore gs://P-uploads/acme/old.pdf --apply    # and the way back
+    python reconcile.py --project P --approved <approval id> --apply   # the withdrawal a second person approved on the
+                                                          # chat service (workshop lesson 5.8): re-checked, then --retire's
     python reconcile.py --project P --report [--tenant acme] [--json]   # the versions view: every source's current
                                                           # version, generation, counts, dates, the corpus fingerprint
     python reconcile.py --project P --purge [--apply]     # the manual twin of the TTL policy: retired rows past expire_at
@@ -146,6 +148,25 @@ def expired(rows: list[dict], now) -> list[dict]:
             if r.get("current") is False and r.get("expire_at") is not None and r["expire_at"] <= now]
 
 
+def remove_vectors(index_name: str, gone: dict, remove=None) -> int:
+    """The index follows a retirement (13 October 2026, lesson 8.4's review). retire_previous() flags the rows; the
+    worker's swap and undo then take the retired ids out of Vector Search, and this walk and --retire never did, so a
+    source that left the bucket or was withdrawn kept every datapoint in the index, each one a neighbour slot that a
+    current chunk lost to a row the retriever then drops. Now they come out here too, through the worker's own
+    remove_datapoints(), when VECTOR_INDEX_NAME names the index (reconcile.tf gives it to the nightly job, make retire
+    and make reconcile read it from terraform output). The count goes on the retirement's line as datapoints_removed;
+    with no index named nothing is touched and the line carries no count."""
+    ids = gone.get("retired_ids") or []
+    if not index_name:
+        return 0
+    if ids:
+        if remove is None:
+            from indexer import remove_datapoints as remove
+        remove(index_name, ids)
+    gone["datapoints_removed"] = len(ids)
+    return len(ids)
+
+
 def selftest() -> int:
     from contracts import is_stale
     objs = [{"name": "acme/a.md", "generation": "2", "tenant_id": "acme"},
@@ -209,6 +230,8 @@ def main() -> int:
                     help="repair current vectors; re-embed missing/legacy document embeddings (VECTOR_INDEX_NAME)")
     ap.add_argument("--retire", help="a gs:// URI (or tenant/name) to withdraw by hand: a tombstone the walk honours")
     ap.add_argument("--restore", help="a gs:// URI (or tenant/name) withdrawn by --retire: clear the tombstone, re-ingest")
+    ap.add_argument("--approved", help="an approval id (workshop lesson 5.8): re-check the record a second person approved "
+                                       "on the chat service, withdraw its document as --retire does, mark the record withdrawn")
     ap.add_argument("--report", action="store_true", help="the versions view: sources/ and the corpus fingerprint")
     ap.add_argument("--purge", action="store_true", help="retired rows past expire_at (the TTL policy's manual twin)")
     ap.add_argument("--json", action="store_true", help="--report as JSON lines")
@@ -233,6 +256,10 @@ def main() -> int:
     bucket_name = a.bucket or f"{a.project}-uploads"
     bucket = gcs.bucket(bucket_name)
     expire_at = datetime.now(timezone.utc) + timedelta(days=RETENTION_DAYS)
+    # The index a retirement takes its ids out of (remove_vectors); indexer.py reads the project when it is imported.
+    index_name = os.environ.get("VECTOR_INDEX_NAME", "")
+    if index_name:
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", a.project)
 
     if a.report:
         # THE VERSIONS VIEW: what the API serves as GET /v1/sources and the UI's Documents page shows.
@@ -320,6 +347,42 @@ def main() -> int:
                           "datapoints": n}))
         return 0
 
+    if a.approved:
+        # AN APPROVED WITHDRAWAL (workshop lesson 5.8, 13 October 2026). The record a second person approved on the chat
+        # service (shared/approvals.py) names the document, and nothing on the command line does. It is checked again
+        # here, from the operator's shell: approved and not yet run, by a second person who still holds doc_approver in
+        # the record's own tenant, for a document of that tenant. Then --retire's own branch below runs, through main()
+        # again with its arguments, so the tombstone is written by the one path lessons 1.7 and 7.4 show. On its success
+        # the record is marked withdrawn, with the kit's one doc.withdraw audit event; make retire from the shell writes
+        # none. Without --apply the checks run and nothing is written.
+        from shared import approvals
+        try:
+            rec = approvals.recheck(db, a.approved)
+        except approvals.ApprovalError as e:
+            print(json.dumps({"event": "reconcile_approved_refused", "approval": a.approved, "status": e.status, "why": e.detail}))
+            return 1
+        w = rec["withdrawal"]
+        source = f"{w['tenant']}/{w['name']}"
+        if not a.apply:
+            print(f"would run approval {a.approved}: withdraw {source}, asked for by {rec['requester']}, approved by "
+                  f"{w['approved_by']}; the checks pass, and make restore SOURCE={source} is the way back (--apply to do it)")
+            return 0
+        argv, sys.argv = sys.argv, [sys.argv[0], "--project", a.project, "--retire", source, "--apply"] + (
+            ["--bucket", a.bucket] if a.bucket else [])
+        try:
+            rc = int(main() or 0)
+        finally:
+            sys.argv = argv
+        if rc != 0:
+            print(json.dumps({"event": "reconcile_approved_failed", "approval": a.approved, "source": source, "exit": rc,
+                              "note": "the record stays approved: make withdraw-run again once the cause is fixed"}))
+            return rc
+        rec = approvals.withdrawn(db, rec, run_by=os.environ.get("DOCUMIND_OPERATOR") or os.environ.get("USER") or "operator")
+        print(json.dumps({"event": "reconcile_approved", "approval": a.approved, "gcs_uri": f"gs://{bucket_name}/{source}",
+                          "status": rec["status"], "requested_by": rec["requester"], "approved_by": w["approved_by"],
+                          "run_by": rec["run_by"], "undo": f"make restore SOURCE={source}"}))
+        return 0
+
     if a.retire:
         # WITHDRAWAL IS A TOMBSTONE (12 September 2026). The rows are retired as for any retirement - flagged,
         # stamped, never deleted - but the ledger row says `withdrawn`, not `retired`: `retired` means the object
@@ -337,6 +400,7 @@ def main() -> int:
         mirror.retired(tenant, gone.get("retired_doc_keys", []), "withdrawn")
         db.collection("sources").document(source_id_for(tenant, name)).set(
             {"status": "withdrawn", "withdrawn_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        remove_vectors(index_name, gone)
         fp = refresh_fingerprint(db, tenant, "reconcile_withdrawn")
         print(json.dumps({"event": "reconcile_withdrawn", "gcs_uri": uri, "fingerprint": fp, **gone,
                           "note": "a tombstone: the object is kept and nothing automatic re-ingests it; make restore SOURCE= does"}))
@@ -446,6 +510,7 @@ def main() -> int:
             mirror.retired(act["tenant_id"], gone.get("retired_doc_keys", []), "retired")
             db.collection("sources").document(source_id_for(act["tenant_id"], act["name"])).set(
                 {"status": "retired", "retired_at": firestore.SERVER_TIMESTAMP}, merge=True)
+            remove_vectors(index_name, gone)
             touched.add(act["tenant_id"])
             print(json.dumps({"event": "reconcile_retired", "gcs_uri": uri, **gone}))
         elif act["action"] == "touch":

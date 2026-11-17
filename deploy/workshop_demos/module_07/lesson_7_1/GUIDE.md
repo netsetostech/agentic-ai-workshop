@@ -4,7 +4,7 @@ Read this beside the section-numbered demo files. The prose below follows the ma
 its terminal setup is replaced by the documented Python setup. Read-only code
 and sample output are not executable steps. Sample values are not live results.
 
-Source: the lesson's main page, `Netsetos_GCP_Capstone_7.1_Graph_Evidence_WIX.html`, reviewed at blob `ce68fb1aaf2d3f04172a25e69ed3b5880f13a267`. Learners read that page on the course site; this guide keeps its prose.
+Source: the lesson's main page, `Netsetos_GCP_Capstone_7.1_Graph_Evidence_WIX.html`, reviewed at blob `81611d9527aceb1f3116e7a0b7d65b46cd1bdffc`. Learners read that page on the course site; this guide keeps its prose.
 
 Dense retrieval finds passages that sound like the question. A question about a relation, such as who approves a purchase above two lakh rupees, is better answered by following a named link from one thing to another. The kit builds those links from the tenant's own documents. It asks flash-lite for the entities and relations each passage states, and folds the different ways a name is written into one node. Every node and every edge keeps the chunk it came from, so a hop through the graph can be cited like a passage.
 

@@ -33,6 +33,12 @@ request arrives through `REQUEST` rather than a ToolRuntime and whose arguments 
 against the same schemas. Both end in `search()`, so the two adapters can differ only in how the
 request reaches them, and no schema a model reads names the tenant, the assertion or the brain.
 
+THE FENCE (workshop lesson 10.8), off unless AGENT_FENCE=on. A quote is text from a document anyone in the tenant may
+have uploaded, so with the switch on search() hands the model each quote inside a <document> fence, with
+shared/spotlight.py's RULE first in the result. It fences after the numbering step copies each new citation into the
+ledger, and fences a copy: the ledger, which the answer's citations and the UI's pills come from, keeps the clean
+quote.
+
 Verified 2026-09-04 against langchain 1.4.0 / langchain-google-genai 4.4.0; the ToolRuntime
 wiring against langgraph 1.2.11 / langchain-core 1.5.6 on 2026-09-05.
 """
@@ -53,7 +59,7 @@ except ImportError:                                   # a bare langgraph install
 # The shared tool layer. The image must be built with `deploy/` as its context so that
 # shared/ lands beside this service - see the Dockerfile. Lesson 8.7 is the argument for why
 # this import exists at all: one retrieval implementation, adapted per brain, never re-written.
-from shared import documind_tools
+from shared import documind_tools, spotlight
 
 import limits                                         # services/chat/limits.py: the turn's Meter and its timed calls
 
@@ -165,6 +171,7 @@ def search(query: str, doc_type: str = "all", top_k: int = 5, *, tenant_id: str 
     }
     if cited is not None and delivered:
         _number(out["citations"], cited)
+    out = spotlight.fenced(out, "citations", "quote") if spotlight.FENCE else out    # AGENT_FENCE (lesson 10.8)
     return out
 
 
